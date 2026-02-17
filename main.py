@@ -530,26 +530,46 @@ def generate_ai_assessment(data):
 
         print("Generating AI market assessment...")
 
-        # Prepare the prompt
-        prompt = f"""You are a financial analyst. Analyze these economic indicators and provide a brief, actionable market assessment (3-4 sentences max):
+        # Prepare comprehensive prompt with all context
+        yield_status = "Inverted (recession signal)" if data['yield_curve'] < 0 else "Positive (no inversion)"
+        sahm_status = "RECESSION SIGNAL" if data['sahm_rule'] >= 0.5 else "Safe"
+        sentiment_status = "Weak" if data['consumer_sentiment'] < 60 else "Healthy" if data['consumer_sentiment'] < 80 else "Strong"
+        claims_status = "Healthy" if data['initial_claims'] < 250 else "Elevated" if data['initial_claims'] < 350 else "Stressed"
+        credit_status = "Tight (good)" if data['credit_spread'] < 1.5 else "Normal" if data['credit_spread'] < 2.5 else "Stressed"
+        yields_status = "Easy" if data['real_yields'] < 0 else "Neutral" if data['real_yields'] < 2.0 else "Restrictive"
+        lei_status = "Rising" if data['lei_change'] > 0 else "Falling"
+        fear_status = "Extreme Fear" if data['fear_greed'] < 25 else "Fear" if data['fear_greed'] < 45 else "Neutral" if data['fear_greed'] < 55 else "Greed" if data['fear_greed'] < 75 else "Extreme Greed"
 
-📊 DATA:
-- Yield Curve (10Y-2Y): {data['yield_curve']:.2f}%
-- Profit Margin: {data['profit_margin']:.2f}%
-- Fear & Greed Index: {data['fear_greed']:.1f} (Fear)
-- Sahm Rule: {data['sahm_rule']:.2f} (0.5+ = recession)
-- Consumer Sentiment: {data['consumer_sentiment']:.1f}
-- Initial Claims: {data['initial_claims']:.0f}K
-- Credit Spread: {data['credit_spread']:.2f}%
-- Real Yields: {data['real_yields']:.2f}%
-- Leading Index Change: {data['lei_change']:+.2f}%
+        prompt = f"""You are a senior financial analyst. Analyze these comprehensive economic indicators and market data to provide a brief, actionable assessment (4-5 sentences max):
 
-Provide a concise assessment covering:
-1. Overall market health (1 sentence)
-2. Key risk or opportunity (1 sentence)
-3. What to watch (1 sentence)
+📊 COMPLETE MARKET DATA:
 
-Be direct and actionable. No fluff."""
+**MARKET INDICATORS:**
+- Yield Curve (10Y-2Y): {data['yield_curve']:.2f}% → {yield_status}
+- Corporate Profit Margins: {data['profit_margin']:.2f}% (vs GDP)
+- Fear & Greed Index: {data['fear_greed']:.1f}/100 → {fear_status}
+
+**RECESSION & LABOR SIGNALS:**
+- Sahm Rule Recession Indicator: {data['sahm_rule']:.2f} → {sahm_status} (0.5+ triggers recession signal)
+- Initial Jobless Claims (4wk): {data['initial_claims']:.0f}K → {claims_status}
+
+**CONSUMER & SENTIMENT:**
+- Consumer Sentiment Index: {data['consumer_sentiment']:.1f}/100 → {sentiment_status}
+
+**CREDIT & MONETARY CONDITIONS:**
+- BBB Credit Spread: {data['credit_spread']:.2f}% → {credit_status}
+- Real Yields (10Y TIPS): {data['real_yields']:.2f}% → {yields_status} policy
+
+**FORWARD-LOOKING:**
+- Leading Economic Index: {data['lei_change']:+.2f}% change → {lei_status}
+
+TASK: Provide a concise, actionable assessment covering:
+1. Overall market health (considering ALL indicators above)
+2. Most important risk OR opportunity right now
+3. Key metric to watch closely
+4. Brief directional guidance (bullish/bearish/cautious)
+
+Be direct, specific, and actionable. Reference the actual data points."""
 
         # Call Groq API
         headers = {
@@ -792,17 +812,28 @@ def main():
 
         print(f"✓ Indicators text generated")
 
-        # Store data for AI assessment
+        # Store comprehensive data for AI assessment
         assessment_data = {
             'yield_curve': yield_value,
+            'yield_date': yield_date,
             'profit_margin': margin_value,
+            'margin_date': margin_date,
             'fear_greed': fg_score,
+            'fear_rating': fg_rating,
             'sahm_rule': sahm_rule,
+            'sahm_emoji': sahm_emoji,
             'consumer_sentiment': sentiment_current,
+            'sentiment_change': sentiment_change,
+            'sentiment_emoji': sentiment_emoji,
             'initial_claims': claims_in_k,
+            'claims_emoji': claims_emoji,
             'credit_spread': bbb_current,
+            'credit_emoji': bbb_emoji,
             'real_yields': tips_current,
-            'lei_change': lei_change_pct
+            'yields_change': tips_change,
+            'yields_emoji': tips_emoji,
+            'lei_change': lei_change_pct,
+            'lei_emoji': lei_emoji
         }
 
         # Generate AI market assessment
