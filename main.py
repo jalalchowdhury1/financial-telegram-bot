@@ -957,96 +957,94 @@ def main():
 
         bullish_signals = []
 
-        # 1. Yield Curve - Recession Predictor
-        t10y2y = fred.get_series('T10Y2Y')
-        yc_current = t10y2y.dropna().iloc[-1]
-        yc_bullish = yc_current > 0
-        yc_emoji = '✅' if yc_bullish else '🚨'
-        yc_status = "← Positive" if yc_bullish else "← INVERTED"
-        bullish_signals.append(yc_bullish)
-        checklist_text += f"{yc_emoji} *Yield Curve (10Y-2Y):* `{yc_current:.2f}%` {yc_status}\n"
-        checklist_text += f"   Recession signal when inverted (<0)\n\n"
+        # 1. Financial Conditions Index - Overall System Tightness
+        nfci = fred.get_series('NFCI')
+        nfci_current = nfci.dropna().iloc[-1]
+        nfci_bullish = nfci_current < 0
+        nfci_emoji = '✅' if nfci_current < -0.5 else '⚠️' if nfci_current < 0 else '🔴'
+        nfci_status = "← Easy" if nfci_current < -0.5 else "← Neutral" if nfci_current < 0 else "← Tight"
+        bullish_signals.append(nfci_bullish)
+        checklist_text += f"{nfci_emoji} *Financial Conditions:* `{nfci_current:.2f}` {nfci_status}\n"
+        checklist_text += f"   System tightness (<0 = easy, >0 = tight)\n\n"
 
-        # 2. Sahm Rule - Real-Time Recession Indicator
-        unrate = fred.get_series('UNRATE')
-        unrate_recent = unrate.dropna().tail(12)
-        unrate_3mo = unrate_recent.tail(3).mean()
-        unrate_12mo_low = unrate_recent.min()
-        sahm = unrate_3mo - unrate_12mo_low
-        sahm_bullish = sahm < 0.5
-        sahm_emoji = '✅' if sahm_bullish else '🚨'
-        sahm_status = "← Safe" if sahm_bullish else "← RECESSION"
-        bullish_signals.append(sahm_bullish)
-        checklist_text += f"{sahm_emoji} *Sahm Rule:* `{sahm:.2f}` {sahm_status}\n"
-        checklist_text += f"   Never false positive (≥0.5 = recession)\n\n"
+        # 2. M2 Money Supply Growth - Liquidity
+        m2 = fred.get_series('M2SL')
+        m2_current = m2.dropna().iloc[-1]
+        m2_year_ago = m2.dropna().iloc[-13]
+        m2_growth = ((m2_current - m2_year_ago) / m2_year_ago) * 100
+        m2_bullish = m2_growth > 2.0
+        m2_emoji = '✅' if m2_growth > 4.0 else '⚠️' if m2_growth > 2.0 else '🔴'
+        m2_status = "← Growing" if m2_growth > 2.0 else "← Contracting"
+        bullish_signals.append(m2_bullish)
+        checklist_text += f"{m2_emoji} *M2 Money Supply:* `{m2_growth:+.1f}%` {m2_status}\n"
+        checklist_text += f"   YoY liquidity growth (>2% = expanding)\n\n"
 
-        # 3. High Yield Spread - Financial Stress Indicator
-        hy_spread = fred.get_series('BAMLH0A0HYM2')
-        hy_current = hy_spread.dropna().iloc[-1]
-        hy_bullish = hy_current < 5.0
-        hy_emoji = '✅' if hy_current < 4.0 else '⚠️' if hy_current < 5.0 else '🔴'
-        hy_status = "← Healthy" if hy_current < 4.0 else "← Elevated" if hy_current < 5.0 else "← Stressed"
-        bullish_signals.append(hy_bullish)
-        checklist_text += f"{hy_emoji} *High Yield Spread:* `{hy_current:.2f}%` {hy_status}\n"
-        checklist_text += f"   Credit market stress (>5% = distress)\n\n"
+        # 3. Retail Sales - Consumer Spending
+        retail = fred.get_series('RSXFS')
+        retail_current = retail.dropna().iloc[-1]
+        retail_3mo_ago = retail.dropna().iloc[-4]
+        retail_growth = ((retail_current - retail_3mo_ago) / retail_3mo_ago) * 100
+        retail_bullish = retail_growth > 0
+        retail_emoji = '✅' if retail_growth > 1.0 else '⚠️' if retail_growth > 0 else '🔴'
+        retail_status = "← Growing" if retail_growth > 0 else "← Declining"
+        bullish_signals.append(retail_bullish)
+        checklist_text += f"{retail_emoji} *Retail Sales (3mo):* `{retail_growth:+.1f}%` {retail_status}\n"
+        checklist_text += f"   Consumer spending strength\n\n"
 
-        # 4. Initial Claims Trend - Leading Labor Indicator
-        claims = fred.get_series('ICSA')
-        claims_4wk = claims.dropna().tail(4).mean() / 1000
-        claims_8wk = claims.dropna().tail(8).mean() / 1000
-        claims_improving = claims_4wk < claims_8wk
-        claims_bullish = claims_4wk < 250 and claims_improving
-        claims_emoji = '✅' if claims_bullish else '⚠️'
-        claims_trend = "↘ Improving" if claims_improving else "↗ Rising"
-        bullish_signals.append(claims_bullish)
-        checklist_text += f"{claims_emoji} *Initial Claims:* `{claims_4wk:.0f}K` {claims_trend}\n"
-        checklist_text += f"   Leading indicator (<250K + falling = strong)\n\n"
+        # 4. Housing Starts - Housing Market
+        housing = fred.get_series('HOUST')
+        housing_current = housing.dropna().iloc[-1]
+        housing_6mo_avg = housing.dropna().tail(6).mean()
+        housing_bullish = housing_current > housing_6mo_avg and housing_current > 1300
+        housing_emoji = '✅' if housing_current > 1400 else '⚠️' if housing_current > 1300 else '🔴'
+        housing_status = "← Strong" if housing_current > 1400 else "← OK" if housing_current > 1300 else "← Weak"
+        bullish_signals.append(housing_bullish)
+        checklist_text += f"{housing_emoji} *Housing Starts:* `{housing_current:.0f}K` {housing_status}\n"
+        checklist_text += f"   Housing market health (>1,300K = healthy)\n\n"
 
-        # 5. Real Yields - Policy Restrictiveness
-        tips = fred.get_series('DFII10')
-        tips_current = tips.dropna().iloc[-1]
-        tips_bullish = tips_current < 1.5
-        tips_emoji = '✅' if tips_current < 1.0 else '⚠️' if tips_current < 2.0 else '🔴'
-        tips_status = "← Easy" if tips_current < 1.0 else "← Neutral" if tips_current < 2.0 else "← Tight"
-        bullish_signals.append(tips_bullish)
-        checklist_text += f"{tips_emoji} *Real Yields (10Y TIPS):* `{tips_current:.2f}%` {tips_status}\n"
-        checklist_text += f"   Policy stance (>2% = restrictive)\n\n"
+        # 5. Industrial Production - Manufacturing
+        indpro = fred.get_series('INDPRO')
+        indpro_current = indpro.dropna().iloc[-1]
+        indpro_6mo_ago = indpro.dropna().iloc[-7]
+        indpro_change = ((indpro_current - indpro_6mo_ago) / indpro_6mo_ago) * 100
+        indpro_bullish = indpro_change > 0
+        indpro_emoji = '✅' if indpro_change > 1.0 else '⚠️' if indpro_change > 0 else '🔴'
+        indpro_status = "← Expanding" if indpro_change > 0 else "← Contracting"
+        bullish_signals.append(indpro_bullish)
+        checklist_text += f"{indpro_emoji} *Industrial Production:* `{indpro_change:+.1f}%` {indpro_status}\n"
+        checklist_text += f"   6-month manufacturing trend\n\n"
 
-        # 6. Leading Economic Index - Forward Indicator
-        lei = fred.get_series('USSLIND')
-        lei_current = lei.dropna().iloc[-1]
-        lei_3mo_ago = lei.dropna().iloc[-4]
-        lei_change = ((lei_current - lei_3mo_ago) / lei_3mo_ago) * 100
-        lei_bullish = lei_change > 0
-        lei_emoji = '✅' if lei_bullish else '🔴'
-        lei_status = "← Rising" if lei_bullish else "← Falling"
-        bullish_signals.append(lei_bullish)
-        checklist_text += f"{lei_emoji} *Leading Index (3mo):* `{lei_change:+.2f}%` {lei_status}\n"
-        checklist_text += f"   Composite forward indicator (10 metrics)\n\n"
+        # 6. Job Openings - Labor Demand
+        jolts = fred.get_series('JTSJOL')
+        jolts_current = jolts.dropna().iloc[-1]
+        jolts_bullish = jolts_current > 6000
+        jolts_emoji = '✅' if jolts_current > 7000 else '⚠️' if jolts_current > 6000 else '🔴'
+        jolts_status = "← Strong" if jolts_current > 7000 else "← OK" if jolts_current > 6000 else "← Weak"
+        bullish_signals.append(jolts_bullish)
+        checklist_text += f"{jolts_emoji} *Job Openings (JOLTS):* `{jolts_current:.0f}K` {jolts_status}\n"
+        checklist_text += f"   Labor demand (>6,000K = tight)\n\n"
 
-        # 7. Corporate Profit Margins - Corporate Health
-        profit_data = fred.get_series('A053RC1Q027SBEA')
-        gdp_data = fred.get_series('GDP')
-        df_margin = pd.DataFrame({'profit': profit_data, 'gdp': gdp_data}).dropna()
-        margin = (df_margin['profit'].iloc[-1] / df_margin['gdp'].iloc[-1]) * 100
-        margin_bullish = margin > 12.0
-        margin_emoji = '✅' if margin > 13.0 else '⚠️' if margin > 12.0 else '🔴'
-        margin_status = "← Strong" if margin > 13.0 else "← OK" if margin > 12.0 else "← Weak"
-        bullish_signals.append(margin_bullish)
-        checklist_text += f"{margin_emoji} *Profit Margins:* `{margin:.2f}%` {margin_status}\n"
-        checklist_text += f"   Corporate health (>12% = healthy)\n\n"
+        # 7. Durable Goods Orders - Business Investment
+        durable = fred.get_series('DGORDER')
+        durable_current = durable.dropna().iloc[-1]
+        durable_3mo_ago = durable.dropna().iloc[-4]
+        durable_change = ((durable_current - durable_3mo_ago) / durable_3mo_ago) * 100
+        durable_bullish = durable_change > 0
+        durable_emoji = '✅' if durable_change > 2.0 else '⚠️' if durable_change > 0 else '🔴'
+        durable_status = "← Rising" if durable_change > 0 else "← Falling"
+        bullish_signals.append(durable_bullish)
+        checklist_text += f"{durable_emoji} *Durable Goods Orders:* `{durable_change:+.1f}%` {durable_status}\n"
+        checklist_text += f"   Business investment (3mo trend)\n\n"
 
-        # 8. Consumer Sentiment - Behavioral Indicator
-        sentiment = fred.get_series('UMCSENT')
-        sent_current = sentiment.dropna().iloc[-1]
-        sent_3mo_ago = sentiment.dropna().iloc[-4]
-        sent_change = sent_current - sent_3mo_ago
-        sent_bullish = sent_current > 70 or (sent_current > 60 and sent_change > 5)
-        sent_emoji = '✅' if sent_current > 80 else '⚠️' if sent_current > 60 else '🔴'
-        sent_status = "← Strong" if sent_current > 80 else "← OK" if sent_current > 60 else "← Weak"
-        bullish_signals.append(sent_bullish)
-        checklist_text += f"{sent_emoji} *Consumer Sentiment:* `{sent_current:.1f}` {sent_status}\n"
-        checklist_text += f"   Behavioral gauge (>70 = healthy)\n\n"
+        # 8. Personal Savings Rate - Consumer Cushion
+        savings = fred.get_series('PSAVERT')
+        savings_current = savings.dropna().iloc[-1]
+        savings_bullish = savings_current > 3.5
+        savings_emoji = '✅' if savings_current > 5.0 else '⚠️' if savings_current > 3.5 else '🔴'
+        savings_status = "← Healthy" if savings_current > 5.0 else "← OK" if savings_current > 3.5 else "← Low"
+        bullish_signals.append(savings_bullish)
+        checklist_text += f"{savings_emoji} *Savings Rate:* `{savings_current:.1f}%` {savings_status}\n"
+        checklist_text += f"   Consumer cushion (>3.5% = runway)\n\n"
 
         # Calculate score
         bull_count = sum(bullish_signals)
