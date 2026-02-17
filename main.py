@@ -563,13 +563,25 @@ def generate_ai_assessment(data):
 **FORWARD-LOOKING:**
 - Leading Economic Index: {data['lei_change']:+.2f}% change → {lei_status}
 
-TASK: Provide a concise, actionable assessment covering:
-1. Overall market health (considering ALL indicators above)
-2. Most important risk OR opportunity right now
-3. Key metric to watch closely
-4. Brief directional guidance (bullish/bearish/cautious)
+TASK: Write a confident, data-driven market assessment (MAX 4 sentences):
 
-Be direct, specific, and actionable. Reference the actual data points."""
+STYLE REQUIREMENTS:
+- Be CONFIDENT and DIRECT - no hedging ("appears", "could", "might", "cautiously")
+- Use EMOJIS liberally (🟢🔴📊⚠️✅🚨💪📈📉🎯)
+- Lead with DATA and FACTS - cite specific numbers
+- SHORT sentences. Punchy. Clear.
+- No fluff words like "monitoring", "warrant", "appear to be"
+- End with ONE clear action/stance (Bullish/Bearish/Hold)
+
+FORMAT:
+Line 1: Overall verdict with emoji + key data points
+Line 2: Biggest risk OR opportunity with data
+Line 3: What to watch with specific threshold
+Line 4: Clear stance with emoji
+
+Example style: "🟢 Markets are STRONG - Sahm Rule at 0.40 (safe), claims at 220K (healthy), LEI rising +9.5%. ⚠️ Consumer sentiment at 52.9 is the weak link. 🎯 Watch for sentiment breaking 60. 📈 BULLISH but monitor sentiment closely."
+
+Now write YOUR assessment:"""
 
         # Call Groq API
         headers = {
