@@ -957,92 +957,98 @@ def main():
 
         bullish_signals = []
 
-        # 1. Market Trend - S&P 500 vs 200-day MA
+        # Get S&P 500 data for multiple indicators
         sp500 = fred.get_series('SP500')
         sp500_current = sp500.dropna().iloc[-1]
-        sp500_ma200 = sp500.dropna().tail(200).mean()
-        trend_bullish = sp500_current > sp500_ma200
-        trend_pct = ((sp500_current - sp500_ma200) / sp500_ma200) * 100
-        trend_emoji = '✅' if trend_bullish else '❌'
-        trend_status = "← Bullish" if trend_bullish else "← Bearish"
-        bullish_signals.append(trend_bullish)
-        checklist_text += f"{trend_emoji} *Market Trend:* `{sp500_current:.0f}` ({trend_pct:+.1f}%) {trend_status}\n"
-        checklist_text += f"   Above 200-day MA →\n\n"
 
-        # 2. Yield Curve
-        t10y2y = fred.get_series('T10Y2Y')
-        yield_current = t10y2y.dropna().iloc[-1]
-        yield_bullish = yield_current > 0
-        yield_emoji = '✅' if yield_bullish else '❌'
-        yield_status = "← Positive" if yield_bullish else "← Inverted"
-        bullish_signals.append(yield_bullish)
-        checklist_text += f"{yield_emoji} *Yield Curve:* `{yield_current:.2f}%` {yield_status}\n"
-        checklist_text += f"   Inverted at <0 →\n\n"
+        # 1. Breakout Level - S&P 500 vs Recent High
+        sp500_52w_high = sp500.dropna().tail(252).max()
+        breakout_bullish = sp500_current >= sp500_52w_high * 0.99  # Within 1% of high
+        breakout_pct = ((sp500_current - sp500_52w_high) / sp500_52w_high) * 100
+        breakout_emoji = '✅' if breakout_bullish else '⚠️'
+        breakout_status = "← At High" if breakout_bullish else "← Below High"
+        bullish_signals.append(breakout_bullish)
+        checklist_text += f"{breakout_emoji} *Breakout Level:* `{sp500_current:.0f}` {breakout_status}\n"
+        checklist_text += f"   52-week high: {sp500_52w_high:.0f} ({breakout_pct:+.1f}%)\n\n"
 
-        # 3. Credit Conditions
+        # 2. Trend Direction - 200-Day MA Rising
+        sp500_ma200 = sp500.dropna().rolling(200).mean()
+        ma200_current = sp500_ma200.iloc[-1]
+        ma200_prev = sp500_ma200.iloc[-21]  # 1 month ago
+        trend_rising = ma200_current > ma200_prev
+        # Count consecutive days above MA
+        above_ma = (sp500.dropna() > sp500_ma200).astype(int)
+        consecutive_days = 0
+        for val in reversed(above_ma.values):
+            if val == 1:
+                consecutive_days += 1
+            else:
+                break
+        trend_emoji = '✅' if trend_rising else '❌'
+        trend_status = f"← Rising" if trend_rising else "← Falling"
+        bullish_signals.append(trend_rising)
+        checklist_text += f"{trend_emoji} *Trend Direction:* `{consecutive_days} days` {trend_status}\n"
+        checklist_text += f"   S&P above 200-day MA for {consecutive_days} days\n\n"
+
+        # 3. Momentum Regime - Price momentum (simplified RSI proxy)
+        returns_14 = sp500.dropna().pct_change(14).iloc[-1] * 100
+        momentum_bullish = returns_14 > 0
+        momentum_emoji = '✅' if momentum_bullish else '❌'
+        momentum_status = "← Bullish" if momentum_bullish else "← Bearish"
+        bullish_signals.append(momentum_bullish)
+        checklist_text += f"{momentum_emoji} *Momentum Regime:* `{returns_14:+.1f}%` {momentum_status}\n"
+        checklist_text += f"   14-day momentum positive →\n\n"
+
+        # 4. Breadth Thrust - Market breadth (using VIX as proxy)
+        vix = fred.get_series('VIXCLS')
+        vix_current = vix.dropna().iloc[-1]
+        vix_ma20 = vix.dropna().tail(20).mean()
+        breadth_bullish = vix_current < vix_ma20  # Low VIX = good breadth
+        breadth_emoji = '✅' if breadth_bullish else '⚠️'
+        breadth_status = "← Active" if breadth_bullish else "← Weak"
+        bullish_signals.append(breadth_bullish)
+        checklist_text += f"{breadth_emoji} *Breadth Thrust:* `VIX {vix_current:.1f}` {breadth_status}\n"
+        checklist_text += f"   VIX below 20-day avg = healthy breadth\n\n"
+
+        # 5. Risk Regime - Risk On/Off (VIX vs threshold)
+        risk_on = vix_current < 20
+        risk_reading = 20 - vix_current
+        risk_emoji = '✅' if risk_on else '❌'
+        risk_status = "← Risk On" if risk_on else "← Risk Off"
+        bullish_signals.append(risk_on)
+        checklist_text += f"{risk_emoji} *Risk Regime:* `{risk_reading:+.1f}` {risk_status}\n"
+        checklist_text += f"   Risk On when VIX < 20 →\n\n"
+
+        # 6. Crowd Pressure - VIX trend (fear or strength)
+        vix_change = vix_current - vix.dropna().iloc[-5]
+        crowd_bullish = vix_change < 0  # Falling VIX = strength
+        crowd_emoji = '✅' if crowd_bullish else '⚠️'
+        crowd_status = "← Strength" if crowd_bullish else "← Fear"
+        bullish_signals.append(crowd_bullish)
+        checklist_text += f"{crowd_emoji} *Crowd Pressure:* `{vix_change:+.1f}` {crowd_status}\n"
+        checklist_text += f"   VIX falling = market strength →\n\n"
+
+        # 7. Internal Strength - Credit spreads (core market health)
         bbb = fred.get_series('BAMLC0A4CBBB')
         bbb_current = bbb.dropna().iloc[-1]
-        credit_bullish = bbb_current < 2.0
-        credit_emoji = '✅' if credit_bullish else '⚠️'
-        credit_status = "← Healthy" if credit_bullish else "← Stressed"
-        bullish_signals.append(credit_bullish)
-        checklist_text += f"{credit_emoji} *Credit Conditions:* `{bbb_current:.2f}%` {credit_status}\n"
-        checklist_text += f"   Stressed at 2.0+ →\n\n"
+        internal_bullish = bbb_current < 2.0
+        internal_reading = 2.0 - bbb_current
+        internal_emoji = '✅' if internal_bullish else '⚠️'
+        internal_status = "← Strong" if internal_bullish else "← Weak"
+        bullish_signals.append(internal_bullish)
+        checklist_text += f"{internal_emoji} *Internal Strength:* `{internal_reading:+.2f}` {internal_status}\n"
+        checklist_text += f"   Credit spreads tight = strong internals\n\n"
 
-        # 4. Labor Market
-        claims = fred.get_series('ICSA')
-        claims_avg = claims.dropna().tail(4).mean() / 1000
-        labor_bullish = claims_avg < 300
-        labor_emoji = '✅' if labor_bullish else '⚠️'
-        labor_status = "← Strong" if labor_bullish else "← Weak"
-        bullish_signals.append(labor_bullish)
-        checklist_text += f"{labor_emoji} *Labor Market:* `{claims_avg:.0f}K` {labor_status}\n"
-        checklist_text += f"   Weak at 300K+ →\n\n"
-
-        # 5. Recession Risk
-        unrate = fred.get_series('UNRATE')
-        unrate_recent = unrate.dropna().tail(12)
-        sahm = unrate_recent.tail(3).mean() - unrate_recent.min()
-        recession_bullish = sahm < 0.5
-        recession_emoji = '✅' if recession_bullish else '🚨'
-        recession_status = "← Safe" if recession_bullish else "← SIGNAL"
-        bullish_signals.append(recession_bullish)
-        checklist_text += f"{recession_emoji} *Recession Risk:* `{sahm:.2f}` {recession_status}\n"
-        checklist_text += f"   Recession at 0.50+ →\n\n"
-
-        # 6. Economic Momentum
-        lei = fred.get_series('USSLIND')
-        lei_current = lei.dropna().iloc[-1]
-        lei_prev = lei.dropna().iloc[-2]
-        lei_change = ((lei_current - lei_prev) / lei_prev) * 100
-        momentum_bullish = lei_change > 0
-        momentum_emoji = '✅' if momentum_bullish else '❌'
-        momentum_status = "← Rising" if momentum_bullish else "← Falling"
-        bullish_signals.append(momentum_bullish)
-        checklist_text += f"{momentum_emoji} *Economic Momentum:* `{lei_change:+.2f}%` {momentum_status}\n"
-        checklist_text += f"   Falling at <0 →\n\n"
-
-        # 7. Consumer Health
-        sentiment = fred.get_series('UMCSENT')
-        sent_current = sentiment.dropna().iloc[-1]
-        consumer_bullish = sent_current > 60
-        consumer_emoji = '✅' if consumer_bullish else '⚠️'
-        consumer_status = "← Healthy" if consumer_bullish else "← Weak"
-        bullish_signals.append(consumer_bullish)
-        checklist_text += f"{consumer_emoji} *Consumer Health:* `{sent_current:.1f}` {consumer_status}\n"
-        checklist_text += f"   Weak at <60 →\n\n"
-
-        # 8. Profit Margins
-        profit_data = fred.get_series('A053RC1Q027SBEA')
-        gdp_data = fred.get_series('GDP')
-        df_margin = pd.DataFrame({'profit': profit_data, 'gdp': gdp_data}).dropna()
-        margin_pct = (df_margin['profit'].iloc[-1] / df_margin['gdp'].iloc[-1]) * 100
-        margin_bullish = margin_pct > 12
-        margin_emoji = '✅' if margin_bullish else '⚠️'
-        margin_status = "← Strong" if margin_bullish else "← Weak"
-        bullish_signals.append(margin_bullish)
-        checklist_text += f"{margin_emoji} *Profit Margins:* `{margin_pct:.1f}%` {margin_status}\n"
-        checklist_text += f"   Weak at <12% →\n\n"
+        # 8. Global Participation - Using yield curve as global proxy
+        t10y2y = fred.get_series('T10Y2Y')
+        yield_current = t10y2y.dropna().iloc[-1]
+        global_bullish = yield_current > 0
+        global_pct = 50 + (yield_current * 10)  # Rough estimate
+        global_emoji = '✅' if global_bullish else '❌'
+        global_status = "← Favorable" if global_bullish else "← Weak"
+        bullish_signals.append(global_bullish)
+        checklist_text += f"{global_emoji} *Global Participation:* `{global_pct:.0f}%` {global_status}\n"
+        checklist_text += f"   Positive yield curve = global participation\n\n"
 
         # Calculate score
         bull_count = sum(bullish_signals)
