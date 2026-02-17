@@ -961,7 +961,7 @@ def main():
         sp500 = fred.get_series('SP500')
         sp500_current = sp500.dropna().iloc[-1]
 
-        # 1. Breakout Level - S&P 500 vs Recent High
+        # 1. Breakout Level - S&P 500 vs Recent High [EXACT]
         sp500_52w_high = sp500.dropna().tail(252).max()
         breakout_bullish = sp500_current >= sp500_52w_high * 0.99  # Within 1% of high
         breakout_pct = ((sp500_current - sp500_52w_high) / sp500_52w_high) * 100
@@ -969,9 +969,9 @@ def main():
         breakout_status = "← At High" if breakout_bullish else "← Below High"
         bullish_signals.append(breakout_bullish)
         checklist_text += f"{breakout_emoji} *Breakout Level:* `{sp500_current:.0f}` {breakout_status}\n"
-        checklist_text += f"   52-week high: {sp500_52w_high:.0f} ({breakout_pct:+.1f}%)\n\n"
+        checklist_text += f"   52-week high: {sp500_52w_high:.0f} ({breakout_pct:+.1f}%) [EXACT]\n\n"
 
-        # 2. Trend Direction - 200-Day MA Rising
+        # 2. Trend Direction - 200-Day MA + Consecutive Days [EXACT]
         sp500_ma200 = sp500.dropna().rolling(200).mean()
         ma200_current = sp500_ma200.iloc[-1]
         ma200_prev = sp500_ma200.iloc[-21]  # 1 month ago
@@ -988,67 +988,52 @@ def main():
         trend_status = f"← Rising" if trend_rising else "← Falling"
         bullish_signals.append(trend_rising)
         checklist_text += f"{trend_emoji} *Trend Direction:* `{consecutive_days} days` {trend_status}\n"
-        checklist_text += f"   S&P above 200-day MA for {consecutive_days} days\n\n"
+        checklist_text += f"   Consecutive days above 200-MA [EXACT]\n\n"
 
-        # 3. Momentum Regime - Price momentum (simplified RSI proxy)
-        returns_14 = sp500.dropna().pct_change(14).iloc[-1] * 100
-        momentum_bullish = returns_14 > 0
+        # 3. Momentum Regime - RSI Calculation [EXACT]
+        # Calculate 14-day RSI
+        delta = sp500.dropna().diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        rs = gain / loss
+        rsi = 100 - (100 / (1 + rs))
+        rsi_current = rsi.iloc[-1]
+        momentum_bullish = rsi_current > 50
         momentum_emoji = '✅' if momentum_bullish else '❌'
         momentum_status = "← Bullish" if momentum_bullish else "← Bearish"
         bullish_signals.append(momentum_bullish)
-        checklist_text += f"{momentum_emoji} *Momentum Regime:* `{returns_14:+.1f}%` {momentum_status}\n"
-        checklist_text += f"   14-day momentum positive →\n\n"
+        checklist_text += f"{momentum_emoji} *Momentum Regime:* `RSI {rsi_current:.1f}` {momentum_status}\n"
+        checklist_text += f"   14-day RSI calculation [EXACT]\n\n"
 
-        # 4. Breadth Thrust - Market breadth (using VIX as proxy)
+        # 4. Crowd Pressure - VIX Trend [PROXY - AD line not available]
         vix = fred.get_series('VIXCLS')
         vix_current = vix.dropna().iloc[-1]
+        vix_prev = vix.dropna().iloc[-5]
+        vix_falling = vix_current < vix_prev
+        crowd_bullish = vix_falling and vix_current < 25
+        crowd_emoji = '✅' if crowd_bullish else '⚠️'
+        crowd_status = "← Strength" if vix_falling else "← Fear"
+        bullish_signals.append(crowd_bullish)
+        checklist_text += f"{crowd_emoji} *Crowd Pressure:* `VIX {vix_current:.1f}` {crowd_status}\n"
+        checklist_text += f"   VIX trend (AD line unavailable) [PROXY]\n\n"
+
+        # 5. Breadth Thrust [PROXY - VIX based]
         vix_ma20 = vix.dropna().tail(20).mean()
-        breadth_bullish = vix_current < vix_ma20  # Low VIX = good breadth
+        breadth_bullish = vix_current < vix_ma20
         breadth_emoji = '✅' if breadth_bullish else '⚠️'
         breadth_status = "← Active" if breadth_bullish else "← Weak"
         bullish_signals.append(breadth_bullish)
         checklist_text += f"{breadth_emoji} *Breadth Thrust:* `VIX {vix_current:.1f}` {breadth_status}\n"
-        checklist_text += f"   VIX below 20-day avg = healthy breadth\n\n"
+        checklist_text += f"   VIX vs 20-day avg [PROXY]\n\n"
 
-        # 5. Risk Regime - Risk On/Off (VIX vs threshold)
+        # 6. Risk Regime - Risk On/Off [PROXY - VIX threshold]
         risk_on = vix_current < 20
         risk_reading = 20 - vix_current
         risk_emoji = '✅' if risk_on else '❌'
         risk_status = "← Risk On" if risk_on else "← Risk Off"
         bullish_signals.append(risk_on)
         checklist_text += f"{risk_emoji} *Risk Regime:* `{risk_reading:+.1f}` {risk_status}\n"
-        checklist_text += f"   Risk On when VIX < 20 →\n\n"
-
-        # 6. Crowd Pressure - VIX trend (fear or strength)
-        vix_change = vix_current - vix.dropna().iloc[-5]
-        crowd_bullish = vix_change < 0  # Falling VIX = strength
-        crowd_emoji = '✅' if crowd_bullish else '⚠️'
-        crowd_status = "← Strength" if crowd_bullish else "← Fear"
-        bullish_signals.append(crowd_bullish)
-        checklist_text += f"{crowd_emoji} *Crowd Pressure:* `{vix_change:+.1f}` {crowd_status}\n"
-        checklist_text += f"   VIX falling = market strength →\n\n"
-
-        # 7. Internal Strength - Credit spreads (core market health)
-        bbb = fred.get_series('BAMLC0A4CBBB')
-        bbb_current = bbb.dropna().iloc[-1]
-        internal_bullish = bbb_current < 2.0
-        internal_reading = 2.0 - bbb_current
-        internal_emoji = '✅' if internal_bullish else '⚠️'
-        internal_status = "← Strong" if internal_bullish else "← Weak"
-        bullish_signals.append(internal_bullish)
-        checklist_text += f"{internal_emoji} *Internal Strength:* `{internal_reading:+.2f}` {internal_status}\n"
-        checklist_text += f"   Credit spreads tight = strong internals\n\n"
-
-        # 8. Global Participation - Using yield curve as global proxy
-        t10y2y = fred.get_series('T10Y2Y')
-        yield_current = t10y2y.dropna().iloc[-1]
-        global_bullish = yield_current > 0
-        global_pct = 50 + (yield_current * 10)  # Rough estimate
-        global_emoji = '✅' if global_bullish else '❌'
-        global_status = "← Favorable" if global_bullish else "← Weak"
-        bullish_signals.append(global_bullish)
-        checklist_text += f"{global_emoji} *Global Participation:* `{global_pct:.0f}%` {global_status}\n"
-        checklist_text += f"   Positive yield curve = global participation\n\n"
+        checklist_text += f"   VIX threshold model [PROXY]\n\n"
 
         # Calculate score
         bull_count = sum(bullish_signals)
