@@ -1000,7 +1000,7 @@ def main():
         housing_status = "← Strong" if housing_current > 1400 else "← OK" if housing_current > 1300 else "← Weak"
         bullish_signals.append(housing_bullish)
         checklist_text += f"{housing_emoji} *Housing Starts:* `{housing_current:.0f}K` {housing_status}\n"
-        checklist_text += f"   Housing market health (>1,300K = healthy)\n\n"
+        checklist_text += f"   Housing market health (>1,400K = strong, >1,300K = OK)\n\n"
 
         # 5. Industrial Production - Manufacturing
         indpro = fred.get_series('INDPRO')
@@ -1022,7 +1022,7 @@ def main():
         jolts_status = "← Strong" if jolts_current > 7000 else "← OK" if jolts_current > 6000 else "← Weak"
         bullish_signals.append(jolts_bullish)
         checklist_text += f"{jolts_emoji} *Job Openings (JOLTS):* `{jolts_current:.0f}K` {jolts_status}\n"
-        checklist_text += f"   Labor demand (>6,000K = tight)\n\n"
+        checklist_text += f"   Labor demand (>7,000K = strong, >6,000K = OK)\n\n"
 
         # 7. Durable Goods Orders - Business Investment
         durable = fred.get_series('DGORDER')
@@ -1039,12 +1039,12 @@ def main():
         # 8. Personal Savings Rate - Consumer Cushion
         savings = fred.get_series('PSAVERT')
         savings_current = savings.dropna().iloc[-1]
-        savings_bullish = savings_current > 3.5
-        savings_emoji = '✅' if savings_current > 5.0 else '⚠️' if savings_current > 3.5 else '🔴'
-        savings_status = "← Healthy" if savings_current > 5.0 else "← OK" if savings_current > 3.5 else "← Low"
+        savings_bullish = savings_current >= 3.5
+        savings_emoji = '✅' if savings_current > 5.0 else '⚠️' if savings_current >= 3.5 else '🔴'
+        savings_status = "← Healthy" if savings_current > 5.0 else "← OK" if savings_current >= 3.5 else "← Low"
         bullish_signals.append(savings_bullish)
         checklist_text += f"{savings_emoji} *Savings Rate:* `{savings_current:.1f}%` {savings_status}\n"
-        checklist_text += f"   Consumer cushion (>3.5% = runway)\n\n"
+        checklist_text += f"   Consumer cushion (>5% = healthy, ≥3.5% = OK)\n\n"
 
         # Calculate score
         bull_count = sum(bullish_signals)
