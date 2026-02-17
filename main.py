@@ -947,15 +947,132 @@ def main():
 
     print()
 
+    # Generate Bull Market Checklist as text (not image)
     try:
-        # Chart 4: Bull Market Checklist
-        checklist_file, bull_count, total_count = create_bull_market_checklist(fred)
+        print("Generating Bull Market Checklist text...")
+
+        checklist_text = "📋 *BULL MARKET CHECKLIST*\n"
+        checklist_text += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        checklist_text += f"Updated: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n\n"
+
+        bullish_signals = []
+
+        # 1. Market Trend - S&P 500 vs 200-day MA
+        sp500 = fred.get_series('SP500')
+        sp500_current = sp500.dropna().iloc[-1]
+        sp500_ma200 = sp500.dropna().tail(200).mean()
+        trend_bullish = sp500_current > sp500_ma200
+        trend_pct = ((sp500_current - sp500_ma200) / sp500_ma200) * 100
+        trend_emoji = '✅' if trend_bullish else '❌'
+        trend_status = "← Bullish" if trend_bullish else "← Bearish"
+        bullish_signals.append(trend_bullish)
+        checklist_text += f"{trend_emoji} *Market Trend:* `{sp500_current:.0f}` ({trend_pct:+.1f}%) {trend_status}\n"
+        checklist_text += f"   Above 200-day MA →\n\n"
+
+        # 2. Yield Curve
+        t10y2y = fred.get_series('T10Y2Y')
+        yield_current = t10y2y.dropna().iloc[-1]
+        yield_bullish = yield_current > 0
+        yield_emoji = '✅' if yield_bullish else '❌'
+        yield_status = "← Positive" if yield_bullish else "← Inverted"
+        bullish_signals.append(yield_bullish)
+        checklist_text += f"{yield_emoji} *Yield Curve:* `{yield_current:.2f}%` {yield_status}\n"
+        checklist_text += f"   Inverted at <0 →\n\n"
+
+        # 3. Credit Conditions
+        bbb = fred.get_series('BAMLC0A4CBBB')
+        bbb_current = bbb.dropna().iloc[-1]
+        credit_bullish = bbb_current < 2.0
+        credit_emoji = '✅' if credit_bullish else '⚠️'
+        credit_status = "← Healthy" if credit_bullish else "← Stressed"
+        bullish_signals.append(credit_bullish)
+        checklist_text += f"{credit_emoji} *Credit Conditions:* `{bbb_current:.2f}%` {credit_status}\n"
+        checklist_text += f"   Stressed at 2.0+ →\n\n"
+
+        # 4. Labor Market
+        claims = fred.get_series('ICSA')
+        claims_avg = claims.dropna().tail(4).mean() / 1000
+        labor_bullish = claims_avg < 300
+        labor_emoji = '✅' if labor_bullish else '⚠️'
+        labor_status = "← Strong" if labor_bullish else "← Weak"
+        bullish_signals.append(labor_bullish)
+        checklist_text += f"{labor_emoji} *Labor Market:* `{claims_avg:.0f}K` {labor_status}\n"
+        checklist_text += f"   Weak at 300K+ →\n\n"
+
+        # 5. Recession Risk
+        unrate = fred.get_series('UNRATE')
+        unrate_recent = unrate.dropna().tail(12)
+        sahm = unrate_recent.tail(3).mean() - unrate_recent.min()
+        recession_bullish = sahm < 0.5
+        recession_emoji = '✅' if recession_bullish else '🚨'
+        recession_status = "← Safe" if recession_bullish else "← SIGNAL"
+        bullish_signals.append(recession_bullish)
+        checklist_text += f"{recession_emoji} *Recession Risk:* `{sahm:.2f}` {recession_status}\n"
+        checklist_text += f"   Recession at 0.50+ →\n\n"
+
+        # 6. Economic Momentum
+        lei = fred.get_series('USSLIND')
+        lei_current = lei.dropna().iloc[-1]
+        lei_prev = lei.dropna().iloc[-2]
+        lei_change = ((lei_current - lei_prev) / lei_prev) * 100
+        momentum_bullish = lei_change > 0
+        momentum_emoji = '✅' if momentum_bullish else '❌'
+        momentum_status = "← Rising" if momentum_bullish else "← Falling"
+        bullish_signals.append(momentum_bullish)
+        checklist_text += f"{momentum_emoji} *Economic Momentum:* `{lei_change:+.2f}%` {momentum_status}\n"
+        checklist_text += f"   Falling at <0 →\n\n"
+
+        # 7. Consumer Health
+        sentiment = fred.get_series('UMCSENT')
+        sent_current = sentiment.dropna().iloc[-1]
+        consumer_bullish = sent_current > 60
+        consumer_emoji = '✅' if consumer_bullish else '⚠️'
+        consumer_status = "← Healthy" if consumer_bullish else "← Weak"
+        bullish_signals.append(consumer_bullish)
+        checklist_text += f"{consumer_emoji} *Consumer Health:* `{sent_current:.1f}` {consumer_status}\n"
+        checklist_text += f"   Weak at <60 →\n\n"
+
+        # 8. Profit Margins
+        profit_data = fred.get_series('A053RC1Q027SBEA')
+        gdp_data = fred.get_series('GDP')
+        df_margin = pd.DataFrame({'profit': profit_data, 'gdp': gdp_data}).dropna()
+        margin_pct = (df_margin['profit'].iloc[-1] / df_margin['gdp'].iloc[-1]) * 100
+        margin_bullish = margin_pct > 12
+        margin_emoji = '✅' if margin_bullish else '⚠️'
+        margin_status = "← Strong" if margin_bullish else "← Weak"
+        bullish_signals.append(margin_bullish)
+        checklist_text += f"{margin_emoji} *Profit Margins:* `{margin_pct:.1f}%` {margin_status}\n"
+        checklist_text += f"   Weak at <12% →\n\n"
+
+        # Calculate score
+        bull_count = sum(bullish_signals)
+        total_count = len(bullish_signals)
+        bull_pct = (bull_count / total_count) * 100
+
+        # Determine regime
+        if bull_pct >= 75:
+            regime = "🟢 *CONFIRMED BULL MARKET*"
+        elif bull_pct >= 50:
+            regime = "🟡 *CAUTIOUS / MIXED*"
+        else:
+            regime = "🔴 *BEAR MARKET WARNING*"
+
+        checklist_text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        checklist_text += f"*Score:* {bull_count}/{total_count} ({bull_pct:.0f}% Bullish)\n"
+        checklist_text += f"*Regime:* {regime}\n\n"
+        checklist_text += "Source: FRED Economic Data"
+
+        # Send as text message
         charts_generated.append({
-            'file': checklist_file,
-            'caption': f"📋 Bull Market Checklist: {bull_count}/{total_count} Bullish\nDate: {datetime.now().strftime('%Y-%m-%d')}"
+            'file': None,
+            'caption': checklist_text,
+            'is_text': True
         })
+
+        print(f"✓ Bull Market Checklist generated ({bull_count}/{total_count})")
+
     except Exception as e:
-        print(f"WARNING: Skipping Bull Market Checklist due to error: {e}")
+        print(f"WARNING: Could not generate checklist: {e}")
 
     print()
 
