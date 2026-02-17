@@ -511,6 +511,109 @@ def create_indicators_table(fred, output_file='indicators_table.png'):
         raise
 
 
+def generate_ai_assessment(data):
+    """
+    Generate AI-powered market assessment using Groq API
+
+    Args:
+        data: Dictionary with all indicator values
+
+    Returns:
+        str: AI-generated assessment text
+    """
+    try:
+        # Check if Groq API key is available (optional)
+        groq_api_key = os.getenv('GROQ_API_KEY')
+        if not groq_api_key:
+            print("  ⚠ GROQ_API_KEY not set, generating rule-based assessment...")
+            return generate_rule_based_assessment(data)
+
+        print("Generating AI market assessment...")
+
+        # Prepare the prompt
+        prompt = f"""You are a financial analyst. Analyze these economic indicators and provide a brief, actionable market assessment (3-4 sentences max):
+
+📊 DATA:
+- Yield Curve (10Y-2Y): {data['yield_curve']:.2f}%
+- Profit Margin: {data['profit_margin']:.2f}%
+- Fear & Greed Index: {data['fear_greed']:.1f} (Fear)
+- Sahm Rule: {data['sahm_rule']:.2f} (0.5+ = recession)
+- Consumer Sentiment: {data['consumer_sentiment']:.1f}
+- Initial Claims: {data['initial_claims']:.0f}K
+- Credit Spread: {data['credit_spread']:.2f}%
+- Real Yields: {data['real_yields']:.2f}%
+- Leading Index Change: {data['lei_change']:+.2f}%
+
+Provide a concise assessment covering:
+1. Overall market health (1 sentence)
+2. Key risk or opportunity (1 sentence)
+3. What to watch (1 sentence)
+
+Be direct and actionable. No fluff."""
+
+        # Call Groq API
+        headers = {
+            'Authorization': f'Bearer {groq_api_key}',
+            'Content-Type': 'application/json'
+        }
+
+        payload = {
+            'model': 'llama-3.3-70b-versatile',  # Latest Llama model
+            'messages': [{'role': 'user', 'content': prompt}],
+            'temperature': 0.7,
+            'max_tokens': 300
+        }
+
+        response = requests.post(
+            'https://api.groq.com/openai/v1/chat/completions',
+            headers=headers,
+            json=payload,
+            timeout=30
+        )
+        response.raise_for_status()
+
+        assessment = response.json()['choices'][0]['message']['content'].strip()
+        print(f"✓ AI assessment generated")
+        return assessment
+
+    except Exception as e:
+        print(f"  ⚠ AI assessment failed: {e}, using rule-based...")
+        return generate_rule_based_assessment(data)
+
+
+def generate_rule_based_assessment(data):
+    """Generate simple rule-based assessment as fallback"""
+    assessment = "🤖 *MARKET ASSESSMENT*\n\n"
+
+    # Overall sentiment
+    risk_signals = 0
+    if data['sahm_rule'] >= 0.3: risk_signals += 1
+    if data['fear_greed'] < 45: risk_signals += 1
+    if data['consumer_sentiment'] < 60: risk_signals += 1
+    if data['lei_change'] < 0: risk_signals += 1
+
+    if risk_signals >= 3:
+        assessment += "⚠️ *Elevated Risk:* Multiple indicators showing weakness. "
+    elif risk_signals >= 2:
+        assessment += "🟡 *Cautious:* Mixed signals with some concerning trends. "
+    else:
+        assessment += "🟢 *Stable:* Markets showing resilience despite volatility. "
+
+    # Key points
+    if data['yield_curve'] > 0:
+        assessment += "Yield curve positive (no inversion). "
+    else:
+        assessment += "Yield curve inverted (recession watch). "
+
+    if data['sahm_rule'] >= 0.5:
+        assessment += "⚠️ Sahm Rule triggered - recession signal. "
+
+    assessment += f"\n\n📍 *Watch:* Consumer sentiment at {data['consumer_sentiment']:.0f}, "
+    assessment += f"Fear & Greed at {data['fear_greed']:.0f} (fearful market)."
+
+    return assessment
+
+
 def send_to_telegram(token, chat_id, image_path, caption):
     """
     Send image to Telegram chat
@@ -614,61 +717,68 @@ def main():
         indicators_text += f"━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         indicators_text += f"Updated: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n\n"
 
-        # 1. Sahm Rule
+        # 1. Sahm Rule (0 = good, 0.5+ = recession)
         unrate = fred.get_series('UNRATE')
         unrate_recent = unrate.dropna().tail(12)
         unrate_3mo_avg = unrate_recent.tail(3).mean()
         unrate_12mo_low = unrate_recent.min()
         sahm_rule = unrate_3mo_avg - unrate_12mo_low
         sahm_emoji = '🔴' if sahm_rule >= 0.5 else '✅'
-        sahm_status = 'RECESSION SIGNAL' if sahm_rule >= 0.5 else 'No Signal'
-        indicators_text += f"{sahm_emoji} *Sahm Rule:* `{sahm_rule:.2f}`\n"
-        indicators_text += f"   → {sahm_status}\n\n"
+        sahm_status = "← Safe" if sahm_rule < 0.5 else "← RECESSION"
+        indicators_text += f"{sahm_emoji} *Sahm Rule:* `{sahm_rule:.2f}` {sahm_status}\n"
+        indicators_text += f"   Recession at 0.50 →\n\n"
 
-        # 2. Consumer Sentiment
+        # 2. Consumer Sentiment (0-100, higher is better)
         sentiment = fred.get_series('UMCSENT')
         sentiment_current = sentiment.dropna().iloc[-1]
-        sentiment_prev = sentiment.dropna().iloc[-2]
-        sentiment_change = sentiment_current - sentiment_prev
+        sentiment_change = sentiment_current - sentiment.dropna().iloc[-2]
         sentiment_emoji = '🟢' if sentiment_current > 80 else '🟡' if sentiment_current > 60 else '🔴'
-        indicators_text += f"{sentiment_emoji} *Consumer Sentiment:* `{sentiment_current:.1f}`\n"
-        indicators_text += f"   → {sentiment_change:+.1f} | {'Strong' if sentiment_current > 80 else 'Neutral' if sentiment_current > 60 else 'Weak'}\n\n"
+        sentiment_status = "← Weak" if sentiment_current < 60 else "← Good" if sentiment_current < 80 else "← Strong"
+        indicators_text += f"{sentiment_emoji} *Consumer Sentiment:* `{sentiment_current:.1f}` ({sentiment_change:+.1f}) {sentiment_status}\n"
+        indicators_text += f"   Healthy at 60+ →\n\n"
 
-        # 3. Initial Claims
+        # 3. Initial Claims (lower is better) - value is in actual numbers, need to convert to thousands
         claims = fred.get_series('ICSA')
         claims_4wk_avg = claims.dropna().tail(4).mean()
-        claims_emoji = '🟢' if claims_4wk_avg < 250 else '🟡' if claims_4wk_avg < 350 else '🔴'
-        indicators_text += f"{claims_emoji} *Initial Claims (4wk):* `{claims_4wk_avg:.0f}K`\n"
-        indicators_text += f"   → {'Healthy' if claims_4wk_avg < 250 else 'Elevated' if claims_4wk_avg < 350 else 'Weak'}\n\n"
+        claims_in_k = claims_4wk_avg / 1000  # Convert to thousands
+        claims_emoji = '🟢' if claims_in_k < 250 else '🟡' if claims_in_k < 350 else '🔴'
+        claims_status = "← Healthy" if claims_in_k < 250 else "← Elevated" if claims_in_k < 350 else "← Weak"
+        indicators_text += f"{claims_emoji} *Initial Claims:* `{claims_in_k:.0f}K` {claims_status}\n"
+        indicators_text += f"   Stressed at 250K+ →\n\n"
 
-        # 4. BBB Credit Spread
+        # 4. BBB Credit Spread (lower is better)
         bbb_spread = fred.get_series('BAMLC0A4CBBB')
         bbb_current = bbb_spread.dropna().iloc[-1]
         bbb_emoji = '🟢' if bbb_current < 1.5 else '🟡' if bbb_current < 2.5 else '🔴'
-        indicators_text += f"{bbb_emoji} *BBB Credit Spread:* `{bbb_current:.2f}%`\n"
-        indicators_text += f"   → {'Tight' if bbb_current < 1.5 else 'Normal' if bbb_current < 2.5 else 'Stressed'}\n\n"
+        bbb_status = "← Tight (Good)" if bbb_current < 1.5 else "← Normal" if bbb_current < 2.5 else "← Stressed"
+        indicators_text += f"{bbb_emoji} *Credit Spread:* `{bbb_current:.2f}%` {bbb_status}\n"
+        indicators_text += f"   Stressed at 2.5+ →\n\n"
 
         # 5. Real Yields
         tips = fred.get_series('DFII10')
         tips_current = tips.dropna().iloc[-1]
-        tips_prev = tips.dropna().iloc[-2]
-        tips_change = tips_current - tips_prev
+        tips_change = tips_current - tips.dropna().iloc[-2]
         tips_emoji = '🔴' if tips_current > 2.0 else '🟡' if tips_current > 0 else '🟢'
-        indicators_text += f"{tips_emoji} *Real Yields (10Y TIPS):* `{tips_current:.2f}%`\n"
-        indicators_text += f"   → {tips_change:+.2f}% | {'Restrictive' if tips_current > 2.0 else 'Neutral' if tips_current > 0 else 'Accommodative'}\n\n"
+        tips_status = "← Easy" if tips_current < 0 else "← Neutral" if tips_current < 2.0 else "← Restrictive"
+        indicators_text += f"{tips_emoji} *Real Yields:* `{tips_current:.2f}%` ({tips_change:+.2f}) {tips_status}\n"
+        indicators_text += f"   Restrictive at 2.0+ →\n\n"
 
-        # 6. Leading Economic Index
+        # 6. Leading Economic Index (trend matters)
         lei = fred.get_series('USSLIND')
         lei_current = lei.dropna().iloc[-1]
         lei_prev = lei.dropna().iloc[-2]
         lei_change_pct = ((lei_current - lei_prev) / lei_prev) * 100
         lei_emoji = '🟢' if lei_change_pct > 0 else '🔴'
-        indicators_text += f"{lei_emoji} *Leading Economic Index:* `{lei_current:.2f}`\n"
-        indicators_text += f"   → {lei_change_pct:+.2f}% | {'Positive' if lei_change_pct > 0 else 'Negative'}\n\n"
+        lei_status = '← Rising (Good)' if lei_change_pct > 0 else '← Falling (Bad)'
+        indicators_text += f"{lei_emoji} *Leading Index:* `{lei_current:.2f}` ({lei_change_pct:+.2f}%) {lei_status}\n"
+        indicators_text += f"   Trend = Economic direction\n\n"
 
-        # 7. Market Valuation
-        indicators_text += f"💎 *Market Valuation:* `P/E ~32`\n"
-        indicators_text += f"   → Expensive\n\n"
+        # 7. Market Valuation (lower P/E is better)
+        pe_ratio = 32
+        valuation_emoji = '💎'
+        valuation_status = "← Cheap" if pe_ratio < 20 else "← Fair" if pe_ratio < 30 else "← Expensive"
+        indicators_text += f"{valuation_emoji} *Market Valuation:* `P/E ~{pe_ratio}` {valuation_status}\n"
+        indicators_text += f"   Fair at ~20 ←\n\n"
 
         indicators_text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         indicators_text += "Source: FRED Economic Data"
@@ -681,6 +791,30 @@ def main():
         })
 
         print(f"✓ Indicators text generated")
+
+        # Store data for AI assessment
+        assessment_data = {
+            'yield_curve': yield_value,
+            'profit_margin': margin_value,
+            'fear_greed': fg_score,
+            'sahm_rule': sahm_rule,
+            'consumer_sentiment': sentiment_current,
+            'initial_claims': claims_in_k,
+            'credit_spread': bbb_current,
+            'real_yields': tips_current,
+            'lei_change': lei_change_pct
+        }
+
+        # Generate AI market assessment
+        try:
+            assessment_text = generate_ai_assessment(assessment_data)
+            charts_generated.append({
+                'file': None,
+                'caption': assessment_text,
+                'is_text': True
+            })
+        except Exception as e:
+            print(f"WARNING: Could not generate AI assessment: {e}")
 
     except Exception as e:
         print(f"WARNING: Could not generate indicators text: {e}")
