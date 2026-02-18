@@ -9,6 +9,10 @@ on:
   # Allow manual trigger for testing
   workflow_dispatch:
 
+  # Allow triggering via Telegram bot or API
+  repository_dispatch:
+    types: [telegram-report]
+
 jobs:
   generate-and-send-report:
     runs-on: ubuntu-latest
