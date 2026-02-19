@@ -2,9 +2,9 @@ name: Daily Financial Report
 
 on:
   schedule:
-    # TEMPORARY TEST: Run at 13:23 UTC to test scheduling
-    # Will change back to: 0 13 * * * (8:00 AM EST)
-    - cron: '23 13 * * *'
+    # Run every day at 8:00 AM EST (13:00 UTC)
+    # Note: This is a backup - primary scheduling is in telegram_bot_server.py
+    - cron: '0 13 * * *'
 
   # Allow manual trigger for testing
   workflow_dispatch:
