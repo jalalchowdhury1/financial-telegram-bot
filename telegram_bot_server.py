@@ -5,6 +5,7 @@ Combines the Telegram bot with a simple Flask web server for health checks
 
 import os
 import sys
+import asyncio
 import requests
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
@@ -149,6 +150,13 @@ def main():
     telegram_app.add_handler(CommandHandler("report", report_command))
 
     print("✓ Telegram bot is running! Send /report to generate a financial report.")
+
+    # Fix for Python 3.10+ asyncio event loop issue
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
 
     # Start Telegram bot polling
     telegram_app.run_polling(allowed_updates=Update.ALL_TYPES)
