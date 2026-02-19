@@ -1,6 +1,7 @@
 """
 Telegram Bot with Web Server for Cloud Deployment
 Combines the Telegram bot with a simple Flask web server for health checks
+Includes automatic daily scheduler for reports at 4:15 AM EST
 """
 
 import os
@@ -12,6 +13,10 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 from dotenv import load_dotenv
 from flask import Flask
 from threading import Thread
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
+import pytz
+from datetime import datetime
 
 # Load environment variables
 load_dotenv()
@@ -123,6 +128,18 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+def scheduled_report():
+    """Trigger report automatically on schedule"""
+    est = pytz.timezone('America/New_York')
+    current_time = datetime.now(est).strftime('%Y-%m-%d %I:%M:%S %p %Z')
+    print(f"🕐 Scheduled report triggered at {current_time}")
+
+    if trigger_github_workflow():
+        print("✅ Scheduled report triggered successfully")
+    else:
+        print("❌ Scheduled report failed to trigger")
+
+
 def run_flask():
     """Run Flask server"""
     port = int(os.environ.get('PORT', 10000))
@@ -130,11 +147,39 @@ def run_flask():
 
 
 def main():
-    """Start both Flask server and Telegram bot"""
-    print("Starting Financial Telegram Bot with Web Server...")
+    """Start Flask server, scheduler, and Telegram bot"""
+    print("Starting Financial Telegram Bot with Web Server and Scheduler...")
 
     # Validate environment
     validate_environment()
+
+    # Set up scheduler for automatic reports
+    est = pytz.timezone('America/New_York')
+    scheduler = BackgroundScheduler(timezone=est)
+
+    # Production schedule: Daily at 4:15 AM EST
+    scheduler.add_job(
+        scheduled_report,
+        trigger=CronTrigger(hour=4, minute=15, timezone=est),
+        id='daily_report',
+        name='Daily Financial Report at 4:15 AM EST',
+        replace_existing=True
+    )
+
+    # TEST SCHEDULE: Run at 9:14 AM EST today for testing
+    # Remove this after successful test!
+    scheduler.add_job(
+        scheduled_report,
+        trigger=CronTrigger(hour=9, minute=14, timezone=est),
+        id='test_report',
+        name='TEST: Report at 9:14 AM EST',
+        replace_existing=True
+    )
+
+    scheduler.start()
+    print("✓ Scheduler started")
+    print("  → Daily reports: 4:15 AM EST")
+    print("  → TEST: 9:14 AM EST (remove after testing)")
 
     # Start Flask in background thread
     flask_thread = Thread(target=run_flask, daemon=True)
