@@ -2,9 +2,9 @@ name: Daily Financial Report
 
 on:
   schedule:
-    # Run every day at 8:00 AM EST (13:00 UTC)
-    # Note: During daylight saving time (March-November), 8 AM EDT is 12:00 UTC
-    - cron: '0 13 * * *'
+    # TEMPORARY TEST: Run at 13:23 UTC to test scheduling
+    # Will change back to: 0 13 * * * (8:00 AM EST)
+    - cron: '23 13 * * *'
 
   # Allow manual trigger for testing
   workflow_dispatch:
