@@ -166,20 +166,20 @@ def main():
         replace_existing=True
     )
 
-    # TEST SCHEDULE: Run at 9:14 AM EST today for testing
+    # TEST SCHEDULE: Run at 9:20 AM EST today for testing
     # Remove this after successful test!
     scheduler.add_job(
         scheduled_report,
-        trigger=CronTrigger(hour=9, minute=14, timezone=est),
+        trigger=CronTrigger(hour=9, minute=20, timezone=est),
         id='test_report',
-        name='TEST: Report at 9:14 AM EST',
+        name='TEST: Report at 9:20 AM EST',
         replace_existing=True
     )
 
     scheduler.start()
     print("✓ Scheduler started")
     print("  → Daily reports: 4:15 AM EST")
-    print("  → TEST: 9:14 AM EST (remove after testing)")
+    print("  → TEST: 9:20 AM EST (remove after testing)")
 
     # Start Flask in background thread
     flask_thread = Thread(target=run_flask, daemon=True)
