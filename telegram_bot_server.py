@@ -157,8 +157,19 @@ def main():
         name='Daily Financial Report at 8 AM EST',
         replace_existing=True
     )
+
+    # TEST: Add one-time test job at 8:31 AM EST
+    scheduler.add_job(
+        scheduled_report,
+        trigger=CronTrigger(hour=8, minute=31, timezone=pytz.timezone('America/New_York')),
+        id='test_report',
+        name='TEST: One-time report at 8:31 AM EST',
+        replace_existing=True
+    )
+
     scheduler.start()
     print("✓ Scheduler started - Daily reports at 8:00 AM EST")
+    print("✓ TEST: One-time report scheduled for 8:31 AM EST")
 
     # Start Flask in background thread
     flask_thread = Thread(target=run_flask, daemon=True)
