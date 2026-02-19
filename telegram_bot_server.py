@@ -166,28 +166,21 @@ def main():
         replace_existing=True
     )
 
-    # TEST SCHEDULE: Run at 9:20 AM EST today for testing
-    # Remove this after successful test!
-    scheduler.add_job(
-        scheduled_report,
-        trigger=CronTrigger(hour=9, minute=20, timezone=est),
-        id='test_report',
-        name='TEST: Report at 9:20 AM EST',
-        replace_existing=True
-    )
-
     scheduler.start()
-    print("✓ Scheduler started")
-    print("  → Daily reports: 4:15 AM EST")
-    print("  → TEST: 9:20 AM EST (remove after testing)")
+    print("✓ Scheduler started - Daily reports at 4:15 AM EST")
 
     # Start Flask in background thread
     flask_thread = Thread(target=run_flask, daemon=True)
     flask_thread.start()
     print("✓ Web server started")
 
-    # Create Telegram bot application
-    telegram_app = Application.builder().token(TELEGRAM_TOKEN).build()
+    # Create Telegram bot application (disable built-in job queue since we use APScheduler)
+    telegram_app = (
+        Application.builder()
+        .token(TELEGRAM_TOKEN)
+        .job_queue(None)  # Disable built-in job queue to avoid conflicts
+        .build()
+    )
 
     # Add command handlers
     telegram_app.add_handler(CommandHandler("start", start_command))
