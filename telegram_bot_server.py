@@ -201,26 +201,15 @@ def main():
         replace_existing=True
     )
 
-    # TEST SCHEDULE: 8:55 AM EST - Remove after successful test!
-    scheduler.add_job(
-        scheduled_report,
-        trigger=CronTrigger(hour=8, minute=55, timezone=est),
-        id='test_report',
-        name='TEST: Report at 8:55 AM EST',
-        replace_existing=True
-    )
-
     scheduler.start()
 
     # Log scheduler info
-    print("✓ Scheduler started")
-    print("  → Daily reports: 4:15 AM EST")
-    print("  → TEST: 8:55 AM EST (will be removed after test)")
+    print("✓ Scheduler started - Daily reports at 4:15 AM EST")
     for job in scheduler.get_jobs():
         next_run = job.next_run_time
         if next_run:
             next_run_est = next_run.astimezone(est).strftime('%Y-%m-%d %I:%M:%S %p %Z')
-            print(f"  → {job.name}: Next run at {next_run_est}")
+            print(f"  → Next report: {next_run_est}")
 
     # Start Flask in background thread
     flask_thread = Thread(target=run_flask, daemon=True)
