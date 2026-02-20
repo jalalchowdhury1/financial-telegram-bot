@@ -30,6 +30,9 @@ GITHUB_REPO = 'jalalchowdhury1/financial-telegram-bot'
 # Flask app for health checks
 app = Flask(__name__)
 
+# Global scheduler reference for status checking
+global_scheduler = None
+
 @app.route('/')
 def health_check():
     return {'status': 'running', 'bot': 'financial-telegram-bot'}, 200
@@ -37,6 +40,35 @@ def health_check():
 @app.route('/health')
 def health():
     return {'status': 'healthy'}, 200
+
+@app.route('/scheduler-status')
+def scheduler_status():
+    """Check if scheduler is running and show next scheduled jobs"""
+    est = pytz.timezone('America/New_York')
+    current_time = datetime.now(est).strftime('%Y-%m-%d %I:%M:%S %p %Z')
+
+    if global_scheduler is None:
+        return {'error': 'Scheduler not initialized', 'current_time': current_time}, 500
+
+    jobs = []
+    for job in global_scheduler.get_jobs():
+        next_run = job.next_run_time
+        if next_run:
+            next_run_est = next_run.astimezone(est).strftime('%Y-%m-%d %I:%M:%S %p %Z')
+        else:
+            next_run_est = 'None'
+
+        jobs.append({
+            'id': job.id,
+            'name': job.name,
+            'next_run': next_run_est
+        })
+
+    return {
+        'current_time': current_time,
+        'scheduler_running': global_scheduler.running,
+        'jobs': jobs
+    }, 200
 
 
 def validate_environment():
@@ -148,6 +180,8 @@ def run_flask():
 
 def main():
     """Start Flask server, scheduler, and Telegram bot"""
+    global global_scheduler
+
     print("Starting Financial Telegram Bot with Web Server and Scheduler...")
 
     # Validate environment
@@ -156,6 +190,7 @@ def main():
     # Set up scheduler for automatic reports
     est = pytz.timezone('America/New_York')
     scheduler = BackgroundScheduler(timezone=est)
+    global_scheduler = scheduler
 
     # Production schedule: Daily at 4:15 AM EST
     scheduler.add_job(
@@ -167,7 +202,14 @@ def main():
     )
 
     scheduler.start()
-    print("✓ Scheduler started - Daily reports at 4:15 AM EST")
+
+    # Log scheduler info
+    next_run = scheduler.get_jobs()[0].next_run_time if scheduler.get_jobs() else None
+    if next_run:
+        next_run_est = next_run.astimezone(est).strftime('%Y-%m-%d %I:%M:%S %p %Z')
+        print(f"✓ Scheduler started - Next report: {next_run_est}")
+    else:
+        print("✓ Scheduler started - Daily reports at 4:15 AM EST")
 
     # Start Flask in background thread
     flask_thread = Thread(target=run_flask, daemon=True)
