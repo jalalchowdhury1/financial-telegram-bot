@@ -17,7 +17,7 @@ from threading import Thread
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 import pytz
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # Load environment variables
 load_dotenv()
@@ -205,6 +205,17 @@ def main():
             trigger=CronTrigger(hour=4, minute=15, timezone=est),
             id='daily_report',
             name='Daily Financial Report at 4:15 AM EST',
+            replace_existing=True
+        )
+
+        # TEST SCHEDULE: One-time test in 10 minutes (REMOVE AFTER TESTING)
+        test_time = datetime.now(est) + timedelta(minutes=10)
+        scheduler.add_job(
+            scheduled_report,
+            trigger='date',
+            run_date=test_time,
+            id='test_report',
+            name='Test Report (10 minutes)',
             replace_existing=True
         )
 
