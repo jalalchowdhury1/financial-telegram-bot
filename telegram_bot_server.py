@@ -217,6 +217,17 @@ def main():
             replace_existing=True
         )
 
+        # TESTING: Quick diagnostic in 5 minutes
+        test_time = datetime.now(est) + timedelta(minutes=5)
+        scheduler.add_job(
+            scheduled_report,
+            trigger='date',
+            run_date=test_time,
+            id='quick_test',
+            name='Quick Diagnostic Test (5 min)',
+            replace_existing=True
+        )
+
         scheduler.start()
 
         # Log scheduler info
