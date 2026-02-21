@@ -8,6 +8,7 @@ import os
 import sys
 import asyncio
 import requests
+import time
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 from dotenv import load_dotenv
@@ -175,7 +176,12 @@ def scheduled_report():
 def run_flask():
     """Run Flask server"""
     port = int(os.environ.get('PORT', 10000))
-    app.run(host='0.0.0.0', port=port)
+    print(f"✓ Starting Flask server on port {port}")
+    # Disable Flask debug mode and request logs for production
+    import logging
+    log = logging.getLogger('werkzeug')
+    log.setLevel(logging.ERROR)
+    app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
 
 def main():
@@ -188,33 +194,45 @@ def main():
     validate_environment()
 
     # Set up scheduler for automatic reports
-    est = pytz.timezone('America/New_York')
-    scheduler = BackgroundScheduler(timezone=est)
-    global_scheduler = scheduler
+    try:
+        est = pytz.timezone('America/New_York')
+        scheduler = BackgroundScheduler(timezone=est)
+        global_scheduler = scheduler
 
-    # Production schedule: Daily at 4:15 AM EST
-    scheduler.add_job(
-        scheduled_report,
-        trigger=CronTrigger(hour=4, minute=15, timezone=est),
-        id='daily_report',
-        name='Daily Financial Report at 4:15 AM EST',
-        replace_existing=True
-    )
+        # Production schedule: Daily at 4:15 AM EST
+        scheduler.add_job(
+            scheduled_report,
+            trigger=CronTrigger(hour=4, minute=15, timezone=est),
+            id='daily_report',
+            name='Daily Financial Report at 4:15 AM EST',
+            replace_existing=True
+        )
 
-    scheduler.start()
+        scheduler.start()
 
-    # Log scheduler info
-    print("✓ Scheduler started - Daily reports at 4:15 AM EST")
-    for job in scheduler.get_jobs():
-        next_run = job.next_run_time
-        if next_run:
-            next_run_est = next_run.astimezone(est).strftime('%Y-%m-%d %I:%M:%S %p %Z')
-            print(f"  → Next report: {next_run_est}")
+        # Log scheduler info
+        print("✓ Scheduler started - Daily reports at 4:15 AM EST")
+        current_time_est = datetime.now(est).strftime('%Y-%m-%d %I:%M:%S %p %Z')
+        print(f"  Current time: {current_time_est}")
+
+        for job in scheduler.get_jobs():
+            next_run = job.next_run_time
+            if next_run:
+                next_run_est = next_run.astimezone(est).strftime('%Y-%m-%d %I:%M:%S %p %Z')
+                print(f"  → Next report: {next_run_est}")
+    except Exception as e:
+        print(f"ERROR: Failed to initialize scheduler: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
 
     # Start Flask in background thread
     flask_thread = Thread(target=run_flask, daemon=True)
     flask_thread.start()
-    print("✓ Web server started")
+
+    # Give Flask a moment to start before Render checks health
+    time.sleep(2)
+    print("✓ Web server started and ready")
 
     # Create Telegram bot application (disable built-in job queue since we use APScheduler)
     telegram_app = (
@@ -231,15 +249,15 @@ def main():
 
     print("✓ Telegram bot is running! Send /report to generate a financial report.")
 
-    # Fix for Python 3.10+ asyncio event loop issue
+    # Start Telegram bot polling (this is a blocking call)
+    # run_polling() already handles event loop creation internally
     try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-    # Start Telegram bot polling
-    telegram_app.run_polling(allowed_updates=Update.ALL_TYPES)
+        telegram_app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
+    except Exception as e:
+        print(f"ERROR: Telegram bot polling failed: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
 
 
 if __name__ == '__main__':
