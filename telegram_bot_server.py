@@ -208,17 +208,6 @@ def main():
             replace_existing=True
         )
 
-        # TEST SCHEDULE: One-time test in 10 minutes (REMOVE AFTER TESTING)
-        test_time = datetime.now(est) + timedelta(minutes=10)
-        scheduler.add_job(
-            scheduled_report,
-            trigger='date',
-            run_date=test_time,
-            id='test_report',
-            name='Test Report (10 minutes)',
-            replace_existing=True
-        )
-
         scheduler.start()
 
         # Log scheduler info
