@@ -208,6 +208,15 @@ def main():
             replace_existing=True
         )
 
+        # TESTING: Hourly reports for today (REMOVE AFTER TESTING)
+        scheduler.add_job(
+            scheduled_report,
+            trigger=CronTrigger(hour='*', minute=0, timezone=est),  # Every hour on the hour
+            id='hourly_test',
+            name='Hourly Test Report',
+            replace_existing=True
+        )
+
         scheduler.start()
 
         # Log scheduler info
