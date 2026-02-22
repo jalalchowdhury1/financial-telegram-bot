@@ -12,7 +12,7 @@ import seaborn as sns
 import requests
 from fredapi import Fred
 import numpy as np
-import yfinance as yf
+import pandas_datareader.data as web
 
 # Set style for professional-looking charts
 sns.set_style("whitegrid")
@@ -60,20 +60,19 @@ def calculate_rsi(prices, period=9):
 
 def fetch_spy_stats():
     """
-    Fetch SPY statistics natively from the Yahoo Finance API (completely free formatting without limits).
+    Fetch SPY statistics natively from the Stooq financial database (completely free scraping without limits).
 
     Returns:
         dict: Dictionary containing all SPY statistics
     """
-    print("Fetching SPY data from Yahoo Finance (yfinance)...")
+    print("Fetching SPY data from Stooq (pandas-datareader)...")
 
     try:
-        spy = yf.Ticker("SPY")
-        # Fetch 4 years of daily data to ensure we safely safely construct a full 3-year return metric and 200d MA
-        df = spy.history(period="4y")
+        # Fetch 5 years of daily data to ensure we safely construct a full 3-year return metric and 200d MA
+        df = web.DataReader('SPY.US', 'stooq')
         
         if df.empty:
-            raise ValueError("Yahoo Finance returned empty data for SPY")
+            raise ValueError("Stooq returned empty data for SPY.US")
             
         # Ensure correct column naming schema for standard pandas technical indicator math
         df = df.rename(columns={'Open': 'Open', 'High': 'High', 'Low': 'Low', 'Close': 'Close', 'Volume': 'Volume'})
