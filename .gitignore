@@ -48,3 +48,6 @@ Thumbs.db
 
 # Logs
 *.log
+dashboard/node_modules/
+dashboard/.next/
+dashboard/.env.local
