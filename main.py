@@ -647,8 +647,8 @@ def create_fear_greed_chart(output_file='fear_greed.png'):
         ax.add_patch(patches.Circle((gauge_center_x, gauge_center_y), 0.025, facecolor='#333333', zorder=4))
         
         # Score Text
-        ax.text(gauge_center_x, gauge_center_y - 0.08, f"{int(current_score)}", fontsize=48, color=color_text, fontweight='bold', ha='center')
-        ax.text(gauge_center_x, gauge_center_y - 0.16, rating, fontsize=20, color=color_text, fontweight='bold', ha='center')
+        ax.text(gauge_center_x, gauge_center_y - 0.12, f"{int(current_score)}", fontsize=48, color=color_text, fontweight='bold', ha='center')
+        ax.text(gauge_center_x, gauge_center_y - 0.20, rating, fontsize=20, color=color_text, fontweight='bold', ha='center')
         
         # Historical
         hist_text = f"Prev Close: {int(prev_close)}  |  1W: {int(prev_week)}  |  1M: {int(prev_month)}  |  1Y: {int(prev_year)}"
@@ -858,7 +858,7 @@ def create_indicators_table(fred, output_file='indicators_table.png'):
 
 def generate_ai_assessment(data):
     """
-    Generate AI-powered market assessment using Groq API
+    Generate an advanced AI-powered macroeconomic assessment using available LLM providers.
 
     Args:
         data: Dictionary with all indicator values
@@ -867,13 +867,23 @@ def generate_ai_assessment(data):
         str: AI-generated assessment text
     """
     try:
-        # Check if Groq API key is available (optional)
+        openai_api_key = os.getenv('OPENAI_API_KEY')
+        gemini_api_key = os.getenv('GEMINI_API_KEY')
         groq_api_key = os.getenv('GROQ_API_KEY')
-        if not groq_api_key:
-            print("  ⚠ GROQ_API_KEY not set, generating rule-based assessment...")
+        
+        provider = None
+        if openai_api_key:
+            provider = 'openai'
+        elif gemini_api_key:
+            provider = 'gemini'
+        elif groq_api_key:
+            provider = 'groq'
+            
+        if not provider:
+            print("  ⚠ No AI API keys (OPENAI, GEMINI, GROQ) found, using rule-based assessment...")
             return generate_rule_based_assessment(data)
 
-        print("Generating AI market assessment...")
+        print(f"Generating advanced AI market assessment using {provider.upper()}...")
 
         # Prepare comprehensive prompt with all context
         yield_status = "Inverted (recession signal)" if data['yield_curve'] < 0 else "Positive (no inversion)"
@@ -885,76 +895,89 @@ def generate_ai_assessment(data):
         lei_status = "Rising" if data['lei_change'] > 0 else "Falling"
         fear_status = "Extreme Fear" if data['fear_greed'] < 25 else "Fear" if data['fear_greed'] < 45 else "Neutral" if data['fear_greed'] < 55 else "Greed" if data['fear_greed'] < 75 else "Extreme Greed"
 
-        prompt = f"""You are a senior financial analyst. Analyze these comprehensive economic indicators and market data to provide a brief, actionable assessment (4-5 sentences max):
+        prompt = f"""You are a senior quantitative macroeconomic analyst preparing an executive summary for institutional investors.
+Analyze the following comprehensive economic indicators to provide a nuanced, in-depth macroeconomic assessment.
 
 📊 COMPLETE MARKET DATA:
 
-**MARKET INDICATORS:**
+**MACRO & SENTIMENT:**
 - Yield Curve (10Y-2Y): {data['yield_curve']:.2f}% → {yield_status}
 - Corporate Profit Margins: {data['profit_margin']:.2f}% (vs GDP)
 - Fear & Greed Index: {data['fear_greed']:.1f}/100 → {fear_status}
 
-**RECESSION & LABOR SIGNALS:**
+**LABOR & RECESSION SIGNALING:**
 - Sahm Rule Recession Indicator: {data['sahm_rule']:.2f} → {sahm_status} (0.5+ triggers recession signal)
-- Initial Jobless Claims (4wk): {data['initial_claims']:.0f}K → {claims_status}
+- Initial Jobless Claims (4wk avg): {data['initial_claims']:.0f}K → {claims_status}
 
-**CONSUMER & SENTIMENT:**
+**CONSUMER HEALTH & FORWARD PATH:**
 - Consumer Sentiment Index: {data['consumer_sentiment']:.1f}/100 → {sentiment_status}
-
-**CREDIT & MONETARY CONDITIONS:**
-- BBB Credit Spread: {data['credit_spread']:.2f}% → {credit_status}
-- Real Yields (10Y TIPS): {data['real_yields']:.2f}% → {yields_status} policy
-
-**FORWARD-LOOKING:**
 - Leading Economic Index: {data['lei_change']:+.2f}% change → {lei_status}
 
-TASK: Write a confident, data-driven market assessment (MAX 4 sentences):
+**CREDIT & MONETARY TIGHTNESS:**
+- BBB Credit Spread: {data['credit_spread']:.2f}% → {credit_status}
+- Real Yields (10Y TIPS): {data['real_yields']:.2f}% → {yields_status}
 
-STYLE REQUIREMENTS:
-- Be CONFIDENT and DIRECT - no hedging ("appears", "could", "might", "cautiously")
-- Use EMOJIS liberally (🟢🔴📊⚠️✅🚨💪📈📉🎯)
-- Lead with DATA and FACTS - cite specific numbers
-- SHORT sentences. Punchy. Clear.
-- No fluff words like "monitoring", "warrant", "appear to be"
-- End with ONE clear action/stance (Bullish/Bearish/Hold)
+TASK: Synthesize a highly nuanced, intelligent, multi-paragraph assessment of the current structural regime.
 
-FORMAT:
-Line 1: Overall verdict with emoji + key data points
-Line 2: Biggest risk OR opportunity with data
-Line 3: What to watch with specific threshold
-Line 4: Clear stance with emoji
+STYLE & SUBSTANCE REQUIREMENTS:
+- Read as an advanced, institutional macro narrative. Go beyond merely listing the data.
+- Synthesize conflicting data intelligently (e.g., if the Yield Curve is positive but LEI is falling, explain what that divergence means).
+- Highlight the risk premiums based on real yields and BBB spreads.
+- Maintain a structured but flowing format.
+- Conclude with a definitive macro verdict specifying the exact regime (e.g. "Late-Cycle Expansion", "Soft Landing Confirmed", "Pre-Recessionary", etc.).
+- Use appropriate emojis to format your response cleanly (📊, 🟢, 🔴, ⚠️, 💡) but don't overdo it. 
+- You MUST mention the specific data values in your synthesis to back your claims.
 
-Example style: "🟢 Markets are STRONG - Sahm Rule at 0.40 (safe), claims at 220K (healthy), LEI rising +9.5%. ⚠️ Consumer sentiment at 52.9 is the weak link. 🎯 Watch for sentiment breaking 60. 📈 BULLISH but monitor sentiment closely."
+Output the assessment now:"""
 
-Now write YOUR assessment:"""
+        assessment = ""
 
-        # Call Groq API
-        headers = {
-            'Authorization': f'Bearer {groq_api_key}',
-            'Content-Type': 'application/json'
-        }
+        if provider == 'openai':
+            headers = {
+                'Authorization': f'Bearer {openai_api_key}',
+                'Content-Type': 'application/json'
+            }
+            payload = {
+                'model': 'gpt-4o',
+                'messages': [{'role': 'user', 'content': prompt}],
+                'temperature': 0.7,
+                'max_tokens': 500
+            }
+            response = requests.post('https://api.openai.com/v1/chat/completions', headers=headers, json=payload, timeout=30)
+            response.raise_for_status()
+            assessment = response.json()['choices'][0]['message']['content'].strip()
+            
+        elif provider == 'gemini':
+            headers = {'Content-Type': 'application/json'}
+            payload = {
+                'contents': [{'parts': [{'text': prompt}]}],
+                'generationConfig': {'temperature': 0.7, 'maxOutputTokens': 500}
+            }
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key={gemini_api_key}"
+            response = requests.post(url, headers=headers, json=payload, timeout=30)
+            response.raise_for_status()
+            assessment = response.json()['candidates'][0]['content']['parts'][0]['text'].strip()
 
-        payload = {
-            'model': 'llama-3.3-70b-versatile',  # Latest Llama model
-            'messages': [{'role': 'user', 'content': prompt}],
-            'temperature': 0.7,
-            'max_tokens': 300
-        }
+        elif provider == 'groq':
+            headers = {
+                'Authorization': f'Bearer {groq_api_key}',
+                'Content-Type': 'application/json'
+            }
+            payload = {
+                'model': 'llama-3.3-70b-versatile',
+                'messages': [{'role': 'user', 'content': prompt}],
+                'temperature': 0.7,
+                'max_tokens': 500
+            }
+            response = requests.post('https://api.groq.com/openai/v1/chat/completions', headers=headers, json=payload, timeout=30)
+            response.raise_for_status()
+            assessment = response.json()['choices'][0]['message']['content'].strip()
 
-        response = requests.post(
-            'https://api.groq.com/openai/v1/chat/completions',
-            headers=headers,
-            json=payload,
-            timeout=30
-        )
-        response.raise_for_status()
-
-        assessment = response.json()['choices'][0]['message']['content'].strip()
-        print(f"✓ AI assessment generated")
+        print(f"✓ Advanced AI assessment generated via {provider.upper()}")
         return assessment
 
     except Exception as e:
-        print(f"  ⚠ AI assessment failed: {e}, using rule-based...")
+        print(f"  ⚠ AI assessment failed ({e}), falling back to rule-based...")
         return generate_rule_based_assessment(data)
 
 
