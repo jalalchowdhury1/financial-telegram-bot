@@ -72,9 +72,8 @@ def fetch_spy_stats():
         if not api_key:
             raise ValueError("ALPHA_VANTAGE_API_KEY not set in environment variables")
 
-        # Fetch weekly time series data (free tier supports 20+ years of weekly data)
-        # Weekly data is sufficient for 200-day MA, 52-week high, and 3-year return calculations
-        url = f"https://www.alphavantage.co/query?function=TIME_SERIES_WEEKLY&symbol=SPY&apikey={api_key}"
+        # Fetch daily time series data (use full output to compute 3Y properly)
+        url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=SPY&outputsize=full&apikey={api_key}"
 
         print("  Requesting data from Alpha Vantage API...")
         response = requests.get(url, timeout=30)
@@ -94,11 +93,11 @@ def fetch_spy_stats():
             # Alpha Vantage returns this for API key issues or other info messages
             raise ValueError(f"Alpha Vantage message: {data['Information']}")
 
-        if "Weekly Time Series" not in data:
+        if "Time Series (Daily)" not in data:
             raise ValueError(f"Unexpected API response format. Keys: {list(data.keys())}, Data: {data}")
 
         # Parse the time series data
-        time_series = data["Weekly Time Series"]
+        time_series = data["Time Series (Daily)"]
 
         # Convert to DataFrame for easier calculations
         df = pd.DataFrame.from_dict(time_series, orient='index')
@@ -112,14 +111,14 @@ def fetch_spy_stats():
         df.index = pd.to_datetime(df.index)
         df = df.sort_index()
 
-        # Verify we have enough data (156 weeks = ~3 years)
-        if len(df) < 156:
-            print(f"  Warning: Only {len(df)} weeks of data available")
-            weeks_available = len(df)
+        # Verify we have enough data (756 days = ~3 years)
+        if len(df) < 756:
+            print(f"  Warning: Only {len(df)} days of data available")
+            days_available = len(df)
         else:
-            weeks_available = 156
+            days_available = 756
 
-        print(f"  Received {len(df)} weeks of historical data")
+        print(f"  Received {len(df)} days of historical data")
 
         # Current price (most recent close)
         current_price = df['Close'].iloc[-1]
@@ -128,28 +127,28 @@ def fetch_spy_stats():
         if pd.isna(current_price) or current_price <= 0:
             raise ValueError("Invalid current price data")
 
-        # 200-day MA (200 days ≈ 40 weeks)
-        weeks_for_200d = 40  # 200 trading days / 5 days per week
-        if len(df) >= weeks_for_200d:
-            ma_200 = df['Close'].tail(weeks_for_200d).mean()
+        # 200-day MA (200 trading days)
+        days_for_200d = 200
+        if len(df) >= days_for_200d:
+            ma_200 = df['Close'].tail(days_for_200d).mean()
         else:
             ma_200 = df['Close'].mean()
         ma_200_pct = ((current_price - ma_200) / ma_200) * 100
 
-        # 52-week high
-        week_data_points = min(52, len(df))
-        week_52_high = df['Close'].tail(week_data_points).max()
+        # 52-week high (252 trading days)
+        days_52w = min(252, len(df))
+        week_52_high = df['Close'].tail(days_52w).max()
         high_52w_pct = ((current_price - week_52_high) / week_52_high) * 100
 
-        # 9-week RSI (using weekly data, so 9 weeks instead of 9 days)
-        rsi_9d = calculate_rsi(df['Close'], period=9)
+        # 14-day RSI (standard fundamental)
+        rsi_14d = calculate_rsi(df['Close'], period=14)
 
         # Verify RSI is valid
-        if pd.isna(rsi_9d):
+        if pd.isna(rsi_14d):
             raise ValueError("Invalid RSI calculation")
 
-        # 3-year return (156 weeks = 3 years)
-        price_past = df['Close'].iloc[-weeks_available]
+        # 3-year return
+        price_past = df['Close'].iloc[-days_available]
         return_3y_pct = ((current_price - price_past) / price_past) * 100
 
         stats = {
@@ -158,7 +157,7 @@ def fetch_spy_stats():
             'ma_200_pct': ma_200_pct,
             'week_52_high': week_52_high,
             'high_52w_pct': high_52w_pct,
-            'rsi_9d': rsi_9d,
+            'rsi_14d': rsi_14d,
             'return_3y_pct': return_3y_pct
         }
 
@@ -166,7 +165,7 @@ def fetch_spy_stats():
         print(f"  Current: ${current_price:.2f}")
         print(f"  200-day MA: ${ma_200:.2f} ({ma_200_pct:+.2f}%)")
         print(f"  52-wk High: ${week_52_high:.2f} ({high_52w_pct:+.2f}%)")
-        print(f"  9d RSI: {rsi_9d:.2f}")
+        print(f"  9d RSI: {rsi_14d:.2f}")
         print(f"  3Y Return: {return_3y_pct:.2f}%")
 
         return stats
@@ -192,7 +191,7 @@ def create_spy_stats_chart(stats, output_file='spy_stats.png'):
     
     try:
         # Validate all required stats are present and finite
-        required_keys = ['current', 'ma_200', 'ma_200_pct', 'week_52_high', 'high_52w_pct', 'rsi_9d', 'return_3y_pct']
+        required_keys = ['current', 'ma_200', 'ma_200_pct', 'week_52_high', 'high_52w_pct', 'rsi_14d', 'return_3y_pct']
         for key in required_keys:
             if key not in stats:
                 raise ValueError(f"Missing required stat: {key}")
@@ -316,7 +315,7 @@ def create_spy_stats_chart(stats, output_file='spy_stats.png'):
             ax.text(lx, ly, str(val), ha='center', va='center', fontsize=10, fontweight='bold', color=color_gray)
         
         # Draw needle
-        val = min(max(stats['rsi_9d'], 0), 100)
+        val = min(max(stats['rsi_14d'], 0), 100)
         theta_needle = np.pi - (val / 100) * np.pi
         needle_r = gauge_radius_inner + 0.03
         needle_x = gauge_center_x + needle_r * np.cos(theta_needle)
@@ -326,8 +325,8 @@ def create_spy_stats_chart(stats, output_file='spy_stats.png'):
         ax.add_patch(patches.Circle((gauge_center_x, gauge_center_y), 0.015, facecolor='#333333', zorder=4))
         
         # RSI Text
-        ax.text(gauge_center_x - 0.02, 0.08, 'RSI ', fontsize=18, color=color_gray, fontweight='bold', ha='right')
-        ax.text(gauge_center_x, 0.08, f"{stats['rsi_9d']:.2f}", fontsize=20, color=color_text, fontweight='bold', ha='left')
+        ax.text(gauge_center_x - 0.02, 0.08, '14D RSI ', fontsize=14, color=color_gray, fontweight='bold', ha='right')
+        ax.text(gauge_center_x, 0.08, f"{stats['rsi_14d']:.2f}", fontsize=20, color=color_text, fontweight='bold', ha='left')
         
         # -> 3Y Return (Right)
         ax.text(0.53, 0.30, '3Y Return ', fontsize=16, color=color_text, fontweight='normal', ha='left')
@@ -374,7 +373,7 @@ def format_spy_text_stats(stats):
     text += f"💵 Current    : {stats['current']:.2f}\n"
     text += f"📈 200-day MA : {stats['ma_200']:.2f} ({stats['ma_200_pct']:+.2f}%)\n"
     text += f"🏔️ 52-wk High: {stats['week_52_high']:.2f} ({stats['high_52w_pct']:+.2f}%)\n"
-    text += f"📊 SPY 9d RSI : {stats['rsi_9d']:.2f}\n"
+    text += f"📊 SPY 14d RSI : {stats['rsi_14d']:.2f}\n"
     text += f"📉 3Y SPY Return : {stats['return_3y_pct']:.2f}% (>85%)"
 
     return text
@@ -959,15 +958,15 @@ Analyze the following comprehensive economic indicators to provide a nuanced, in
 - BBB Credit Spread: {data['credit_spread']:.2f}% → {credit_status}
 - Real Yields (10Y TIPS): {data['real_yields']:.2f}% → {yields_status}
 
-TASK: Synthesize a concise, intelligent, high-impact assessment of the current structural regime. Limit your response to 2-4 punchy sentences.
+TASK: Synthesize an intelligent, highly nuanced assessment of the current structural regime. Limit your response to 4-6 sentences to maintain a perfectly balanced medium-length synthesis.
 
 STYLE & SUBSTANCE REQUIREMENTS:
-- Read as an advanced, institutional macro narrative, but keep it extremely concise and direct.
+- Read as an advanced, institutional macro narrative. Retain a clear and readable tone.
 - Synthesize conflicting data intelligently (e.g. "Weak consumer sentiment is the biggest risk, but healthy jobless claims mitigate this").
 - Conclude with a definitive macro verdict specifying the exact regime and your stance (e.g., BULLISH, BEARISH, CAUTIOUS).
 - Use appropriate emojis to format your response cleanly (📈, 🔴, ⚠️, 🎯, 💪) but don't overdo it. 
 - You MUST mention the most critical data values in your synthesis to back your claims.
-- Example Style: "Markets are RESILIENT - Yield Curve at 0.60% (no inversion), corporate profit margins at 13.78%, and LEI rising +9.55%. 🔴 Weak consumer sentiment at 56.4/100 is the biggest risk, but healthy jobless claims at 219K mitigate this. 🎯 Watch for the Sahm Rule Recession Indicator breaking 0.5. 📈 BULLISH 💪"
+- Example Style: "Markets are proving structurally resilient across the board. The Yield Curve sits positive at 0.60% indicating no immediate cyclical inversion, paired with strong corporate margins at 13.78% and an accelerating (+9.55%) LEI footprint. 🔴 The primary divergence remains consumer sentiment at 56.4/100, though this weakness is effectively cushioned by deeply robust initial jobless claims holding at 219K. 🎯 Watch closely for the Sahm Rule Recession Indicator to approach exactly 0.5. 📈 BULLISH 💪"
 
 Output the assessment now:"""
 
@@ -982,7 +981,7 @@ Output the assessment now:"""
                 'model': 'gpt-4o',
                 'messages': [{'role': 'user', 'content': prompt}],
                 'temperature': 0.7,
-                'max_tokens': 250
+                'max_tokens': 350
             }
             response = requests.post('https://api.openai.com/v1/chat/completions', headers=headers, json=payload, timeout=30)
             response.raise_for_status()
@@ -992,7 +991,7 @@ Output the assessment now:"""
             headers = {'Content-Type': 'application/json'}
             payload = {
                 'contents': [{'parts': [{'text': prompt}]}],
-                'generationConfig': {'temperature': 0.7, 'maxOutputTokens': 250}
+                'generationConfig': {'temperature': 0.7, 'maxOutputTokens': 350}
             }
             url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key={gemini_api_key}"
             response = requests.post(url, headers=headers, json=payload, timeout=30)
@@ -1008,7 +1007,7 @@ Output the assessment now:"""
                 'model': 'llama-3.3-70b-versatile',
                 'messages': [{'role': 'user', 'content': prompt}],
                 'temperature': 0.7,
-                'max_tokens': 250
+                'max_tokens': 350
             }
             response = requests.post('https://api.groq.com/openai/v1/chat/completions', headers=headers, json=payload, timeout=30)
             response.raise_for_status()
