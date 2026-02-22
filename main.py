@@ -917,16 +917,15 @@ Analyze the following comprehensive economic indicators to provide a nuanced, in
 - BBB Credit Spread: {data['credit_spread']:.2f}% → {credit_status}
 - Real Yields (10Y TIPS): {data['real_yields']:.2f}% → {yields_status}
 
-TASK: Synthesize a highly nuanced, intelligent, multi-paragraph assessment of the current structural regime.
+TASK: Synthesize a concise, intelligent, high-impact assessment of the current structural regime. Limit your response to 2-4 punchy sentences.
 
 STYLE & SUBSTANCE REQUIREMENTS:
-- Read as an advanced, institutional macro narrative. Go beyond merely listing the data.
-- Synthesize conflicting data intelligently (e.g., if the Yield Curve is positive but LEI is falling, explain what that divergence means).
-- Highlight the risk premiums based on real yields and BBB spreads.
-- Maintain a structured but flowing format.
-- Conclude with a definitive macro verdict specifying the exact regime (e.g. "Late-Cycle Expansion", "Soft Landing Confirmed", "Pre-Recessionary", etc.).
-- Use appropriate emojis to format your response cleanly (📊, 🟢, 🔴, ⚠️, 💡) but don't overdo it. 
-- You MUST mention the specific data values in your synthesis to back your claims.
+- Read as an advanced, institutional macro narrative, but keep it extremely concise and direct.
+- Synthesize conflicting data intelligently (e.g. "Weak consumer sentiment is the biggest risk, but healthy jobless claims mitigate this").
+- Conclude with a definitive macro verdict specifying the exact regime and your stance (e.g., BULLISH, BEARISH, CAUTIOUS).
+- Use appropriate emojis to format your response cleanly (📈, 🔴, ⚠️, 🎯, 💪) but don't overdo it. 
+- You MUST mention the most critical data values in your synthesis to back your claims.
+- Example Style: "Markets are RESILIENT - Yield Curve at 0.60% (no inversion), corporate profit margins at 13.78%, and LEI rising +9.55%. 🔴 Weak consumer sentiment at 56.4/100 is the biggest risk, but healthy jobless claims at 219K mitigate this. 🎯 Watch for the Sahm Rule Recession Indicator breaking 0.5. 📈 BULLISH 💪"
 
 Output the assessment now:"""
 
@@ -941,7 +940,7 @@ Output the assessment now:"""
                 'model': 'gpt-4o',
                 'messages': [{'role': 'user', 'content': prompt}],
                 'temperature': 0.7,
-                'max_tokens': 500
+                'max_tokens': 250
             }
             response = requests.post('https://api.openai.com/v1/chat/completions', headers=headers, json=payload, timeout=30)
             response.raise_for_status()
@@ -951,7 +950,7 @@ Output the assessment now:"""
             headers = {'Content-Type': 'application/json'}
             payload = {
                 'contents': [{'parts': [{'text': prompt}]}],
-                'generationConfig': {'temperature': 0.7, 'maxOutputTokens': 500}
+                'generationConfig': {'temperature': 0.7, 'maxOutputTokens': 250}
             }
             url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key={gemini_api_key}"
             response = requests.post(url, headers=headers, json=payload, timeout=30)
@@ -967,7 +966,7 @@ Output the assessment now:"""
                 'model': 'llama-3.3-70b-versatile',
                 'messages': [{'role': 'user', 'content': prompt}],
                 'temperature': 0.7,
-                'max_tokens': 500
+                'max_tokens': 250
             }
             response = requests.post('https://api.groq.com/openai/v1/chat/completions', headers=headers, json=payload, timeout=30)
             response.raise_for_status()
