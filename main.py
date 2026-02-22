@@ -13,6 +13,8 @@ import requests
 from fredapi import Fred
 import numpy as np
 import pandas_datareader.data as web
+import csv
+from io import StringIO
 
 # Set style for professional-looking charts
 sns.set_style("whitegrid")
@@ -35,6 +37,54 @@ def load_environment_variables():
         sys.exit(1)
 
     return required_vars
+
+
+def fetch_google_sheet_indicators():
+    """
+    Fetch custom indicator values from assigned Google Sheets via CSV export.
+    Returns a rigidly formatted string to be prepended to the Telegram report.
+    """
+    print("Fetching Google Sheet custom indicators...")
+    try:
+        # 1. NotSoBoring (gid=0)
+        url_nsb = "https://docs.google.com/spreadsheets/d/10Y8Jus8_fMwH9H69vWh7thSzl2hH34Ri3BRbDw_GEgw/export?format=csv&gid=0"
+        r_nsb = requests.get(url_nsb, timeout=10)
+        reader_nsb = list(csv.reader(StringIO(r_nsb.text)))
+        not_so_boring_val = reader_nsb[2][1].strip()  # Row 3 (index 2), Col B (index 1)
+
+        # 2. FrontRunner (gid=1668420064)
+        url_fr = "https://docs.google.com/spreadsheets/d/1vdlPNlT6gRpzMHuQUT7olqUNb455CQM3ab4wPuCE5R0/export?format=csv&gid=1668420064"
+        r_fr = requests.get(url_fr, timeout=10)
+        reader_fr = list(csv.reader(StringIO(r_fr.text)))
+        front_runner_val = reader_fr[1][0].strip().split('\n')[0].strip()  # Row 2 (index 1), Col A (index 0)
+
+        # 3. AAII Diff (gid=0)
+        url_aaii = "https://docs.google.com/spreadsheets/d/1zQQ2am1yhzTwY7nx8xPak4Q0WoNMwxWj7Ekr-fDEIF4/export?format=csv&gid=0"
+        r_aaii = requests.get(url_aaii, timeout=10)
+        reader_aaii = list(csv.reader(StringIO(r_aaii.text)))
+        aaii_val = reader_aaii[1][4].strip()  # Row 2 (index 1), Col E (index 4)
+
+        # 4. VIX (gid=790638481)
+        url_vix = "https://docs.google.com/spreadsheets/d/1vdlPNlT6gRpzMHuQUT7olqUNb455CQM3ab4wPuCE5R0/export?format=csv&gid=790638481"
+        r_vix = requests.get(url_vix, timeout=10)
+        reader_vix = list(csv.reader(StringIO(r_vix.text)))
+        vix_current = reader_vix[1][0].strip()
+        vix_3m = reader_vix[1][1].strip()
+        fear_greed_status = reader_vix[1][2].strip()
+
+        # Build exactly mimicking format
+        output = (
+            f"🛡️ NotSoBoring : {not_so_boring_val}\n\n"
+            f"🔑 FrontRunner :  {front_runner_val}\n\n"
+            f"🔸 AAII Diff :  {aaii_val} (G | >20% | 6mths out)%\n\n"
+            f"🎢 VIX: (Current | 3M) : {vix_current}  | {vix_3m} | {fear_greed_status}\n\n"
+        )
+        print("✓ Successfully fetched and parsed Google Sheet indicators")
+        return output
+
+    except Exception as e:
+        print(f"WARNING: Failed to fetch Google Sheet indicators: {e}")
+        return ""
 
 
 def calculate_rsi(prices, period=9):
@@ -1289,7 +1339,19 @@ def main():
     # Generate charts
     charts_generated = []
 
-    # FIRST: SPY Statistics Chart and Text
+    # FIRST: Google Sheet Custom Indicators (Raw Text Prepended to the entire report)
+    try:
+        gs_text = fetch_google_sheet_indicators()
+        if gs_text:
+            charts_generated.append({
+                'file': None,
+                'caption': gs_text,
+                'is_text': True
+            })
+    except Exception as e:
+        print(f"WARNING: Skipping Google Sheets indicators: {e}")
+
+    # SECOND: SPY Statistics Chart and Text
     try:
         spy_stats = fetch_spy_stats()
 
