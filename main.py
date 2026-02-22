@@ -89,8 +89,12 @@ def fetch_spy_stats():
             # Rate limit hit
             raise ValueError(f"Alpha Vantage rate limit: {data['Note']}")
 
+        if "Information" in data:
+            # Alpha Vantage returns this for API key issues or other info messages
+            raise ValueError(f"Alpha Vantage message: {data['Information']}")
+
         if "Time Series (Daily)" not in data:
-            raise ValueError(f"Unexpected API response format. Keys: {list(data.keys())}")
+            raise ValueError(f"Unexpected API response format. Keys: {list(data.keys())}, Data: {data}")
 
         # Parse the time series data
         time_series = data["Time Series (Daily)"]
