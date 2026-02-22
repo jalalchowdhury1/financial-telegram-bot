@@ -67,55 +67,93 @@ def fetch_spy_stats():
     """
     print("Fetching SPY data from Yahoo Finance...")
 
-    try:
-        spy = yf.Ticker("SPY")
+    # Try multiple times with different approaches
+    for attempt in range(3):
+        try:
+            if attempt > 0:
+                print(f"  Retry attempt {attempt + 1}/3...")
+                import time
+                time.sleep(2)  # Wait before retry
 
-        # Get historical data (3 years + some buffer for calculations)
-        hist = spy.history(period="4y")
+            spy = yf.Ticker("SPY")
 
-        if hist.empty:
-            raise ValueError("No SPY data returned from Yahoo Finance")
+            # Get historical data (use 5y which is a valid yfinance period)
+            # Valid periods: 1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, max
+            hist = spy.history(period="5y")
 
-        # Current price
-        current_price = hist['Close'].iloc[-1]
+            if hist is None or hist.empty:
+                if attempt < 2:
+                    continue
+                raise ValueError(f"No SPY data returned from Yahoo Finance after {attempt + 1} attempts")
 
-        # 200-day MA
-        ma_200 = hist['Close'].tail(200).mean()
-        ma_200_pct = ((current_price - ma_200) / ma_200) * 100
+            # Verify we have enough data
+            if len(hist) < 756:
+                print(f"  Warning: Only {len(hist)} days of data available, need 756 for 3Y return")
+                # Adjust 3-year calculation if we don't have enough data
+                days_available = len(hist)
+            else:
+                days_available = 756
 
-        # 52-week high
-        week_52_high = hist['Close'].tail(252).max()  # ~252 trading days in a year
-        high_52w_pct = ((current_price - week_52_high) / week_52_high) * 100
+            # Current price
+            current_price = hist['Close'].iloc[-1]
 
-        # 9-day RSI
-        rsi_9d = calculate_rsi(hist['Close'], period=9)
+            # Verify current price is valid
+            if pd.isna(current_price) or current_price <= 0:
+                if attempt < 2:
+                    continue
+                raise ValueError("Invalid current price data")
 
-        # 3-year return
-        price_3y_ago = hist['Close'].iloc[-756]  # ~3 years of trading days
-        return_3y_pct = ((current_price - price_3y_ago) / price_3y_ago) * 100
+            # 200-day MA
+            if len(hist) >= 200:
+                ma_200 = hist['Close'].tail(200).mean()
+            else:
+                ma_200 = hist['Close'].mean()  # Use all available data
+            ma_200_pct = ((current_price - ma_200) / ma_200) * 100
 
-        stats = {
-            'current': current_price,
-            'ma_200': ma_200,
-            'ma_200_pct': ma_200_pct,
-            'week_52_high': week_52_high,
-            'high_52w_pct': high_52w_pct,
-            'rsi_9d': rsi_9d,
-            'return_3y_pct': return_3y_pct
-        }
+            # 52-week high
+            week_data_points = min(252, len(hist))
+            week_52_high = hist['Close'].tail(week_data_points).max()
+            high_52w_pct = ((current_price - week_52_high) / week_52_high) * 100
 
-        print(f"✓ SPY data fetched successfully")
-        print(f"  Current: ${current_price:.2f}")
-        print(f"  200-day MA: ${ma_200:.2f} ({ma_200_pct:+.2f}%)")
-        print(f"  52-wk High: ${week_52_high:.2f} ({high_52w_pct:+.2f}%)")
-        print(f"  9d RSI: {rsi_9d:.2f}")
-        print(f"  3Y Return: {return_3y_pct:.2f}%")
+            # 9-day RSI
+            rsi_9d = calculate_rsi(hist['Close'], period=9)
 
-        return stats
+            # Verify RSI is valid
+            if pd.isna(rsi_9d):
+                if attempt < 2:
+                    continue
+                raise ValueError("Invalid RSI calculation")
 
-    except Exception as e:
-        print(f"ERROR: Failed to fetch SPY data: {str(e)}")
-        raise
+            # 3-year return (or whatever data we have)
+            price_past = hist['Close'].iloc[-days_available]
+            return_3y_pct = ((current_price - price_past) / price_past) * 100
+
+            stats = {
+                'current': current_price,
+                'ma_200': ma_200,
+                'ma_200_pct': ma_200_pct,
+                'week_52_high': week_52_high,
+                'high_52w_pct': high_52w_pct,
+                'rsi_9d': rsi_9d,
+                'return_3y_pct': return_3y_pct
+            }
+
+            print(f"✓ SPY data fetched successfully")
+            print(f"  Current: ${current_price:.2f}")
+            print(f"  200-day MA: ${ma_200:.2f} ({ma_200_pct:+.2f}%)")
+            print(f"  52-wk High: ${week_52_high:.2f} ({high_52w_pct:+.2f}%)")
+            print(f"  9d RSI: {rsi_9d:.2f}")
+            print(f"  3Y Return: {return_3y_pct:.2f}%")
+
+            return stats
+
+        except Exception as e:
+            if attempt < 2:
+                print(f"  Attempt {attempt + 1} failed: {str(e)}")
+                continue
+            else:
+                print(f"ERROR: Failed to fetch SPY data after all attempts: {str(e)}")
+                raise
 
 
 def create_spy_stats_chart(stats, output_file='spy_stats.png'):
@@ -132,6 +170,13 @@ def create_spy_stats_chart(stats, output_file='spy_stats.png'):
     print("Creating SPY statistics chart...")
 
     try:
+        # Validate all required stats are present and finite
+        required_keys = ['current', 'ma_200', 'ma_200_pct', 'week_52_high', 'high_52w_pct', 'rsi_9d', 'return_3y_pct']
+        for key in required_keys:
+            if key not in stats:
+                raise ValueError(f"Missing required stat: {key}")
+            if not np.isfinite(stats[key]):
+                raise ValueError(f"Invalid value for {key}: {stats[key]}")
         # Create figure with specific layout
         fig = plt.figure(figsize=(12, 8))
         gs = fig.add_gridspec(3, 2, height_ratios=[1.2, 1, 1], hspace=0.3, wspace=0.3)
