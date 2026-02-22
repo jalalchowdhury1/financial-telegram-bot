@@ -12,6 +12,7 @@ import seaborn as sns
 import requests
 from fredapi import Fred
 import numpy as np
+import yfinance as yf
 
 # Set style for professional-looking charts
 sns.set_style("whitegrid")
@@ -24,8 +25,7 @@ def load_environment_variables():
     required_vars = {
         'FRED_API_KEY': os.getenv('FRED_API_KEY'),
         'TELEGRAM_TOKEN': os.getenv('TELEGRAM_TOKEN'),
-        'TELEGRAM_CHAT_ID': os.getenv('TELEGRAM_CHAT_ID'),
-        'ALPHA_VANTAGE_API_KEY': os.getenv('ALPHA_VANTAGE_API_KEY')
+        'TELEGRAM_CHAT_ID': os.getenv('TELEGRAM_CHAT_ID')
     }
 
     missing_vars = [var for var, value in required_vars.items() if not value]
@@ -60,98 +60,66 @@ def calculate_rsi(prices, period=9):
 
 def fetch_spy_stats():
     """
-    Fetch SPY statistics from Alpha Vantage API
+    Fetch SPY statistics natively from the Yahoo Finance API (completely free formatting without limits).
 
     Returns:
         dict: Dictionary containing all SPY statistics
     """
-    print("Fetching SPY data from Alpha Vantage...")
+    print("Fetching SPY data from Yahoo Finance (yfinance)...")
 
     try:
-        api_key = os.getenv('ALPHA_VANTAGE_API_KEY')
-        if not api_key:
-            raise ValueError("ALPHA_VANTAGE_API_KEY not set in environment variables")
+        spy = yf.Ticker("SPY")
+        # Fetch 4 years of daily data to ensure we safely safely construct a full 3-year return metric and 200d MA
+        df = spy.history(period="4y")
+        
+        if df.empty:
+            raise ValueError("Yahoo Finance returned empty data for SPY")
+            
+        # Ensure correct column naming schema for standard pandas technical indicator math
+        df = df.rename(columns={'Open': 'Open', 'High': 'High', 'Low': 'Low', 'Close': 'Close', 'Volume': 'Volume'})
 
-        # Fetch weekly data for long-term stats (200-day MA, 52-week high, 3-year return)
-        url_weekly = f"https://www.alphavantage.co/query?function=TIME_SERIES_WEEKLY&symbol=SPY&apikey={api_key}"
-        print("  Requesting weekly data from Alpha Vantage API...")
-        response_weekly = requests.get(url_weekly, timeout=30)
-        response_weekly.raise_for_status()
-        data_weekly = response_weekly.json()
+        # Sort by date (oldest first)
+        df.index = pd.to_datetime(df.index)
+        df = df.sort_index()
 
-        if "Error Message" in data_weekly:
-            raise ValueError(f"Alpha Vantage API error: {data_weekly['Error Message']}")
-        if "Note" in data_weekly:
-            raise ValueError(f"Alpha Vantage rate limit: {data_weekly['Note']}")
-        if "Weekly Time Series" not in data_weekly:
-            raise ValueError(f"Unexpected API response format. Keys: {list(data_weekly.keys())}")
-
-        time_series_weekly = data_weekly["Weekly Time Series"]
-        df_weekly = pd.DataFrame.from_dict(time_series_weekly, orient='index')
-        df_weekly.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
-        for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
-            df_weekly[col] = df_weekly[col].astype(float)
-        df_weekly.index = pd.to_datetime(df_weekly.index)
-        df_weekly = df_weekly.sort_index()
-
-        # Fetch daily data (compact, 100 days) for accurate 9-day RSI
-        url_daily = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=SPY&apikey={api_key}"
-        print("  Requesting daily data from Alpha Vantage API...")
-        response_daily = requests.get(url_daily, timeout=30)
-        response_daily.raise_for_status()
-        data_daily = response_daily.json()
-
-        if "Error Message" in data_daily:
-            raise ValueError(f"Alpha Vantage API error: {data_daily['Error Message']}")
-        if "Note" in data_daily:
-             raise ValueError(f"Alpha Vantage rate limit: {data_daily['Note']}")
-        if "Time Series (Daily)" not in data_daily:
-            raise ValueError(f"Unexpected API response format. Keys: {list(data_daily.keys())}")
-
-        time_series_daily = data_daily["Time Series (Daily)"]
-        df_daily = pd.DataFrame.from_dict(time_series_daily, orient='index')
-        df_daily.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
-        for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
-            df_daily[col] = df_daily[col].astype(float)
-        df_daily.index = pd.to_datetime(df_daily.index)
-        df_daily = df_daily.sort_index()
-
-        # Verify we have enough weekly data (156 weeks = ~3 years)
-        if len(df_weekly) < 156:
-            print(f"  Warning: Only {len(df_weekly)} weeks of data available")
-            weeks_available = len(df_weekly)
+        # Target 3 years worth of trading days (average 252 days per year = 756 days)
+        if len(df) < 756:
+            print(f"  Warning: Only {len(df)} days of data available")
+            days_available = len(df)
         else:
-            weeks_available = 156
+            days_available = 756
 
-        # Current price (most recent close from daily)
-        current_price = df_daily['Close'].iloc[-1]
+        print(f"  Received {len(df)} days of historical data")
+
+        # Current price (most recent close)
+        current_price = df['Close'].iloc[-1]
 
         # Verify current price is valid
         if pd.isna(current_price) or current_price <= 0:
-            raise ValueError("Invalid current price data")
+            raise ValueError("Invalid current price data format.")
 
-        # 200-day MA (approx 40 weeks)
-        weeks_for_200d = 40
-        if len(df_weekly) >= weeks_for_200d:
-            ma_200 = df_weekly['Close'].tail(weeks_for_200d).mean()
+        # 200-day MA (200 trading days)
+        days_for_200d = 200
+        if len(df) >= days_for_200d:
+            ma_200 = df['Close'].tail(days_for_200d).mean()
         else:
-            ma_200 = df_weekly['Close'].mean()
+            ma_200 = df['Close'].mean()
         ma_200_pct = ((current_price - ma_200) / ma_200) * 100
 
-        # 52-week high
-        weeks_52 = min(52, len(df_weekly))
-        week_52_high = df_weekly['Close'].tail(weeks_52).max()
+        # 52-week high (252 trading days)
+        days_52w = min(252, len(df))
+        week_52_high = df['Close'].tail(days_52w).max()
         high_52w_pct = ((current_price - week_52_high) / week_52_high) * 100
 
-        # 9-day RSI (user algo preference using absolute daily math)
-        rsi_9d = calculate_rsi(df_daily['Close'], period=9)
+        # 9-day RSI (user algo preference using standard daily math)
+        rsi_9d = calculate_rsi(df['Close'], period=9)
 
         # Verify RSI is valid
         if pd.isna(rsi_9d):
-            raise ValueError("Invalid RSI calculation")
+            raise ValueError("Invalid RSI calculation generation.")
 
-        # 3-year return (156 weeks)
-        price_past = df_weekly['Close'].iloc[-weeks_available]
+        # 3-year return (756 standard trading days back)
+        price_past = df['Close'].iloc[-days_available]
         return_3y_pct = ((current_price - price_past) / price_past) * 100
 
         stats = {
