@@ -275,11 +275,9 @@ def create_spy_stats_chart(stats, output_file='spy_stats.png'):
         gauge_radius_inner = 0.09
         
         rsi_segments = [
-            (0, 20, '#2e8b57'),      # Dark Green
-            (20, 40, '#8fce00'),     # Light Green
-            (40, 60, '#ffce00'),     # Yellow
-            (60, 80, '#ff7a00'),     # Orange
-            (80, 100, '#c72d2d')     # Red
+            (0, 30, '#5a9f5a'),      # Oversold (Green)
+            (30, 70, '#d4d4d4'),     # Neutral (Gray)
+            (70, 100, '#c75450')     # Overbought (Red)
         ]
         
         for start, end, color in rsi_segments:
@@ -295,8 +293,27 @@ def create_spy_stats_chart(stats, output_file='spy_stats.png'):
             y_inner = gauge_center_y + gauge_radius_inner * np.sin(angles[::-1])
             
             verts = list(zip(x_outer, y_outer)) + list(zip(x_inner, y_inner))
-            poly = patches.Polygon(verts, facecolor=color, edgecolor='white', linewidth=1)
+            poly = patches.Polygon(verts, facecolor=color, edgecolor='white', linewidth=1.5)
             ax.add_patch(poly)
+            
+        # Draw benchmark ticks and labels
+        for val in [30, 70]:
+            theta_val = np.pi - (val / 100) * np.pi
+            
+            # Tick line
+            tick_r_inner = gauge_radius_inner
+            tick_r_outer = gauge_radius_outer + 0.015
+            ax.plot(
+                [gauge_center_x + tick_r_inner * np.cos(theta_val), gauge_center_x + tick_r_outer * np.cos(theta_val)],
+                [gauge_center_y + tick_r_inner * np.sin(theta_val), gauge_center_y + tick_r_outer * np.sin(theta_val)],
+                color='#333333', linewidth=2, zorder=3
+            )
+            
+            # Explicit label
+            label_r = gauge_radius_outer + 0.035
+            lx = gauge_center_x + label_r * np.cos(theta_val)
+            ly = gauge_center_y + label_r * np.sin(theta_val)
+            ax.text(lx, ly, str(val), ha='center', va='center', fontsize=10, fontweight='bold', color=color_gray)
         
         # Draw needle
         val = min(max(stats['rsi_9d'], 0), 100)
@@ -635,6 +652,31 @@ def create_fear_greed_chart(output_file='fear_greed.png'):
             ly = gauge_center_y + label_r * np.sin(mid_theta)
             
             ax.text(lx, ly, label, ha='center', va='center', fontsize=10, fontweight='bold', color=color_gray)
+
+        # Draw benchmark ticks and numeric thresholds
+        for val in [0, 25, 45, 55, 75, 100]:
+            theta_val = np.pi - (val / 100) * np.pi
+            
+            # Tick line
+            tick_r_inner = gauge_radius_inner
+            tick_r_outer = gauge_radius_outer + 0.015
+            ax.plot(
+                [gauge_center_x + tick_r_inner * np.cos(theta_val), gauge_center_x + tick_r_outer * np.cos(theta_val)],
+                [gauge_center_y + tick_r_inner * np.sin(theta_val), gauge_center_y + tick_r_outer * np.sin(theta_val)],
+                color='#333333', linewidth=2, zorder=3
+            )
+            
+            # Explicit label
+            label_r = gauge_radius_outer + 0.08
+            lx = gauge_center_x + label_r * np.cos(theta_val)
+            ly = gauge_center_y + label_r * np.sin(theta_val)
+            
+            # Adjust align for edges to prevent clipping
+            align = 'center'
+            if val == 0: align = 'left'
+            if val == 100: align = 'right'
+                
+            ax.text(lx, ly, str(val), ha=align, va='center', fontsize=11, fontweight='bold', color='#666666')
 
         # Draw needle
         val = min(max(current_score, 0), 100)
