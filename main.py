@@ -11,7 +11,6 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import requests
 from fredapi import Fred
-import yfinance as yf
 import numpy as np
 
 # Set style for professional-looking charts
@@ -25,7 +24,8 @@ def load_environment_variables():
     required_vars = {
         'FRED_API_KEY': os.getenv('FRED_API_KEY'),
         'TELEGRAM_TOKEN': os.getenv('TELEGRAM_TOKEN'),
-        'TELEGRAM_CHAT_ID': os.getenv('TELEGRAM_CHAT_ID')
+        'TELEGRAM_CHAT_ID': os.getenv('TELEGRAM_CHAT_ID'),
+        'ALPHA_VANTAGE_API_KEY': os.getenv('ALPHA_VANTAGE_API_KEY')
     }
 
     missing_vars = [var for var, value in required_vars.items() if not value]
@@ -60,100 +60,114 @@ def calculate_rsi(prices, period=9):
 
 def fetch_spy_stats():
     """
-    Fetch SPY statistics from Yahoo Finance
+    Fetch SPY statistics from Alpha Vantage API
 
     Returns:
         dict: Dictionary containing all SPY statistics
     """
-    print("Fetching SPY data from Yahoo Finance...")
+    print("Fetching SPY data from Alpha Vantage...")
 
-    # Try multiple times with different approaches
-    for attempt in range(3):
-        try:
-            if attempt > 0:
-                print(f"  Retry attempt {attempt + 1}/3...")
-                import time
-                time.sleep(2)  # Wait before retry
+    try:
+        api_key = os.getenv('ALPHA_VANTAGE_API_KEY')
+        if not api_key:
+            raise ValueError("ALPHA_VANTAGE_API_KEY not set in environment variables")
 
-            spy = yf.Ticker("SPY")
+        # Fetch daily time series data (outputsize=full gets 20+ years of data)
+        url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=SPY&outputsize=full&apikey={api_key}"
 
-            # Get historical data (use 5y which is a valid yfinance period)
-            # Valid periods: 1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, max
-            hist = spy.history(period="5y")
+        print("  Requesting data from Alpha Vantage API...")
+        response = requests.get(url, timeout=30)
+        response.raise_for_status()
 
-            if hist is None or hist.empty:
-                if attempt < 2:
-                    continue
-                raise ValueError(f"No SPY data returned from Yahoo Finance after {attempt + 1} attempts")
+        data = response.json()
 
-            # Verify we have enough data
-            if len(hist) < 756:
-                print(f"  Warning: Only {len(hist)} days of data available, need 756 for 3Y return")
-                # Adjust 3-year calculation if we don't have enough data
-                days_available = len(hist)
-            else:
-                days_available = 756
+        # Check for API errors
+        if "Error Message" in data:
+            raise ValueError(f"Alpha Vantage API error: {data['Error Message']}")
 
-            # Current price
-            current_price = hist['Close'].iloc[-1]
+        if "Note" in data:
+            # Rate limit hit
+            raise ValueError(f"Alpha Vantage rate limit: {data['Note']}")
 
-            # Verify current price is valid
-            if pd.isna(current_price) or current_price <= 0:
-                if attempt < 2:
-                    continue
-                raise ValueError("Invalid current price data")
+        if "Time Series (Daily)" not in data:
+            raise ValueError(f"Unexpected API response format. Keys: {list(data.keys())}")
 
-            # 200-day MA
-            if len(hist) >= 200:
-                ma_200 = hist['Close'].tail(200).mean()
-            else:
-                ma_200 = hist['Close'].mean()  # Use all available data
-            ma_200_pct = ((current_price - ma_200) / ma_200) * 100
+        # Parse the time series data
+        time_series = data["Time Series (Daily)"]
 
-            # 52-week high
-            week_data_points = min(252, len(hist))
-            week_52_high = hist['Close'].tail(week_data_points).max()
-            high_52w_pct = ((current_price - week_52_high) / week_52_high) * 100
+        # Convert to DataFrame for easier calculations
+        df = pd.DataFrame.from_dict(time_series, orient='index')
+        df.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
 
-            # 9-day RSI
-            rsi_9d = calculate_rsi(hist['Close'], period=9)
+        # Convert string values to float
+        for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
+            df[col] = df[col].astype(float)
 
-            # Verify RSI is valid
-            if pd.isna(rsi_9d):
-                if attempt < 2:
-                    continue
-                raise ValueError("Invalid RSI calculation")
+        # Sort by date (oldest first)
+        df.index = pd.to_datetime(df.index)
+        df = df.sort_index()
 
-            # 3-year return (or whatever data we have)
-            price_past = hist['Close'].iloc[-days_available]
-            return_3y_pct = ((current_price - price_past) / price_past) * 100
+        # Verify we have enough data
+        if len(df) < 756:
+            print(f"  Warning: Only {len(df)} days of data available")
+            days_available = len(df)
+        else:
+            days_available = 756
 
-            stats = {
-                'current': current_price,
-                'ma_200': ma_200,
-                'ma_200_pct': ma_200_pct,
-                'week_52_high': week_52_high,
-                'high_52w_pct': high_52w_pct,
-                'rsi_9d': rsi_9d,
-                'return_3y_pct': return_3y_pct
-            }
+        print(f"  Received {len(df)} days of historical data")
 
-            print(f"✓ SPY data fetched successfully")
-            print(f"  Current: ${current_price:.2f}")
-            print(f"  200-day MA: ${ma_200:.2f} ({ma_200_pct:+.2f}%)")
-            print(f"  52-wk High: ${week_52_high:.2f} ({high_52w_pct:+.2f}%)")
-            print(f"  9d RSI: {rsi_9d:.2f}")
-            print(f"  3Y Return: {return_3y_pct:.2f}%")
+        # Current price (most recent close)
+        current_price = df['Close'].iloc[-1]
 
-            return stats
+        # Verify current price is valid
+        if pd.isna(current_price) or current_price <= 0:
+            raise ValueError("Invalid current price data")
 
-        except Exception as e:
-            if attempt < 2:
-                print(f"  Attempt {attempt + 1} failed: {str(e)}")
-                continue
-            else:
-                print(f"ERROR: Failed to fetch SPY data after all attempts: {str(e)}")
-                raise
+        # 200-day MA
+        if len(df) >= 200:
+            ma_200 = df['Close'].tail(200).mean()
+        else:
+            ma_200 = df['Close'].mean()
+        ma_200_pct = ((current_price - ma_200) / ma_200) * 100
+
+        # 52-week high (252 trading days)
+        week_data_points = min(252, len(df))
+        week_52_high = df['Close'].tail(week_data_points).max()
+        high_52w_pct = ((current_price - week_52_high) / week_52_high) * 100
+
+        # 9-day RSI
+        rsi_9d = calculate_rsi(df['Close'], period=9)
+
+        # Verify RSI is valid
+        if pd.isna(rsi_9d):
+            raise ValueError("Invalid RSI calculation")
+
+        # 3-year return
+        price_past = df['Close'].iloc[-days_available]
+        return_3y_pct = ((current_price - price_past) / price_past) * 100
+
+        stats = {
+            'current': current_price,
+            'ma_200': ma_200,
+            'ma_200_pct': ma_200_pct,
+            'week_52_high': week_52_high,
+            'high_52w_pct': high_52w_pct,
+            'rsi_9d': rsi_9d,
+            'return_3y_pct': return_3y_pct
+        }
+
+        print(f"✓ SPY data fetched successfully")
+        print(f"  Current: ${current_price:.2f}")
+        print(f"  200-day MA: ${ma_200:.2f} ({ma_200_pct:+.2f}%)")
+        print(f"  52-wk High: ${week_52_high:.2f} ({high_52w_pct:+.2f}%)")
+        print(f"  9d RSI: {rsi_9d:.2f}")
+        print(f"  3Y Return: {return_3y_pct:.2f}%")
+
+        return stats
+
+    except Exception as e:
+        print(f"ERROR: Failed to fetch SPY data from Alpha Vantage: {str(e)}")
+        raise
 
 
 def create_spy_stats_chart(stats, output_file='spy_stats.png'):
