@@ -11,6 +11,8 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import requests
 from fredapi import Fred
+import yfinance as yf
+import numpy as np
 
 # Set style for professional-looking charts
 sns.set_style("whitegrid")
@@ -33,6 +35,260 @@ def load_environment_variables():
         sys.exit(1)
 
     return required_vars
+
+
+def calculate_rsi(prices, period=9):
+    """
+    Calculate Relative Strength Index (RSI)
+
+    Args:
+        prices: Series of prices
+        period: RSI period (default 9)
+
+    Returns:
+        float: RSI value
+    """
+    delta = prices.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+
+    rs = gain / loss
+    rsi = 100 - (100 / (1 + rs))
+
+    return rsi.iloc[-1]
+
+
+def fetch_spy_stats():
+    """
+    Fetch SPY statistics from Yahoo Finance
+
+    Returns:
+        dict: Dictionary containing all SPY statistics
+    """
+    print("Fetching SPY data from Yahoo Finance...")
+
+    try:
+        spy = yf.Ticker("SPY")
+
+        # Get historical data (3 years + some buffer for calculations)
+        hist = spy.history(period="4y")
+
+        if hist.empty:
+            raise ValueError("No SPY data returned from Yahoo Finance")
+
+        # Current price
+        current_price = hist['Close'].iloc[-1]
+
+        # 200-day MA
+        ma_200 = hist['Close'].tail(200).mean()
+        ma_200_pct = ((current_price - ma_200) / ma_200) * 100
+
+        # 52-week high
+        week_52_high = hist['Close'].tail(252).max()  # ~252 trading days in a year
+        high_52w_pct = ((current_price - week_52_high) / week_52_high) * 100
+
+        # 9-day RSI
+        rsi_9d = calculate_rsi(hist['Close'], period=9)
+
+        # 3-year return
+        price_3y_ago = hist['Close'].iloc[-756]  # ~3 years of trading days
+        return_3y_pct = ((current_price - price_3y_ago) / price_3y_ago) * 100
+
+        stats = {
+            'current': current_price,
+            'ma_200': ma_200,
+            'ma_200_pct': ma_200_pct,
+            'week_52_high': week_52_high,
+            'high_52w_pct': high_52w_pct,
+            'rsi_9d': rsi_9d,
+            'return_3y_pct': return_3y_pct
+        }
+
+        print(f"✓ SPY data fetched successfully")
+        print(f"  Current: ${current_price:.2f}")
+        print(f"  200-day MA: ${ma_200:.2f} ({ma_200_pct:+.2f}%)")
+        print(f"  52-wk High: ${week_52_high:.2f} ({high_52w_pct:+.2f}%)")
+        print(f"  9d RSI: {rsi_9d:.2f}")
+        print(f"  3Y Return: {return_3y_pct:.2f}%")
+
+        return stats
+
+    except Exception as e:
+        print(f"ERROR: Failed to fetch SPY data: {str(e)}")
+        raise
+
+
+def create_spy_stats_chart(stats, output_file='spy_stats.png'):
+    """
+    Create SPY statistics chart with gauge and progress bar
+
+    Args:
+        stats: Dictionary with SPY statistics
+        output_file: Output filename
+
+    Returns:
+        str: Output file path
+    """
+    print("Creating SPY statistics chart...")
+
+    try:
+        # Create figure with specific layout
+        fig = plt.figure(figsize=(12, 8))
+        gs = fig.add_gridspec(3, 2, height_ratios=[1.2, 1, 1], hspace=0.3, wspace=0.3)
+
+        # Title and current price (top, spans both columns)
+        ax_title = fig.add_subplot(gs[0, :])
+        ax_title.axis('off')
+        ax_title.text(0.5, 0.7, 'SPY', fontsize=48, fontweight='bold', ha='center', va='center')
+        ax_title.text(0.5, 0.2, f"{stats['current']:.2f}", fontsize=56, fontweight='bold', ha='center', va='center')
+
+        # Horizontal bar showing position between 200D MA and 52W High (middle row, spans both)
+        ax_bar = fig.add_subplot(gs[1, :])
+        ax_bar.axis('off')
+
+        # Draw the bar
+        bar_y = 0.5
+        bar_height = 0.15
+
+        # Background bar
+        ax_bar.add_patch(plt.Rectangle((0.1, bar_y - bar_height/2), 0.8, bar_height,
+                                       facecolor='lightgray', edgecolor='none'))
+
+        # Calculate position (normalize between 200D and 52W high)
+        range_span = stats['week_52_high'] - stats['ma_200']
+        if range_span > 0:
+            position = (stats['current'] - stats['ma_200']) / range_span
+            position = max(0, min(1, position))  # Clamp between 0 and 1
+        else:
+            position = 0.5
+
+        # Current position marker
+        marker_x = 0.1 + (0.8 * position)
+        ax_bar.add_patch(plt.Rectangle((marker_x - 0.01, bar_y - bar_height/2 - 0.05),
+                                       0.02, bar_height + 0.1,
+                                       facecolor='black', edgecolor='none'))
+
+        # Labels for 200D MA
+        ax_bar.text(0.1, 0.25, '200D', fontsize=12, ha='center', va='top', color='gray')
+        ax_bar.text(0.1, 0.15, f"{stats['ma_200']:.2f}", fontsize=14, ha='center', va='top', fontweight='bold')
+        ax_bar.text(0.1, 0.0, f"{stats['ma_200_pct']:.2f}%", fontsize=11, ha='center', va='top', color='gray')
+
+        # Labels for 52W High
+        ax_bar.text(0.9, 0.25, '52wH', fontsize=12, ha='center', va='top', color='gray')
+        ax_bar.text(0.9, 0.15, f"{stats['week_52_high']:.2f}", fontsize=14, ha='center', va='top', fontweight='bold')
+        ax_bar.text(0.9, 0.0, f"{stats['high_52w_pct']:.2f}%", fontsize=11, ha='center', va='top', color='gray')
+
+        ax_bar.set_xlim(0, 1)
+        ax_bar.set_ylim(0, 1)
+
+        # RSI Gauge (bottom left)
+        ax_rsi = fig.add_subplot(gs[2, 0], projection='polar')
+
+        # Draw gauge segments
+        theta_offset = np.pi  # Start from left
+        segments = [
+            (0, 30, '#c75450'),    # Oversold (red)
+            (30, 40, '#e8a798'),   # Approaching oversold
+            (40, 60, '#90EE90'),   # Neutral (green)
+            (60, 70, '#FFD700'),   # Approaching overbought
+            (70, 100, '#e8a798')   # Overbought
+        ]
+
+        for start, end, color in segments:
+            theta_start = theta_offset + (start / 100) * np.pi
+            theta_end = theta_offset + (end / 100) * np.pi
+            theta = np.linspace(theta_start, theta_end, 100)
+            r = np.ones_like(theta)
+            ax_rsi.fill_between(theta, 0, r, color=color, alpha=0.7)
+
+        # Draw needle
+        needle_theta = theta_offset + (stats['rsi_9d'] / 100) * np.pi
+        ax_rsi.plot([needle_theta, needle_theta], [0, 0.9], 'k-', linewidth=3)
+        ax_rsi.plot(needle_theta, 0, 'ko', markersize=8)
+
+        # Configure gauge
+        ax_rsi.set_ylim(0, 1.1)
+        ax_rsi.set_theta_direction(-1)
+        ax_rsi.set_theta_zero_location('W')
+        ax_rsi.set_xticks([])
+        ax_rsi.set_yticks([])
+        ax_rsi.spines['polar'].set_visible(False)
+
+        # RSI value
+        ax_rsi.text(np.pi, -0.3, f"{stats['rsi_9d']:.2f}",
+                   ha='center', va='center', fontsize=32, fontweight='bold')
+        ax_rsi.text(np.pi, -0.55, 'RSI',
+                   ha='center', va='center', fontsize=14, fontweight='bold')
+
+        # 3Y Return Progress Bar (bottom right)
+        ax_return = fig.add_subplot(gs[2, 1])
+        ax_return.axis('off')
+
+        ax_return.text(0.5, 0.95, '3Y Return', fontsize=16, fontweight='bold',
+                      ha='center', va='top', transform=ax_return.transAxes)
+        ax_return.text(0.5, 0.85, f"{stats['return_3y_pct']:.2f}%", fontsize=24, fontweight='bold',
+                      ha='center', va='top', transform=ax_return.transAxes)
+
+        # Progress bar
+        bar_width = 0.8
+        bar_x = 0.1
+        bar_y = 0.4
+        bar_h = 0.15
+
+        # Background
+        ax_return.add_patch(plt.Rectangle((bar_x, bar_y), bar_width, bar_h,
+                                         facecolor='lightgray', edgecolor='gray', linewidth=1,
+                                         transform=ax_return.transAxes))
+
+        # Fill (based on progress toward 85% target)
+        target = 85.0
+        fill_pct = min(stats['return_3y_pct'] / target, 1.0)
+        fill_color = '#1E88E5'  # Blue
+        ax_return.add_patch(plt.Rectangle((bar_x, bar_y), bar_width * fill_pct, bar_h,
+                                         facecolor=fill_color, edgecolor='none',
+                                         transform=ax_return.transAxes))
+
+        # Target marker
+        ax_return.plot([bar_x + bar_width, bar_x + bar_width], [bar_y, bar_y + bar_h],
+                      'k-', linewidth=2, transform=ax_return.transAxes)
+
+        # Target label
+        ax_return.text(bar_x + bar_width, bar_y - 0.05, 'Target 85%',
+                      fontsize=10, ha='right', va='top', transform=ax_return.transAxes)
+
+        # Add source
+        fig.text(0.99, 0.01, 'Source: Yahoo Finance',
+                ha='right', va='bottom', fontsize=8, style='italic', alpha=0.7)
+
+        plt.savefig(output_file, dpi=300, bbox_inches='tight', facecolor='white')
+        plt.close()
+
+        print(f"✓ SPY chart saved: {output_file}")
+        return output_file
+
+    except Exception as e:
+        print(f"ERROR: Failed to create SPY chart: {str(e)}")
+        raise
+
+
+def format_spy_text_stats(stats):
+    """
+    Format SPY statistics as text message
+
+    Args:
+        stats: Dictionary with SPY statistics
+
+    Returns:
+        str: Formatted text
+    """
+    text = "🔹 *SPY Stats*\n"
+    text += f"💵 Current    : {stats['current']:.2f}\n"
+    text += f"📈 200-day MA : {stats['ma_200']:.2f} ({stats['ma_200_pct']:+.2f}%)\n"
+    text += f"🏔️ 52-wk High: {stats['week_52_high']:.2f} ({stats['high_52w_pct']:+.2f}%)\n"
+    text += f"📊 SPY 9d RSI : {stats['rsi_9d']:.2f}\n"
+    text += f"📉 3Y SPY Return : {stats['return_3y_pct']:.2f}% (>85%)"
+
+    return text
 
 
 def create_yield_curve_chart(fred, output_file='yield_curve.png'):
@@ -911,8 +1167,31 @@ def main():
     # Generate charts
     charts_generated = []
 
+    # FIRST: SPY Statistics Chart and Text
     try:
-        # Chart 1: Yield Curve
+        spy_stats = fetch_spy_stats()
+
+        # Create SPY chart
+        spy_chart_file = create_spy_stats_chart(spy_stats)
+        charts_generated.append({
+            'file': spy_chart_file,
+            'caption': f"📊 SPY Market Overview\nCurrent: ${spy_stats['current']:.2f} | RSI: {spy_stats['rsi_9d']:.2f}"
+        })
+
+        # Add SPY text stats
+        spy_text = format_spy_text_stats(spy_stats)
+        charts_generated.append({
+            'file': None,
+            'caption': spy_text,
+            'is_text': True
+        })
+
+        print()
+    except Exception as e:
+        print(f"WARNING: Skipping SPY stats due to error: {e}")
+
+    try:
+        # Chart 2: Yield Curve
         yield_file, yield_value, yield_date = create_yield_curve_chart(fred)
         charts_generated.append({
             'file': yield_file,
@@ -924,7 +1203,7 @@ def main():
     print()
 
     try:
-        # Chart 2: Profit Margin
+        # Chart 3: Profit Margin
         margin_file, margin_value, margin_date = create_profit_margin_chart(fred)
         charts_generated.append({
             'file': margin_file,
@@ -936,7 +1215,7 @@ def main():
     print()
 
     try:
-        # Chart 3: Fear & Greed Index
+        # Chart 4: Fear & Greed Index
         fg_file, fg_score, fg_rating = create_fear_greed_chart()
         charts_generated.append({
             'file': fg_file,
