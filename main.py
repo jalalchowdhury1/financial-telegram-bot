@@ -72,83 +72,86 @@ def fetch_spy_stats():
         if not api_key:
             raise ValueError("ALPHA_VANTAGE_API_KEY not set in environment variables")
 
-        # Fetch daily time series data (use full output to compute 3Y properly)
-        url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=SPY&outputsize=full&apikey={api_key}"
+        # Fetch weekly data for long-term stats (200-day MA, 52-week high, 3-year return)
+        url_weekly = f"https://www.alphavantage.co/query?function=TIME_SERIES_WEEKLY&symbol=SPY&apikey={api_key}"
+        print("  Requesting weekly data from Alpha Vantage API...")
+        response_weekly = requests.get(url_weekly, timeout=30)
+        response_weekly.raise_for_status()
+        data_weekly = response_weekly.json()
 
-        print("  Requesting data from Alpha Vantage API...")
-        response = requests.get(url, timeout=30)
-        response.raise_for_status()
+        if "Error Message" in data_weekly:
+            raise ValueError(f"Alpha Vantage API error: {data_weekly['Error Message']}")
+        if "Note" in data_weekly:
+            raise ValueError(f"Alpha Vantage rate limit: {data_weekly['Note']}")
+        if "Weekly Time Series" not in data_weekly:
+            raise ValueError(f"Unexpected API response format. Keys: {list(data_weekly.keys())}")
 
-        data = response.json()
-
-        # Check for API errors
-        if "Error Message" in data:
-            raise ValueError(f"Alpha Vantage API error: {data['Error Message']}")
-
-        if "Note" in data:
-            # Rate limit hit
-            raise ValueError(f"Alpha Vantage rate limit: {data['Note']}")
-
-        if "Information" in data:
-            # Alpha Vantage returns this for API key issues or other info messages
-            raise ValueError(f"Alpha Vantage message: {data['Information']}")
-
-        if "Time Series (Daily)" not in data:
-            raise ValueError(f"Unexpected API response format. Keys: {list(data.keys())}, Data: {data}")
-
-        # Parse the time series data
-        time_series = data["Time Series (Daily)"]
-
-        # Convert to DataFrame for easier calculations
-        df = pd.DataFrame.from_dict(time_series, orient='index')
-        df.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
-
-        # Convert string values to float
+        time_series_weekly = data_weekly["Weekly Time Series"]
+        df_weekly = pd.DataFrame.from_dict(time_series_weekly, orient='index')
+        df_weekly.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
         for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
-            df[col] = df[col].astype(float)
+            df_weekly[col] = df_weekly[col].astype(float)
+        df_weekly.index = pd.to_datetime(df_weekly.index)
+        df_weekly = df_weekly.sort_index()
 
-        # Sort by date (oldest first)
-        df.index = pd.to_datetime(df.index)
-        df = df.sort_index()
+        # Fetch daily data (compact, 100 days) for accurate 9-day RSI
+        url_daily = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=SPY&apikey={api_key}"
+        print("  Requesting daily data from Alpha Vantage API...")
+        response_daily = requests.get(url_daily, timeout=30)
+        response_daily.raise_for_status()
+        data_daily = response_daily.json()
 
-        # Verify we have enough data (756 days = ~3 years)
-        if len(df) < 756:
-            print(f"  Warning: Only {len(df)} days of data available")
-            days_available = len(df)
+        if "Error Message" in data_daily:
+            raise ValueError(f"Alpha Vantage API error: {data_daily['Error Message']}")
+        if "Note" in data_daily:
+             raise ValueError(f"Alpha Vantage rate limit: {data_daily['Note']}")
+        if "Time Series (Daily)" not in data_daily:
+            raise ValueError(f"Unexpected API response format. Keys: {list(data_daily.keys())}")
+
+        time_series_daily = data_daily["Time Series (Daily)"]
+        df_daily = pd.DataFrame.from_dict(time_series_daily, orient='index')
+        df_daily.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
+        for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
+            df_daily[col] = df_daily[col].astype(float)
+        df_daily.index = pd.to_datetime(df_daily.index)
+        df_daily = df_daily.sort_index()
+
+        # Verify we have enough weekly data (156 weeks = ~3 years)
+        if len(df_weekly) < 156:
+            print(f"  Warning: Only {len(df_weekly)} weeks of data available")
+            weeks_available = len(df_weekly)
         else:
-            days_available = 756
+            weeks_available = 156
 
-        print(f"  Received {len(df)} days of historical data")
-
-        # Current price (most recent close)
-        current_price = df['Close'].iloc[-1]
+        # Current price (most recent close from daily)
+        current_price = df_daily['Close'].iloc[-1]
 
         # Verify current price is valid
         if pd.isna(current_price) or current_price <= 0:
             raise ValueError("Invalid current price data")
 
-        # 200-day MA (200 trading days)
-        days_for_200d = 200
-        if len(df) >= days_for_200d:
-            ma_200 = df['Close'].tail(days_for_200d).mean()
+        # 200-day MA (approx 40 weeks)
+        weeks_for_200d = 40
+        if len(df_weekly) >= weeks_for_200d:
+            ma_200 = df_weekly['Close'].tail(weeks_for_200d).mean()
         else:
-            ma_200 = df['Close'].mean()
+            ma_200 = df_weekly['Close'].mean()
         ma_200_pct = ((current_price - ma_200) / ma_200) * 100
 
-        # 52-week high (252 trading days)
-        days_52w = min(252, len(df))
-        week_52_high = df['Close'].tail(days_52w).max()
+        # 52-week high
+        weeks_52 = min(52, len(df_weekly))
+        week_52_high = df_weekly['Close'].tail(weeks_52).max()
         high_52w_pct = ((current_price - week_52_high) / week_52_high) * 100
 
-        # 9-day RSI (user algo preference)
-        rsi_9d = calculate_rsi(df['Close'], period=9)
+        # 9-day RSI (user algo preference using absolute daily math)
+        rsi_9d = calculate_rsi(df_daily['Close'], period=9)
 
         # Verify RSI is valid
         if pd.isna(rsi_9d):
             raise ValueError("Invalid RSI calculation")
 
-        # 3-year return
-        price_past = df['Close'].iloc[-days_available]
+        # 3-year return (156 weeks)
+        price_past = df_weekly['Close'].iloc[-weeks_available]
         return_3y_pct = ((current_price - price_past) / price_past) * 100
 
         stats = {
