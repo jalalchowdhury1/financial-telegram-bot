@@ -178,17 +178,18 @@ def fetch_spy_stats():
 
 def create_spy_stats_chart(stats, output_file='spy_stats.png'):
     """
-    Create SPY statistics chart with gauge and progress bar
-
+    Create SPY statistics chart with a modern card design
+    
     Args:
         stats: Dictionary with SPY statistics
         output_file: Output filename
-
+        
     Returns:
         str: Output file path
     """
     print("Creating SPY statistics chart...")
-
+    import matplotlib.patches as patches
+    
     try:
         # Validate all required stats are present and finite
         required_keys = ['current', 'ma_200', 'ma_200_pct', 'week_52_high', 'high_52w_pct', 'rsi_9d', 'return_3y_pct']
@@ -197,134 +198,140 @@ def create_spy_stats_chart(stats, output_file='spy_stats.png'):
                 raise ValueError(f"Missing required stat: {key}")
             if not np.isfinite(stats[key]):
                 raise ValueError(f"Invalid value for {key}: {stats[key]}")
-        # Create figure with specific layout
-        fig = plt.figure(figsize=(12, 8))
-        gs = fig.add_gridspec(3, 2, height_ratios=[1.2, 1, 1], hspace=0.3, wspace=0.3)
-
-        # Title and current price (top, spans both columns)
-        ax_title = fig.add_subplot(gs[0, :])
-        ax_title.axis('off')
-        ax_title.text(0.5, 0.7, 'SPY', fontsize=48, fontweight='bold', ha='center', va='center')
-        ax_title.text(0.5, 0.2, f"{stats['current']:.2f}", fontsize=56, fontweight='bold', ha='center', va='center')
-
-        # Horizontal bar showing position between 200D MA and 52W High (middle row, spans both)
-        ax_bar = fig.add_subplot(gs[1, :])
-        ax_bar.axis('off')
-
-        # Draw the bar
-        bar_y = 0.5
-        bar_height = 0.15
-
-        # Background bar
-        ax_bar.add_patch(plt.Rectangle((0.1, bar_y - bar_height/2), 0.8, bar_height,
-                                       facecolor='lightgray', edgecolor='none'))
-
-        # Calculate position (normalize between 200D and 52W high)
+                
+        # Figure setup
+        fig = plt.figure(figsize=(10, 6), facecolor='white')
+        ax = fig.add_axes([0, 0, 1, 1])
+        ax.axis('off')
+        
+        # Fonts
+        color_text = '#2d2d2d'
+        color_gray = '#888888'
+        
+        # Draw rounded card background
+        card_edge = '#d4d4d4'
+        card_bg = '#ffffff'
+        rect = patches.FancyBboxPatch(
+            (0.05, 0.05), 0.9, 0.9,
+            boxstyle="round,pad=0.02,rounding_size=0.05",
+            edgecolor=card_edge,
+            facecolor=card_bg,
+            linewidth=1.5,
+            zorder=0
+        )
+        ax.add_patch(rect)
+        
+        # --- Top Section ---
+        ax.text(0.12, 0.82, 'SPY', fontsize=40, color=color_text, fontweight='bold', va='center', ha='left')
+        ax.text(0.5, 0.82, f"{stats['current']:.2f}", fontsize=56, color=color_text, fontweight='bold', va='center', ha='center')
+        
+        # Divider 1
+        ax.plot([0.1, 0.9], [0.68, 0.68], color='#e0e0e0', linewidth=1.5)
+        
+        # --- Middle Section (Slider) ---
+        slider_y = 0.52
+        
+        # Text above slider
+        ax.text(0.1, 0.60, '200D ', fontsize=16, color=color_gray, fontweight='bold', ha='left', va='bottom')
+        ax.text(0.18, 0.60, f"{stats['ma_200']:.2f}", fontsize=18, color=color_text, fontweight='bold', ha='left', va='bottom')
+        
+        ax.text(0.82, 0.60, '52wH ', fontsize=16, color=color_gray, fontweight='bold', ha='right', va='bottom')
+        ax.text(0.9, 0.60, f"{stats['week_52_high']:.2f}", fontsize=18, color=color_text, fontweight='bold', ha='right', va='bottom')
+        
+        # Background Bar
+        bar_height = 0.025
+        ax.add_patch(patches.Rectangle((0.1, slider_y - bar_height/2), 0.8, bar_height,
+                                       facecolor='#d4d4d4', edgecolor='none', zorder=1))
+        
+        # Calculate slider position (clamp 0 to 1)
         range_span = stats['week_52_high'] - stats['ma_200']
         if range_span > 0:
             position = (stats['current'] - stats['ma_200']) / range_span
-            position = max(0, min(1, position))  # Clamp between 0 and 1
+            position = max(0, min(1, position))
         else:
             position = 0.5
-
-        # Current position marker
+        
+        # Handle
         marker_x = 0.1 + (0.8 * position)
-        ax_bar.add_patch(plt.Rectangle((marker_x - 0.01, bar_y - bar_height/2 - 0.05),
-                                       0.02, bar_height + 0.1,
-                                       facecolor='black', edgecolor='none'))
-
-        # Labels for 200D MA
-        ax_bar.text(0.1, 0.25, '200D', fontsize=12, ha='center', va='top', color='gray')
-        ax_bar.text(0.1, 0.15, f"{stats['ma_200']:.2f}", fontsize=14, ha='center', va='top', fontweight='bold')
-        ax_bar.text(0.1, 0.0, f"{stats['ma_200_pct']:.2f}%", fontsize=11, ha='center', va='top', color='gray')
-
-        # Labels for 52W High
-        ax_bar.text(0.9, 0.25, '52wH', fontsize=12, ha='center', va='top', color='gray')
-        ax_bar.text(0.9, 0.15, f"{stats['week_52_high']:.2f}", fontsize=14, ha='center', va='top', fontweight='bold')
-        ax_bar.text(0.9, 0.0, f"{stats['high_52w_pct']:.2f}%", fontsize=11, ha='center', va='top', color='gray')
-
-        ax_bar.set_xlim(0, 1)
-        ax_bar.set_ylim(0, 1)
-
-        # RSI Gauge (bottom left)
-        ax_rsi = fig.add_subplot(gs[2, 0], projection='polar')
-
-        # Draw gauge segments
-        theta_offset = np.pi  # Start from left
-        segments = [
-            (0, 30, '#c75450'),    # Oversold (red)
-            (30, 40, '#e8a798'),   # Approaching oversold
-            (40, 60, '#90EE90'),   # Neutral (green)
-            (60, 70, '#FFD700'),   # Approaching overbought
-            (70, 100, '#e8a798')   # Overbought
+        ax.add_patch(patches.Rectangle((marker_x - 0.005, slider_y - bar_height - 0.01),
+                                       0.01, bar_height * 2 + 0.02,
+                                       facecolor='#333333', edgecolor='none', zorder=2))
+                                       
+        # Text below slider
+        ax.text(0.1, 0.45, f"{stats['ma_200_pct']:.2f}%", fontsize=14, color=color_gray, ha='left', va='top')
+        ax.text(0.9, 0.45, f"{stats['high_52w_pct']:.2f}%", fontsize=14, color=color_gray, ha='right', va='top')
+        
+        # Divider 2
+        ax.plot([0.1, 0.9], [0.38, 0.38], color='#e0e0e0', linewidth=1.5)
+        
+        # --- Bottom Section ---
+        # Vertical Divider
+        ax.plot([0.48, 0.48], [0.1, 0.35], color='#e0e0e0', linewidth=1.5)
+        
+        # -> RSI Gauge (Left)
+        gauge_center_x = 0.28
+        gauge_center_y = 0.18
+        gauge_radius_outer = 0.13
+        gauge_radius_inner = 0.09
+        
+        rsi_segments = [
+            (0, 20, '#2e8b57'),      # Dark Green
+            (20, 40, '#8fce00'),     # Light Green
+            (40, 60, '#ffce00'),     # Yellow
+            (60, 80, '#ff7a00'),     # Orange
+            (80, 100, '#c72d2d')     # Red
         ]
-
-        for start, end, color in segments:
-            theta_start = theta_offset + (start / 100) * np.pi
-            theta_end = theta_offset + (end / 100) * np.pi
-            theta = np.linspace(theta_start, theta_end, 100)
-            r = np.ones_like(theta)
-            ax_rsi.fill_between(theta, 0, r, color=color, alpha=0.7)
-
+        
+        for start, end, color in rsi_segments:
+            theta_start = np.pi - (start / 100) * np.pi
+            theta_end = np.pi - (end / 100) * np.pi
+            
+            angles = np.linspace(theta_start, theta_end, 50)
+            
+            x_outer = gauge_center_x + gauge_radius_outer * np.cos(angles)
+            y_outer = gauge_center_y + gauge_radius_outer * np.sin(angles)
+            
+            x_inner = gauge_center_x + gauge_radius_inner * np.cos(angles[::-1])
+            y_inner = gauge_center_y + gauge_radius_inner * np.sin(angles[::-1])
+            
+            verts = list(zip(x_outer, y_outer)) + list(zip(x_inner, y_inner))
+            poly = patches.Polygon(verts, facecolor=color, edgecolor='white', linewidth=1)
+            ax.add_patch(poly)
+        
         # Draw needle
-        needle_theta = theta_offset + (stats['rsi_9d'] / 100) * np.pi
-        ax_rsi.plot([needle_theta, needle_theta], [0, 0.9], 'k-', linewidth=3)
-        ax_rsi.plot(needle_theta, 0, 'ko', markersize=8)
-
-        # Configure gauge
-        ax_rsi.set_ylim(0, 1.1)
-        ax_rsi.set_theta_direction(-1)
-        ax_rsi.set_theta_zero_location('W')
-        ax_rsi.set_xticks([])
-        ax_rsi.set_yticks([])
-        ax_rsi.spines['polar'].set_visible(False)
-
-        # RSI value
-        ax_rsi.text(np.pi, -0.3, f"{stats['rsi_9d']:.2f}",
-                   ha='center', va='center', fontsize=32, fontweight='bold')
-        ax_rsi.text(np.pi, -0.55, 'RSI',
-                   ha='center', va='center', fontsize=14, fontweight='bold')
-
-        # 3Y Return Progress Bar (bottom right)
-        ax_return = fig.add_subplot(gs[2, 1])
-        ax_return.axis('off')
-
-        ax_return.text(0.5, 0.95, '3Y Return', fontsize=16, fontweight='bold',
-                      ha='center', va='top', transform=ax_return.transAxes)
-        ax_return.text(0.5, 0.85, f"{stats['return_3y_pct']:.2f}%", fontsize=24, fontweight='bold',
-                      ha='center', va='top', transform=ax_return.transAxes)
-
+        val = min(max(stats['rsi_9d'], 0), 100)
+        theta_needle = np.pi - (val / 100) * np.pi
+        needle_r = gauge_radius_inner + 0.03
+        needle_x = gauge_center_x + needle_r * np.cos(theta_needle)
+        needle_y = gauge_center_y + needle_r * np.sin(theta_needle)
+        
+        ax.plot([gauge_center_x, needle_x], [gauge_center_y, needle_y], color='#333333', linewidth=4, zorder=3)
+        ax.add_patch(patches.Circle((gauge_center_x, gauge_center_y), 0.015, facecolor='#333333', zorder=4))
+        
+        # RSI Text
+        ax.text(gauge_center_x - 0.02, 0.08, 'RSI ', fontsize=18, color=color_gray, fontweight='bold', ha='right')
+        ax.text(gauge_center_x, 0.08, f"{stats['rsi_9d']:.2f}", fontsize=20, color=color_text, fontweight='bold', ha='left')
+        
+        # -> 3Y Return (Right)
+        ax.text(0.53, 0.30, '3Y Return ', fontsize=16, color=color_text, fontweight='normal', ha='left')
+        ax.text(0.70, 0.30, f"{stats['return_3y_pct']:.2f}%", fontsize=18, color=color_text, fontweight='bold', ha='left')
+        
         # Progress bar
-        bar_width = 0.8
-        bar_x = 0.1
-        bar_y = 0.4
-        bar_h = 0.15
-
-        # Background
-        ax_return.add_patch(plt.Rectangle((bar_x, bar_y), bar_width, bar_h,
-                                         facecolor='lightgray', edgecolor='gray', linewidth=1,
-                                         transform=ax_return.transAxes))
-
-        # Fill (based on progress toward 85% target)
+        bar_x = 0.53
+        bar_y = 0.20
+        bar_w = 0.35
+        bar_h = 0.035
+        
+        ax.add_patch(patches.Rectangle((bar_x, bar_y), bar_w, bar_h, facecolor='#d4d4d4', edgecolor='none'))
+        
         target = 85.0
-        fill_pct = min(stats['return_3y_pct'] / target, 1.0)
-        fill_color = '#1E88E5'  # Blue
-        ax_return.add_patch(plt.Rectangle((bar_x, bar_y), bar_width * fill_pct, bar_h,
-                                         facecolor=fill_color, edgecolor='none',
-                                         transform=ax_return.transAxes))
-
-        # Target marker
-        ax_return.plot([bar_x + bar_width, bar_x + bar_width], [bar_y, bar_y + bar_h],
-                      'k-', linewidth=2, transform=ax_return.transAxes)
-
-        # Target label
-        ax_return.text(bar_x + bar_width, bar_y - 0.05, 'Target 85%',
-                      fontsize=10, ha='right', va='top', transform=ax_return.transAxes)
-
-        # Add source
-        fig.text(0.99, 0.01, 'Source: Yahoo Finance',
-                ha='right', va='bottom', fontsize=8, style='italic', alpha=0.7)
-
+        fill_pct = min(max(stats['return_3y_pct'] / target, 0), 1.0)
+        ax.add_patch(patches.Rectangle((bar_x, bar_y), bar_w * fill_pct, bar_h, facecolor='#0052cc', edgecolor='none'))
+        
+        # Target line
+        ax.plot([bar_x + bar_w, bar_x + bar_w], [bar_y - 0.01, bar_y + bar_h + 0.01], color='#333333', linewidth=3)
+        ax.text(bar_x + bar_w, bar_y - 0.02, 'Target 85%', fontsize=12, color=color_gray, ha='center', va='top')
+        
         plt.savefig(output_file, dpi=300, bbox_inches='tight', facecolor='white')
         plt.close()
 
