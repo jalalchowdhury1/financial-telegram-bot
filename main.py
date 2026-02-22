@@ -140,11 +140,11 @@ def fetch_spy_stats():
         week_52_high = df['Close'].tail(days_52w).max()
         high_52w_pct = ((current_price - week_52_high) / week_52_high) * 100
 
-        # 14-day RSI (standard fundamental)
-        rsi_14d = calculate_rsi(df['Close'], period=14)
+        # 9-day RSI (user algo preference)
+        rsi_9d = calculate_rsi(df['Close'], period=9)
 
         # Verify RSI is valid
-        if pd.isna(rsi_14d):
+        if pd.isna(rsi_9d):
             raise ValueError("Invalid RSI calculation")
 
         # 3-year return
@@ -157,7 +157,7 @@ def fetch_spy_stats():
             'ma_200_pct': ma_200_pct,
             'week_52_high': week_52_high,
             'high_52w_pct': high_52w_pct,
-            'rsi_14d': rsi_14d,
+            'rsi_9d': rsi_9d,
             'return_3y_pct': return_3y_pct
         }
 
@@ -165,7 +165,7 @@ def fetch_spy_stats():
         print(f"  Current: ${current_price:.2f}")
         print(f"  200-day MA: ${ma_200:.2f} ({ma_200_pct:+.2f}%)")
         print(f"  52-wk High: ${week_52_high:.2f} ({high_52w_pct:+.2f}%)")
-        print(f"  9d RSI: {rsi_14d:.2f}")
+        print(f"  9d RSI: {rsi_9d:.2f}")
         print(f"  3Y Return: {return_3y_pct:.2f}%")
 
         return stats
@@ -191,7 +191,7 @@ def create_spy_stats_chart(stats, output_file='spy_stats.png'):
     
     try:
         # Validate all required stats are present and finite
-        required_keys = ['current', 'ma_200', 'ma_200_pct', 'week_52_high', 'high_52w_pct', 'rsi_14d', 'return_3y_pct']
+        required_keys = ['current', 'ma_200', 'ma_200_pct', 'week_52_high', 'high_52w_pct', 'rsi_9d', 'return_3y_pct']
         for key in required_keys:
             if key not in stats:
                 raise ValueError(f"Missing required stat: {key}")
@@ -315,7 +315,7 @@ def create_spy_stats_chart(stats, output_file='spy_stats.png'):
             ax.text(lx, ly, str(val), ha='center', va='center', fontsize=10, fontweight='bold', color=color_gray)
         
         # Draw needle
-        val = min(max(stats['rsi_14d'], 0), 100)
+        val = min(max(stats['rsi_9d'], 0), 100)
         theta_needle = np.pi - (val / 100) * np.pi
         needle_r = gauge_radius_inner + 0.03
         needle_x = gauge_center_x + needle_r * np.cos(theta_needle)
@@ -325,8 +325,8 @@ def create_spy_stats_chart(stats, output_file='spy_stats.png'):
         ax.add_patch(patches.Circle((gauge_center_x, gauge_center_y), 0.015, facecolor='#333333', zorder=4))
         
         # RSI Text
-        ax.text(gauge_center_x - 0.02, 0.08, '14D RSI ', fontsize=14, color=color_gray, fontweight='bold', ha='right')
-        ax.text(gauge_center_x, 0.08, f"{stats['rsi_14d']:.2f}", fontsize=20, color=color_text, fontweight='bold', ha='left')
+        ax.text(gauge_center_x - 0.02, 0.08, '9D RSI ', fontsize=14, color=color_gray, fontweight='bold', ha='right')
+        ax.text(gauge_center_x, 0.08, f"{stats['rsi_9d']:.2f}", fontsize=20, color=color_text, fontweight='bold', ha='left')
         
         # -> 3Y Return (Right)
         ax.text(0.53, 0.30, '3Y Return ', fontsize=16, color=color_text, fontweight='normal', ha='left')
@@ -373,7 +373,7 @@ def format_spy_text_stats(stats):
     text += f"💵 Current    : {stats['current']:.2f}\n"
     text += f"📈 200-day MA : {stats['ma_200']:.2f} ({stats['ma_200_pct']:+.2f}%)\n"
     text += f"🏔️ 52-wk High: {stats['week_52_high']:.2f} ({stats['high_52w_pct']:+.2f}%)\n"
-    text += f"📊 SPY 14d RSI : {stats['rsi_14d']:.2f}\n"
+    text += f"📊 SPY 9d RSI : {stats['rsi_9d']:.2f}\n"
     text += f"📉 3Y SPY Return : {stats['return_3y_pct']:.2f}% (>85%)"
 
     return text
