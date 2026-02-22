@@ -235,7 +235,7 @@ def create_spy_stats_chart(stats, output_file='spy_stats.png'):
         ax.text(0.1, 0.60, '200D ', fontsize=16, color=color_gray, fontweight='bold', ha='left', va='bottom')
         ax.text(0.18, 0.60, f"{stats['ma_200']:.2f}", fontsize=18, color=color_text, fontweight='bold', ha='left', va='bottom')
         
-        ax.text(0.82, 0.60, '52wH ', fontsize=16, color=color_gray, fontweight='bold', ha='right', va='bottom')
+        ax.text(0.78, 0.60, '52wH ', fontsize=16, color=color_gray, fontweight='bold', ha='right', va='bottom')
         ax.text(0.9, 0.60, f"{stats['week_52_high']:.2f}", fontsize=18, color=color_text, fontweight='bold', ha='right', va='bottom')
         
         # Background Bar
@@ -538,7 +538,7 @@ def create_profit_margin_chart(fred, output_file='profit_margin.png'):
 
 def create_fear_greed_chart(output_file='fear_greed.png'):
     """
-    Create Fear & Greed Index chart from CNN data
+    Create Fear & Greed Index chart from CNN data with modern design
 
     Args:
         output_file: Output filename for the chart
@@ -547,6 +547,8 @@ def create_fear_greed_chart(output_file='fear_greed.png'):
         tuple: (output_file, current_score, rating)
     """
     print("Fetching Fear & Greed Index data from CNN...")
+    import matplotlib.patches as patches
+    import numpy as np
 
     try:
         # Fetch data from CNN API
@@ -567,81 +569,96 @@ def create_fear_greed_chart(output_file='fear_greed.png'):
         prev_month = fg['previous_1_month']
         prev_year = fg['previous_1_year']
 
-        # Create the gauge chart
-        fig, ax = plt.subplots(figsize=(12, 8), subplot_kw={'projection': 'polar'})
-
-        # Define segments
-        segments = [
+        # Figure setup
+        fig = plt.figure(figsize=(10, 6), facecolor='white')
+        ax = fig.add_axes([0, 0, 1, 1])
+        ax.axis('off')
+        
+        # Fonts
+        color_text = '#2d2d2d'
+        color_gray = '#888888'
+        
+        # Draw rounded card background
+        card_edge = '#d4d4d4'
+        card_bg = '#ffffff'
+        rect = patches.FancyBboxPatch(
+            (0.05, 0.05), 0.9, 0.9,
+            boxstyle="round,pad=0.02,rounding_size=0.05",
+            edgecolor=card_edge,
+            facecolor=card_bg,
+            linewidth=1.5,
+            zorder=0
+        )
+        ax.add_patch(rect)
+        
+        # Title
+        ax.text(0.5, 0.85, 'Fear & Greed Index', fontsize=32, color=color_text, fontweight='bold', ha='center', va='center')
+        ax.text(0.5, 0.78, 'What emotion is driving the market now?', fontsize=14, color=color_gray, style='italic', ha='center', va='center')
+        
+        # Divider
+        ax.plot([0.1, 0.9], [0.70, 0.70], color='#e0e0e0', linewidth=1.5)
+        
+        # Gauge Center
+        gauge_center_x = 0.5
+        gauge_center_y = 0.35
+        gauge_radius_outer = 0.25
+        gauge_radius_inner = 0.16
+        
+        fg_segments = [
             (0, 25, 'Extreme Fear', '#c75450'),
             (25, 45, 'Fear', '#e8a798'),
             (45, 55, 'Neutral', '#d4d4d4'),
             (55, 75, 'Greed', '#a8c5a2'),
             (75, 100, 'Extreme Greed', '#5a9f5a')
         ]
-
-        # Draw segments (bottom half circle)
-        import numpy as np
-        theta_offset = np.pi  # Start from left (180 degrees)
-
-        for start, end, label, color in segments:
-            theta_start = theta_offset + (start / 100) * np.pi
-            theta_end = theta_offset + (end / 100) * np.pi
-            theta = np.linspace(theta_start, theta_end, 100)
-            r = np.ones_like(theta)
-            ax.fill_between(theta, 0, r, color=color, alpha=0.7)
-
-            # Add labels
+        
+        for start, end, label, color in fg_segments:
+            theta_start = np.pi - (start / 100) * np.pi
+            theta_end = np.pi - (end / 100) * np.pi
+            
+            angles = np.linspace(theta_start, theta_end, 50)
+            
+            x_outer = gauge_center_x + gauge_radius_outer * np.cos(angles)
+            y_outer = gauge_center_y + gauge_radius_outer * np.sin(angles)
+            
+            x_inner = gauge_center_x + gauge_radius_inner * np.cos(angles[::-1])
+            y_inner = gauge_center_y + gauge_radius_inner * np.sin(angles[::-1])
+            
+            verts = list(zip(x_outer, y_outer)) + list(zip(x_inner, y_inner))
+            poly = patches.Polygon(verts, facecolor=color, edgecolor='white', linewidth=2)
+            ax.add_patch(poly)
+            
+            # Segment label
             mid_theta = (theta_start + theta_end) / 2
-            label_r = 0.7
-            ax.text(mid_theta, label_r, label, ha='center', va='center',
-                   fontsize=9, fontweight='bold', rotation=0)
+            label_r = gauge_radius_outer + 0.04
+            lx = gauge_center_x + label_r * np.cos(mid_theta)
+            ly = gauge_center_y + label_r * np.sin(mid_theta)
+            
+            ax.text(lx, ly, label, ha='center', va='center', fontsize=10, fontweight='bold', color=color_gray)
 
-        # Draw the needle
-        needle_theta = theta_offset + (current_score / 100) * np.pi
-        ax.plot([needle_theta, needle_theta], [0, 0.95], 'k-', linewidth=4)
-        ax.plot(needle_theta, 0, 'ko', markersize=10)
-
-        # Configure polar plot
-        ax.set_ylim(0, 1.2)
-        ax.set_theta_direction(-1)
-        ax.set_theta_zero_location('W')
-        ax.set_xticks([])
-        ax.set_yticks([])
-        ax.spines['polar'].set_visible(False)
-
-        # Add score in center
-        ax.text(np.pi, -0.3, f"{int(current_score)}",
-               ha='center', va='center', fontsize=48, fontweight='bold')
-        ax.text(np.pi, -0.55, rating,
-               ha='center', va='center', fontsize=16, fontweight='bold')
-
-        # Add title
-        fig.text(0.5, 0.95, 'Fear & Greed Index',
-                ha='center', fontsize=18, fontweight='bold')
-        fig.text(0.5, 0.91, 'What emotion is driving the market now?',
-                ha='center', fontsize=10, style='italic')
-
-        # Add historical values
-        history_text = f"""Previous close: {rating} ({int(prev_close)})
-1 week ago: {"NEUTRAL" if 45 <= prev_week <= 55 else "FEAR" if prev_week < 45 else "GREED"} ({int(prev_week)})
-1 month ago: {"NEUTRAL" if 45 <= prev_month <= 55 else "FEAR" if prev_month < 45 else "GREED"} ({int(prev_month)})
-1 year ago: {"NEUTRAL" if 45 <= prev_year <= 55 else "FEAR" if prev_year < 45 else "GREED"} ({int(prev_year)})"""
-
-        fig.text(0.75, 0.35, history_text, fontsize=9,
-                verticalalignment='top', family='monospace',
-                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.3))
-
-        # Add scale markers
-        for value in [0, 25, 50, 75, 100]:
-            theta_val = theta_offset + (value / 100) * np.pi
-            ax.text(theta_val, 1.05, str(value), ha='center', va='center', fontsize=9)
-
-        # Add source
+        # Draw needle
+        val = min(max(current_score, 0), 100)
+        theta_needle = np.pi - (val / 100) * np.pi
+        needle_r = gauge_radius_inner + 0.06
+        needle_x = gauge_center_x + needle_r * np.cos(theta_needle)
+        needle_y = gauge_center_y + needle_r * np.sin(theta_needle)
+        
+        ax.plot([gauge_center_x, needle_x], [gauge_center_y, needle_y], color='#333333', linewidth=5, zorder=3)
+        ax.add_patch(patches.Circle((gauge_center_x, gauge_center_y), 0.025, facecolor='#333333', zorder=4))
+        
+        # Score Text
+        ax.text(gauge_center_x, gauge_center_y - 0.08, f"{int(current_score)}", fontsize=48, color=color_text, fontweight='bold', ha='center')
+        ax.text(gauge_center_x, gauge_center_y - 0.16, rating, fontsize=20, color=color_text, fontweight='bold', ha='center')
+        
+        # Historical
+        hist_text = f"Prev Close: {int(prev_close)}  |  1W: {int(prev_week)}  |  1M: {int(prev_month)}  |  1Y: {int(prev_year)}"
+        ax.text(0.5, 0.10, hist_text, ha='center', va='center', fontsize=12, color=color_gray, fontweight='bold')
+        
+        # Add source at bottom
         fig.text(0.5, 0.02, 'Source: CNN Business Fear & Greed Index',
                 ha='center', fontsize=8, style='italic', alpha=0.7)
-
-        plt.tight_layout()
-        plt.savefig(output_file, dpi=300, bbox_inches='tight')
+                
+        plt.savefig(output_file, dpi=300, bbox_inches='tight', facecolor='white')
         plt.close()
 
         print(f"✓ Fear & Greed chart saved: {output_file}")
