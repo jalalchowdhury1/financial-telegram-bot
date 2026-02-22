@@ -72,8 +72,9 @@ def fetch_spy_stats():
         if not api_key:
             raise ValueError("ALPHA_VANTAGE_API_KEY not set in environment variables")
 
-        # Fetch daily time series data (outputsize=full gets 20+ years of data)
-        url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=SPY&outputsize=full&apikey={api_key}"
+        # Fetch weekly time series data (free tier supports 20+ years of weekly data)
+        # Weekly data is sufficient for 200-day MA, 52-week high, and 3-year return calculations
+        url = f"https://www.alphavantage.co/query?function=TIME_SERIES_WEEKLY&symbol=SPY&apikey={api_key}"
 
         print("  Requesting data from Alpha Vantage API...")
         response = requests.get(url, timeout=30)
@@ -93,11 +94,11 @@ def fetch_spy_stats():
             # Alpha Vantage returns this for API key issues or other info messages
             raise ValueError(f"Alpha Vantage message: {data['Information']}")
 
-        if "Time Series (Daily)" not in data:
+        if "Weekly Time Series" not in data:
             raise ValueError(f"Unexpected API response format. Keys: {list(data.keys())}, Data: {data}")
 
         # Parse the time series data
-        time_series = data["Time Series (Daily)"]
+        time_series = data["Weekly Time Series"]
 
         # Convert to DataFrame for easier calculations
         df = pd.DataFrame.from_dict(time_series, orient='index')
@@ -111,14 +112,14 @@ def fetch_spy_stats():
         df.index = pd.to_datetime(df.index)
         df = df.sort_index()
 
-        # Verify we have enough data
-        if len(df) < 756:
-            print(f"  Warning: Only {len(df)} days of data available")
-            days_available = len(df)
+        # Verify we have enough data (156 weeks = ~3 years)
+        if len(df) < 156:
+            print(f"  Warning: Only {len(df)} weeks of data available")
+            weeks_available = len(df)
         else:
-            days_available = 756
+            weeks_available = 156
 
-        print(f"  Received {len(df)} days of historical data")
+        print(f"  Received {len(df)} weeks of historical data")
 
         # Current price (most recent close)
         current_price = df['Close'].iloc[-1]
@@ -127,27 +128,28 @@ def fetch_spy_stats():
         if pd.isna(current_price) or current_price <= 0:
             raise ValueError("Invalid current price data")
 
-        # 200-day MA
-        if len(df) >= 200:
-            ma_200 = df['Close'].tail(200).mean()
+        # 200-day MA (200 days ≈ 40 weeks)
+        weeks_for_200d = 40  # 200 trading days / 5 days per week
+        if len(df) >= weeks_for_200d:
+            ma_200 = df['Close'].tail(weeks_for_200d).mean()
         else:
             ma_200 = df['Close'].mean()
         ma_200_pct = ((current_price - ma_200) / ma_200) * 100
 
-        # 52-week high (252 trading days)
-        week_data_points = min(252, len(df))
+        # 52-week high
+        week_data_points = min(52, len(df))
         week_52_high = df['Close'].tail(week_data_points).max()
         high_52w_pct = ((current_price - week_52_high) / week_52_high) * 100
 
-        # 9-day RSI
+        # 9-week RSI (using weekly data, so 9 weeks instead of 9 days)
         rsi_9d = calculate_rsi(df['Close'], period=9)
 
         # Verify RSI is valid
         if pd.isna(rsi_9d):
             raise ValueError("Invalid RSI calculation")
 
-        # 3-year return
-        price_past = df['Close'].iloc[-days_available]
+        # 3-year return (156 weeks = 3 years)
+        price_past = df['Close'].iloc[-weeks_available]
         return_3y_pct = ((current_price - price_past) / price_past) * 100
 
         stats = {
