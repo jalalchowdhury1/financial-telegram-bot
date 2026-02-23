@@ -191,10 +191,10 @@ body::before {
 .tooltip-trigger:hover::after {
   content: attr(data-tooltip);
   position: absolute;
-  bottom: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  margin-bottom: 8px;
+  top: 50%;
+  left: 100%;
+  transform: translateY(-50%);
+  margin-left: 12px;
   padding: 8px 12px;
   background: rgba(15, 23, 42, 0.95);
   border: 1px solid rgba(99, 102, 241, 0.3);
@@ -211,7 +211,7 @@ body::before {
   font-family: var(--font-sans);
   text-transform: none;
   letter-spacing: normal;
-  text-align: center;
+  text-align: left;
   line-height: 1.4;
   animation: fadeIn 0.2s ease forwards;
 }
@@ -219,12 +219,12 @@ body::before {
 .tooltip-trigger:hover::before {
   content: '';
   position: absolute;
-  bottom: 100%;
-  left: 50%;
-  transform: translateX(-50%);
+  top: 50%;
+  left: 100%;
+  transform: translateY(-50%);
   border: 6px solid transparent;
-  border-top-color: rgba(99, 102, 241, 0.3);
-  margin-bottom: -4px;
+  border-right-color: rgba(99, 102, 241, 0.3);
+  margin-left: 0;
   z-index: 999;
   pointer-events: none;
   animation: fadeIn 0.2s ease forwards;
