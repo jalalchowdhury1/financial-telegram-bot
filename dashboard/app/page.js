@@ -369,11 +369,13 @@ export default function Dashboard() {
     const [loading, setLoading] = useState(true);
     const [lastUpdated, setLastUpdated] = useState(null);
     const [systemStatus, setSystemStatus] = useState(null);
+    const [apiErrors, setApiErrors] = useState([]);
     const [refreshing, setRefreshing] = useState(false);
 
     async function fetchAll() {
         setLoading(true);
         setRefreshing(true);
+        setApiErrors([]);
         try {
             const [sheetsRes, spyRes, fgRes, fredRes] = await Promise.all([
                 fetch('/api/sheets', { cache: 'no-store' }).then(r => r.json()).catch(() => null),
@@ -393,6 +395,13 @@ export default function Dashboard() {
                 fg: fgRes?._meta,
                 sheets: sheetsRes?._meta
             });
+
+            const errors = [];
+            if (sheetsRes?.error) errors.push(`[SHEETS] ${sheetsRes.error}`);
+            if (spyRes?.error) errors.push(`[SPY] ${spyRes.error}`);
+            if (fgRes?.error) errors.push(`[F&G] ${fgRes.error}`);
+            if (fredRes?.error) errors.push(`[FRED] ${fredRes.error}`);
+            setApiErrors(errors);
 
             const now = new Date();
             const year = now.getFullYear();
@@ -422,6 +431,7 @@ export default function Dashboard() {
             }
         } catch (e) {
             console.error('Dashboard fetch error:', e);
+            setApiErrors(prev => [...prev, `[NETWORK] ${e.toString()}`]);
         }
         setLoading(false);
         setRefreshing(false);
@@ -660,10 +670,10 @@ export default function Dashboard() {
                 <div className="card" style={{ animationDelay: '0.4s' }}>
                     <div className="card-header">
                         <h2><span className="tooltip-trigger" data-tooltip="When the 2-year yield is higher than the 10-year, it is a classic recession warning.">📈 Yield Curve (10Y-2Y)</span></h2>
-                        {fred?.yieldCurve && <span className={`badge ${fred.yieldCurve.current >= 0 ? 'badge-green' : 'badge-red'}`}>{fred.yieldCurve.current >= 0 ? 'Positive' : 'Inverted'}</span>}
+                        {fred?.yieldCurve?.current !== undefined && <span className={`badge ${fred.yieldCurve.current >= 0 ? 'badge-green' : 'badge-red'}`}>{fred.yieldCurve.current >= 0 ? 'Positive' : 'Inverted'}</span>}
                     </div>
                     <ErrorBoundary>
-                        {loading || !fred || fred.error ? <Skeleton count={2} /> : (
+                        {loading || !fred || fred.error || fred.yieldCurve?.current === undefined ? <Skeleton count={2} /> : (
                             <>
                                 <div className="hero-price-section">
                                     <div className="hero-price" style={{ fontSize: '2.2rem', color: fred.yieldCurve.current >= 0 ? 'var(--green)' : 'var(--red)' }}>
@@ -705,12 +715,12 @@ export default function Dashboard() {
                         {loading || !fred || fred.error ? <Skeleton count={6} /> : (
                             <>
                                 {[
-                                    { icon: fred.indicators.sahmRule.status === 'safe' ? '✅' : '🔴', label: 'Sahm Rule', tooltip: "Recession indicator: triggers if 3mo average unemployment rises 0.5% above its 12mo low.", value: fred.indicators.sahmRule.value.toFixed(2), status: fred.indicators.sahmRule.status, benchmark: '< 0.50' },
-                                    { icon: '🛒', label: 'Consumer Sentiment', tooltip: "University of Michigan survey assessing consumer confidence.", value: fred.indicators.sentiment.value.toFixed(1), status: fred.indicators.sentiment.status, benchmark: '> 80 strong' },
-                                    { icon: '📋', label: 'Initial Claims (4wk)', tooltip: "4-week moving average of initial jobless claims. A critical real-time labor market gauge.", value: `${fred.indicators.claims.value.toFixed(0)}K`, status: fred.indicators.claims.status, benchmark: '< 250K healthy' },
-                                    { icon: '🏦', label: 'BBB Credit Spread', tooltip: "The premium corporations pay over Treasuries to borrow. Widening indicates market stress.", value: `${fred.indicators.creditSpread.value.toFixed(2)}%`, status: fred.indicators.creditSpread.status, benchmark: '< 1.5% tight' },
-                                    { icon: '💵', label: 'Real Yields (10Y TIPS)', tooltip: "10-Year Treasury Inflation-Indexed Security. Shows the true inflation-adjusted cost of capital.", value: `${fred.indicators.realYields.value.toFixed(2)}%`, status: fred.indicators.realYields.status, benchmark: '< 0% easy' },
-                                    { icon: '📊', label: 'Leading Economic Index', tooltip: "The Conference Board LEI tracks 10 forward-looking economic components.", value: `${fred.indicators.lei.change >= 0 ? '+' : ''}${fred.indicators.lei.change.toFixed(2)}%`, status: fred.indicators.lei.status, benchmark: '> 0% rising' },
+                                    { icon: fred.indicators.sahmRule?.status === 'safe' ? '✅' : '🔴', label: 'Sahm Rule', tooltip: "Recession indicator: triggers if 3mo average unemployment rises 0.5% above its 12mo low.", value: fred.indicators.sahmRule?.value?.toFixed(2) ?? 'N/A', status: fred.indicators.sahmRule?.status, benchmark: '< 0.50' },
+                                    { icon: '🛒', label: 'Consumer Sentiment', tooltip: "University of Michigan survey assessing consumer confidence.", value: fred.indicators.sentiment?.value?.toFixed(1) ?? 'N/A', status: fred.indicators.sentiment?.status, benchmark: '> 80 strong' },
+                                    { icon: '📋', label: 'Initial Claims (4wk)', tooltip: "4-week moving average of initial jobless claims. A critical real-time labor market gauge.", value: fred.indicators.claims?.value ? `${fred.indicators.claims.value.toFixed(0)}K` : 'N/A', status: fred.indicators.claims?.status, benchmark: '< 250K healthy' },
+                                    { icon: '🏦', label: 'BBB Credit Spread', tooltip: "The premium corporations pay over Treasuries to borrow. Widening indicates market stress.", value: fred.indicators.creditSpread?.value ? `${fred.indicators.creditSpread.value.toFixed(2)}%` : 'N/A', status: fred.indicators.creditSpread?.status, benchmark: '< 1.5% tight' },
+                                    { icon: '💵', label: 'Real Yields (10Y TIPS)', tooltip: "10-Year Treasury Inflation-Indexed Security. Shows the true inflation-adjusted cost of capital.", value: fred.indicators.realYields?.value ? `${fred.indicators.realYields.value.toFixed(2)}%` : 'N/A', status: fred.indicators.realYields?.status, benchmark: '< 0% easy' },
+                                    { icon: '📊', label: 'Leading Economic Index', tooltip: "The Conference Board LEI tracks 10 forward-looking economic components.", value: fred.indicators.lei?.change ? `${fred.indicators.lei.change >= 0 ? '+' : ''}${fred.indicators.lei.change.toFixed(2)}%` : 'N/A', status: fred.indicators.lei?.status, benchmark: '> 0% rising' },
                                     { icon: '💎', label: 'Market Valuation', tooltip: "Current S&P 500 P/E Ratio. A measure of how expensive the market is historically.", value: fred.peRatio ? `P/E ~${fred.peRatio.toFixed(1)}` : 'P/E N/A', status: fred.peRatio > 25 ? 'restrictive' : 'neutral', benchmark: 'Fair at ~20' },
                                 ].map(ind => (
                                     <div className="stat-row" key={ind.label}>
@@ -839,6 +849,31 @@ export default function Dashboard() {
                     Deployed: {new Date(process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_MESSAGE ? Date.now() : Date.now()).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                 </p>
             </footer>
+
+            {/* SYSTEM ERROR LOGS */}
+            {apiErrors.length > 0 && (
+                <div style={{
+                    margin: '0 auto 24px',
+                    maxWidth: '1200px',
+                    width: 'calc(100% - 48px)',
+                    padding: '16px',
+                    backgroundColor: 'rgba(239, 68, 68, 0.05)',
+                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                    borderRadius: '8px',
+                    fontFamily: "'JetBrains Mono', monospace",
+                    fontSize: '0.8rem',
+                    color: 'rgba(255, 255, 255, 0.8)'
+                }}>
+                    <div style={{ fontWeight: 600, color: '#ef4444', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        ⚠️ System Diagnostic Logs
+                    </div>
+                    {apiErrors.map((err, i) => (
+                        <div key={i} style={{ marginBottom: '4px', whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: '#fca5a5' }}>
+                            {err}
+                        </div>
+                    ))}
+                </div>
+            )}
 
             {/* SYSTEM STATUS BAR */}
             {systemStatus && (

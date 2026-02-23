@@ -1,7 +1,9 @@
 // /api/spy - Fetch SPY statistics from Stooq
+
 export const dynamic = 'force-dynamic';
 export async function GET() {
     try {
+
         let rows = [];
         let dataSource = 'Stooq';
         try {
