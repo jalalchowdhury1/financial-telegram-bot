@@ -474,7 +474,7 @@ export default function Dashboard() {
                     <div className="label"><span className="emoji">🔑</span>FrontRunner</div>
                     <div className="value">{sheets?.FrontRunner || (loading ? '...' : 'N/A')}</div>
                 </div>
-                <div className="indicator-pill">
+                <div className={`indicator-pill${sheets?.AAIIDiff && parseFloat(sheets.AAIIDiff) > 20 ? ' pill-alert' : ''}`}>
                     <div className="label"><span className="emoji">🔸</span>AAII Diff</div>
                     {sheets?.AAIIDiff ? (() => {
                         const val = parseFloat(sheets.AAIIDiff);
