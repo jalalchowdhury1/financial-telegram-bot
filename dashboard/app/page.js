@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
+import ErrorBoundary from './ErrorBoundary';
 
 // ============ GAUGE COMPONENT (SEMICIRCLE) ============
 function Gauge({ score, segments, size = 240, labels }) {
@@ -389,7 +390,8 @@ export default function Dashboard() {
             setSystemStatus({
                 spy: spyRes?._meta,
                 fred: fredRes?._meta,
-                fg: fgRes?._meta
+                fg: fgRes?._meta,
+                sheets: sheetsRes?._meta
             });
 
             const now = new Date();
@@ -550,56 +552,58 @@ export default function Dashboard() {
                         <h2>📊 SPY Market Overview</h2>
                         {spy && !spy.error && <span className={`badge ${spy.rsi > 70 ? 'badge-red' : spy.rsi < 30 ? 'badge-green' : 'badge-blue'}`}>{spy.rsi > 70 ? 'Overbought' : spy.rsi < 30 ? 'Oversold' : 'Neutral'}</span>}
                     </div>
-                    {loading || !spy || spy.error ? <Skeleton count={5} /> : (
-                        <>
-                            {/* Hero price */}
-                            <div className="hero-price-section">
-                                <div className="hero-price">${spy.current.toFixed(2)}</div>
-                                {spy.dailyChange && (
-                                    <div className={`daily-change-badge ${spy.dailyChange.pct >= 0 ? 'daily-up' : 'daily-down'}`}>
-                                        {spy.dailyChange.pct >= 0 ? '▲' : '▼'} ${Math.abs(spy.dailyChange.value).toFixed(2)} ({spy.dailyChange.pct >= 0 ? '+' : ''}{spy.dailyChange.pct.toFixed(2)}%) today
+                    <ErrorBoundary>
+                        {loading || !spy || spy.error ? <Skeleton count={5} /> : (
+                            <>
+                                {/* Hero price */}
+                                <div className="hero-price-section">
+                                    <div className="hero-price">${spy.current.toFixed(2)}</div>
+                                    {spy.dailyChange && (
+                                        <div className={`daily-change-badge ${spy.dailyChange.pct >= 0 ? 'daily-up' : 'daily-down'}`}>
+                                            {spy.dailyChange.pct >= 0 ? '▲' : '▼'} ${Math.abs(spy.dailyChange.value).toFixed(2)} ({spy.dailyChange.pct >= 0 ? '+' : ''}{spy.dailyChange.pct.toFixed(2)}%) today
+                                        </div>
+                                    )}
+                                    <div className={`hero-change ${spy.ma200.pct >= 0 ? 'stat-positive' : 'stat-negative'}`} style={{ marginTop: '6px' }}>
+                                        {spy.ma200.pct >= 0 ? '▲' : '▼'} {Math.abs(spy.ma200.pct).toFixed(2)}% {spy.ma200.pct >= 0 ? 'above' : 'below'} 200d MA
                                     </div>
-                                )}
-                                <div className={`hero-change ${spy.ma200.pct >= 0 ? 'stat-positive' : 'stat-negative'}`} style={{ marginTop: '6px' }}>
-                                    {spy.ma200.pct >= 0 ? '▲' : '▼'} {Math.abs(spy.ma200.pct).toFixed(2)}% {spy.ma200.pct >= 0 ? 'above' : 'below'} 200d MA
+                                    <div className={`hero-change`} style={{ color: spy.week52High.pct >= -1 ? 'var(--green)' : 'var(--yellow)', fontSize: '0.78rem', marginTop: '2px' }}>
+                                        {spy.week52High.pct >= 0 ? '🔥 At 52-week high' : `${spy.week52High.pct.toFixed(2)}% from 52wk high ($${spy.week52High.value.toFixed(2)})`}
+                                    </div>
                                 </div>
-                                <div className={`hero-change`} style={{ color: spy.week52High.pct >= -1 ? 'var(--green)' : 'var(--yellow)', fontSize: '0.78rem', marginTop: '2px' }}>
-                                    {spy.week52High.pct >= 0 ? '🔥 At 52-week high' : `${spy.week52High.pct.toFixed(2)}% from 52wk high ($${spy.week52High.value.toFixed(2)})`}
-                                </div>
-                            </div>
 
-                            {/* Stats grid */}
-                            <div className="stats-mini-grid">
-                                <div className="stat-mini">
-                                    <span className="stat-mini-label">200d MA</span>
-                                    <span className="stat-mini-value">${spy.ma200.value.toFixed(2)}</span>
+                                {/* Stats grid */}
+                                <div className="stats-mini-grid">
+                                    <div className="stat-mini">
+                                        <span className="stat-mini-label">200d MA</span>
+                                        <span className="stat-mini-value">${spy.ma200.value.toFixed(2)}</span>
+                                    </div>
+                                    <div className="stat-mini">
+                                        <span className="stat-mini-label">52w High</span>
+                                        <span className={`stat-mini-value ${spy.week52High.pct >= 0 ? 'stat-positive' : 'stat-negative'}`}>${spy.week52High.value.toFixed(2)}</span>
+                                    </div>
+                                    <div className="stat-mini">
+                                        <span className="stat-mini-label">3Y Return</span>
+                                        <span className={`stat-mini-value ${spy.return3y >= 0 ? 'stat-positive' : 'stat-negative'}`}>{spy.return3y >= 0 ? '+' : ''}{spy.return3y.toFixed(2)}%</span>
+                                    </div>
+                                    <div className="stat-mini">
+                                        <span className="stat-mini-label">9d RSI</span>
+                                        <span className={`stat-mini-value ${spy.rsi > 70 ? 'stat-negative' : spy.rsi < 30 ? 'stat-positive' : ''}`}>{spy.rsi.toFixed(2)}</span>
+                                    </div>
                                 </div>
-                                <div className="stat-mini">
-                                    <span className="stat-mini-label">52w High</span>
-                                    <span className={`stat-mini-value ${spy.week52High.pct >= 0 ? 'stat-positive' : 'stat-negative'}`}>${spy.week52High.value.toFixed(2)}</span>
-                                </div>
-                                <div className="stat-mini">
-                                    <span className="stat-mini-label">3Y Return</span>
-                                    <span className={`stat-mini-value ${spy.return3y >= 0 ? 'stat-positive' : 'stat-negative'}`}>{spy.return3y >= 0 ? '+' : ''}{spy.return3y.toFixed(2)}%</span>
-                                </div>
-                                <div className="stat-mini">
-                                    <span className="stat-mini-label">9d RSI</span>
-                                    <span className={`stat-mini-value ${spy.rsi > 70 ? 'stat-negative' : spy.rsi < 30 ? 'stat-positive' : ''}`}>{spy.rsi.toFixed(2)}</span>
-                                </div>
-                            </div>
 
-                            {/* RSI Gauge */}
-                            <div className="gauge-section">
-                                <Gauge score={spy.rsi} segments={rsiSegments} labels={[0, 30, 50, 70, 100]} />
-                                <div className="gauge-inline-label">
-                                    RSI: <strong>{spy.rsi.toFixed(2)}</strong>
-                                    <span style={{ marginLeft: '8px', color: spy.rsi > 70 ? 'var(--red)' : spy.rsi < 30 ? 'var(--green)' : 'var(--text-muted)', fontSize: '0.7rem' }}>
-                                        {spy.rsi > 70 ? 'OVERBOUGHT' : spy.rsi < 30 ? 'OVERSOLD' : 'NEUTRAL'}
-                                    </span>
+                                {/* RSI Gauge */}
+                                <div className="gauge-section">
+                                    <Gauge score={spy.rsi} segments={rsiSegments} labels={[0, 30, 50, 70, 100]} />
+                                    <div className="gauge-inline-label">
+                                        RSI: <strong>{spy.rsi.toFixed(2)}</strong>
+                                        <span style={{ marginLeft: '8px', color: spy.rsi > 70 ? 'var(--red)' : spy.rsi < 30 ? 'var(--green)' : 'var(--text-muted)', fontSize: '0.7rem' }}>
+                                            {spy.rsi > 70 ? 'OVERBOUGHT' : spy.rsi < 30 ? 'OVERSOLD' : 'NEUTRAL'}
+                                        </span>
+                                    </div>
                                 </div>
-                            </div>
-                        </>
-                    )}
+                            </>
+                        )}
+                    </ErrorBoundary>
                 </div>
 
                 {/* ========== REDESIGNED FEAR & GREED CARD ========== */}
@@ -608,46 +612,48 @@ export default function Dashboard() {
                         <h2>😨 Fear & Greed Index</h2>
                         {fg && !fg.error && <span className={`badge ${fg.score < 45 ? 'badge-red' : fg.score > 55 ? 'badge-green' : 'badge-yellow'}`}>{fg.rating}</span>}
                     </div>
-                    {loading || !fg || fg.error ? <Skeleton type="gauge" /> : (
-                        <>
-                            {/* Hero score */}
-                            <div className="hero-price-section">
-                                <div className="hero-price" style={{ color: fgColor(fg.score) }}>{Math.round(fg.score)}</div>
-                                <div className="hero-change" style={{ color: fgColor(fg.score) }}>{fg.rating}</div>
-                            </div>
+                    <ErrorBoundary>
+                        {loading || !fg || fg.error ? <Skeleton type="gauge" /> : (
+                            <>
+                                {/* Hero score */}
+                                <div className="hero-price-section">
+                                    <div className="hero-price" style={{ color: fgColor(fg.score) }}>{Math.round(fg.score)}</div>
+                                    <div className="hero-change" style={{ color: fgColor(fg.score) }}>{fg.rating}</div>
+                                </div>
 
-                            {/* Gauge */}
-                            <div className="gauge-section">
-                                <Gauge score={fg.score} segments={fgSegments} labels={[0, 25, 50, 75, 100]} />
-                            </div>
+                                {/* Gauge */}
+                                <div className="gauge-section">
+                                    <Gauge score={fg.score} segments={fgSegments} labels={[0, 25, 50, 75, 100]} />
+                                </div>
 
-                            {/* Historical */}
-                            <div className="fg-history">
-                                {[
-                                    { label: 'Prev Close', val: Math.round(fg.previousClose) },
-                                    { label: '1 Week', val: Math.round(fg.previousWeek) },
-                                    { label: '1 Month', val: Math.round(fg.previousMonth) },
-                                    { label: '1 Year', val: Math.round(fg.previousYear) }
-                                ].map(h => {
-                                    const current = Math.round(fg.score);
-                                    const diff = current - h.val;
-                                    const arrow = diff > 0 ? '▲' : diff < 0 ? '▼' : '—';
-                                    const arrowColor = diff > 0 ? 'var(--green)' : diff < 0 ? 'var(--red)' : 'var(--text-muted)';
-                                    return (
-                                        <div key={h.label} className="fg-history-item">
-                                            <div className="fg-history-label">{h.label}</div>
-                                            <div className="fg-history-value">
-                                                {h.val}
-                                                <span style={{ marginLeft: '6px', fontSize: '0.7rem', color: arrowColor, fontWeight: 600 }}>
-                                                    {arrow}{Math.abs(diff)}
-                                                </span>
+                                {/* Historical */}
+                                <div className="fg-history">
+                                    {[
+                                        { label: 'Prev Close', val: Math.round(fg.previousClose) },
+                                        { label: '1 Week', val: Math.round(fg.previousWeek) },
+                                        { label: '1 Month', val: Math.round(fg.previousMonth) },
+                                        { label: '1 Year', val: Math.round(fg.previousYear) }
+                                    ].map(h => {
+                                        const current = Math.round(fg.score);
+                                        const diff = current - h.val;
+                                        const arrow = diff > 0 ? '▲' : diff < 0 ? '▼' : '—';
+                                        const arrowColor = diff > 0 ? 'var(--green)' : diff < 0 ? 'var(--red)' : 'var(--text-muted)';
+                                        return (
+                                            <div key={h.label} className="fg-history-item">
+                                                <div className="fg-history-label">{h.label}</div>
+                                                <div className="fg-history-value">
+                                                    {h.val}
+                                                    <span style={{ marginLeft: '6px', fontSize: '0.7rem', color: arrowColor, fontWeight: 600 }}>
+                                                        {arrow}{Math.abs(diff)}
+                                                    </span>
+                                                </div>
                                             </div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </>
-                    )}
+                                        );
+                                    })}
+                                </div>
+                            </>
+                        )}
+                    </ErrorBoundary>
                 </div>
 
                 {/* YIELD CURVE */}
@@ -656,16 +662,18 @@ export default function Dashboard() {
                         <h2><span className="tooltip-trigger" data-tooltip="When the 2-year yield is higher than the 10-year, it is a classic recession warning.">📈 Yield Curve (10Y-2Y)</span></h2>
                         {fred?.yieldCurve && <span className={`badge ${fred.yieldCurve.current >= 0 ? 'badge-green' : 'badge-red'}`}>{fred.yieldCurve.current >= 0 ? 'Positive' : 'Inverted'}</span>}
                     </div>
-                    {loading || !fred || fred.error ? <Skeleton count={2} /> : (
-                        <>
-                            <div className="hero-price-section">
-                                <div className="hero-price" style={{ fontSize: '2.2rem', color: fred.yieldCurve.current >= 0 ? 'var(--green)' : 'var(--red)' }}>
-                                    {fred.yieldCurve.current >= 0 ? '+' : ''}{fred.yieldCurve.current.toFixed(3)}%
+                    <ErrorBoundary>
+                        {loading || !fred || fred.error ? <Skeleton count={2} /> : (
+                            <>
+                                <div className="hero-price-section">
+                                    <div className="hero-price" style={{ fontSize: '2.2rem', color: fred.yieldCurve.current >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                                        {fred.yieldCurve.current >= 0 ? '+' : ''}{fred.yieldCurve.current.toFixed(3)}%
+                                    </div>
                                 </div>
-                            </div>
-                            <MiniChart history={fred.yieldCurve.history} color="#818cf8" gradientId="yieldGrad" showZero={true} recessions={fred.recessions || []} />
-                        </>
-                    )}
+                                <MiniChart history={fred.yieldCurve.history} color="#818cf8" gradientId="yieldGrad" showZero={true} recessions={fred.recessions || []} />
+                            </>
+                        )}
+                    </ErrorBoundary>
                 </div>
 
                 {/* PROFIT MARGIN */}
@@ -674,16 +682,18 @@ export default function Dashboard() {
                         <h2><span className="tooltip-trigger" data-tooltip="Corporate Profits / GDP: High margins indicate strong corporate pricing power.">💰 Profit Margin</span></h2>
                         {fred?.profitMargin && <span className="badge badge-blue">Corp Profits / GDP</span>}
                     </div>
-                    {loading || !fred || fred.error || !fred.profitMargin ? <Skeleton count={2} /> : (
-                        <>
-                            <div className="hero-price-section">
-                                <div className="hero-price" style={{ fontSize: '2.2rem', color: 'var(--green)' }}>
-                                    {fred.profitMargin.current.toFixed(2)}%
+                    <ErrorBoundary>
+                        {loading || !fred || fred.error || !fred.profitMargin ? <Skeleton count={2} /> : (
+                            <>
+                                <div className="hero-price-section">
+                                    <div className="hero-price" style={{ fontSize: '2.2rem', color: 'var(--green)' }}>
+                                        {fred.profitMargin.current.toFixed(2)}%
+                                    </div>
                                 </div>
-                            </div>
-                            <MiniChart history={fred.profitMargin.history} color="#22c55e" gradientId="profitGrad" recessions={fred.recessions || []} />
-                        </>
-                    )}
+                                <MiniChart history={fred.profitMargin.history} color="#22c55e" gradientId="profitGrad" recessions={fred.recessions || []} />
+                            </>
+                        )}
+                    </ErrorBoundary>
                 </div>
 
                 {/* ECONOMIC INDICATORS */}
@@ -691,29 +701,31 @@ export default function Dashboard() {
                     <div className="card-header">
                         <h2>📊 Economic Indicators</h2>
                     </div>
-                    {loading || !fred || fred.error ? <Skeleton count={6} /> : (
-                        <>
-                            {[
-                                { icon: fred.indicators.sahmRule.status === 'safe' ? '✅' : '🔴', label: 'Sahm Rule', tooltip: "Recession indicator: triggers if 3mo average unemployment rises 0.5% above its 12mo low.", value: fred.indicators.sahmRule.value.toFixed(2), status: fred.indicators.sahmRule.status, benchmark: '< 0.50' },
-                                { icon: '🛒', label: 'Consumer Sentiment', tooltip: "University of Michigan survey assessing consumer confidence.", value: fred.indicators.sentiment.value.toFixed(1), status: fred.indicators.sentiment.status, benchmark: '> 80 strong' },
-                                { icon: '📋', label: 'Initial Claims (4wk)', tooltip: "4-week moving average of initial jobless claims. A critical real-time labor market gauge.", value: `${fred.indicators.claims.value.toFixed(0)}K`, status: fred.indicators.claims.status, benchmark: '< 250K healthy' },
-                                { icon: '🏦', label: 'BBB Credit Spread', tooltip: "The premium corporations pay over Treasuries to borrow. Widening indicates market stress.", value: `${fred.indicators.creditSpread.value.toFixed(2)}%`, status: fred.indicators.creditSpread.status, benchmark: '< 1.5% tight' },
-                                { icon: '💵', label: 'Real Yields (10Y TIPS)', tooltip: "10-Year Treasury Inflation-Indexed Security. Shows the true inflation-adjusted cost of capital.", value: `${fred.indicators.realYields.value.toFixed(2)}%`, status: fred.indicators.realYields.status, benchmark: '< 0% easy' },
-                                { icon: '📊', label: 'Leading Economic Index', tooltip: "The Conference Board LEI tracks 10 forward-looking economic components.", value: `${fred.indicators.lei.change >= 0 ? '+' : ''}${fred.indicators.lei.change.toFixed(2)}%`, status: fred.indicators.lei.status, benchmark: '> 0% rising' },
-                                { icon: '💎', label: 'Market Valuation', tooltip: "Current S&P 500 P/E Ratio. A measure of how expensive the market is historically.", value: fred.peRatio ? `P/E ~${fred.peRatio.toFixed(1)}` : 'P/E N/A', status: fred.peRatio > 25 ? 'restrictive' : 'neutral', benchmark: 'Fair at ~20' },
-                            ].map(ind => (
-                                <div className="stat-row" key={ind.label}>
-                                    <span className="stat-label">
-                                        {ind.icon} <span className="tooltip-trigger" data-tooltip={ind.tooltip}>{ind.label}</span>
-                                    </span>
-                                    <span className="stat-right">
-                                        <span className={`stat-value ${statusColor(ind.status)}`}>{ind.value}</span>
-                                        <span className="stat-benchmark">{ind.benchmark}</span>
-                                    </span>
-                                </div>
-                            ))}
-                        </>
-                    )}
+                    <ErrorBoundary>
+                        {loading || !fred || fred.error ? <Skeleton count={6} /> : (
+                            <>
+                                {[
+                                    { icon: fred.indicators.sahmRule.status === 'safe' ? '✅' : '🔴', label: 'Sahm Rule', tooltip: "Recession indicator: triggers if 3mo average unemployment rises 0.5% above its 12mo low.", value: fred.indicators.sahmRule.value.toFixed(2), status: fred.indicators.sahmRule.status, benchmark: '< 0.50' },
+                                    { icon: '🛒', label: 'Consumer Sentiment', tooltip: "University of Michigan survey assessing consumer confidence.", value: fred.indicators.sentiment.value.toFixed(1), status: fred.indicators.sentiment.status, benchmark: '> 80 strong' },
+                                    { icon: '📋', label: 'Initial Claims (4wk)', tooltip: "4-week moving average of initial jobless claims. A critical real-time labor market gauge.", value: `${fred.indicators.claims.value.toFixed(0)}K`, status: fred.indicators.claims.status, benchmark: '< 250K healthy' },
+                                    { icon: '🏦', label: 'BBB Credit Spread', tooltip: "The premium corporations pay over Treasuries to borrow. Widening indicates market stress.", value: `${fred.indicators.creditSpread.value.toFixed(2)}%`, status: fred.indicators.creditSpread.status, benchmark: '< 1.5% tight' },
+                                    { icon: '💵', label: 'Real Yields (10Y TIPS)', tooltip: "10-Year Treasury Inflation-Indexed Security. Shows the true inflation-adjusted cost of capital.", value: `${fred.indicators.realYields.value.toFixed(2)}%`, status: fred.indicators.realYields.status, benchmark: '< 0% easy' },
+                                    { icon: '📊', label: 'Leading Economic Index', tooltip: "The Conference Board LEI tracks 10 forward-looking economic components.", value: `${fred.indicators.lei.change >= 0 ? '+' : ''}${fred.indicators.lei.change.toFixed(2)}%`, status: fred.indicators.lei.status, benchmark: '> 0% rising' },
+                                    { icon: '💎', label: 'Market Valuation', tooltip: "Current S&P 500 P/E Ratio. A measure of how expensive the market is historically.", value: fred.peRatio ? `P/E ~${fred.peRatio.toFixed(1)}` : 'P/E N/A', status: fred.peRatio > 25 ? 'restrictive' : 'neutral', benchmark: 'Fair at ~20' },
+                                ].map(ind => (
+                                    <div className="stat-row" key={ind.label}>
+                                        <span className="stat-label">
+                                            {ind.icon} <span className="tooltip-trigger" data-tooltip={ind.tooltip}>{ind.label}</span>
+                                        </span>
+                                        <span className="stat-right">
+                                            <span className={`stat-value ${statusColor(ind.status)}`}>{ind.value}</span>
+                                            <span className="stat-benchmark">{ind.benchmark}</span>
+                                        </span>
+                                    </div>
+                                ))}
+                            </>
+                        )}
+                    </ErrorBoundary>
                 </div>
 
                 {/* SPY HISTORICAL CHART */}
@@ -722,9 +734,11 @@ export default function Dashboard() {
                         <h2>📈 SPY Historical</h2>
                         <span className="badge badge-blue">Price + 200d MA</span>
                     </div>
-                    {loading || !spy || spy.error || !spy.chartHistory ? <Skeleton count={4} /> : (
-                        <SpyChart chartHistory={spy.chartHistory} recessions={fred?.recessions || []} />
-                    )}
+                    <ErrorBoundary>
+                        {loading || !spy || spy.error || !spy.chartHistory ? <Skeleton count={4} /> : (
+                            <SpyChart chartHistory={spy.chartHistory} recessions={fred?.recessions || []} />
+                        )}
+                    </ErrorBoundary>
                 </div>
 
                 {/* BULL MARKET CHECKLIST */}
@@ -738,66 +752,68 @@ export default function Dashboard() {
                             return <span className={`badge ${pct >= 75 ? 'badge-green' : pct >= 50 ? 'badge-yellow' : 'badge-red'}`}>{bullish}/{items.length} ({pct.toFixed(0)}%)</span>;
                         })()}
                     </div>
-                    {loading || !fred || fred.error ? <Skeleton count={8} /> : (
-                        <>
-                            <div className="checklist-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
-                                {Object.entries(fred.checklist).map(([key, item]) => (
-                                    <div className="checklist-item" key={key} style={{ padding: '12px 14px', alignItems: 'center' }}>
-                                        <span className="checklist-icon">{item.bullish ? '✅' : '🔴'}</span>
-                                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                                            <span className="checklist-text" style={{ flex: 'none', color: 'var(--text-primary)' }}>{item.label}</span>
-                                            <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', lineHeight: 1.2 }}>
-                                                {{
-                                                    nfci: 'System tightness (<0 = easy, >0 = tight)',
-                                                    m2: 'YoY liquidity growth (>2% = expanding)',
-                                                    retail: 'Consumer spending strength',
-                                                    housing: 'Housing market health (>1,400K = strong, >1,300K = OK)',
-                                                    indpro: '6-month manufacturing trend',
-                                                    jolts: 'Labor demand (>7,000K = strong, >6,000K = OK)',
-                                                    durable: 'Business investment (3mo trend)',
-                                                    savings: 'Consumer cushion (>5% = healthy, ≥ 3.5% = OK)'
-                                                }[key]}
-                                            </span>
+                    <ErrorBoundary>
+                        {loading || !fred || fred.error ? <Skeleton count={8} /> : (
+                            <>
+                                <div className="checklist-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
+                                    {Object.entries(fred.checklist).map(([key, item]) => (
+                                        <div className="checklist-item" key={key} style={{ padding: '12px 14px', alignItems: 'center' }}>
+                                            <span className="checklist-icon">{item.bullish ? '✅' : '🔴'}</span>
+                                            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                                                <span className="checklist-text" style={{ flex: 'none', color: 'var(--text-primary)' }}>{item.label}</span>
+                                                <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', lineHeight: 1.2 }}>
+                                                    {{
+                                                        nfci: 'System tightness (<0 = easy, >0 = tight)',
+                                                        m2: 'YoY liquidity growth (>2% = expanding)',
+                                                        retail: 'Consumer spending strength',
+                                                        housing: 'Housing market health (>1,400K = strong, >1,300K = OK)',
+                                                        indpro: '6-month manufacturing trend',
+                                                        jolts: 'Labor demand (>7,000K = strong, >6,000K = OK)',
+                                                        durable: 'Business investment (3mo trend)',
+                                                        savings: 'Consumer cushion (>5% = healthy, ≥ 3.5% = OK)'
+                                                    }[key]}
+                                                </span>
+                                            </div>
+                                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '3px' }}>
+                                                <span className={`checklist-value ${item.bullish ? 'stat-positive' : 'stat-negative'}`} style={{ fontSize: '0.95rem' }}>
+                                                    {typeof item.value === 'number' ? (
+                                                        key === 'housing' || key === 'jolts' ? `${item.value.toFixed(0)}K` :
+                                                            key === 'nfci' ? `${item.value.toFixed(2)}` :
+                                                                `${item.value >= 0 && key !== 'nfci' ? '+' : ''}${item.value.toFixed(1)}%`
+                                                    ) : item.value}
+                                                </span>
+                                                <span className="checklist-benchmark" style={{ opacity: 0.9 }}>
+                                                    {{
+                                                        nfci: item.status === 'strong' ? '← Easy' : item.status === 'good' ? '← Easy' : '← Tight',
+                                                        m2: item.status === 'strong' ? '← Growing' : item.status === 'good' ? '← Growing' : '← Contracting',
+                                                        retail: item.status === 'strong' ? '← Growing' : item.status === 'good' ? '← Growing' : '← Declining',
+                                                        housing: item.status === 'strong' ? '← Strong' : item.status === 'good' ? '← OK' : '← Weak',
+                                                        indpro: item.status === 'strong' ? '← Expanding' : item.status === 'good' ? '← Expanding' : '← Contracting',
+                                                        jolts: item.status === 'strong' ? '← Strong' : item.status === 'good' ? '← OK' : '← Weak',
+                                                        durable: item.status === 'strong' ? '← Rising' : item.status === 'good' ? '← Rising' : '← Falling',
+                                                        savings: item.status === 'strong' ? '← Healthy' : item.status === 'good' ? '← OK' : '← Low'
+                                                    }[key]}
+                                                </span>
+                                            </div>
                                         </div>
-                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '3px' }}>
-                                            <span className={`checklist-value ${item.bullish ? 'stat-positive' : 'stat-negative'}`} style={{ fontSize: '0.95rem' }}>
-                                                {typeof item.value === 'number' ? (
-                                                    key === 'housing' || key === 'jolts' ? `${item.value.toFixed(0)}K` :
-                                                        key === 'nfci' ? `${item.value.toFixed(2)}` :
-                                                            `${item.value >= 0 && key !== 'nfci' ? '+' : ''}${item.value.toFixed(1)}%`
-                                                ) : item.value}
-                                            </span>
-                                            <span className="checklist-benchmark" style={{ opacity: 0.9 }}>
-                                                {{
-                                                    nfci: item.status === 'strong' ? '← Easy' : item.status === 'good' ? '← Easy' : '← Tight',
-                                                    m2: item.status === 'strong' ? '← Growing' : item.status === 'good' ? '← Growing' : '← Contracting',
-                                                    retail: item.status === 'strong' ? '← Growing' : item.status === 'good' ? '← Growing' : '← Declining',
-                                                    housing: item.status === 'strong' ? '← Strong' : item.status === 'good' ? '← OK' : '← Weak',
-                                                    indpro: item.status === 'strong' ? '← Expanding' : item.status === 'good' ? '← Expanding' : '← Contracting',
-                                                    jolts: item.status === 'strong' ? '← Strong' : item.status === 'good' ? '← OK' : '← Weak',
-                                                    durable: item.status === 'strong' ? '← Rising' : item.status === 'good' ? '← Rising' : '← Falling',
-                                                    savings: item.status === 'strong' ? '← Healthy' : item.status === 'good' ? '← OK' : '← Low'
-                                                }[key]}
-                                            </span>
+                                    ))}
+                                </div>
+                                {(() => {
+                                    const items = Object.values(fred.checklist);
+                                    const bullish = items.filter(i => i.bullish).length;
+                                    const pct = (bullish / items.length) * 100;
+                                    const regime = pct >= 75 ? '🟢 CONFIRMED BULL MARKET' : pct >= 50 ? '🟡 CAUTIOUS / MIXED' : '🔴 BEAR MARKET WARNING';
+                                    const bg = pct >= 75 ? 'var(--green-bg)' : pct >= 50 ? 'var(--yellow-bg)' : 'var(--red-bg)';
+                                    const color = pct >= 75 ? 'var(--green)' : pct >= 50 ? 'var(--yellow)' : 'var(--red)';
+                                    return (
+                                        <div className="checklist-score" style={{ background: bg, color }}>
+                                            {regime} — Score: {bullish}/{items.length} ({pct.toFixed(0)}% Bullish)
                                         </div>
-                                    </div>
-                                ))}
-                            </div>
-                            {(() => {
-                                const items = Object.values(fred.checklist);
-                                const bullish = items.filter(i => i.bullish).length;
-                                const pct = (bullish / items.length) * 100;
-                                const regime = pct >= 75 ? '🟢 CONFIRMED BULL MARKET' : pct >= 50 ? '🟡 CAUTIOUS / MIXED' : '🔴 BEAR MARKET WARNING';
-                                const bg = pct >= 75 ? 'var(--green-bg)' : pct >= 50 ? 'var(--yellow-bg)' : 'var(--red-bg)';
-                                const color = pct >= 75 ? 'var(--green)' : pct >= 50 ? 'var(--yellow)' : 'var(--red)';
-                                return (
-                                    <div className="checklist-score" style={{ background: bg, color }}>
-                                        {regime} — Score: {bullish}/{items.length} ({pct.toFixed(0)}% Bullish)
-                                    </div>
-                                );
-                            })()}
-                        </>
-                    )}
+                                    );
+                                })()}
+                            </>
+                        )}
+                    </ErrorBoundary>
                 </div>
 
                 {/* AI ASSESSMENT */}
@@ -806,11 +822,13 @@ export default function Dashboard() {
                         <h2>🤖 AI Market Assessment</h2>
                         <span className="badge badge-purple">AI-Powered</span>
                     </div>
-                    {!assessment ? (
-                        loading ? <Skeleton count={4} /> : <div className="error-message">Assessment unavailable</div>
-                    ) : (
-                        <div className="ai-assessment">{assessment}</div>
-                    )}
+                    <ErrorBoundary>
+                        {!assessment ? (
+                            loading ? <Skeleton count={4} /> : <div className="error-message">Assessment unavailable</div>
+                        ) : (
+                            <div className="ai-assessment">{assessment}</div>
+                        )}
+                    </ErrorBoundary>
                 </div>
             </div>
 
@@ -834,6 +852,9 @@ export default function Dashboard() {
                         </span>
                         <span className={`status-item ${systemStatus.fg?.hasErrors ? 'status-error' : ''}`}>
                             [F&G: {systemStatus.fg?.hasErrors ? 'PARTIAL' : 'LIVE OK'}]
+                        </span>
+                        <span className={`status-item ${systemStatus.sheets?.hasErrors ? 'status-warn' : ''}`}>
+                            [SHEETS: {systemStatus.sheets?.hasErrors ? 'CACHE' : 'LIVE OK'}]
                         </span>
                     </div>
                 </div>

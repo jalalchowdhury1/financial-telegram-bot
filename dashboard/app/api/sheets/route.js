@@ -1,5 +1,8 @@
-// /api/sheets - Fetch Google Sheets custom indicators
+import fs from 'fs';
+
 export const dynamic = 'force-dynamic';
+const CACHE_FILE = '/tmp/financial-dashboard-sheets-cache.json';
+
 export async function GET() {
     try {
         const sheets = [
@@ -29,11 +32,18 @@ export async function GET() {
             }
         ];
 
-        const results = {};
+        let results = {};
+        let source = 'Google Sheets (Live)';
+        let usedCache = false;
+        let fetchFailed = false;
 
-        for (const sheet of sheets) {
-            try {
-                const res = await fetch(sheet.url, { next: { revalidate: 0 } });
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 2500); // Strict 2.5s timeout
+
+        try {
+            const fetchPromises = sheets.map(async (sheet) => {
+                const res = await fetch(sheet.url, { next: { revalidate: 0 }, signal: controller.signal });
+                if (!res.ok) throw new Error(`Status ${res.status}`);
                 const text = await res.text();
                 const rows = text.split('\n').map(row => {
                     const result = [];
@@ -47,13 +57,45 @@ export async function GET() {
                     result.push(current);
                     return result;
                 });
-                results[sheet.name] = sheet.parse(rows);
-            } catch (e) {
-                results[sheet.name] = 'Error';
+                return { name: sheet.name, data: sheet.parse(rows) };
+            });
+
+            const resolved = await Promise.all(fetchPromises);
+            clearTimeout(timeoutId);
+
+            for (const r of resolved) {
+                results[r.name] = r.data;
+            }
+
+            // Save valid fetch to cache
+            fs.writeFileSync(CACHE_FILE, JSON.stringify(results));
+        } catch (networkError) {
+            clearTimeout(timeoutId);
+            fetchFailed = true;
+            console.warn('Google Sheets fetch failed/timed out. Falling back to cache...', networkError.message);
+
+            try {
+                if (fs.existsSync(CACHE_FILE)) {
+                    const cachedData = fs.readFileSync(CACHE_FILE, 'utf8');
+                    results = JSON.parse(cachedData);
+                    source = 'Google Sheets (Cached Backup)';
+                    usedCache = true;
+                } else {
+                    throw new Error('No cache file available');
+                }
+            } catch (cacheError) {
+                return Response.json({ error: 'Live fetch failed and cache unavailable.' }, { status: 500 });
             }
         }
 
-        return Response.json(results);
+        return Response.json({
+            ...results,
+            _meta: {
+                source: source,
+                hasErrors: fetchFailed,
+                messages: [usedCache ? `Loaded from local cache due to API failure` : `Loaded live data directly from Google`]
+            }
+        });
     } catch (error) {
         return Response.json({ error: error.message }, { status: 500 });
     }
