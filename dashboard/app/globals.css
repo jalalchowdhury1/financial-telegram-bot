@@ -230,10 +230,9 @@ body::before {
 
 /* ========== SYSTEM STATUS BAR ========== */
 .system-status-bar {
-  padding: 8px 16px;
+  padding: 16px 16px 24px 16px;
   text-align: center;
-  margin-top: -20px;
-  padding-bottom: 24px;
+  margin-top: 0;
 }
 
 .status-items {
