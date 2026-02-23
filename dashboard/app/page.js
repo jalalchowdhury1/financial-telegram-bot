@@ -466,11 +466,11 @@ export default function Dashboard() {
 
             {/* CUSTOM INDICATOR BAR */}
             <div className="indicator-bar">
-                <div className="indicator-pill">
+                <div className={`indicator-pill${sheets?.NotSoBoring && sheets.NotSoBoring !== 'ON' ? ' pill-alert' : ''}`}>
                     <div className="label"><span className="emoji">🛡️</span>NotSoBoring</div>
                     <div className="value">{sheets?.NotSoBoring || (loading ? '...' : 'N/A')}</div>
                 </div>
-                <div className="indicator-pill">
+                <div className={`indicator-pill${sheets?.FrontRunner && !sheets.FrontRunner.startsWith('BIL') ? ' pill-alert' : ''}`}>
                     <div className="label"><span className="emoji">🔑</span>FrontRunner</div>
                     <div className="value">{sheets?.FrontRunner || (loading ? '...' : 'N/A')}</div>
                 </div>

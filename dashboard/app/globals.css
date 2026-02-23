@@ -198,6 +198,25 @@ body::before {
   margin-right: 6px;
 }
 
+/* Subtle attention state for changed indicators */
+.indicator-pill.pill-alert {
+  border-left: 3px solid rgba(234, 179, 8, 0.6);
+  box-shadow: 0 0 12px rgba(234, 179, 8, 0.08);
+  animation: fadeInUp 0.5s ease forwards, pillGlow 3s ease-in-out infinite;
+}
+
+@keyframes pillGlow {
+
+  0%,
+  100% {
+    box-shadow: 0 0 12px rgba(234, 179, 8, 0.08);
+  }
+
+  50% {
+    box-shadow: 0 0 18px rgba(234, 179, 8, 0.15);
+  }
+}
+
 /* Stagger animation delays */
 .indicator-pill:nth-child(1) {
   animation-delay: 0.1s;
