@@ -49,23 +49,22 @@ Output the assessment now:`;
         let assessment = null;
         let lastError = 'No API keys configured.';
         let usedModel = '';
-        const debugErrors = [];
 
         const configs = [];
 
         // Priority 1: Best Free Models via OpenRouter
         if (process.env.OPENROUTER_API_KEY) {
-            // #1: Gemini 2.5 Pro (Experimental but extremely strong reasoning)
-            configs.push({ name: 'OpenRouter Gemini 2.5 Pro (Free)', url: 'https://openrouter.ai/api/v1/chat/completions', model: 'google/gemini-2.5-pro-exp-0205:free', key: process.env.OPENROUTER_API_KEY });
+            // #1: OpenRouter Free (Dynamic router that picks the smartest available free model)
+            configs.push({ name: 'OpenRouter Free (Auto)', url: 'https://openrouter.ai/api/v1/chat/completions', model: 'openrouter/free', key: process.env.OPENROUTER_API_KEY });
 
-            // #2: Llama 3.3 70B (The model Groq was rate-limiting you on, but hosted for free)
+            // #2: Gemini 2.0 Flash (Experimental but extremely fast/smart)
+            configs.push({ name: 'OpenRouter Gemini 2.0 Flash (Free)', url: 'https://openrouter.ai/api/v1/chat/completions', model: 'google/gemini-2.0-flash-exp:free', key: process.env.OPENROUTER_API_KEY });
+
+            // #3: Llama 3.3 70B (High-power fallback)
             configs.push({ name: 'OpenRouter Llama 3.3 70B (Free)', url: 'https://openrouter.ai/api/v1/chat/completions', model: 'meta-llama/llama-3.3-70b-instruct:free', key: process.env.OPENROUTER_API_KEY });
-
-            // #3: DeepSeek R1 (Extremely smart logic/reasoning model)
-            configs.push({ name: 'OpenRouter DeepSeek R1 (Free)', url: 'https://openrouter.ai/api/v1/chat/completions', model: 'deepseek/deepseek-r1:free', key: process.env.OPENROUTER_API_KEY });
         }
 
-        // Priority 2: Direct API Keys (If OpenRouter fails or isn't configured)
+        // Priority 2: Direct API Keys (If OpenRouter fails)
         if (process.env.OPENAI_API_KEY) {
             configs.push({ name: 'OpenAI GPT-4o', url: 'https://api.openai.com/v1/chat/completions', model: 'gpt-4o', key: process.env.OPENAI_API_KEY });
         }
@@ -76,7 +75,7 @@ Output the assessment now:`;
             configs.push({ name: 'Moonshot K2', url: 'https://api.moonshot.cn/v1/chat/completions', model: 'moonshot-v1-8k', key: process.env.MOONSHOT_API_KEY });
         }
 
-        // Safety Fallback: Groq's smallest, fastest Llama model (highest rate limits)
+        // Safety Fallback: Groq's 8B model (highest rate limits)
         if (process.env.GROQ_API_KEY) {
             configs.push({ name: 'Groq Llama 3.1 8B (Fallback)', url: 'https://api.groq.com/openai/v1/chat/completions', model: 'llama-3.1-8b-instant', key: process.env.GROQ_API_KEY });
         }
@@ -116,7 +115,6 @@ Output the assessment now:`;
                     const errStr = result.error?.message || JSON.stringify(result.error) || res.statusText;
                     console.warn(`[ASSESSMENT FALLBACK] ${conf.name} failed. Status: ${res.status}. Error:`, errStr);
                     lastError = `[${conf.name}] ${errStr}`;
-                    debugErrors.push(`[${conf.name} Failed]: ${errStr}`);
                     continue; // Model failed (rate limit, etc). Automatically step to the next one!
                 }
 
@@ -130,7 +128,6 @@ Output the assessment now:`;
             } catch (networkError) {
                 console.warn(`[ASSESSMENT FALLBACK] ${conf.name} network fetch failed:`, networkError.message);
                 lastError = `[${conf.name} Network] ${networkError.message}`;
-                debugErrors.push(`[${conf.name} Network Failed]: ${networkError.message}`);
             }
         }
 
@@ -138,13 +135,8 @@ Output the assessment now:`;
             return Response.json({ assessment: `⚠️ All AI models exhausted or rate-limited.\n\nFinal Error:\n${lastError}` }, { status: 500 });
         }
 
-        let debugFooter = '';
-        if (debugErrors.length > 0) {
-            debugFooter = `\n\n**Debug Trace:**\n${debugErrors.join('\n')}`;
-        }
-
         // Append a subtle tag to let the user know which model successfully serviced the request
-        return Response.json({ assessment: assessment + `\n\n*(Provider: ${usedModel})*` + debugFooter });
+        return Response.json({ assessment: assessment + `\n\n*(Provider: ${usedModel})*` });
     } catch (error) {
         return Response.json({ assessment: `⚠️ AI assessment unavailable: ${error.message}` }, { status: 500 });
     }
