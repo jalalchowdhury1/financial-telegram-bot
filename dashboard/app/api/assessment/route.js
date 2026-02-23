@@ -49,6 +49,7 @@ Output the assessment now:`;
         let assessment = null;
         let lastError = 'No API keys configured.';
         let usedModel = '';
+        const debugErrors = [];
 
         const configs = [];
 
@@ -112,8 +113,10 @@ Output the assessment now:`;
                 const result = await res.json();
 
                 if (!res.ok) {
-                    console.warn(`[ASSESSMENT FALLBACK] ${conf.name} failed. Status: ${res.status}. Error object:`, JSON.stringify(result.error || result));
-                    lastError = `[${conf.name}] ${result.error?.message || res.statusText}`;
+                    const errStr = result.error?.message || JSON.stringify(result.error) || res.statusText;
+                    console.warn(`[ASSESSMENT FALLBACK] ${conf.name} failed. Status: ${res.status}. Error:`, errStr);
+                    lastError = `[${conf.name}] ${errStr}`;
+                    debugErrors.push(`[${conf.name} Failed]: ${errStr}`);
                     continue; // Model failed (rate limit, etc). Automatically step to the next one!
                 }
 
@@ -127,6 +130,7 @@ Output the assessment now:`;
             } catch (networkError) {
                 console.warn(`[ASSESSMENT FALLBACK] ${conf.name} network fetch failed:`, networkError.message);
                 lastError = `[${conf.name} Network] ${networkError.message}`;
+                debugErrors.push(`[${conf.name} Network Failed]: ${networkError.message}`);
             }
         }
 
@@ -134,8 +138,13 @@ Output the assessment now:`;
             return Response.json({ assessment: `⚠️ All AI models exhausted or rate-limited.\n\nFinal Error:\n${lastError}` }, { status: 500 });
         }
 
+        let debugFooter = '';
+        if (debugErrors.length > 0) {
+            debugFooter = `\n\n**Debug Trace:**\n${debugErrors.join('\n')}`;
+        }
+
         // Append a subtle tag to let the user know which model successfully serviced the request
-        return Response.json({ assessment: assessment + `\n\n*(Provider: ${usedModel})*` });
+        return Response.json({ assessment: assessment + `\n\n*(Provider: ${usedModel})*` + debugFooter });
     } catch (error) {
         return Response.json({ assessment: `⚠️ AI assessment unavailable: ${error.message}` }, { status: 500 });
     }
