@@ -694,19 +694,51 @@ body::before {
 
   .indicator-pill {
     padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-height: 72px;
   }
 
   .indicator-pill .value {
-    font-size: 0.85rem;
+    font-size: 0.82rem;
+    word-break: break-word;
   }
 
   .indicator-pill .label {
-    font-size: 0.65rem;
+    font-size: 0.62rem;
     margin-bottom: 4px;
   }
 
-  /* Tighter checklist grid on mobile */
+  /* Hide extra detail text on mobile to keep pills even */
+  .indicator-pill .pill-detail {
+    display: none;
+  }
+
+  /* Tighter cards */
+  .card {
+    padding: 18px 16px;
+  }
+
   .card .checklist-item {
     padding: 10px 10px;
+  }
+
+  /* Centered stats grid on mobile */
+  .stats-mini-grid {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1px;
+  }
+
+  .stat-mini {
+    padding: 10px 4px;
+  }
+
+  .stat-mini-label {
+    font-size: 0.52rem;
+  }
+
+  .stat-mini-value {
+    font-size: 0.75rem;
   }
 }

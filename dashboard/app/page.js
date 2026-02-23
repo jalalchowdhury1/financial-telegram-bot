@@ -487,10 +487,10 @@ export default function Dashboard() {
                                 <div className="value" style={{ color: isBullish ? 'var(--green)' : 'var(--text-primary)' }}>
                                     {sheets.AAIIDiff}
                                 </div>
-                                <div style={{ fontSize: '0.68rem', marginTop: '4px', color: isBullish ? 'var(--green)' : 'var(--text-muted)', fontWeight: 600 }}>
+                                <div className="pill-detail" style={{ fontSize: '0.68rem', marginTop: '4px', color: isBullish ? 'var(--green)' : 'var(--text-muted)', fontWeight: 600 }}>
                                     {isBullish ? '🟢' : '⚪'} {isBullish ? 'Bullish' : 'Neutral'} outlook → {dateStr}
                                 </div>
-                                <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                                <div className="pill-detail" style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginTop: '2px' }}>
                                     Threshold: &gt;20% = bullish 6mo forward
                                 </div>
                             </>
