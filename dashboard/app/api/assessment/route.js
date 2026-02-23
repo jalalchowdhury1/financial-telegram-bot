@@ -63,7 +63,12 @@ Output the assessment now:`;
                 })
             });
             const result = await res.json();
-            assessment = result.choices?.[0]?.message?.content?.trim() || 'Assessment unavailable';
+            if (!res.ok) {
+                console.error('Groq API Error:', result);
+                assessment = `⚠️ Groq API Error: ${result.error?.message || res.statusText}`;
+            } else {
+                assessment = result.choices?.[0]?.message?.content?.trim() || 'Assessment unavailable';
+            }
         } else if (openaiKey) {
             const res = await fetch('https://api.openai.com/v1/chat/completions', {
                 method: 'POST',
@@ -79,7 +84,12 @@ Output the assessment now:`;
                 })
             });
             const result = await res.json();
-            assessment = result.choices?.[0]?.message?.content?.trim() || 'Assessment unavailable';
+            if (!res.ok) {
+                console.error('OpenAI API Error:', result);
+                assessment = `⚠️ OpenAI API Error: ${result.error?.message || res.statusText}`;
+            } else {
+                assessment = result.choices?.[0]?.message?.content?.trim() || 'Assessment unavailable';
+            }
         }
 
         return Response.json({ assessment });

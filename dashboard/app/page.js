@@ -422,12 +422,26 @@ export default function Dashboard() {
                     leiChange: fredRes.indicators?.lei?.change,
                     fearGreed: fgRes.score
                 };
-                const assessRes = await fetch('/api/assessment', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(assessData)
-                }).then(r => r.json()).catch(() => null);
-                setAssessment(assessRes?.assessment);
+                try {
+                    const assessRes = await fetch('/api/assessment', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(assessData)
+                    });
+                    if (!assessRes.ok) {
+                        const errText = await assessRes.text();
+                        console.error('Assessment API returned non-OK:', errText);
+                        setAssessment(`⚠️ Network Error: Could not reach Assessment API (${assessRes.status})`);
+                        setApiErrors(prev => [...prev, `[ASSESSMENT] ${assessRes.status} Error: ${errText.substring(0, 50)}`]);
+                    } else {
+                        const json = await assessRes.json();
+                        setAssessment(json.assessment);
+                    }
+                } catch (assessFetchErr) {
+                    console.error('Failed to parse or fetch assessment:', assessFetchErr);
+                    setAssessment('⚠️ Fetch Error: Failed to contact Assessment API.');
+                    setApiErrors(prev => [...prev, `[ASSESSMENT] Fetch failed: ${assessFetchErr.message}`]);
+                }
             }
         } catch (e) {
             console.error('Dashboard fetch error:', e);
