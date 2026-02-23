@@ -373,12 +373,11 @@ export default function Dashboard() {
         setLoading(true);
         setRefreshing(true);
         try {
-            const [sheetsRes, spyRes, fgRes, fredRes, runRes] = await Promise.all([
+            const [sheetsRes, spyRes, fgRes, fredRes] = await Promise.all([
                 fetch('/api/sheets', { cache: 'no-store' }).then(r => r.json()).catch(() => null),
                 fetch('/api/spy', { cache: 'no-store' }).then(r => r.json()).catch(() => null),
                 fetch('/api/fear-greed', { cache: 'no-store' }).then(r => r.json()).catch(() => null),
                 fetch('/api/fred', { cache: 'no-store' }).then(r => r.json()).catch(() => null),
-                fetch('/api/last-run', { cache: 'no-store' }).then(r => r.json()).catch(() => null),
             ]);
 
             setSheets(sheetsRes);
@@ -386,17 +385,13 @@ export default function Dashboard() {
             setFg(fgRes);
             setFred(fredRes);
 
-            if (runRes && runRes.lastRun) {
-                const date = new Date(runRes.lastRun);
-                const year = date.getFullYear();
-                const month = String(date.getMonth() + 1).padStart(2, '0');
-                const day = String(date.getDate()).padStart(2, '0');
-                const hours = String(date.getHours()).padStart(2, '0');
-                const minutes = String(date.getMinutes()).padStart(2, '0');
-                setLastUpdated(`${year}-${month}-${day} ${hours}:${minutes}`);
-            } else {
-                setLastUpdated(new Date().toLocaleString());
-            }
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            setLastUpdated(`${year}-${month}-${day} ${hours}:${minutes}`);
 
             if (fredRes && fgRes && !fredRes.error && !fgRes.error) {
                 const assessData = {
@@ -423,7 +418,11 @@ export default function Dashboard() {
         setRefreshing(false);
     }
 
-    useEffect(() => { fetchAll(); }, []);
+    useEffect(() => {
+        fetchAll();
+        const interval = setInterval(fetchAll, 5 * 60 * 1000); // Auto-refresh every 5 minutes
+        return () => clearInterval(interval);
+    }, []);
 
     const fgSegments = [
         { start: 0, end: 25, color: '#dc2626' },
