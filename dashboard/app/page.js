@@ -447,7 +447,7 @@ export default function Dashboard() {
         <div className="dashboard">
             {/* HEADER */}
             <header className="dashboard-header">
-                <h1>Financial Intelligence Dashboard</h1>
+                <h1>Jalal's Financial Dashboard</h1>
                 <p className="subtitle">Live market data, economic indicators & AI-powered assessment</p>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', marginTop: '12px' }}>
                     <div className="live-badge">
@@ -764,7 +764,7 @@ export default function Dashboard() {
 
             {/* FOOTER */}
             <footer className="dashboard-footer">
-                <p>Financial Intelligence Dashboard v3.0 — Data from FRED, CNN, Stooq & Google Sheets</p>
+                <p>Jalal's Financial Dashboard v3.0 — Data from FRED, CNN, Stooq & Google Sheets</p>
             </footer>
         </div>
     );
