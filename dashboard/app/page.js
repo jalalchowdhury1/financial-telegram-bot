@@ -610,7 +610,7 @@ export default function Dashboard() {
                         <>
                             <div className="hero-price-section">
                                 <div className="hero-price" style={{ fontSize: '2.2rem', color: fred.yieldCurve.current >= 0 ? 'var(--green)' : 'var(--red)' }}>
-                                    {fred.yieldCurve.current >= 0 ? '+' : ''}{fred.yieldCurve.current.toFixed(2)}%
+                                    {fred.yieldCurve.current >= 0 ? '+' : ''}{fred.yieldCurve.current.toFixed(3)}%
                                 </div>
                             </div>
                             <MiniChart history={fred.yieldCurve.history} color="#818cf8" gradientId="yieldGrad" showZero={true} recessions={fred.recessions || []} />
@@ -650,6 +650,7 @@ export default function Dashboard() {
                                 { icon: '🏦', label: 'BBB Credit Spread', value: `${fred.indicators.creditSpread.value.toFixed(2)}%`, status: fred.indicators.creditSpread.status, benchmark: '< 1.5% tight' },
                                 { icon: '💵', label: 'Real Yields (10Y TIPS)', value: `${fred.indicators.realYields.value.toFixed(2)}%`, status: fred.indicators.realYields.status, benchmark: '< 0% easy' },
                                 { icon: '📊', label: 'Leading Economic Index', value: `${fred.indicators.lei.change >= 0 ? '+' : ''}${fred.indicators.lei.change.toFixed(2)}%`, status: fred.indicators.lei.status, benchmark: '> 0% rising' },
+                                { icon: '💎', label: 'Market Valuation', value: 'P/E ~32', status: 'neutral', benchmark: 'Fair at ~20' },
                             ].map(ind => (
                                 <div className="stat-row" key={ind.label}>
                                     <span className="stat-label">{ind.icon} {ind.label}</span>
@@ -716,14 +717,14 @@ export default function Dashboard() {
                                             </span>
                                             <span className="checklist-benchmark" style={{ opacity: 0.9 }}>
                                                 {{
-                                                    nfci: item.bullish ? '← Easy' : '← Tight',
-                                                    m2: item.bullish ? '← Growing' : '← Contracting',
-                                                    retail: item.bullish ? '← Growing' : '← Declining',
-                                                    housing: item.bullish ? '← Strong' : '← Weak',
-                                                    indpro: item.bullish ? '← Expanding' : '← Contracting',
-                                                    jolts: item.bullish ? '← Strong' : '← Weak',
-                                                    durable: item.bullish ? '← Rising' : '← Falling',
-                                                    savings: item.bullish ? '← Healthy' : '← Low'
+                                                    nfci: item.status === 'strong' ? '← Easy' : item.status === 'good' ? '← Neutral' : '← Tight',
+                                                    m2: item.status === 'strong' ? '← Growing' : item.status === 'good' ? '← Growing' : '← Contracting',
+                                                    retail: item.status === 'strong' ? '← Growing' : item.status === 'good' ? '← Growing' : '← Declining',
+                                                    housing: item.status === 'strong' ? '← Strong' : item.status === 'good' ? '← OK' : '← Weak',
+                                                    indpro: item.status === 'strong' ? '← Expanding' : item.status === 'good' ? '← Expanding' : '← Contracting',
+                                                    jolts: item.status === 'strong' ? '← Strong' : item.status === 'good' ? '← OK' : '← Weak',
+                                                    durable: item.status === 'strong' ? '← Rising' : item.status === 'good' ? '← Rising' : '← Falling',
+                                                    savings: item.status === 'strong' ? '← Healthy' : item.status === 'good' ? '← OK' : '← Low'
                                                 }[key]}
                                             </span>
                                         </div>
