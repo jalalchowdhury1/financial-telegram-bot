@@ -675,44 +675,28 @@ export default function Dashboard() {
                     </div>
                     {loading || !fred || fred.error ? <Skeleton count={8} /> : (
                         <>
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '4px' }}>
                                 {Object.entries(fred.checklist).map(([key, item]) => (
-                                    <div className="checklist-item" key={key} style={{ padding: '12px 14px', alignItems: 'center' }}>
+                                    <div className="checklist-item" key={key}>
                                         <span className="checklist-icon">{item.bullish ? '✅' : '🔴'}</span>
-                                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                                            <span className="checklist-text" style={{ flex: 'none', color: 'var(--text-primary)' }}>{item.label}</span>
-                                            <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', lineHeight: 1.2 }}>
-                                                {{
-                                                    nfci: 'System tightness (< 0 = easy, > 0 = tight)',
-                                                    m2: 'YoY liquidity growth (> 2% = expanding)',
-                                                    retail: 'Consumer spending strength (> 0% = growing)',
-                                                    housing: 'Housing market health (> 1300K = healthy)',
-                                                    indpro: '6-mo manufacturing trend (> 0% = expanding)',
-                                                    jolts: 'Labor demand (> 6000K = strong)',
-                                                    durable: 'Business investment 3mo trend (> 0% = rising)',
-                                                    savings: 'Consumer cushion (≥ 3.5% = healthy)'
-                                                }[key]}
-                                            </span>
-                                        </div>
-                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '3px' }}>
-                                            <span className={`checklist-value ${item.bullish ? 'stat-positive' : 'stat-negative'}`} style={{ fontSize: '0.95rem' }}>
-                                                {typeof item.value === 'number' ? (
-                                                    key === 'housing' || key === 'jolts' ? `${item.value.toFixed(0)}K` : `${item.value >= 0 ? '+' : ''}${item.value.toFixed(1)}%`
-                                                ) : item.value}
-                                            </span>
-                                            <span className="checklist-benchmark" style={{ opacity: 0.9 }}>
-                                                {{
-                                                    nfci: item.bullish ? '← Easy' : '← Tight',
-                                                    m2: item.bullish ? '← Growing' : '← Contracting',
-                                                    retail: item.bullish ? '← Growing' : '← Declining',
-                                                    housing: item.bullish ? '← Strong' : '← Weak',
-                                                    indpro: item.bullish ? '← Expanding' : '← Contracting',
-                                                    jolts: item.bullish ? '← Strong' : '← Weak',
-                                                    durable: item.bullish ? '← Rising' : '← Falling',
-                                                    savings: item.bullish ? '← Healthy' : '← Low'
-                                                }[key]}
-                                            </span>
-                                        </div>
+                                        <span className="checklist-text">{item.label}</span>
+                                        <span className={`checklist-value ${item.bullish ? 'stat-positive' : 'stat-negative'}`}>
+                                            {typeof item.value === 'number' ? (
+                                                key === 'housing' || key === 'jolts' ? `${item.value.toFixed(0)}K` : `${item.value >= 0 ? '+' : ''}${item.value.toFixed(1)}%`
+                                            ) : item.value}
+                                        </span>
+                                        <span className="checklist-benchmark">
+                                            {{
+                                                nfci: '< 0',
+                                                m2: '> 2%',
+                                                retail: '> 0%',
+                                                housing: '> 1300K',
+                                                indpro: '> 0%',
+                                                jolts: '> 6000K',
+                                                durable: '> 0%',
+                                                savings: '≥ 3.5%'
+                                            }[key]}
+                                        </span>
                                     </div>
                                 ))}
                             </div>

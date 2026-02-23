@@ -590,7 +590,9 @@ def create_fear_greed_chart(output_file='fear_greed.png'):
         # Fetch data from CNN API
         url = "https://production.dataviz.cnn.io/index/fearandgreed/graphdata"
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+            'Referer': 'https://edition.cnn.com/',
+            'Accept': 'application/json'
         }
         response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()

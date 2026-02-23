@@ -110,12 +110,16 @@ export async function GET() {
         const savingsCurrent = psavert[0]?.value;
 
         // Profit Margin
+        const gdpMap = new Map();
+        for (const gd of gdpData) {
+            gdpMap.set(gd.date, gd.value);
+        }
+
         const profitMarginHistory = [];
-        for (let i = 0; i < Math.min(corpProfits.length, gdpData.length); i++) {
-            const cp = corpProfits[i];
-            const gd = gdpData[i];
-            if (cp && gd && gd.value !== 0) {
-                profitMarginHistory.push({ date: cp.date, value: (cp.value / gd.value) * 100 });
+        for (const cp of corpProfits) {
+            const gdpValue = gdpMap.get(cp.date);
+            if (gdpValue && gdpValue !== 0) {
+                profitMarginHistory.push({ date: cp.date, value: (cp.value / gdpValue) * 100 });
             }
         }
         const profitMargin = {
