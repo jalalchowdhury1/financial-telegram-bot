@@ -772,8 +772,19 @@ body::before {
   }
 
   /* Tighter checklist items */
+  /* Checklist — single column on mobile */
+  .checklist-grid {
+    grid-template-columns: 1fr !important;
+    gap: 6px !important;
+  }
+
   .card .checklist-item {
     padding: 10px 10px;
+  }
+
+  .checklist-score {
+    font-size: 0.9rem;
+    padding: 12px;
   }
 
   /* Gauge smaller on mobile */

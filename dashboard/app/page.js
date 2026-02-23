@@ -688,7 +688,7 @@ export default function Dashboard() {
                     </div>
                     {loading || !fred || fred.error ? <Skeleton count={8} /> : (
                         <>
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
+                            <div className="checklist-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
                                 {Object.entries(fred.checklist).map(([key, item]) => (
                                     <div className="checklist-item" key={key} style={{ padding: '12px 14px', alignItems: 'center' }}>
                                         <span className="checklist-icon">{item.status === 'strong' ? '✅' : item.status === 'good' ? '⚠️' : '🔴'}</span>
