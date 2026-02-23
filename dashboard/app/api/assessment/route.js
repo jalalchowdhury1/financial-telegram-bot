@@ -72,6 +72,9 @@ Output the assessment now:`;
         if (process.env.OPENROUTER_API_KEY) {
             configs.push({ name: 'OpenRouter K2', url: 'https://openrouter.ai/api/v1/chat/completions', model: 'moonshotai/kimi-k2-instruct-0905', key: process.env.OPENROUTER_API_KEY });
         }
+        if (process.env.GROQ_API_KEY) {
+            configs.push({ name: 'Groq K2', url: 'https://api.groq.com/openai/v1/chat/completions', model: 'kimi-k2-instruct', key: process.env.GROQ_API_KEY });
+        }
         if (process.env.MOONSHOT_API_KEY) {
             configs.push({ name: 'Moonshot K2', url: 'https://api.moonshot.cn/v1/chat/completions', model: 'moonshot-v1-8k', key: process.env.MOONSHOT_API_KEY });
         }
