@@ -228,7 +228,39 @@ body::before {
   animation: fadeIn 0.2s ease forwards;
 }
 
-/* ========== MARKET PULSE ========== */
+/* ========== SYSTEM STATUS BAR ========== */
+.system-status-bar {
+  padding: 8px 16px;
+  text-align: center;
+  margin-top: -20px;
+  padding-bottom: 24px;
+}
+
+.status-items {
+  display: inline-flex;
+  gap: 16px;
+  justify-content: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.65rem;
+  color: rgba(255, 255, 255, 0.2);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.status-item {
+  transition: color 0.2s ease;
+}
+
+.status-item.status-warn {
+  color: rgba(245, 158, 11, 0.6);
+  /* Amber for fallbacks */
+}
+
+.status-item.status-error {
+  color: rgba(239, 68, 68, 0.6);
+  /* Red for missing data */
+}
+
 .market-pulse {
   display: flex;
   align-items: center;

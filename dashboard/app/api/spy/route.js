@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic';
 export async function GET() {
     try {
         let rows = [];
+        let dataSource = 'Stooq';
         try {
             const url = 'https://stooq.com/q/d/l/?s=spy.us&i=d';
             const res = await fetch(url, {
@@ -17,6 +18,7 @@ export async function GET() {
                 return { date, open: +open, high: +high, low: +low, close: +close, volume: +volume };
             }).filter(r => !isNaN(r.close));
         } catch (stooqError) {
+            dataSource = 'Yahoo Finance (Fallback)';
             console.warn('Stooq fetch failed, falling back to Yahoo Finance...');
             const yUrl = 'https://query1.finance.yahoo.com/v8/finance/chart/SPY?range=5y&interval=1d';
             const yRes = await fetch(yUrl, {
@@ -107,7 +109,12 @@ export async function GET() {
             week52High: { value: week52High, pct: high52wPct },
             rsi,
             return3y,
-            chartHistory
+            chartHistory,
+            _meta: {
+                source: dataSource,
+                hasErrors: false,
+                messages: [`Loaded ${rows.length} days of SPY history from ${dataSource}`]
+            }
         });
     } catch (error) {
         return Response.json({ error: error.message }, { status: 500 });

@@ -367,6 +367,7 @@ export default function Dashboard() {
     const [assessment, setAssessment] = useState(null);
     const [loading, setLoading] = useState(true);
     const [lastUpdated, setLastUpdated] = useState(null);
+    const [systemStatus, setSystemStatus] = useState(null);
     const [refreshing, setRefreshing] = useState(false);
 
     async function fetchAll() {
@@ -384,6 +385,12 @@ export default function Dashboard() {
             setSpy(spyRes);
             setFg(fgRes);
             setFred(fredRes);
+
+            setSystemStatus({
+                spy: spyRes?._meta,
+                fred: fredRes?._meta,
+                fg: fgRes?._meta
+            });
 
             const now = new Date();
             const year = now.getFullYear();
@@ -814,6 +821,23 @@ export default function Dashboard() {
                     Deployed: {new Date(process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_MESSAGE ? Date.now() : Date.now()).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                 </p>
             </footer>
+
+            {/* SYSTEM STATUS BAR */}
+            {systemStatus && (
+                <div className="system-status-bar">
+                    <div className="status-items">
+                        <span className={`status-item ${systemStatus.spy?.hasErrors ? 'status-error' : systemStatus.spy?.source?.includes('Yahoo') ? 'status-warn' : ''}`}>
+                            [SPY: {systemStatus.spy?.source?.includes('Yahoo') ? 'Yahoo Fallback' : systemStatus.spy?.source || 'OK'}]
+                        </span>
+                        <span className={`status-item ${systemStatus.fred?.hasErrors ? 'status-error' : ''}`}>
+                            [FRED: {systemStatus.fred?.messages?.[0]?.replace('Loaded ', '').replace(' series', '') || '18/18'}]
+                        </span>
+                        <span className={`status-item ${systemStatus.fg?.hasErrors ? 'status-error' : ''}`}>
+                            [F&G: {systemStatus.fg?.hasErrors ? 'PARTIAL' : 'LIVE OK'}]
+                        </span>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

@@ -16,13 +16,29 @@ export async function GET() {
         const data = await res.json();
         const fg = data.fear_and_greed;
 
+        const score = fg?.score ?? 'N/A';
+        const rating = fg?.rating?.toUpperCase() || 'N/A';
+        const previousClose = fg?.previous_close ?? 'N/A';
+        const previousWeek = fg?.previous_1_week ?? 'N/A';
+        const previousMonth = fg?.previous_1_month ?? 'N/A';
+        const previousYear = fg?.previous_1_year ?? 'N/A';
+
+        const missingFields = [];
+        if (score === 'N/A') missingFields.push('score');
+        if (previousClose === 'N/A') missingFields.push('previousClose');
+
         return Response.json({
-            score: fg.score,
-            rating: fg.rating.toUpperCase(),
-            previousClose: fg.previous_close,
-            previousWeek: fg.previous_1_week,
-            previousMonth: fg.previous_1_month,
-            previousYear: fg.previous_1_year
+            score,
+            rating,
+            previousClose,
+            previousWeek,
+            previousMonth,
+            previousYear,
+            _meta: {
+                source: 'CNN',
+                hasErrors: missingFields.length > 0,
+                messages: missingFields.length > 0 ? [`Missing fields from CNN: ${missingFields.join(', ')}`] : ['CNN data parsed successfully']
+            }
         });
     } catch (error) {
         return Response.json({ error: error.message }, { status: 500 });

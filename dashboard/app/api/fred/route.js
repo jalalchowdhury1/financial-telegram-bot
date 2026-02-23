@@ -168,6 +168,14 @@ export async function GET() {
                 jolts: { value: joltsCurrent, bullish: joltsCurrent > 6000, status: joltsCurrent > 7000 ? 'strong' : joltsCurrent > 6000 ? 'good' : 'weak', label: 'Job Openings (JOLTS)' },
                 durable: { value: durableChange, bullish: durableChange > 0, status: durableChange > 2.0 ? 'strong' : durableChange > 0 ? 'good' : 'weak', label: 'Durable Goods Orders' },
                 savings: { value: savingsCurrent, bullish: savingsCurrent >= 3.5, status: savingsCurrent >= 5.0 ? 'strong' : savingsCurrent >= 3.5 ? 'good' : 'weak', label: 'Savings Rate' }
+            },
+            _meta: {
+                source: 'St. Louis Fed',
+                hasErrors: results.some(r => r.status === 'rejected'),
+                messages: [
+                    `Loaded ${results.filter(r => r.status === 'fulfilled').length}/${results.length} series`,
+                    ...results.filter(r => r.status === 'rejected').map(r => `Failed to load a series: ${r.reason.message}`)
+                ]
             }
         });
     } catch (error) {
