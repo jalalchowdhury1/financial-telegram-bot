@@ -2,21 +2,47 @@
 export const dynamic = 'force-dynamic';
 export async function GET() {
     try {
-        const url = 'https://stooq.com/q/d/l/?s=spy.us&i=d';
-        const res = await fetch(url, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
-            },
-            next: { revalidate: 0 }
-        });
-        const text = await res.text();
+        let rows = [];
+        try {
+            const url = 'https://stooq.com/q/d/l/?s=spy.us&i=d';
+            const res = await fetch(url, {
+                headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' },
+                next: { revalidate: 0 }
+            });
+            if (!res.ok) throw new Error('Stooq response not ok');
+            const text = await res.text();
+            const lines = text.trim().split('\n');
+            rows = lines.slice(1).map(line => {
+                const [date, open, high, low, close, volume] = line.split(',');
+                return { date, open: +open, high: +high, low: +low, close: +close, volume: +volume };
+            }).filter(r => !isNaN(r.close));
+        } catch (stooqError) {
+            console.warn('Stooq fetch failed, falling back to Yahoo Finance...');
+            const yUrl = 'https://query1.finance.yahoo.com/v8/finance/chart/SPY?range=5y&interval=1d';
+            const yRes = await fetch(yUrl, {
+                headers: { 'User-Agent': 'Mozilla/5.0' },
+                next: { revalidate: 0 }
+            });
+            if (!yRes.ok) throw new Error('Both Stooq and Yahoo Finance APIs failed');
+            const yData = await yRes.json();
+            const result = yData.chart.result[0];
+            const timestamps = result.timestamp;
+            const quotes = result.indicators.quote[0];
 
-        const lines = text.trim().split('\n');
-        // Header: Date,Open,High,Low,Close,Volume
-        const rows = lines.slice(1).map(line => {
-            const [date, open, high, low, close, volume] = line.split(',');
-            return { date, open: +open, high: +high, low: +low, close: +close, volume: +volume };
-        }).filter(r => !isNaN(r.close));
+            for (let i = 0; i < timestamps.length; i++) {
+                if (quotes.close[i] !== null) {
+                    const d = new Date(timestamps[i] * 1000);
+                    rows.push({
+                        date: d.toISOString().split('T')[0],
+                        open: quotes.open[i],
+                        high: quotes.high[i],
+                        low: quotes.low[i],
+                        close: quotes.close[i],
+                        volume: quotes.volume[i]
+                    });
+                }
+            }
+        }
 
         if (rows.length < 10) throw new Error('Insufficient SPY data');
 

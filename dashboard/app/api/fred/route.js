@@ -19,11 +19,7 @@ export async function GET() {
     }
 
     try {
-        const [
-            t10y2y, unrate, umcsent, icsa, bbb, dfii10, usslind,
-            nfci, m2sl, rsxfs, houst, indpro, jtsjol, dgorder, psavert,
-            corpProfits, gdpData, usrec
-        ] = await Promise.all([
+        const results = await Promise.allSettled([
             fetchSeries('T10Y2Y', apiKey, 100000),
             fetchSeries('UNRATE', apiKey, 15),
             fetchSeries('UMCSENT', apiKey, 5),
@@ -43,6 +39,14 @@ export async function GET() {
             fetchSeries('GDP', apiKey, 100000),
             fetchSeries('USREC', apiKey, 100000)
         ]);
+
+        const safeValue = (res) => res.status === 'fulfilled' ? res.value : [];
+
+        const [
+            t10y2y, unrate, umcsent, icsa, bbb, dfii10, usslind,
+            nfci, m2sl, rsxfs, houst, indpro, jtsjol, dgorder, psavert,
+            corpProfits, gdpData, usrec
+        ] = results.map(safeValue);
 
         // Fetch current S&P 500 P/E ratio from multpl.com
         let peRatio = null;
@@ -81,16 +85,16 @@ export async function GET() {
         };
 
         // Sahm Rule
-        const unrate3mo = unrate.slice(0, 3).reduce((s, v) => s + v.value, 0) / 3;
-        const unrate12moLow = Math.min(...unrate.map(u => u.value));
-        const sahmRule = unrate3mo - unrate12moLow;
+        const unrate3mo = unrate.length >= 3 ? unrate.slice(0, 3).reduce((s, v) => s + v.value, 0) / 3 : null;
+        const unrate12moLow = unrate.length > 0 ? Math.min(...unrate.map(u => u.value)) : null;
+        const sahmRule = unrate3mo !== null && unrate12moLow !== null ? unrate3mo - unrate12moLow : 0;
 
         // Consumer Sentiment
         const sentimentCurrent = umcsent[0]?.value;
         const sentimentPrev = umcsent[1]?.value;
 
         // Claims
-        const claims4wk = icsa.slice(0, 4).reduce((s, v) => s + v.value, 0) / 4;
+        const claims4wk = icsa.length >= 4 ? icsa.slice(0, 4).reduce((s, v) => s + v.value, 0) / 4 : 0;
 
         // Credit Spread
         const bbbCurrent = bbb[0]?.value;
@@ -113,7 +117,7 @@ export async function GET() {
         const retail3mo = rsxfs[3]?.value;
         const retailGrowth = retail3mo ? ((retailCurrent - retail3mo) / retail3mo) * 100 : 0;
         const housingCurrent = houst[0]?.value;
-        const housing6moAvg = houst.slice(0, 6).reduce((s, v) => s + v.value, 0) / 6;
+        const housing6moAvg = houst.length >= 6 ? houst.slice(0, 6).reduce((s, v) => s + v.value, 0) / 6 : 0;
         const indproCurrent = indpro[0]?.value;
         const indpro6mo = indpro[6]?.value;
         const indproChange = indpro6mo ? ((indproCurrent - indpro6mo) / indpro6mo) * 100 : 0;
