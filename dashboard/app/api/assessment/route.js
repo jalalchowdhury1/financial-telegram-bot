@@ -52,34 +52,30 @@ Output the assessment now:`;
 
         const configs = [];
 
-        // Priority 1: OpenAI Models (GPT-4o)
+        // Priority 1: Best Free Models via OpenRouter
         if (process.env.OPENROUTER_API_KEY) {
-            configs.push({ name: 'OpenRouter GPT-4o', url: 'https://openrouter.ai/api/v1/chat/completions', model: 'openai/gpt-4o-2024-11-20', key: process.env.OPENROUTER_API_KEY });
+            // #1: Gemini 2.5 Pro (Experimental but extremely strong reasoning)
+            configs.push({ name: 'OpenRouter Gemini 2.5 Pro (Free)', url: 'https://openrouter.ai/api/v1/chat/completions', model: 'google/gemini-2.5-pro-exp-0205:free', key: process.env.OPENROUTER_API_KEY });
+
+            // #2: Llama 3.3 70B (The model Groq was rate-limiting you on, but hosted for free)
+            configs.push({ name: 'OpenRouter Llama 3.3 70B (Free)', url: 'https://openrouter.ai/api/v1/chat/completions', model: 'meta-llama/llama-3.3-70b-instruct:free', key: process.env.OPENROUTER_API_KEY });
+
+            // #3: DeepSeek R1 (Extremely smart logic/reasoning model)
+            configs.push({ name: 'OpenRouter DeepSeek R1 (Free)', url: 'https://openrouter.ai/api/v1/chat/completions', model: 'deepseek/deepseek-r1:free', key: process.env.OPENROUTER_API_KEY });
         }
+
+        // Priority 2: Direct API Keys (If OpenRouter fails or isn't configured)
         if (process.env.OPENAI_API_KEY) {
             configs.push({ name: 'OpenAI GPT-4o', url: 'https://api.openai.com/v1/chat/completions', model: 'gpt-4o', key: process.env.OPENAI_API_KEY });
         }
-
-        // Priority 2: Llama Models (Llama 3.3 70B)
         if (process.env.GROQ_API_KEY) {
             configs.push({ name: 'Groq Llama 3.3 70B', url: 'https://api.groq.com/openai/v1/chat/completions', model: 'llama-3.3-70b-versatile', key: process.env.GROQ_API_KEY });
-        }
-        if (process.env.OPENROUTER_API_KEY) {
-            configs.push({ name: 'OpenRouter Llama 3.3', url: 'https://openrouter.ai/api/v1/chat/completions', model: 'meta-llama/llama-3.3-70b-instruct', key: process.env.OPENROUTER_API_KEY });
-        }
-
-        // Priority 3: K2 Models (Moonshot Kimi K2)
-        if (process.env.OPENROUTER_API_KEY) {
-            configs.push({ name: 'OpenRouter K2', url: 'https://openrouter.ai/api/v1/chat/completions', model: 'moonshotai/kimi-k2-instruct-0905', key: process.env.OPENROUTER_API_KEY });
-        }
-        if (process.env.GROQ_API_KEY) {
-            configs.push({ name: 'Groq K2', url: 'https://api.groq.com/openai/v1/chat/completions', model: 'kimi-k2-instruct', key: process.env.GROQ_API_KEY });
         }
         if (process.env.MOONSHOT_API_KEY) {
             configs.push({ name: 'Moonshot K2', url: 'https://api.moonshot.cn/v1/chat/completions', model: 'moonshot-v1-8k', key: process.env.MOONSHOT_API_KEY });
         }
 
-        // Safety Fallback: Groq's smaller Llama model if the 70B is rate-limited and nothing else is available
+        // Safety Fallback: Groq's smallest, fastest Llama model (highest rate limits)
         if (process.env.GROQ_API_KEY) {
             configs.push({ name: 'Groq Llama 3.1 8B (Fallback)', url: 'https://api.groq.com/openai/v1/chat/completions', model: 'llama-3.1-8b-instant', key: process.env.GROQ_API_KEY });
         }
