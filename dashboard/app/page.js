@@ -506,6 +506,31 @@ export default function Dashboard() {
                 </div>
             </div>
 
+            {/* MARKET PULSE - Quick summary at top */}
+            {!loading && spy && fg && !spy.error && !fg.error && (
+                <div className="market-pulse">
+                    <span className="pulse-label">📡 Market Pulse</span>
+                    <span className="pulse-items">
+                        <span className={spy.dailyChange?.pct >= 0 ? 'stat-positive' : 'stat-negative'}>
+                            SPY {spy.dailyChange?.pct >= 0 ? '▲' : '▼'}{Math.abs(spy.dailyChange?.pct || 0).toFixed(2)}%
+                        </span>
+                        <span className="pulse-sep">·</span>
+                        <span style={{ color: fgColor(fg.score) }}>
+                            F&G {Math.round(fg.score)} {fg.rating}
+                        </span>
+                        <span className="pulse-sep">·</span>
+                        <span className={spy.rsi > 70 ? 'stat-negative' : spy.rsi < 30 ? 'stat-positive' : ''}>
+                            RSI {spy.rsi.toFixed(0)}
+                        </span>
+                        {fred?.checklist && (() => {
+                            const bullish = Object.values(fred.checklist).filter(i => i.bullish).length;
+                            const total = Object.values(fred.checklist).length;
+                            return <><span className="pulse-sep">·</span><span style={{ color: 'var(--green)' }}>Bull {bullish}/{total}</span></>;
+                        })()}
+                    </span>
+                </div>
+            )}
+
             {/* MAIN GRID */}
             <div className="dashboard-grid">
 
@@ -520,7 +545,12 @@ export default function Dashboard() {
                             {/* Hero price */}
                             <div className="hero-price-section">
                                 <div className="hero-price">${spy.current.toFixed(2)}</div>
-                                <div className={`hero-change ${spy.ma200.pct >= 0 ? 'stat-positive' : 'stat-negative'}`}>
+                                {spy.dailyChange && (
+                                    <div className={`daily-change-badge ${spy.dailyChange.pct >= 0 ? 'daily-up' : 'daily-down'}`}>
+                                        {spy.dailyChange.pct >= 0 ? '▲' : '▼'} ${Math.abs(spy.dailyChange.value).toFixed(2)} ({spy.dailyChange.pct >= 0 ? '+' : ''}{spy.dailyChange.pct.toFixed(2)}%) today
+                                    </div>
+                                )}
+                                <div className={`hero-change ${spy.ma200.pct >= 0 ? 'stat-positive' : 'stat-negative'}`} style={{ marginTop: '6px' }}>
                                     {spy.ma200.pct >= 0 ? '▲' : '▼'} {Math.abs(spy.ma200.pct).toFixed(2)}% {spy.ma200.pct >= 0 ? 'above' : 'below'} 200d MA
                                 </div>
                                 <div className={`hero-change`} style={{ color: spy.week52High.pct >= -1 ? 'var(--green)' : 'var(--yellow)', fontSize: '0.78rem', marginTop: '2px' }}>
@@ -588,12 +618,23 @@ export default function Dashboard() {
                                     { label: '1 Week', val: Math.round(fg.previousWeek) },
                                     { label: '1 Month', val: Math.round(fg.previousMonth) },
                                     { label: '1 Year', val: Math.round(fg.previousYear) }
-                                ].map(h => (
-                                    <div key={h.label} className="fg-history-item">
-                                        <div className="fg-history-label">{h.label}</div>
-                                        <div className="fg-history-value">{h.val}</div>
-                                    </div>
-                                ))}
+                                ].map(h => {
+                                    const current = Math.round(fg.score);
+                                    const diff = current - h.val;
+                                    const arrow = diff > 0 ? '▲' : diff < 0 ? '▼' : '—';
+                                    const arrowColor = diff > 0 ? 'var(--green)' : diff < 0 ? 'var(--red)' : 'var(--text-muted)';
+                                    return (
+                                        <div key={h.label} className="fg-history-item">
+                                            <div className="fg-history-label">{h.label}</div>
+                                            <div className="fg-history-value">
+                                                {h.val}
+                                                <span style={{ marginLeft: '6px', fontSize: '0.7rem', color: arrowColor, fontWeight: 600 }}>
+                                                    {arrow}{Math.abs(diff)}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
                             </div>
                         </>
                     )}

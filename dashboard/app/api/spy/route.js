@@ -21,6 +21,9 @@ export async function GET() {
         if (rows.length < 10) throw new Error('Insufficient SPY data');
 
         const current = rows[rows.length - 1].close;
+        const prevClose = rows[rows.length - 2].close;
+        const dailyChange = current - prevClose;
+        const dailyChangePct = ((dailyChange) / prevClose) * 100;
 
         // 200-day MA
         const last200 = rows.slice(-200);
@@ -73,6 +76,7 @@ export async function GET() {
 
         return Response.json({
             current,
+            dailyChange: { value: dailyChange, pct: dailyChangePct },
             ma200: { value: ma200, pct: ma200Pct },
             week52High: { value: week52High, pct: high52wPct },
             rsi,
