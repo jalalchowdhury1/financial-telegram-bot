@@ -710,7 +710,7 @@ def create_fear_greed_chart(output_file='fear_greed.png'):
         ax.add_patch(patches.Circle((gauge_center_x, gauge_center_y), 0.025, facecolor='#333333', zorder=4))
         
         # Score Text
-        ax.text(gauge_center_x, gauge_center_y - 0.12, f"{int(current_score)}", fontsize=48, color=color_text, fontweight='bold', ha='center')
+        ax.text(gauge_center_x, gauge_center_y - 0.12, f"{int(round(current_score))}", fontsize=48, color=color_text, fontweight='bold', ha='center')
         ax.text(gauge_center_x, gauge_center_y - 0.20, rating, fontsize=20, color=color_text, fontweight='bold', ha='center')
         
         # Historical
@@ -1405,7 +1405,7 @@ def main():
         fg_file, fg_score, fg_rating = create_fear_greed_chart()
         charts_generated.append({
             'file': fg_file,
-            'caption': f"😨📈 Fear & Greed Index: {int(fg_score)} ({fg_rating})\nDate: {datetime.now().strftime('%Y-%m-%d')}"
+            'caption': f"😨📈 Fear & Greed Index: {int(round(fg_score))} ({fg_rating})\nDate: {datetime.now().strftime('%Y-%m-%d')}"
         })
     except Exception as e:
         print(f"WARNING: Skipping Fear & Greed chart due to error")
