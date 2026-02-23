@@ -96,6 +96,8 @@ Output the assessment now:`;
                     headers['X-Title'] = 'Financial Telegram Dashboard';
                 }
 
+                console.log(`[ASSESSMENT DEBUG] Attempting to fetch from ${conf.name} (${conf.model})...`);
+
                 const res = await fetch(conf.url, {
                     method: 'POST',
                     headers: headers,
@@ -110,7 +112,7 @@ Output the assessment now:`;
                 const result = await res.json();
 
                 if (!res.ok) {
-                    console.warn(`[ASSESSMENT FALLBACK] ${conf.name} failed:`, result.error?.message || res.statusText);
+                    console.warn(`[ASSESSMENT FALLBACK] ${conf.name} failed. Status: ${res.status}. Error object:`, JSON.stringify(result.error || result));
                     lastError = `[${conf.name}] ${result.error?.message || res.statusText}`;
                     continue; // Model failed (rate limit, etc). Automatically step to the next one!
                 }
