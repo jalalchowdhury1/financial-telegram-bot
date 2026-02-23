@@ -93,10 +93,15 @@ export async function GET() {
         const leiChange = ((leiCurrent - leiPrev) / leiPrev) * 100;
         const leiChange6mo = lei6moAgo ? ((leiCurrent - lei6moAgo) / lei6moAgo) * 100 : 0;
 
-        // CPI & Inflation
+        // CPI & Inflation Momentum
         const cpiCurrent = cpiaucsl[0]?.value;
         const cpiYearAgo = cpiaucsl[12]?.value;
         const inflationYoy = cpiYearAgo ? ((cpiCurrent - cpiYearAgo) / cpiYearAgo) * 100 : 0;
+
+        // Calculate Inflation Momentum (3-month annualized vs YoY)
+        const cpi3moAgo = cpiaucsl[3]?.value;
+        const inflation3moAnn = cpi3moAgo ? (((cpiCurrent / cpi3moAgo) ** 4) - 1) * 100 : 0;
+        const inflationMomentum = inflation3moAnn - inflationYoy; // Positive = Rising, Negative = Cooling
 
 
         // Bull Market Checklist
@@ -138,8 +143,8 @@ export async function GET() {
             profitMargin,
             recessions: recessionPeriods,
             economicCycle: {
-                inflation: inflationYoy,
-                growth: leiChange6mo // 6-month growth trend for smoother cycle
+                inflation: inflationMomentum, // Positive = Rising, Negative = Cooling
+                growth: leiChange6mo // Positive = Expanding, Negative = Contracting
             },
             indicators: {
                 sahmRule: { value: sahmRule, status: sahmRule >= 0.5 ? 'danger' : 'safe' },

@@ -360,10 +360,10 @@ function MiniChart({ history, color = '#818cf8', gradientId = 'chartGrad', showZ
 
 // ============ ECONOMIC CYCLE CHART ============
 function EconomicCycleChart({ growth, inflation }) {
-    // Limits
+    // Limits: Center at 0 for both growth and inflation momentum
     const minX = -8, maxX = 8;
-    const minY = 0, maxY = 8;
-    const centerY = 3.0; // Inflation neutral line 3%
+    const minY = -4, maxY = 4;
+    const centerY = 0; // Assume 0% CPI change is the "neutral" target for inflation axis
 
     // Clamp values
     const clampX = Math.min(Math.max(growth || 0, minX), maxX);
@@ -375,19 +375,23 @@ function EconomicCycleChart({ growth, inflation }) {
     const pctY = 100 - yPct; // Y is inverted in web (top=0)
 
     let regime, description, qColor;
-    if (clampX < 0 && clampY > centerY) {
+    if (clampX < 0 && clampY > 0) {
+        // Slowing Growth (X < 0), High/Rising Inflation (Y > target)
         regime = 'Late-Cycle Expansion';
         description = 'Slowing Growth, Elevated Inflation';
         qColor = '#f97316'; // orange
-    } else if (clampX >= 0 && clampY > centerY) {
+    } else if (clampX >= 0 && clampY > 0) {
+        // Strong Growth (X >= 0), Rising Inflation (Y > target)
         regime = 'Mid-Cycle';
         description = 'Strong Growth, Rising Inflation';
         qColor = '#22c55e'; // green
-    } else if (clampX < 0 && clampY <= centerY) {
+    } else if (clampX < 0 && clampY <= 0) {
+        // Falling Growth (X < 0), Cooling Inflation (Y <= target)
         regime = 'Recession / Contraction';
         description = 'Falling Growth, Disinflation';
         qColor = '#38bdf8'; // blue
     } else {
+        // Rebound Growth (X >= 0), Cooling Inflation (Y <= target)
         regime = 'Early-Cycle Recovery';
         description = 'Rebound Growth, Cooling Inflation';
         qColor = '#a3e635'; // light green
@@ -433,9 +437,9 @@ function EconomicCycleChart({ growth, inflation }) {
                 <div style={{
                     position: 'absolute',
                     left: `${pctX}%`,
-                    top: `calc(${pctY}% - 12px)`,
+                    top: `${pctY}%`,
                     transform: 'translate(-50%, -50%)',
-                    width: '16px', height: '16px',
+                    width: '18px', height: '18px',
                     background: qColor,
                     borderRadius: '50%',
                     boxShadow: `0 0 20px ${qColor}`,
@@ -451,7 +455,7 @@ function EconomicCycleChart({ growth, inflation }) {
                     📍 AI Positioning: <span style={{ color: qColor }}>{regime}</span>
                 </span>
                 <span style={{ color: 'var(--text-muted)', fontFamily: "'JetBrains Mono', monospace", fontSize: '0.7rem' }}>
-                    LEI 6mo: {(growth || 0) > 0 ? '+' : ''}{(growth || 0).toFixed(1)}% | CPI YoY: {(inflation || 0).toFixed(1)}%
+                    Growth (LEI): {(growth || 0) > 0 ? '+' : ''}{(growth || 0).toFixed(1)}% | Inflation Mom.: {(inflation || 0) > 0 ? '+' : ''}{(inflation || 0).toFixed(1)}%
                 </span>
             </div>
         </div>
