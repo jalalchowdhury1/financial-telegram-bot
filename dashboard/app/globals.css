@@ -715,30 +715,73 @@ body::before {
     display: none;
   }
 
-  /* Tighter cards */
+  /* Cards — prevent overflow */
   .card {
-    padding: 18px 16px;
+    padding: 16px 14px;
+    overflow: hidden;
   }
 
-  .card .checklist-item {
-    padding: 10px 10px;
+  /* Card header — allow badge to shrink/wrap */
+  .card-header {
+    gap: 8px;
+    margin-bottom: 14px;
+    padding-bottom: 10px;
+    flex-wrap: wrap;
   }
 
-  /* Centered stats grid on mobile */
+  .card-header h2 {
+    font-size: 0.88rem;
+    min-width: 0;
+  }
+
+  .card-header .badge {
+    font-size: 0.6rem;
+    padding: 2px 8px;
+    flex-shrink: 0;
+  }
+
+  /* Hero price — shrink for mobile */
+  .hero-price {
+    font-size: 2rem !important;
+  }
+
+  .hero-change {
+    font-size: 0.72rem !important;
+  }
+
+  .hero-price-section {
+    padding: 4px 0 12px;
+  }
+
+  /* Stats mini grid — fit 4 columns cleanly */
   .stats-mini-grid {
     grid-template-columns: repeat(4, 1fr);
     gap: 1px;
   }
 
   .stat-mini {
-    padding: 10px 4px;
+    padding: 10px 2px;
   }
 
   .stat-mini-label {
-    font-size: 0.52rem;
+    font-size: 0.5rem;
   }
 
   .stat-mini-value {
-    font-size: 0.75rem;
+    font-size: 0.72rem;
+  }
+
+  /* Tighter checklist items */
+  .card .checklist-item {
+    padding: 10px 10px;
+  }
+
+  /* Gauge smaller on mobile */
+  .gauge-section svg {
+    max-width: 200px;
+  }
+
+  .gauge-inline-label {
+    font-size: 0.7rem;
   }
 }
