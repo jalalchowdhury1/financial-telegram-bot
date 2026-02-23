@@ -696,14 +696,14 @@ export default function Dashboard() {
                                             <span className="checklist-text" style={{ flex: 'none', color: 'var(--text-primary)' }}>{item.label}</span>
                                             <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', lineHeight: 1.2 }}>
                                                 {{
-                                                    nfci: 'System tightness (< 0 = easy, > 0 = tight)',
-                                                    m2: 'YoY liquidity growth (> 2% = expanding)',
-                                                    retail: 'Consumer spending strength (> 0% = growing)',
-                                                    housing: 'Housing market health (> 1300K = healthy)',
-                                                    indpro: '6-mo manufacturing trend (> 0% = expanding)',
-                                                    jolts: 'Labor demand (> 6000K = strong)',
-                                                    durable: 'Business investment 3mo trend (> 0% = rising)',
-                                                    savings: 'Consumer cushion (≥ 3.5% = healthy)'
+                                                    nfci: 'System tightness (<0 = easy, >0 = tight)',
+                                                    m2: 'YoY liquidity growth (>2% = expanding)',
+                                                    retail: 'Consumer spending strength',
+                                                    housing: 'Housing market health (>1,400K = strong, >1,300K = OK)',
+                                                    indpro: '6-month manufacturing trend',
+                                                    jolts: 'Labor demand (>7,000K = strong, >6,000K = OK)',
+                                                    durable: 'Business investment (3mo trend)',
+                                                    savings: 'Consumer cushion (>5% = healthy, ≥ 3.5% = OK)'
                                                 }[key]}
                                             </span>
                                         </div>
@@ -717,7 +717,7 @@ export default function Dashboard() {
                                             </span>
                                             <span className="checklist-benchmark" style={{ opacity: 0.9 }}>
                                                 {{
-                                                    nfci: item.status === 'strong' ? '← Easy' : item.status === 'good' ? '← Neutral' : '← Tight',
+                                                    nfci: item.status === 'strong' ? '← Easy' : item.status === 'good' ? '← Easy' : '← Tight',
                                                     m2: item.status === 'strong' ? '← Growing' : item.status === 'good' ? '← Growing' : '← Contracting',
                                                     retail: item.status === 'strong' ? '← Growing' : item.status === 'good' ? '← Growing' : '← Declining',
                                                     housing: item.status === 'strong' ? '← Strong' : item.status === 'good' ? '← OK' : '← Weak',
