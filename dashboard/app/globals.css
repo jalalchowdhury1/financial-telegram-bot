@@ -667,11 +667,46 @@ body::before {
 }
 
 @media (max-width: 500px) {
-  .indicator-bar {
-    grid-template-columns: 1fr;
-  }
-
   .dashboard {
     padding: 16px 12px 40px;
+  }
+
+  /* Compact header */
+  .dashboard-header {
+    padding: 16px 0 8px;
+    margin-bottom: 16px;
+  }
+
+  .dashboard-header h1 {
+    font-size: 1.4rem;
+  }
+
+  .dashboard-header .subtitle {
+    font-size: 0.82rem;
+  }
+
+  /* Compact 2×2 indicator grid */
+  .indicator-bar {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+
+  .indicator-pill {
+    padding: 12px 14px;
+  }
+
+  .indicator-pill .value {
+    font-size: 0.85rem;
+  }
+
+  .indicator-pill .label {
+    font-size: 0.65rem;
+    margin-bottom: 4px;
+  }
+
+  /* Tighter checklist grid on mobile */
+  .card .checklist-item {
+    padding: 10px 10px;
   }
 }
