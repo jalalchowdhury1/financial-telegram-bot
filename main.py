@@ -714,7 +714,7 @@ def create_fear_greed_chart(output_file='fear_greed.png'):
         ax.text(gauge_center_x, gauge_center_y - 0.20, rating, fontsize=20, color=color_text, fontweight='bold', ha='center')
         
         # Historical
-        hist_text = f"Prev Close: {int(prev_close)}  |  1W: {int(prev_week)}  |  1M: {int(prev_month)}  |  1Y: {int(prev_year)}"
+        hist_text = f"Prev Close: {int(round(prev_close))}  |  1W: {int(round(prev_week))}  |  1M: {int(round(prev_month))}  |  1Y: {int(round(prev_year))}"
         ax.text(0.5, 0.10, hist_text, ha='center', va='center', fontsize=12, color=color_gray, fontweight='bold')
         
         # Add source at bottom

@@ -1,4 +1,5 @@
 // /api/sheets - Fetch Google Sheets custom indicators
+export const dynamic = 'force-dynamic';
 export async function GET() {
     try {
         const sheets = [

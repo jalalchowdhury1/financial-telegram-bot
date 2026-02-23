@@ -1,4 +1,5 @@
 // /api/fred - Fetch all FRED economic data
+export const dynamic = 'force-dynamic';
 const FRED_BASE = 'https://api.stlouisfed.org/fred/series/observations';
 
 async function fetchSeries(seriesId, apiKey, limit = 15) {
@@ -141,14 +142,14 @@ export async function GET() {
                 lei: { value: leiCurrent, change: leiChange, status: leiChange > 0 ? 'rising' : 'falling' }
             },
             checklist: {
-                nfci: { value: nfciCurrent, bullish: nfciCurrent < 0, label: 'Financial Conditions' },
-                m2: { value: m2Growth, bullish: m2Growth > 2.0, label: 'M2 Money Supply' },
-                retail: { value: retailGrowth, bullish: retailGrowth > 0, label: 'Retail Sales (3mo)' },
-                housing: { value: housingCurrent, bullish: housingCurrent > housing6moAvg && housingCurrent > 1300, label: 'Housing Starts' },
-                indpro: { value: indproChange, bullish: indproChange > 0, label: 'Industrial Production' },
-                jolts: { value: joltsCurrent, bullish: joltsCurrent > 6000, label: 'Job Openings (JOLTS)' },
-                durable: { value: durableChange, bullish: durableChange > 0, label: 'Durable Goods Orders' },
-                savings: { value: savingsCurrent, bullish: savingsCurrent >= 3.5, label: 'Savings Rate' }
+                nfci: { value: nfciCurrent, bullish: nfciCurrent < 0, status: nfciCurrent < -0.5 ? 'strong' : nfciCurrent < 0 ? 'good' : 'weak', label: 'Financial Conditions' },
+                m2: { value: m2Growth, bullish: m2Growth > 2.0, status: m2Growth > 4.0 ? 'strong' : m2Growth > 2.0 ? 'good' : 'weak', label: 'M2 Money Supply' },
+                retail: { value: retailGrowth, bullish: retailGrowth > 0, status: retailGrowth > 1.0 ? 'strong' : retailGrowth > 0 ? 'good' : 'weak', label: 'Retail Sales (3mo)' },
+                housing: { value: housingCurrent, bullish: housingCurrent > housing6moAvg && housingCurrent > 1300, status: housingCurrent > 1400 ? 'strong' : (housingCurrent > housing6moAvg && housingCurrent > 1300) ? 'good' : 'weak', label: 'Housing Starts' },
+                indpro: { value: indproChange, bullish: indproChange > 0, status: indproChange > 1.0 ? 'strong' : indproChange > 0 ? 'good' : 'weak', label: 'Industrial Production' },
+                jolts: { value: joltsCurrent, bullish: joltsCurrent > 6000, status: joltsCurrent > 7000 ? 'strong' : joltsCurrent > 6000 ? 'good' : 'weak', label: 'Job Openings (JOLTS)' },
+                durable: { value: durableChange, bullish: durableChange > 0, status: durableChange > 2.0 ? 'strong' : durableChange > 0 ? 'good' : 'weak', label: 'Durable Goods Orders' },
+                savings: { value: savingsCurrent, bullish: savingsCurrent >= 3.5, status: savingsCurrent >= 5.0 ? 'strong' : savingsCurrent >= 3.5 ? 'good' : 'weak', label: 'Savings Rate' }
             }
         });
     } catch (error) {

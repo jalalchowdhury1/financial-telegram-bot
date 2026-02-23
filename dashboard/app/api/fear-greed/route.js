@@ -1,9 +1,12 @@
 // /api/fear-greed - Fetch CNN Fear & Greed Index
+export const dynamic = 'force-dynamic';
 export async function GET() {
     try {
         const res = await fetch('https://production.dataviz.cnn.io/index/fearandgreed/graphdata', {
             headers: {
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+                'Referer': 'https://edition.cnn.com/',
+                'Accept': 'application/json'
             },
             next: { revalidate: 0 }
         });
