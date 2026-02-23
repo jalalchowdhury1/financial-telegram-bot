@@ -690,7 +690,7 @@ export default function Dashboard() {
                                 { icon: '🏦', label: 'BBB Credit Spread', value: `${fred.indicators.creditSpread.value.toFixed(2)}%`, status: fred.indicators.creditSpread.status, benchmark: '< 1.5% tight' },
                                 { icon: '💵', label: 'Real Yields (10Y TIPS)', value: `${fred.indicators.realYields.value.toFixed(2)}%`, status: fred.indicators.realYields.status, benchmark: '< 0% easy' },
                                 { icon: '📊', label: 'Leading Economic Index', value: `${fred.indicators.lei.change >= 0 ? '+' : ''}${fred.indicators.lei.change.toFixed(2)}%`, status: fred.indicators.lei.status, benchmark: '> 0% rising' },
-                                { icon: '💎', label: 'Market Valuation', value: 'P/E ~32', status: 'neutral', benchmark: 'Fair at ~20' },
+                                { icon: '💎', label: 'Market Valuation', value: fred.peRatio ? `P/E ~${fred.peRatio.toFixed(1)}` : 'P/E N/A', status: fred.peRatio > 25 ? 'restrictive' : 'neutral', benchmark: 'Fair at ~20' },
                             ].map(ind => (
                                 <div className="stat-row" key={ind.label}>
                                     <span className="stat-label">{ind.icon} {ind.label}</span>
@@ -804,7 +804,10 @@ export default function Dashboard() {
 
             {/* FOOTER */}
             <footer className="dashboard-footer">
-                <p>Jalal's Financial Dashboard v3.0 — Data from FRED, CNN, Stooq & Google Sheets</p>
+                <p>Jalal's Financial Dashboard v7.0 — Data from FRED, CNN, Stooq & Google Sheets</p>
+                <p style={{ fontSize: '0.7rem', opacity: 0.6, marginTop: '4px' }}>
+                    Deployed: {new Date(process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_MESSAGE ? Date.now() : Date.now()).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                </p>
             </footer>
         </div>
     );

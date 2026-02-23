@@ -44,6 +44,19 @@ export async function GET() {
             fetchSeries('USREC', apiKey, 100000)
         ]);
 
+        // Fetch current S&P 500 P/E ratio from multpl.com
+        let peRatio = null;
+        try {
+            const peRes = await fetch('https://www.multpl.com/s-p-500-pe-ratio', {
+                headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' }
+            });
+            const peHtml = await peRes.text();
+            const peMatch = peHtml.match(/Current S&P 500 PE Ratio[^\d]*(\d+\.\d+)/);
+            if (peMatch) peRatio = parseFloat(peMatch[1]);
+        } catch (e) {
+            // Silently fail — P/E is nice-to-have
+        }
+
         // Compute recession periods from USREC (1=recession, 0=expansion)
         const recessionPeriods = [];
         const recSorted = [...usrec].reverse(); // oldest first
@@ -132,6 +145,7 @@ export async function GET() {
         return Response.json({
             yieldCurve,
             profitMargin,
+            peRatio,
             recessions: recessionPeriods,
             indicators: {
                 sahmRule: { value: sahmRule, status: sahmRule >= 0.5 ? 'danger' : 'safe' },
