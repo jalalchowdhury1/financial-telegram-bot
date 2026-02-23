@@ -205,6 +205,12 @@ body::before {
   animation: fadeInUp 0.5s ease forwards, pillGlow 3s ease-in-out infinite;
 }
 
+.card.card-alert {
+  border-left: 3px solid rgba(234, 179, 8, 0.6);
+  box-shadow: var(--shadow-card), 0 0 12px rgba(234, 179, 8, 0.08);
+  animation: fadeInUp 0.6s ease forwards, pillGlow 3s ease-in-out infinite;
+}
+
 @keyframes pillGlow {
 
   0%,

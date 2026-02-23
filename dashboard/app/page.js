@@ -511,7 +511,7 @@ export default function Dashboard() {
             <div className="dashboard-grid">
 
                 {/* ========== REDESIGNED SPY CARD ========== */}
-                <div className="card" style={{ animationDelay: '0.2s' }}>
+                <div className={`card${spy && !spy.error && (spy.rsi < 30 || spy.rsi > 70) ? ' card-alert' : ''}`} style={{ animationDelay: '0.2s' }}>
                     <div className="card-header">
                         <h2>📊 SPY Market Overview</h2>
                         {spy && !spy.error && <span className={`badge ${spy.rsi > 70 ? 'badge-red' : spy.rsi < 30 ? 'badge-green' : 'badge-blue'}`}>{spy.rsi > 70 ? 'Overbought' : spy.rsi < 30 ? 'Oversold' : 'Neutral'}</span>}
