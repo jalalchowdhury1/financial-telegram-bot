@@ -888,8 +888,8 @@ export default function Dashboard() {
                         <span className={`status-item ${systemStatus.fg?.hasErrors ? 'status-error' : ''}`}>
                             [F&G: {systemStatus.fg?.hasErrors ? 'PARTIAL' : 'LIVE OK'}]
                         </span>
-                        <span className={`status-item ${systemStatus.sheets?.hasErrors ? 'status-warn' : ''}`}>
-                            [SHEETS: {systemStatus.sheets?.hasErrors ? 'CACHE' : 'LIVE OK'}]
+                        <span className={`status-item ${systemStatus.sheets?.source === 'Failed' ? 'status-error' : systemStatus.sheets?.hasErrors ? 'status-warn' : ''}`}>
+                            [SHEETS: {systemStatus.sheets?.source === 'Failed' ? 'FAILED' : systemStatus.sheets?.hasErrors ? 'CACHE' : 'LIVE OK'}]
                         </span>
                     </div>
                 </div>

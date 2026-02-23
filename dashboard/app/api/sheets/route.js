@@ -38,7 +38,7 @@ export async function GET() {
         let fetchFailed = false;
 
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 2500); // Strict 2.5s timeout
+        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5.0s timeout for Vercel
 
         try {
             const fetchPromises = sheets.map(async (sheet) => {
@@ -84,7 +84,10 @@ export async function GET() {
                     throw new Error('No cache file available');
                 }
             } catch (cacheError) {
-                return Response.json({ error: 'Live fetch failed and cache unavailable.' }, { status: 500 });
+                return Response.json({
+                    error: 'Live fetch failed and cache unavailable.',
+                    _meta: { source: 'Failed', hasErrors: true, messages: ['Live fetch failed and `/tmp` cache unavailable on Vercel.'] }
+                }, { status: 500 });
             }
         }
 
@@ -97,6 +100,9 @@ export async function GET() {
             }
         });
     } catch (error) {
-        return Response.json({ error: error.message }, { status: 500 });
+        return Response.json({
+            error: error.message,
+            _meta: { source: 'Failed', hasErrors: true, messages: [error.message] }
+        }, { status: 500 });
     }
 }
