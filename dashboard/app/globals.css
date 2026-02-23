@@ -156,14 +156,15 @@ body::before {
 .market-pulse {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 18px;
-  margin-bottom: 20px;
-  background: rgba(30, 41, 59, 0.6);
+  justify-content: center;
+  gap: 16px;
+  padding: 14px 24px;
+  margin-bottom: 24px;
+  background: rgba(30, 41, 59, 0.4);
   border: 1px solid rgba(99, 102, 241, 0.15);
   border-radius: 12px;
   backdrop-filter: blur(8px);
-  font-size: 0.82rem;
+  font-size: 0.9rem;
   font-weight: 600;
   animation: fadeInUp 0.5s ease forwards;
 }
@@ -171,23 +172,27 @@ body::before {
 .pulse-label {
   color: var(--text-muted);
   white-space: nowrap;
-  font-size: 0.72rem;
+  font-size: 0.75rem;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
+  display: flex;
+  align-items: center;
 }
 
 .pulse-items {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: center;
+  gap: 12px;
   flex-wrap: wrap;
   font-family: var(--font-mono);
-  font-size: 0.78rem;
+  font-size: 0.85rem;
 }
 
 .pulse-sep {
   color: var(--text-muted);
   opacity: 0.4;
+  margin: 0 4px;
 }
 
 /* ========== DAILY CHANGE BADGE ========== */
