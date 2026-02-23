@@ -444,6 +444,9 @@ export default function Dashboard() {
 
     return (
         <div className="dashboard">
+            {/* Auto-Refresh Visualizer */}
+            {lastUpdated && <div key={lastUpdated} className="auto-refresh-bar" style={{ animation: 'progress-fill 300s linear forwards' }}></div>}
+
             {/* HEADER */}
             <header className="dashboard-header">
                 <h1>Jalal's Financial Dashboard</h1>
@@ -643,7 +646,7 @@ export default function Dashboard() {
                 {/* YIELD CURVE */}
                 <div className="card" style={{ animationDelay: '0.4s' }}>
                     <div className="card-header">
-                        <h2>📈 Yield Curve (10Y-2Y)</h2>
+                        <h2><span className="tooltip-trigger" data-tooltip="When the 2-year yield is higher than the 10-year, it is a classic recession warning.">📈 Yield Curve (10Y-2Y)</span></h2>
                         {fred?.yieldCurve && <span className={`badge ${fred.yieldCurve.current >= 0 ? 'badge-green' : 'badge-red'}`}>{fred.yieldCurve.current >= 0 ? 'Positive' : 'Inverted'}</span>}
                     </div>
                     {loading || !fred || fred.error ? <Skeleton count={2} /> : (
@@ -661,7 +664,7 @@ export default function Dashboard() {
                 {/* PROFIT MARGIN */}
                 <div className="card" style={{ animationDelay: '0.45s' }}>
                     <div className="card-header">
-                        <h2>💰 Profit Margin</h2>
+                        <h2><span className="tooltip-trigger" data-tooltip="Corporate Profits / GDP: High margins indicate strong corporate pricing power.">💰 Profit Margin</span></h2>
                         {fred?.profitMargin && <span className="badge badge-blue">Corp Profits / GDP</span>}
                     </div>
                     {loading || !fred || fred.error || !fred.profitMargin ? <Skeleton count={2} /> : (
@@ -684,16 +687,18 @@ export default function Dashboard() {
                     {loading || !fred || fred.error ? <Skeleton count={6} /> : (
                         <>
                             {[
-                                { icon: fred.indicators.sahmRule.status === 'safe' ? '✅' : '🔴', label: 'Sahm Rule', value: fred.indicators.sahmRule.value.toFixed(2), status: fred.indicators.sahmRule.status, benchmark: '< 0.50' },
-                                { icon: '🛒', label: 'Consumer Sentiment', value: fred.indicators.sentiment.value.toFixed(1), status: fred.indicators.sentiment.status, benchmark: '> 80 strong' },
-                                { icon: '📋', label: 'Initial Claims (4wk)', value: `${fred.indicators.claims.value.toFixed(0)}K`, status: fred.indicators.claims.status, benchmark: '< 250K healthy' },
-                                { icon: '🏦', label: 'BBB Credit Spread', value: `${fred.indicators.creditSpread.value.toFixed(2)}%`, status: fred.indicators.creditSpread.status, benchmark: '< 1.5% tight' },
-                                { icon: '💵', label: 'Real Yields (10Y TIPS)', value: `${fred.indicators.realYields.value.toFixed(2)}%`, status: fred.indicators.realYields.status, benchmark: '< 0% easy' },
-                                { icon: '📊', label: 'Leading Economic Index', value: `${fred.indicators.lei.change >= 0 ? '+' : ''}${fred.indicators.lei.change.toFixed(2)}%`, status: fred.indicators.lei.status, benchmark: '> 0% rising' },
-                                { icon: '💎', label: 'Market Valuation', value: fred.peRatio ? `P/E ~${fred.peRatio.toFixed(1)}` : 'P/E N/A', status: fred.peRatio > 25 ? 'restrictive' : 'neutral', benchmark: 'Fair at ~20' },
+                                { icon: fred.indicators.sahmRule.status === 'safe' ? '✅' : '🔴', label: 'Sahm Rule', tooltip: "Recession indicator: triggers if 3mo average unemployment rises 0.5% above its 12mo low.", value: fred.indicators.sahmRule.value.toFixed(2), status: fred.indicators.sahmRule.status, benchmark: '< 0.50' },
+                                { icon: '🛒', label: 'Consumer Sentiment', tooltip: "University of Michigan survey assessing consumer confidence.", value: fred.indicators.sentiment.value.toFixed(1), status: fred.indicators.sentiment.status, benchmark: '> 80 strong' },
+                                { icon: '📋', label: 'Initial Claims (4wk)', tooltip: "4-week moving average of initial jobless claims. A critical real-time labor market gauge.", value: `${fred.indicators.claims.value.toFixed(0)}K`, status: fred.indicators.claims.status, benchmark: '< 250K healthy' },
+                                { icon: '🏦', label: 'BBB Credit Spread', tooltip: "The premium corporations pay over Treasuries to borrow. Widening indicates market stress.", value: `${fred.indicators.creditSpread.value.toFixed(2)}%`, status: fred.indicators.creditSpread.status, benchmark: '< 1.5% tight' },
+                                { icon: '💵', label: 'Real Yields (10Y TIPS)', tooltip: "10-Year Treasury Inflation-Indexed Security. Shows the true inflation-adjusted cost of capital.", value: `${fred.indicators.realYields.value.toFixed(2)}%`, status: fred.indicators.realYields.status, benchmark: '< 0% easy' },
+                                { icon: '📊', label: 'Leading Economic Index', tooltip: "The Conference Board LEI tracks 10 forward-looking economic components.", value: `${fred.indicators.lei.change >= 0 ? '+' : ''}${fred.indicators.lei.change.toFixed(2)}%`, status: fred.indicators.lei.status, benchmark: '> 0% rising' },
+                                { icon: '💎', label: 'Market Valuation', tooltip: "Current S&P 500 P/E Ratio. A measure of how expensive the market is historically.", value: fred.peRatio ? `P/E ~${fred.peRatio.toFixed(1)}` : 'P/E N/A', status: fred.peRatio > 25 ? 'restrictive' : 'neutral', benchmark: 'Fair at ~20' },
                             ].map(ind => (
                                 <div className="stat-row" key={ind.label}>
-                                    <span className="stat-label">{ind.icon} {ind.label}</span>
+                                    <span className="stat-label">
+                                        {ind.icon} <span className="tooltip-trigger" data-tooltip={ind.tooltip}>{ind.label}</span>
+                                    </span>
                                     <span className="stat-right">
                                         <span className={`stat-value ${statusColor(ind.status)}`}>{ind.value}</span>
                                         <span className="stat-benchmark">{ind.benchmark}</span>
@@ -731,7 +736,7 @@ export default function Dashboard() {
                             <div className="checklist-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
                                 {Object.entries(fred.checklist).map(([key, item]) => (
                                     <div className="checklist-item" key={key} style={{ padding: '12px 14px', alignItems: 'center' }}>
-                                        <span className="checklist-icon">{item.status === 'strong' ? '✅' : item.status === 'good' ? '⚠️' : '🔴'}</span>
+                                        <span className="checklist-icon">{item.bullish ? '✅' : '🔴'}</span>
                                         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '3px' }}>
                                             <span className="checklist-text" style={{ flex: 'none', color: 'var(--text-primary)' }}>{item.label}</span>
                                             <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', lineHeight: 1.2 }}>
