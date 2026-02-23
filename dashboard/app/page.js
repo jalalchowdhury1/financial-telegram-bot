@@ -497,7 +497,7 @@ export default function Dashboard() {
                         );
                     })() : <div className="value">{loading ? '...' : 'N/A'}</div>}
                 </div>
-                <div className="indicator-pill">
+                <div className={`indicator-pill${sheets?.VIX?.current && parseFloat(sheets.VIX.current) > parseFloat(sheets.VIX.threeMonth) ? ' pill-alert' : ''}`}>
                     <div className="label"><span className="emoji">🎢</span>VIX (Current | 3M)</div>
                     <div className="value">
                         {sheets?.VIX?.current
