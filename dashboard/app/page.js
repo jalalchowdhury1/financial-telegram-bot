@@ -358,110 +358,6 @@ function MiniChart({ history, color = '#818cf8', gradientId = 'chartGrad', showZ
     );
 }
 
-// ============ ECONOMIC CYCLE CHART ============
-function EconomicCycleChart({ growth, inflation }) {
-    // Limits: Center at 0 for both growth and inflation momentum
-    const minX = -8, maxX = 8;
-    const minY = -4, maxY = 4;
-    const centerY = 0; // Assume 0% CPI change is the "neutral" target for inflation axis
-
-    // Clamp values
-    const clampX = Math.min(Math.max(growth || 0, minX), maxX);
-    const clampY = Math.min(Math.max(inflation || 0, minY), maxY);
-
-    // Convert to percentage (for CSS placement)
-    const pctX = ((clampX - minX) / (maxX - minX)) * 100;
-    const yPct = ((clampY - minY) / (maxY - minY)) * 100;
-    const pctY = 100 - yPct; // Y is inverted in web (top=0)
-
-    let regime, description, qColor;
-    if (clampX < 0 && clampY > 0) {
-        // Slowing Growth (X < 0), High/Rising Inflation (Y > target)
-        regime = 'Late-Cycle Expansion';
-        description = 'Slowing Growth, Elevated Inflation';
-        qColor = '#f97316'; // orange
-    } else if (clampX >= 0 && clampY > 0) {
-        // Strong Growth (X >= 0), Rising Inflation (Y > target)
-        regime = 'Mid-Cycle';
-        description = 'Strong Growth, Rising Inflation';
-        qColor = '#22c55e'; // green
-    } else if (clampX < 0 && clampY <= 0) {
-        // Falling Growth (X < 0), Cooling Inflation (Y <= target)
-        regime = 'Recession / Contraction';
-        description = 'Falling Growth, Disinflation';
-        qColor = '#38bdf8'; // blue
-    } else {
-        // Rebound Growth (X >= 0), Cooling Inflation (Y <= target)
-        regime = 'Early-Cycle Recovery';
-        description = 'Rebound Growth, Cooling Inflation';
-        qColor = '#a3e635'; // light green
-    }
-
-    return (
-        <div style={{ position: 'relative', width: '100%', height: '300px', marginTop: '12px', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ position: 'relative', flex: 1, marginBottom: '8px' }}>
-                {/* Quadrant Backgrounds */}
-                <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr 1fr', gap: '3px' }}>
-                    <div style={{ background: 'linear-gradient(135deg, rgba(249,115,22,0.15) 0%, rgba(249,115,22,0.03) 100%)', borderRadius: '8px 0 0 0', padding: '12px' }}>
-                        <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#fed7aa' }}>Late-Cycle</div>
-                        <div style={{ fontSize: '0.6rem', color: 'rgba(255,255,255,0.4)' }}>Slowing Growth, Elevated Inflation</div>
-                    </div>
-                    <div style={{ background: 'linear-gradient(135deg, rgba(34,197,94,0.15) 0%, rgba(34,197,94,0.03) 100%)', borderRadius: '0 8px 0 0', padding: '12px', textAlign: 'right' }}>
-                        <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#bbf7d0' }}>Mid-Cycle</div>
-                        <div style={{ fontSize: '0.6rem', color: 'rgba(255,255,255,0.4)' }}>Strong Growth, Rising Inflation</div>
-                    </div>
-                    <div style={{ background: 'linear-gradient(135deg, rgba(56,189,248,0.15) 0%, rgba(56,189,248,0.03) 100%)', borderRadius: '0 0 0 8px', padding: '12px', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
-                        <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#bae6fd' }}>Recession</div>
-                        <div style={{ fontSize: '0.6rem', color: 'rgba(255,255,255,0.4)' }}>Falling Growth, Disinflation</div>
-                    </div>
-                    <div style={{ background: 'linear-gradient(135deg, rgba(163,230,53,0.15) 0%, rgba(163,230,53,0.03) 100%)', borderRadius: '0 0 8px 0', padding: '12px', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'flex-end', textAlign: 'right' }}>
-                        <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#d9f99d' }}>Early-Cycle</div>
-                        <div style={{ fontSize: '0.6rem', color: 'rgba(255,255,255,0.4)' }}>Rebound Growth, Cooling Inflation</div>
-                    </div>
-                </div>
-
-                {/* Axes Lines */}
-                <div style={{ position: 'absolute', top: 0, left: '50%', width: '1px', bottom: 0, background: 'rgba(255,255,255,0.15)' }}></div>
-                <div style={{ position: 'absolute', top: '50%', left: 0, right: 0, height: '1px', background: 'rgba(255,255,255,0.15)' }}></div>
-
-                {/* Axes Labels */}
-                <div style={{ position: 'absolute', top: '-10px', left: '50%', transform: 'translateX(-50%)', fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 600, background: 'var(--bg-card)', padding: '0 4px', zIndex: 5 }}>Inflation ↑</div>
-                <div style={{ position: 'absolute', right: '-4px', top: '50%', transform: 'translateY(-50%)', fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 600, background: 'var(--bg-card)', padding: '4px 0', zIndex: 5 }}>Growth →</div>
-
-                {/* Macro Cycle Path Approximation */}
-                <svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' }} viewBox="0 0 100 100" preserveAspectRatio="none">
-                    <path d="M 5,80 C 25,80 35,20 60,30 C 80,40 95,70 95,70" fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="2" strokeDasharray="3,3" />
-                </svg>
-
-                {/* Current Position Dot */}
-                <div style={{
-                    position: 'absolute',
-                    left: `${pctX}%`,
-                    top: `${pctY}%`,
-                    transform: 'translate(-50%, -50%)',
-                    width: '18px', height: '18px',
-                    background: qColor,
-                    borderRadius: '50%',
-                    boxShadow: `0 0 20px ${qColor}`,
-                    border: '3px solid white',
-                    zIndex: 10,
-                    transition: 'all 1s ease-out'
-                }}></div>
-            </div>
-
-            {/* Current Status Footer */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 12px', background: 'rgba(255,255,255,0.03)', borderRadius: '8px' }}>
-                <span style={{ fontSize: '0.8rem', color: 'var(--text-primary)', fontWeight: 600 }}>
-                    📍 AI Positioning: <span style={{ color: qColor }}>{regime}</span>
-                </span>
-                <span style={{ color: 'var(--text-muted)', fontFamily: "'JetBrains Mono', monospace", fontSize: '0.7rem' }}>
-                    Growth (LEI): {(growth || 0) > 0 ? '+' : ''}{(growth || 0).toFixed(1)}% | Inflation Mom.: {(inflation || 0) > 0 ? '+' : ''}{(inflation || 0).toFixed(1)}%
-                </span>
-            </div>
-        </div>
-    );
-}
-
 // ============ MAIN DASHBOARD ============
 export default function Dashboard() {
     const [sheets, setSheets] = useState(null);
@@ -834,20 +730,6 @@ export default function Dashboard() {
                                 );
                             })()}
                         </>
-                    )}
-                </div>
-
-                {/* ECONOMIC CYCLE MATRIX */}
-                <div className="card full-width" style={{ animationDelay: '0.65s' }}>
-                    <div className="card-header">
-                        <h2>🧭 Macroeconomic Cycle Map</h2>
-                        <span className="badge badge-purple">AI Inference</span>
-                    </div>
-                    {loading || !fred || fred.error || !fred.economicCycle ? <Skeleton count={6} /> : (
-                        <EconomicCycleChart
-                            growth={fred.economicCycle.growth}
-                            inflation={fred.economicCycle.inflation}
-                        />
                     )}
                 </div>
 
