@@ -21,7 +21,7 @@ export async function GET() {
         const [
             t10y2y, unrate, umcsent, icsa, bbb, dfii10, usslind,
             nfci, m2sl, rsxfs, houst, indpro, jtsjol, dgorder, psavert,
-            corpProfits, gdpData, usrec
+            corpProfits, gdpData, usrec, cpiaucsl
         ] = await Promise.all([
             fetchSeries('T10Y2Y', apiKey, 100000),
             fetchSeries('UNRATE', apiKey, 15),
@@ -40,7 +40,8 @@ export async function GET() {
             fetchSeries('PSAVERT', apiKey, 5),
             fetchSeries('A053RC1Q027SBEA', apiKey, 100000),
             fetchSeries('GDP', apiKey, 100000),
-            fetchSeries('USREC', apiKey, 100000)
+            fetchSeries('USREC', apiKey, 100000),
+            fetchSeries('CPIAUCSL', apiKey, 15)
         ]);
 
         // Compute recession periods from USREC (1=recession, 0=expansion)
@@ -85,10 +86,18 @@ export async function GET() {
         const tipsCurrent = dfii10[0]?.value;
         const tipsPrev = dfii10[1]?.value;
 
-        // LEI
+        // LEI & Growth
         const leiCurrent = usslind[0]?.value;
         const leiPrev = usslind[1]?.value;
+        const lei6moAgo = usslind[6]?.value;
         const leiChange = ((leiCurrent - leiPrev) / leiPrev) * 100;
+        const leiChange6mo = lei6moAgo ? ((leiCurrent - lei6moAgo) / lei6moAgo) * 100 : 0;
+
+        // CPI & Inflation
+        const cpiCurrent = cpiaucsl[0]?.value;
+        const cpiYearAgo = cpiaucsl[12]?.value;
+        const inflationYoy = cpiYearAgo ? ((cpiCurrent - cpiYearAgo) / cpiYearAgo) * 100 : 0;
+
 
         // Bull Market Checklist
         const nfciCurrent = nfci[0]?.value;
@@ -128,6 +137,10 @@ export async function GET() {
             yieldCurve,
             profitMargin,
             recessions: recessionPeriods,
+            economicCycle: {
+                inflation: inflationYoy,
+                growth: leiChange6mo // 6-month growth trend for smoother cycle
+            },
             indicators: {
                 sahmRule: { value: sahmRule, status: sahmRule >= 0.5 ? 'danger' : 'safe' },
                 sentiment: { value: sentimentCurrent, change: sentimentCurrent - sentimentPrev, status: sentimentCurrent > 80 ? 'strong' : sentimentCurrent > 60 ? 'neutral' : 'weak' },
