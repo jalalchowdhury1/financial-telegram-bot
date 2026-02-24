@@ -190,8 +190,9 @@ body::before {
   content: attr(data-tooltip);
   position: absolute;
   top: 100%;
-  left: 50%;
-  transform: translateX(-50%);
+  left: 0;
+  /* Default anchor left for first items */
+  transform: none;
   margin-top: 12px;
   padding: 10px 14px;
   background: rgba(15, 23, 42, 0.98);
@@ -218,14 +219,26 @@ body::before {
   content: '';
   position: absolute;
   top: 100%;
-  left: 50%;
-  transform: translateX(-50%);
+  left: 15px;
+  /* Default left arrow */
+  transform: none;
   border: 6px solid transparent;
   border-bottom-color: rgba(99, 102, 241, 0.4);
   margin-top: 0;
   z-index: 9998;
   pointer-events: none;
   animation: fadeIn 0.2s ease forwards;
+}
+
+/* Force the last 2 pills in the indicator row to anchor right instead of left to avoid edge bleed */
+.indicator-pill:nth-last-child(-n+2) .tooltip-trigger:hover::after {
+  left: auto;
+  right: 0;
+}
+
+.indicator-pill:nth-last-child(-n+2) .tooltip-trigger:hover::before {
+  left: auto;
+  right: 15px;
 }
 
 /* ========== SYSTEM STATUS BAR ========== */
@@ -1016,9 +1029,8 @@ body::before {
   /* Tooltips on mobile */
   .tooltip-trigger:hover::after {
     top: 100%;
-    left: auto;
-    right: 0;
-    /* Anchor to the right edge of the trigger to prevent screen overflow */
+    left: 0;
+    right: auto;
     transform: none;
     margin-left: 0;
     margin-top: 8px;
@@ -1030,12 +1042,22 @@ body::before {
 
   .tooltip-trigger:hover::before {
     top: 100%;
-    left: auto;
-    right: 15px;
-    /* Keep arrow aligned with the right-anchored floating box */
+    left: 15px;
+    right: auto;
     transform: none;
     margin-left: 0;
     margin-top: -4px;
     border-color: transparent transparent rgba(99, 102, 241, 0.4) transparent;
+  }
+
+  /* Override the last two indicator pills on mobile to right-anchor to avoid right-side clipping */
+  .indicator-pill:nth-last-child(-n+2) .tooltip-trigger:hover::after {
+    left: auto;
+    right: 0;
+  }
+
+  .indicator-pill:nth-last-child(-n+2) .tooltip-trigger:hover::before {
+    left: auto;
+    right: 15px;
   }
 }
