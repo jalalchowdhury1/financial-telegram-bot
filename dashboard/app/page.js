@@ -377,11 +377,12 @@ export default function Dashboard() {
         setRefreshing(true);
         setApiErrors([]);
         try {
+            const timestamp = Date.now();
             const [sheetsRes, spyRes, fgRes, fredRes] = await Promise.all([
-                fetch('/api/sheets', { cache: 'no-store' }).then(r => r.json()).catch(() => null),
-                fetch('/api/spy', { cache: 'no-store' }).then(r => r.json()).catch(() => null),
-                fetch('/api/fear-greed', { cache: 'no-store' }).then(r => r.json()).catch(() => null),
-                fetch('/api/fred', { cache: 'no-store' }).then(r => r.json()).catch(() => null),
+                fetch(`/api/sheets?_t=${timestamp}`, { cache: 'no-store' }).then(r => r.json()).catch(() => null),
+                fetch(`/api/spy?_t=${timestamp}`, { cache: 'no-store' }).then(r => r.json()).catch(() => null),
+                fetch(`/api/fear-greed?_t=${timestamp}`, { cache: 'no-store' }).then(r => r.json()).catch(() => null),
+                fetch(`/api/fred?_t=${timestamp}`, { cache: 'no-store' }).then(r => r.json()).catch(() => null),
             ]);
 
             setSheets(sheetsRes);
@@ -501,17 +502,17 @@ export default function Dashboard() {
 
             {/* CUSTOM INDICATOR BAR */}
             <div className="indicator-bar">
-                <div className={`indicator-pill${sheets?.NotSoBoring && sheets.NotSoBoring !== 'ON' ? ' pill-alert' : ''}`}>
+                <div className={`indicator-pill${!loading && sheets?.NotSoBoring && sheets.NotSoBoring !== 'ON' ? ' pill-alert' : ''}`}>
                     <div className="label"><span className="emoji">🛡️</span>NotSoBoring</div>
-                    <div className="value">{sheets?.NotSoBoring || (loading ? '...' : 'N/A')}</div>
+                    <div className="value">{loading ? '...' : (sheets?.NotSoBoring || 'N/A')}</div>
                 </div>
-                <div className={`indicator-pill${sheets?.FrontRunner && !sheets.FrontRunner.startsWith('BIL') ? ' pill-alert' : ''}`}>
+                <div className={`indicator-pill${!loading && sheets?.FrontRunner && !sheets.FrontRunner.startsWith('BIL') ? ' pill-alert' : ''}`}>
                     <div className="label"><span className="emoji">🔑</span>FrontRunner</div>
-                    <div className="value">{sheets?.FrontRunner || (loading ? '...' : 'N/A')}</div>
+                    <div className="value">{loading ? '...' : (sheets?.FrontRunner || 'N/A')}</div>
                 </div>
-                <div className={`indicator-pill${sheets?.AAIIDiff && parseFloat(sheets.AAIIDiff) > 20 ? ' pill-alert' : ''}`}>
+                <div className={`indicator-pill${!loading && sheets?.AAIIDiff && parseFloat(sheets.AAIIDiff) > 20 ? ' pill-alert' : ''}`}>
                     <div className="label"><span className="emoji">🔸</span>AAII Diff</div>
-                    {sheets?.AAIIDiff ? (() => {
+                    {!loading && sheets?.AAIIDiff ? (() => {
                         const val = parseFloat(sheets.AAIIDiff);
                         const isBullish = val > 20;
                         const targetDate = new Date();
@@ -532,12 +533,12 @@ export default function Dashboard() {
                         );
                     })() : <div className="value">{loading ? '...' : 'N/A'}</div>}
                 </div>
-                <div className={`indicator-pill${sheets?.VIX?.current && parseFloat(sheets.VIX.current) > parseFloat(sheets.VIX.threeMonth) ? ' pill-alert' : ''}`}>
+                <div className={`indicator-pill${!loading && sheets?.VIX?.current && parseFloat(sheets.VIX.current) > parseFloat(sheets.VIX.threeMonth) ? ' pill-alert' : ''}`}>
                     <div className="label"><span className="emoji">🎢</span>VIX (Current | 3M)</div>
                     <div className="value">
-                        {sheets?.VIX?.current
+                        {loading ? '...' : (sheets?.VIX?.current
                             ? `${sheets.VIX.current} | ${sheets.VIX.threeMonth} | ${sheets.VIX.fearGreed}`
-                            : (loading ? '...' : 'N/A')}
+                            : 'N/A')}
                     </div>
                 </div>
             </div>
@@ -847,7 +848,7 @@ export default function Dashboard() {
                         <span className="badge badge-purple">AI-Powered</span>
                     </div>
                     <ErrorBoundary>
-                        {!assessment ? (
+                        {loading || !assessment ? (
                             loading ? <Skeleton count={4} /> : <div className="error-message">Assessment unavailable</div>
                         ) : (
                             <div className="ai-assessment">{assessment}</div>
