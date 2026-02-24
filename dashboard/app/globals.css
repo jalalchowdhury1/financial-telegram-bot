@@ -203,8 +203,8 @@ body::before {
   white-space: normal;
   width: max-content;
   max-width: 250px;
-  z-index: 1000;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  z-index: 9999;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.8);
   pointer-events: none;
   font-family: var(--font-sans);
   text-transform: none;
@@ -223,7 +223,7 @@ body::before {
   border: 6px solid transparent;
   border-right-color: rgba(99, 102, 241, 0.3);
   margin-left: 0;
-  z-index: 999;
+  z-index: 9998;
   pointer-events: none;
   animation: fadeIn 0.2s ease forwards;
 }
@@ -347,6 +347,8 @@ body::before {
   border-color: var(--border-glow);
   box-shadow: var(--shadow-glow);
   transform: translateY(-2px);
+  z-index: 50;
+  /* Forces the hovered pill to the front of the stacking context */
 }
 
 .indicator-pill .label {
