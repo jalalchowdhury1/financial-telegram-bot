@@ -503,11 +503,19 @@ export default function Dashboard() {
             {/* CUSTOM INDICATOR BAR */}
             <div className="indicator-bar">
                 <div className={`indicator-pill${!loading && sheets?.NotSoBoring && sheets.NotSoBoring !== 'ON' ? ' pill-alert' : ''}`}>
-                    <div className="label"><span className="emoji">🛡️</span>NotSoBoring</div>
+                    <div className="label">
+                        <span className="tooltip-trigger" data-tooltip="Crash Detector: Monitors Tech (QQQ) and Bonds (TMF) for drops >6-7%. Defensive shift adds Gold and USD to dilute risk.">
+                            <span className="emoji">🛡️</span>NotSoBoring
+                        </span>
+                    </div>
                     <div className="value">{loading ? '...' : (sheets?.NotSoBoring || 'N/A')}</div>
                 </div>
                 <div className={`indicator-pill${!loading && sheets?.FrontRunner && !sheets.FrontRunner.startsWith('BIL') ? ' pill-alert' : ''}`}>
-                    <div className="label"><span className="emoji">🔑</span>FrontRunner</div>
+                    <div className="label">
+                        <span className="tooltip-trigger" data-tooltip="A contrarian strategy that rotates into Volatility (VIX) hedges when markets overheat (RSI > 79) and buys oversold Tech/Leveraged ETFs during deep dips.">
+                            <span className="emoji">🔑</span>FrontRunner
+                        </span>
+                    </div>
                     <div className="value">{loading ? '...' : (sheets?.FrontRunner || 'N/A')}</div>
                 </div>
                 <div className={`indicator-pill${!loading && sheets?.AAIIDiff && parseFloat(sheets.AAIIDiff) > 20 ? ' pill-alert' : ''}`}>
@@ -534,7 +542,11 @@ export default function Dashboard() {
                     })() : <div className="value">{loading ? '...' : 'N/A'}</div>}
                 </div>
                 <div className={`indicator-pill${!loading && sheets?.VIX?.current && parseFloat(sheets.VIX.current) > parseFloat(sheets.VIX.threeMonth) ? ' pill-alert' : ''}`}>
-                    <div className="label"><span className="emoji">🎢</span>VIX (Current | 3M)</div>
+                    <div className="label">
+                        <span className="tooltip-trigger" data-tooltip="Oversold Signal: Short-term panic (Current VIX) exceeds medium-term expectations (3M VIX). Often precedes a market recovery.">
+                            <span className="emoji">🎢</span>VIX (Current | 3M)
+                        </span>
+                    </div>
                     <div className="value">
                         {loading ? '...' : (sheets?.VIX?.current
                             ? `${sheets.VIX.current} | ${sheets.VIX.threeMonth} | ${sheets.VIX.fearGreed}`
