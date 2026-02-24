@@ -64,7 +64,7 @@ export async function GET() {
             console.warn("multpl.com P/E fetch failed:", e.message);
         }
 
-        // Method 2: Yahoo Finance Fallback (SPY Trailing P/E)
+        // Method 2: Yahoo Finance Fallback (SPY Trailing P/E - Operating)
         if (!peRatio) {
             try {
                 const yRes = await fetch('https://finance.yahoo.com/quote/SPY/key-statistics', {
@@ -73,7 +73,12 @@ export async function GET() {
                 });
                 const yHtml = await yRes.text();
                 const peMatch = yHtml.match(/PE Ratio \(TTM\)[\s\S]*?(\d+\.\d+)/i);
-                if (peMatch) peRatio = parseFloat(peMatch[1]);
+                if (peMatch) {
+                    // Yahoo uses Operating Earnings. multpl uses As-Reported (GAAP) Earnings.
+                    // Historically, GAAP P/E runs ~7% higher than Operating P/E for the S&P 500.
+                    // We apply a safe 1.07x multiplier if we are forced to fallback to Yahoo.
+                    peRatio = parseFloat(peMatch[1]) * 1.07;
+                }
             } catch (e) {
                 console.warn("Yahoo Finance P/E fallback failed:", e.message);
             }
