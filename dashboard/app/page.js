@@ -785,7 +785,22 @@ export default function Dashboard() {
                                         <div className="checklist-item" key={key} style={{ padding: '12px 14px', alignItems: 'center' }}>
                                             <span className="checklist-icon">{item.bullish ? '✅' : '🔴'}</span>
                                             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                                                <span className="checklist-text" style={{ flex: 'none', color: 'var(--text-primary)' }}>{item.label}</span>
+                                                <span
+                                                    className="checklist-text tooltip-trigger"
+                                                    style={{ flex: 'none', color: 'var(--text-primary)' }}
+                                                    data-tooltip={{
+                                                        nfci: 'National Financial Conditions Index. Measures the tightness of US financial systems. Below 0 means conditions are accommodative (good for stocks).',
+                                                        m2: 'Total US Money Supply (Cash + Deposits). Growing liquidity acts as a tailwind for asset prices.',
+                                                        retail: 'US Retail Sales (3-month rolling growth). Represents the health of the US consumer, which drives 70% of GDP.',
+                                                        housing: 'US Housing Starts. A strong leading indicator of economic health due to the wide economic footprint of construction.',
+                                                        indpro: 'US Industrial Production Index. Tracks manufacturing output, often signaling turning points in the economic cycle.',
+                                                        jolts: 'Job Openings and Labor Turnover Survey. High openings indicate strong corporate demand for labor.',
+                                                        durable: 'Durable Goods Orders (excluding transportation). Tracks corporate CapEx and business investment confidence.',
+                                                        savings: 'US Personal Saving Rate. A healthy cushion ensures consumers can absorb inflation without cutting core spending.'
+                                                    }[key]}
+                                                >
+                                                    {item.label}
+                                                </span>
                                                 <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', lineHeight: 1.2 }}>
                                                     {{
                                                         nfci: 'System tightness (<0 = easy, >0 = tight)',
