@@ -189,22 +189,22 @@ body::before {
 .tooltip-trigger:hover::after {
   content: attr(data-tooltip);
   position: absolute;
-  top: 50%;
-  left: 100%;
-  transform: translateY(-50%);
-  margin-left: 12px;
-  padding: 8px 12px;
-  background: rgba(15, 23, 42, 0.95);
-  border: 1px solid rgba(99, 102, 241, 0.3);
-  border-radius: 6px;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 12px;
+  padding: 10px 14px;
+  background: rgba(15, 23, 42, 0.98);
+  border: 1px solid rgba(99, 102, 241, 0.4);
+  border-radius: 8px;
   color: #fff;
   font-size: 0.75rem;
   font-weight: 500;
   white-space: normal;
   width: max-content;
-  max-width: 250px;
+  max-width: 280px;
   z-index: 9999;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.8);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.05);
   pointer-events: none;
   font-family: var(--font-sans);
   text-transform: none;
@@ -217,12 +217,12 @@ body::before {
 .tooltip-trigger:hover::before {
   content: '';
   position: absolute;
-  top: 50%;
-  left: 100%;
-  transform: translateY(-50%);
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
   border: 6px solid transparent;
-  border-right-color: rgba(99, 102, 241, 0.3);
-  margin-left: 0;
+  border-bottom-color: rgba(99, 102, 241, 0.4);
+  margin-top: 0;
   z-index: 9998;
   pointer-events: none;
   animation: fadeIn 0.2s ease forwards;
@@ -1016,22 +1016,26 @@ body::before {
   /* Tooltips on mobile */
   .tooltip-trigger:hover::after {
     top: 100%;
-    left: 0;
+    left: auto;
+    right: 0;
+    /* Anchor to the right edge of the trigger to prevent screen overflow */
     transform: none;
     margin-left: 0;
     margin-top: 8px;
-    width: 250px;
-    max-width: calc(100vw - 64px);
+    width: 240px;
+    max-width: calc(100vw - 32px);
     white-space: normal;
-    z-index: 1000;
+    z-index: 10000;
   }
 
   .tooltip-trigger:hover::before {
     top: 100%;
-    left: 20px;
+    left: auto;
+    right: 15px;
+    /* Keep arrow aligned with the right-anchored floating box */
     transform: none;
     margin-left: 0;
     margin-top: -4px;
-    border-color: transparent transparent rgba(99, 102, 241, 0.3) transparent;
+    border-color: transparent transparent rgba(99, 102, 241, 0.4) transparent;
   }
 }
