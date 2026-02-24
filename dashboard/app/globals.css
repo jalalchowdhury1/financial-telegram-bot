@@ -929,10 +929,11 @@ body::before {
     display: none;
   }
 
-  /* Cards — prevent overflow */
+  /* Card adjustments */
   .card {
     padding: 16px 14px;
-    overflow: hidden;
+    position: relative;
+    /* Removed overflow: hidden so tooltips don't get clipped */
   }
 
   /* Card header — allow badge to shrink/wrap */
@@ -1017,8 +1018,9 @@ body::before {
     transform: none;
     margin-left: 0;
     margin-top: 8px;
-    width: max-content;
-    max-width: calc(100vw - 48px);
+    width: 250px;
+    max-width: calc(100vw - 64px);
+    white-space: normal;
     z-index: 1000;
   }
 
