@@ -48,17 +48,35 @@ export async function GET() {
             corpProfits, gdpData, usrec
         ] = results.map(safeValue);
 
-        // Fetch current S&P 500 P/E ratio from multpl.com
+        // Fetch current S&P 500 P/E ratio
         let peRatio = null;
+
+        // Method 1: multpl.com (Current S&P 500)
         try {
             const peRes = await fetch('https://www.multpl.com/s-p-500-pe-ratio', {
-                headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' }
+                headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' },
+                next: { revalidate: 3600 }
             });
             const peHtml = await peRes.text();
             const peMatch = peHtml.match(/Current S&P 500 PE Ratio[^\d]*(\d+\.\d+)/);
             if (peMatch) peRatio = parseFloat(peMatch[1]);
         } catch (e) {
-            // Silently fail — P/E is nice-to-have
+            console.warn("multpl.com P/E fetch failed:", e.message);
+        }
+
+        // Method 2: Yahoo Finance Fallback (SPY Trailing P/E)
+        if (!peRatio) {
+            try {
+                const yRes = await fetch('https://finance.yahoo.com/quote/SPY/key-statistics', {
+                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+                    next: { revalidate: 3600 }
+                });
+                const yHtml = await yRes.text();
+                const peMatch = yHtml.match(/PE Ratio \(TTM\)[\s\S]*?(\d+\.\d+)/i);
+                if (peMatch) peRatio = parseFloat(peMatch[1]);
+            } catch (e) {
+                console.warn("Yahoo Finance P/E fallback failed:", e.message);
+            }
         }
 
         // Compute recession periods from USREC (1=recession, 0=expansion)
