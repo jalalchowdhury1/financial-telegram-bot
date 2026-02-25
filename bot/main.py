@@ -53,28 +53,28 @@ def run_report():
             send_to_telegram(env_vars['TELEGRAM_TOKEN'], env_vars['TELEGRAM_CHAT_ID'], caption=gs_text)
             print("✓ Sent Google Sheets indicators.")
 
-        # 2. Add a quick text summary for SPY (Optional but high value, no plots needed)
-        try:
-            spy = fetch_spy_stats()
-            spy_text = f"📈 *SPY Market Snapshot*\nPrice: ${spy['current']:.2f} ({spy['change_pct']:+.2f}%)\n9D RSI: {spy['rsi_9d']:.2f}"
-            send_to_telegram(env_vars['TELEGRAM_TOKEN'], env_vars['TELEGRAM_CHAT_ID'], caption=spy_text)
-            print("✓ Sent SPY text summary.")
-        except Exception as e:
-            print(f"Skipping SPY summary: {e}")
+        # 2. Add a quick text summary for SPY (Disabled per user request)
+        # try:
+        #     spy = fetch_spy_stats()
+        #     spy_text = f"📈 *SPY Market Snapshot*\nPrice: ${spy['current']:.2f} ({spy['change_pct']:+.2f}%)\n9D RSI: {spy['rsi_9d']:.2f}"
+        #     send_to_telegram(env_vars['TELEGRAM_TOKEN'], env_vars['TELEGRAM_CHAT_ID'], caption=spy_text)
+        #     print("✓ Sent SPY text summary.")
+        # except Exception as e:
+        #     print(f"Skipping SPY summary: {e}")
+        pass
 
-        # 3. AI Assessment (Text-based intelligence)
-        # We use a subset of data for the assessment to keep it fast
-        try:
-            assessment_data = {
-                'spy_rsi': spy['rsi_9d'] if 'spy' in locals() else 50.0,
-                'vix_current': 20.0, # Placeholders if we don't fetch them specifically
-                'fear_greed': 50,
-            }
-            assessment = generate_ai_assessment(assessment_data)
-            send_to_telegram(env_vars['TELEGRAM_TOKEN'], env_vars['TELEGRAM_CHAT_ID'], caption=assessment)
-            print("✓ Sent AI Market Assessment.")
-        except Exception as e:
-            print(f"Skipping AI assessment: {e}")
+        # 3. AI Assessment (Disabled per user request)
+        # try:
+        #     assessment_data = {
+        #         'spy_rsi': spy['rsi_9d'] if 'spy' in locals() else 50.0,
+        #         'vix_current': 20.0,
+        #         'fear_greed': 50,
+        #     }
+        #     assessment = generate_ai_assessment(assessment_data)
+        #     send_to_telegram(env_vars['TELEGRAM_TOKEN'], env_vars['TELEGRAM_CHAT_ID'], caption=assessment)
+        #     print("✓ Sent AI Market Assessment.")
+        # except Exception as e:
+        #     print(f"Skipping AI assessment: {e}")
             
         print("\n✓ Lightweight report processing complete.")
         return True
@@ -88,7 +88,8 @@ async def report_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if str(update.effective_chat.id) != env_vars['TELEGRAM_CHAT_ID']:
         return
 
-    await update.message.reply_text("🔄 Generating your financial summary...")
+    # Removed "Generating" reply per user request
+    # await update.message.reply_text("🔄 Generating your financial summary...")
     
     # Run in a separate thread to avoid blocking the bot's event loop
     def job():

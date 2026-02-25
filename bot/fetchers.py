@@ -40,11 +40,19 @@ def fetch_google_sheet_indicators() -> str:
         vix_3m = reader_vix[1][1].strip()
         fear_greed_status = reader_vix[1][2].strip()
 
+        # Helper to strip trailing non-text/non-special characters (like the weird numbers in the screenshot)
+        import re
+        def clean_val(v):
+            if not v: return v
+            # If it's a numeric status like "BIL (T-Bill ETF)1", strip the trailing number
+            # But keep the % if it's meant to be there once.
+            return re.sub(r'\d+$', '', v.strip())
+
         output = (
-            f"🛡️ NotSoBoring : {not_so_boring_val}\n\n"
-            f"🔑 FrontRunner :  {front_runner_val}\n\n"
-            f"🔸 AAII Diff :  {aaii_val} (G | >20% | 6mths out)%\n\n"
-            f"🎢 VIX: (Current | 3M) : {vix_current}  | {vix_3m} | {fear_greed_status}\n\n"
+            f"🛡️ NotSoBoring : {clean_val(not_so_boring_val)}\n\n"
+            f"🔑 FrontRunner : {clean_val(front_runner_val)}\n\n"
+            f"🔸 AAII Diff : {clean_val(aaii_val)} (G | >20% | 6mths out)\n\n"
+            f"🎢 VIX: (Current | 3M) : {clean_val(vix_current)} | {clean_val(vix_3m)} | {clean_val(fear_greed_status)}\n"
         )
         print("✓ Successfully fetched and parsed Google Sheet indicators")
         return output
