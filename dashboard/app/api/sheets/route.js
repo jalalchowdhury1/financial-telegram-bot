@@ -58,7 +58,6 @@ export async function GET() {
             });
 
             const resolved = await Promise.all(fetchPromises);
-            clearTimeout(timeoutId);
 
             for (const r of resolved) {
                 results[r.name] = r.data;
@@ -67,7 +66,6 @@ export async function GET() {
             // Save valid fetch to cache
             fs.writeFileSync(CACHE_FILE, JSON.stringify(results));
         } catch (networkError) {
-            clearTimeout(timeoutId);
             fetchFailed = true;
             console.warn('Google Sheets fetch failed/timed out. Falling back to cache...', networkError.message);
 

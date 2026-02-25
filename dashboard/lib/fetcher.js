@@ -6,17 +6,23 @@
 import { DEFAULT_HEADERS } from './constants';
 
 export async function proxyFetch(url, options = {}) {
+    const { timeout = 8000, ...fetchOptions } = options;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeout);
+
     const finalOptions = {
-        ...options,
+        ...fetchOptions,
+        signal: controller.signal,
         headers: {
             ...DEFAULT_HEADERS,
-            ...(options.headers || {})
+            ...(fetchOptions.headers || {})
         },
-        next: { revalidate: options.revalidate !== undefined ? options.revalidate : 0 }
+        next: { revalidate: fetchOptions.revalidate !== undefined ? fetchOptions.revalidate : 0 }
     };
 
     try {
         const response = await fetch(url, finalOptions);
+        clearTimeout(timer);
 
         if (!response.ok) {
             throw new Error(`Fetch failed for ${url}: ${response.status} ${response.statusText}`);
@@ -24,6 +30,10 @@ export async function proxyFetch(url, options = {}) {
 
         return response;
     } catch (error) {
+        clearTimeout(timer);
+        if (error.name === 'AbortError') {
+            throw new Error(`Fetch timed out for ${url} after ${timeout}ms`);
+        }
         console.error(`[proxyFetch Error]: ${error.message}`);
         throw error;
     }
