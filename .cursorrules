@@ -1,0 +1,9 @@
+# AI Instructions & Context
+
+Always read `AI_CONTEXT.md` in the root directory before performing any tasks or refactoring. This file contains the "Source of Truth" for:
+- Repository URLs
+- Deployment hosting (Vercel/Render)
+- Modular package structure
+- Maintenance constraints
+
+Do not ignore the `AI_CONTEXT.md` guidelines.

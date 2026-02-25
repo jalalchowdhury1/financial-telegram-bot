@@ -1,5 +1,8 @@
 # 📊 Financial Telegram Bot & Dashboard
 
+> [!IMPORTANT]
+> **AI MAINTAINERS**: Read [AI_CONTEXT.md](file:///Users/jalalchowdhury/PycharmProjects/financial-telegram-bot/financial-telegram-bot/AI_CONTEXT.md) before making changes.
+
 A professional financial monitoring system delivered via a lightweight Telegram bot and a deep-dive interactive dashboard.
 
 ## 🌟 Features
@@ -71,6 +74,3 @@ This project is optimized for AI maintainability with centralized configurations
 
 ## 📄 License
 MIT
-
----
-*Note for AI Maintainers: See [AI_MAINTAINER_GUIDE.md](docs/AI_MAINTAINER_GUIDE.md) for quick onboarding.*
