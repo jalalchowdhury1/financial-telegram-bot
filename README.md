@@ -71,3 +71,6 @@ This project is optimized for AI maintainability with centralized configurations
 
 ## 📄 License
 MIT
+
+---
+*Note for AI Maintainers: See [AI_MAINTAINER_GUIDE.md](docs/AI_MAINTAINER_GUIDE.md) for quick onboarding.*

@@ -1,0 +1,37 @@
+# 🤖 AI Maintainer Guide
+
+This document is for AI agents (like Antigravity, Claude, or ChatGPT) assisting with this project. It provides immediate context to ensure continuity across different chat sessions.
+
+## 📌 Project Identity
+- **Repository**: `https://github.com/jalalchowdhury1/financial-telegram-bot`
+- **Main Branch**: `main`
+
+## 🏗️ Deployment Architecture
+- **Web Dashboard**: Next.js (Dashboard folder). Deployed on **Vercel**.
+- **Bot Service**: Python (Bot folder). Deployed on **Render**.
+  - *Start Command*: `python -m bot.main` (or `python telegram_bot_server.py` for legacy compatibility).
+  - *Internal Scheduler*: APScheduler runs in `bot/main.py`.
+
+## 📂 Source of Truth Locations
+| Goal | File / Directory |
+| :--- | :--- |
+| **JS Constants** | `dashboard/lib/constants.js` |
+| **Python Config** | `bot/config.py` |
+| **API Endpoints** | `dashboard/app/api/` |
+| **Bot Logic** | `bot/` (Modular package) |
+| **Deployment** | `render.yaml` (Render), Dashboard Settings (Vercel) |
+
+## 🛠️ Common AI Tasks
+1. **Adding a New Indicator**:
+   - Add Series ID to `bot/config.py` and `dashboard/lib/constants.js`.
+   - Update `bot/fetchers.py` or new Dashboard API route.
+2. **Updating the Bot Schedule**:
+   - Edit `REPORT_TIME` in `bot/config.py`.
+3. **Commit & Push**:
+   - Always verify the remote with `git remote -v`.
+   - Use descriptive commit messages following the "Phase X: [Description]" format.
+
+## ⚠️ Important Constraints
+- **Do not** add heavy plotting libraries to the Bot (keep it "Lite").
+- **Do not** modify the root `.gitignore` without checking if you're accidentally blocking `dashboard/lib/` or `bot/` subfolders.
+- **Ensure** `requirements.txt` is updated after any new Python imports.
