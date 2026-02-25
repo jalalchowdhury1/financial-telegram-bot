@@ -18,6 +18,8 @@ This document is for AI agents (like Antigravity, Claude, or ChatGPT) assisting 
 | **JS Constants** | `dashboard/lib/constants.js` |
 | **Python Config** | `bot/config.py` |
 | **API Endpoints** | `dashboard/app/api/` |
+| **UI Components** | `dashboard/components/` (Modular structure) |
+| **Main Page** | `dashboard/app/page.js` (Orchestration only) |
 | **Bot Logic** | `bot/` (Modular package) |
 | **Deployment** | `render.yaml` (Render), Dashboard Settings (Vercel) |
 
@@ -25,6 +27,8 @@ This document is for AI agents (like Antigravity, Claude, or ChatGPT) assisting 
 1. **Adding a New Indicator**:
    - Add Series ID to `bot/config.py` and `dashboard/lib/constants.js`.
    - Update `bot/fetchers.py` or new Dashboard API route.
+   - Create or update relevant components in `dashboard/components/`.
+   - Update `dashboard/app/page.js` to include the new component.
 2. **Updating the Bot Schedule**:
    - Edit `REPORT_TIME` in `bot/config.py`.
 3. **Commit & Push**:
@@ -34,4 +38,5 @@ This document is for AI agents (like Antigravity, Claude, or ChatGPT) assisting 
 ## ⚠️ Important Constraints
 - **Do not** add heavy plotting libraries to the Bot (keep it "Lite").
 - **Do not** modify the root `.gitignore` without checking if you're accidentally blocking `dashboard/lib/` or `bot/` subfolders.
+- **Keep it modular**: Extract new UI features into standalone components in `dashboard/components/`.
 - **Ensure** `requirements.txt` is updated after any new Python imports.
