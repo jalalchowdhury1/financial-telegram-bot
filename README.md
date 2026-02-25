@@ -1,93 +1,73 @@
-# Financial Charts Telegram Bot
+# 📊 Financial Telegram Bot & Dashboard
 
-Automated daily financial charts delivered to your Telegram chat every morning at 8:00 AM EST.
+A professional, high-precision financial monitoring system. It delivers daily economic reports to Telegram and provides a live web dashboard for real-time analysis.
 
-## Features
+## 🌟 Features
 
-- **Yield Curve Inversion Chart**: 10Y-2Y Treasury spread over the last 20 years
-- **US Economy-Wide Profit Margin**: Corporate Net Operating Surplus / GDP
-- **Automated Daily Delivery**: GitHub Actions runs every morning
-- **Professional Visualizations**: High-quality charts with matplotlib and seaborn
+- **Automated Daily Reports**: Delivered every morning (Configurable, default 4:15 AM EST).
+- **Interactive Dashboard**: Next.js-powered UI with real-time FRED and Stooq data.
+- **AI-Powered Assessment**: Quantitative market analysis using LLMs (Groq/OpenAI/Gemini).
+- **Core Indicators**:
+  - Yield Curve (10Y-2Y Spread) with recession shading.
+  - Economy-wide Profit Margins.
+  - SPY Stats (200D MA, 52W High, 9D RSI).
+  - Fear & Greed Index.
+  - Proprietary Sheets Data (NotSoBoring, FrontRunner).
 
-## Setup Instructions
+## 🚀 Quick Start
 
-### 1. Get Your API Keys
+### 1. Prerequisites
+- **Python 3.10+** (for the Bot)
+- **Node.js 18+** (for the Dashboard)
+- **FRED API Key**: [Get it here](https://fred.stlouisfed.org/docs/api/api_key.html)
+- **Telegram Bot**: Created via [@BotFather](https://t.me/botfather)
 
-**FRED API Key:**
-1. Visit https://fred.stlouisfed.org/docs/api/api_key.html
-2. Create a free account
-3. Request an API key
-
-**Telegram Bot:**
-1. Open Telegram and search for [@BotFather](https://t.me/botfather)
-2. Send `/newbot` and follow the prompts
-3. Save your bot token (looks like: `1234567890:ABCdefGHIjklMNOpqrsTUVwxyz123456789`)
-
-**Telegram Chat ID:**
-1. Start a chat with your bot and send any message
-2. Visit: `https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getUpdates`
-3. Look for `"chat":{"id":123456789}` in the response
-4. Save this number
-
-### 2. Configure GitHub Secrets
-
-Go to your repository → Settings → Secrets and variables → Actions → New repository secret
-
-Add these three secrets:
-- `FRED_API_KEY`
-- `TELEGRAM_TOKEN`
-- `TELEGRAM_CHAT_ID`
-
-### 3. Test Locally (Optional)
-
+### 2. Configuration
+Copy `.env.example` to `.env` and fill in your keys:
 ```bash
-# Install dependencies
+cp .env.example .env
+```
+
+### 3. Local Development
+
+**Run the Dashboard:**
+```bash
+cd dashboard
+npm install
+npm run dev
+```
+
+**Run the Bot:**
+```bash
 pip install -r requirements.txt
-
-# Set environment variables
-export FRED_API_KEY="your_key"
-export TELEGRAM_TOKEN="your_token"
-export TELEGRAM_CHAT_ID="your_chat_id"
-
-# Run the script
-python main.py
+python -m bot.main
 ```
 
-### 4. Deploy to GitHub
+## 🏗️ Architecture
 
-Push this repository to GitHub and the workflow will run automatically every day at 8:00 AM EST.
+The system is split into two main components:
+1. **Next.js Dashboard**: A serverless web app hosted on Vercel.
+2. **Modular Python Bot**: A long-running service hosted on Render with a built-in Flask health-check server and APScheduler.
 
-To test immediately: Go to Actions tab → Daily Financial Report → Run workflow
+For a detailed visual guide, see [ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-## File Structure
+## 🛠️ Project Structure
 
-```
-financial-telegram-bot/
-├── main.py                           # Main script
-├── requirements.txt                  # Python dependencies
-├── .github/
-│   └── workflows/
-│       └── daily_report.yml         # GitHub Actions workflow
-└── README.md                        # This file
-```
+- `bot/`: Modular Python package for all report generation logic.
+- `dashboard/`: Next.js web application.
+- `docs/`: System documentation and architectural diagrams.
+- `requirements.txt`: Python dependencies.
+- `render.yaml`: Configuration for Render cloud deployment.
 
-## Generated Charts
+## 📜 Commands
 
-- `yield_curve.png` - Yield curve spread visualization
-- `profit_margin.png` - Profit margin trend
+Send these to your Telegram bot:
+- `/report`: Triggers an immediate financial report generation.
+- `/start`: Shows the welcome message and help guide.
 
-## Troubleshooting
+## 🤝 Contributing
 
-**Charts not sending?**
-- Check that all three secrets are correctly set in GitHub
-- View the Actions logs for error messages
-- Verify your Telegram bot token and chat ID
+This project is optimized for AI maintainability with centralized configurations and explicit type hinting.
 
-**Data fetch errors?**
-- FRED API may be temporarily unavailable
-- Check if your API key is valid
-- Some data series update quarterly (slight delays are normal)
-
-## License
-
+## 📄 License
 MIT
