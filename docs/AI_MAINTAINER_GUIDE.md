@@ -36,7 +36,10 @@ This document is for AI agents (like Antigravity, Claude, or ChatGPT) assisting 
    - Use descriptive commit messages following the "Phase X: [Description]" format.
 
 ## ⚠️ Important Constraints
-- **Do not** add heavy plotting libraries to the Bot (keep it "Lite").
-- **Do not** modify the root `.gitignore` without checking if you're accidentally blocking `dashboard/lib/` or `bot/` subfolders.
+- **Lightweight Reporting**: The Telegram report is strictly "Lite" (text-only).
+  - Isolated: Only the Google Sheet indicator block is sent via `/report`.
+  - No Status: Avoid sending "Generating..." or other transition messages to keep the chat clean.
+- **Data Cleaning**: Use the `clean_val` helper in `bot/fetchers.py` to strip trailing digits or junk characters from Google Sheet cells.
+- **Do not** add heavy plotting libraries to the Bot.
 - **Keep it modular**: Extract new UI features into standalone components in `dashboard/components/`.
 - **Ensure** `requirements.txt` is updated after any new Python imports.
