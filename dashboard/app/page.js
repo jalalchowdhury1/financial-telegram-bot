@@ -6,6 +6,10 @@ import Gauge from '../components/Gauge';
 import Skeleton from '../components/Skeleton';
 import SpyChart from '../components/SpyChart';
 import MiniChart from '../components/MiniChart';
+import MarketPulse from '../components/MarketPulse';
+import CustomIndicatorBar from '../components/CustomIndicatorBar';
+import EconomicIndicatorGrid from '../components/EconomicIndicatorGrid';
+import BullChecklist from '../components/BullChecklist';
 
 // ============ MAIN DASHBOARD ============
 export default function Dashboard() {
@@ -149,84 +153,10 @@ export default function Dashboard() {
             </header>
 
             {/* CUSTOM INDICATOR BAR */}
-            <div className="indicator-bar">
-                <div className={`indicator-pill${!loading && sheets?.NotSoBoring && sheets.NotSoBoring !== 'ON' ? ' pill-alert' : ''}`}>
-                    <div className="label">
-                        <span className="tooltip-trigger" data-tooltip="Crash Detector: Monitors Tech (QQQ) and Bonds (TMF) for drops >6-7%. Defensive shift adds Gold and USD to dilute risk.">
-                            <span className="emoji">🛡️</span>NotSoBoring
-                        </span>
-                    </div>
-                    <div className="value">{loading ? '...' : (sheets?.NotSoBoring || 'N/A')}</div>
-                </div>
-                <div className={`indicator-pill${!loading && sheets?.FrontRunner && !sheets.FrontRunner.startsWith('BIL') ? ' pill-alert' : ''}`}>
-                    <div className="label">
-                        <span className="tooltip-trigger" data-tooltip="A contrarian strategy that rotates into Volatility (VIX) hedges when markets overheat (RSI > 79) and buys oversold Tech/Leveraged ETFs during deep dips.">
-                            <span className="emoji">🔑</span>FrontRunner
-                        </span>
-                    </div>
-                    <div className="value">{loading ? '...' : (sheets?.FrontRunner || 'N/A')}</div>
-                </div>
-                <div className={`indicator-pill${!loading && sheets?.AAIIDiff && parseFloat(sheets.AAIIDiff) > 20 ? ' pill-alert' : ''}`}>
-                    <div className="label"><span className="emoji">🔸</span>AAII Diff</div>
-                    {!loading && sheets?.AAIIDiff ? (() => {
-                        const val = parseFloat(sheets.AAIIDiff);
-                        const isBullish = val > 20;
-                        const targetDate = new Date();
-                        targetDate.setMonth(targetDate.getMonth() + 6);
-                        const dateStr = targetDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-                        return (
-                            <>
-                                <div className="value" style={{ color: isBullish ? 'var(--green)' : 'var(--text-primary)' }}>
-                                    {sheets.AAIIDiff}
-                                </div>
-                                <div className="pill-detail" style={{ fontSize: '0.68rem', marginTop: '4px', color: isBullish ? 'var(--green)' : 'var(--text-muted)', fontWeight: 600 }}>
-                                    {isBullish ? '🟢' : '⚪'} {isBullish ? 'Bullish' : 'Neutral'} outlook → {dateStr}
-                                </div>
-                                <div className="pill-detail" style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                                    Threshold: &gt;20% = bullish 6mo forward
-                                </div>
-                            </>
-                        );
-                    })() : <div className="value">{loading ? '...' : 'N/A'}</div>}
-                </div>
-                <div className={`indicator-pill${!loading && sheets?.VIX?.current && parseFloat(sheets.VIX.current) > parseFloat(sheets.VIX.threeMonth) ? ' pill-alert' : ''}`}>
-                    <div className="label">
-                        <span className="tooltip-trigger" data-tooltip="Oversold Signal: Short-term panic (Current VIX) exceeds medium-term expectations (3M VIX). Often precedes a market recovery.">
-                            <span className="emoji">🎢</span>VIX (Current | 3M)
-                        </span>
-                    </div>
-                    <div className="value">
-                        {loading ? '...' : (sheets?.VIX?.current
-                            ? `${sheets.VIX.current} | ${sheets.VIX.threeMonth} | ${sheets.VIX.fearGreed}`
-                            : 'N/A')}
-                    </div>
-                </div>
-            </div>
+            <CustomIndicatorBar sheets={sheets} loading={loading} />
 
             {/* MARKET PULSE - Quick summary at top */}
-            {!loading && spy && fg && !spy.error && !fg.error && (
-                <div className="market-pulse">
-                    <span className="pulse-label">📡 Market Pulse</span>
-                    <span className="pulse-items">
-                        <span className={spy.dailyChange?.pct >= 0 ? 'stat-positive' : 'stat-negative'}>
-                            SPY {spy.dailyChange?.pct >= 0 ? '▲' : '▼'}{Math.abs(spy.dailyChange?.pct || 0).toFixed(2)}%
-                        </span>
-                        <span className="pulse-sep">·</span>
-                        <span style={{ color: fgColor(fg.score) }}>
-                            F&G {Math.round(fg.score)} {fg.rating}
-                        </span>
-                        <span className="pulse-sep">·</span>
-                        <span className={spy.rsi > 70 ? 'stat-negative' : spy.rsi < 30 ? 'stat-positive' : ''}>
-                            RSI {spy.rsi.toFixed(0)}
-                        </span>
-                        {fred?.checklist && (() => {
-                            const bullish = Object.values(fred.checklist).filter(i => i.bullish).length;
-                            const total = Object.values(fred.checklist).length;
-                            return <><span className="pulse-sep">·</span><span style={{ color: 'var(--green)' }}>Bull {bullish}/{total}</span></>;
-                        })()}
-                    </span>
-                </div>
-            )}
+            <MarketPulse spy={spy} fg={fg} fred={fred} loading={loading} fgColor={fgColor} />
 
             {/* MAIN GRID */}
             <div className="dashboard-grid">
@@ -382,36 +312,7 @@ export default function Dashboard() {
                 </div>
 
                 {/* ECONOMIC INDICATORS */}
-                <div className="card" style={{ animationDelay: '0.5s' }}>
-                    <div className="card-header">
-                        <h2>📊 Economic Indicators</h2>
-                    </div>
-                    <ErrorBoundary>
-                        {loading || !fred || fred.error ? <Skeleton count={6} /> : (
-                            <>
-                                {[
-                                    { icon: fred.indicators.sahmRule?.status === 'safe' ? '✅' : '🔴', label: 'Sahm Rule', tooltip: "Recession indicator: triggers if 3mo average unemployment rises 0.5% above its 12mo low.", value: fred.indicators.sahmRule?.value?.toFixed(2) ?? 'N/A', status: fred.indicators.sahmRule?.status, benchmark: '< 0.50' },
-                                    { icon: '🛒', label: 'Consumer Sentiment', tooltip: "University of Michigan survey assessing consumer confidence.", value: fred.indicators.sentiment?.value?.toFixed(1) ?? 'N/A', status: fred.indicators.sentiment?.status, benchmark: '> 80 strong' },
-                                    { icon: '📋', label: 'Initial Claims (4wk)', tooltip: "4-week moving average of initial jobless claims. A critical real-time labor market gauge.", value: fred.indicators.claims?.value ? `${fred.indicators.claims.value.toFixed(0)}K` : 'N/A', status: fred.indicators.claims?.status, benchmark: '< 250K healthy' },
-                                    { icon: '🏦', label: 'BBB Credit Spread', tooltip: "The premium corporations pay over Treasuries to borrow. Widening indicates market stress.", value: fred.indicators.creditSpread?.value ? `${fred.indicators.creditSpread.value.toFixed(2)}%` : 'N/A', status: fred.indicators.creditSpread?.status, benchmark: '< 1.5% tight' },
-                                    { icon: '💵', label: 'Real Yields (10Y TIPS)', tooltip: "10-Year Treasury Inflation-Indexed Security. Shows the true inflation-adjusted cost of capital.", value: fred.indicators.realYields?.value ? `${fred.indicators.realYields.value.toFixed(2)}%` : 'N/A', status: fred.indicators.realYields?.status, benchmark: '< 0% easy' },
-                                    { icon: '📊', label: 'Leading Economic Index', tooltip: "The Conference Board LEI tracks 10 forward-looking economic components.", value: fred.indicators.lei?.change ? `${fred.indicators.lei.change >= 0 ? '+' : ''}${fred.indicators.lei.change.toFixed(2)}%` : 'N/A', status: fred.indicators.lei?.status, benchmark: '> 0% rising' },
-                                    { icon: '💎', label: 'Market Valuation', tooltip: "Current S&P 500 P/E Ratio. A measure of how expensive the market is historically.", value: fred.peRatio ? `P/E ~${fred.peRatio.toFixed(1)}` : 'P/E N/A', status: fred.peRatio > 25 ? 'restrictive' : 'neutral', benchmark: 'Fair at ~20' },
-                                ].map(ind => (
-                                    <div className="stat-row" key={ind.label}>
-                                        <span className="stat-label">
-                                            {ind.icon} <span className="tooltip-trigger" data-tooltip={ind.tooltip}>{ind.label}</span>
-                                        </span>
-                                        <span className="stat-right">
-                                            <span className={`stat-value ${statusColor(ind.status)}`}>{ind.value}</span>
-                                            <span className="stat-benchmark">{ind.benchmark}</span>
-                                        </span>
-                                    </div>
-                                ))}
-                            </>
-                        )}
-                    </ErrorBoundary>
-                </div>
+                <EconomicIndicatorGrid fred={fred} loading={loading} statusColor={statusColor} />
 
                 {/* SPY HISTORICAL CHART */}
                 <div className="card" style={{ animationDelay: '0.55s' }}>
@@ -427,94 +328,7 @@ export default function Dashboard() {
                 </div>
 
                 {/* BULL MARKET CHECKLIST */}
-                <div className="card full-width" style={{ animationDelay: '0.6s' }}>
-                    <div className="card-header">
-                        <h2>📋 Bull Market Checklist</h2>
-                        {fred?.checklist && (() => {
-                            const items = Object.values(fred.checklist);
-                            const bullish = items.filter(i => i.bullish).length;
-                            const pct = (bullish / items.length) * 100;
-                            return <span className={`badge ${pct >= 75 ? 'badge-green' : pct >= 50 ? 'badge-yellow' : 'badge-red'}`}>{bullish}/{items.length} ({pct.toFixed(0)}%)</span>;
-                        })()}
-                    </div>
-                    <ErrorBoundary>
-                        {loading || !fred || fred.error ? <Skeleton count={8} /> : (
-                            <>
-                                <div className="checklist-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
-                                    {Object.entries(fred.checklist).map(([key, item]) => (
-                                        <div className="checklist-item" key={key} style={{ padding: '12px 14px', alignItems: 'center' }}>
-                                            <span className="checklist-icon">{item.bullish ? '✅' : '🔴'}</span>
-                                            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                                                <span
-                                                    className="checklist-text tooltip-trigger"
-                                                    style={{ flex: 'none', color: 'var(--text-primary)' }}
-                                                    data-tooltip={{
-                                                        nfci: 'National Financial Conditions Index. Measures the tightness of US financial systems. Below 0 means conditions are accommodative (good for stocks).',
-                                                        m2: 'Total US Money Supply (Cash + Deposits). Growing liquidity acts as a tailwind for asset prices.',
-                                                        retail: 'US Retail Sales (3-month rolling growth). Represents the health of the US consumer, which drives 70% of GDP.',
-                                                        housing: 'US Housing Starts. A strong leading indicator of economic health due to the wide economic footprint of construction.',
-                                                        indpro: 'US Industrial Production Index. Tracks manufacturing output, often signaling turning points in the economic cycle.',
-                                                        jolts: 'Job Openings and Labor Turnover Survey. High openings indicate strong corporate demand for labor.',
-                                                        durable: 'Durable Goods Orders (excluding transportation). Tracks corporate CapEx and business investment confidence.',
-                                                        savings: 'US Personal Saving Rate. A healthy cushion ensures consumers can absorb inflation without cutting core spending.'
-                                                    }[key]}
-                                                >
-                                                    {item.label}
-                                                </span>
-                                                <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', lineHeight: 1.2 }}>
-                                                    {{
-                                                        nfci: 'System tightness (<0 = easy, >0 = tight)',
-                                                        m2: 'YoY liquidity growth (>2% = expanding)',
-                                                        retail: 'Consumer spending strength',
-                                                        housing: 'Housing market health (>1,400K = strong, >1,300K = OK)',
-                                                        indpro: '6-month manufacturing trend',
-                                                        jolts: 'Labor demand (>7,000K = strong, >6,000K = OK)',
-                                                        durable: 'Business investment (3mo trend)',
-                                                        savings: 'Consumer cushion (>5% = healthy, ≥ 3.5% = OK)'
-                                                    }[key]}
-                                                </span>
-                                            </div>
-                                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '3px' }}>
-                                                <span className={`checklist-value ${item.bullish ? 'stat-positive' : 'stat-negative'}`} style={{ fontSize: '0.95rem' }}>
-                                                    {typeof item.value === 'number' ? (
-                                                        key === 'housing' || key === 'jolts' ? `${item.value.toFixed(0)}K` :
-                                                            key === 'nfci' ? `${item.value.toFixed(2)}` :
-                                                                `${item.value >= 0 && key !== 'nfci' ? '+' : ''}${item.value.toFixed(1)}%`
-                                                    ) : item.value}
-                                                </span>
-                                                <span className="checklist-benchmark" style={{ opacity: 0.9 }}>
-                                                    {{
-                                                        nfci: item.status === 'strong' ? '← Easy' : item.status === 'good' ? '← Easy' : '← Tight',
-                                                        m2: item.status === 'strong' ? '← Growing' : item.status === 'good' ? '← Growing' : '← Contracting',
-                                                        retail: item.status === 'strong' ? '← Growing' : item.status === 'good' ? '← Growing' : '← Declining',
-                                                        housing: item.status === 'strong' ? '← Strong' : item.status === 'good' ? '← OK' : '← Weak',
-                                                        indpro: item.status === 'strong' ? '← Expanding' : item.status === 'good' ? '← Expanding' : '← Contracting',
-                                                        jolts: item.status === 'strong' ? '← Strong' : item.status === 'good' ? '← OK' : '← Weak',
-                                                        durable: item.status === 'strong' ? '← Rising' : item.status === 'good' ? '← Rising' : '← Falling',
-                                                        savings: item.status === 'strong' ? '← Healthy' : item.status === 'good' ? '← OK' : '← Low'
-                                                    }[key]}
-                                                </span>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                                {(() => {
-                                    const items = Object.values(fred.checklist);
-                                    const bullish = items.filter(i => i.bullish).length;
-                                    const pct = (bullish / items.length) * 100;
-                                    const regime = pct >= 75 ? '🟢 CONFIRMED BULL MARKET' : pct >= 50 ? '🟡 CAUTIOUS / MIXED' : '🔴 BEAR MARKET WARNING';
-                                    const bg = pct >= 75 ? 'var(--green-bg)' : pct >= 50 ? 'var(--yellow-bg)' : 'var(--red-bg)';
-                                    const color = pct >= 75 ? 'var(--green)' : pct >= 50 ? 'var(--yellow)' : 'var(--red)';
-                                    return (
-                                        <div className="checklist-score" style={{ background: bg, color }}>
-                                            {regime} — Score: {bullish}/{items.length} ({pct.toFixed(0)}% Bullish)
-                                        </div>
-                                    );
-                                })()}
-                            </>
-                        )}
-                    </ErrorBoundary>
-                </div>
+                <BullChecklist fred={fred} loading={loading} />
 
                 {/* AI ASSESSMENT */}
                 <div className="card full-width" style={{ animationDelay: '0.7s' }}>
