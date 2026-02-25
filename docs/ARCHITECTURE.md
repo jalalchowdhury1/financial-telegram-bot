@@ -1,6 +1,6 @@
 # 🏗️ System Architecture
 
-This project consists of two primary services interacting with external financial data sources and delivering insights to the user.
+This project consists of two primary services: an **Interactive Visualization Dashboard** and a **Lightweight Text Reporter**.
 
 ## 🛰️ Data Flow Diagram
 
@@ -17,18 +17,19 @@ graph TD
         subgraph "Vercel (Dashboard)"
             DASH["Next.js Web App"]
             API["API Routes /lib"]
+            VIZ["Visualization Logic (D3/SVG)"]
         end
 
-        subgraph "Render (Bot)"
-            BOT["Python Bot Logic"]
+        subgraph "Render (Bot Lite)"
+            BOT["Python Text Reporter"]
             FLASK["Flask Health Check"]
             SCHED["APScheduler (Daily Jobs)"]
         end
     end
 
     subgraph "User Delivery"
-        TELEGRAM["Telegram Chat / Bot"]
-        WEB["Browser Dashboard"]
+        TELEGRAM["Telegram Chat / Bot (Text Only)"]
+        WEB["Browser Dashboard (Charts & Charts)"]
     end
 
     %% Data Extraction
@@ -37,9 +38,7 @@ graph TD
     CNN --> API
     Sheets --> API
 
-    FRED --> BOT
     Stooq --> BOT
-    CNN --> BOT
     Sheets --> BOT
 
     %% Delivery paths
@@ -53,12 +52,13 @@ graph TD
 
 ## 🧩 Component Breakdown
 
-### 1. The Dashboard (Next.js)
-- **Standardized Fetcher**: Uses a centralized utility in `lib/fetcher.js` with consistent timeout logic.
+### 1. The Dashboard (Next.js - Full Visual Studio)
+- **Deep Dive Visualization**: Handles all complex charting (Yield Curve, Profit Margins, RSI Gagues).
+- **Standardized Fetcher**: Uses `lib/fetcher.js` with consistent timeout logic.
 - **Business Logic**: Math for RSI and Moving Averages is isolated in `lib/finance.js`.
-- **Constants**: All FRED Series IDs and external URLs are managed in `lib/constants.js`.
 
-### 2. The Bot Package (Python)
-- **Modular Design**: Broken into `fetchers.py`, `charts.py`, `assessment.py`, and `utils.py`.
+### 2. The Bot Lite (Python - High Speed)
+- **Compact Text Reports**: Focused on immediate, high-value text summaries.
+- **Dependency Optimized**: Running without heavy plotting libraries (matplotlib/seaborn) for ultra-fast startup and execution.
 - **Integrated Server**: The entrypoint `bot/main.py` runs a Flask server for Render's health checks and an internal scheduler.
-- **AI-Friendly**: Fully type-hinted to ensure reliable AI-assisted updates.
+- **AI-Friendly**: Fully type-hinted and modular.

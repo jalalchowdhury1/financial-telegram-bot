@@ -1,6 +1,6 @@
 """
 Modular entrypoint for the financial-telegram-bot.
-Orchestrates data fetching, chart generation, and Telegram reporting.
+Orchestrates data fetching and lightweight Telegram text reporting.
 Includes a Flask health-check server and APScheduler for cloud deployment.
 """
 
@@ -13,7 +13,6 @@ from datetime import datetime
 from threading import Thread
 from typing import Dict, Any, Optional
 
-from fredapi import Fred
 from flask import Flask
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
@@ -23,12 +22,6 @@ from apscheduler.triggers.cron import CronTrigger
 # Import from the modular bot package
 from bot.utils import load_environment_variables, send_to_telegram
 from bot.fetchers import fetch_google_sheet_indicators, fetch_spy_stats
-from bot.charts import (
-    create_spy_stats_chart,
-    create_yield_curve_chart,
-    create_profit_margin_chart,
-    create_fear_greed_chart
-)
 from bot.assessment import generate_ai_assessment
 from bot.config import TIMEZONE, REPORT_TIME
 
@@ -38,60 +31,52 @@ global_scheduler: Optional[BackgroundScheduler] = None
 
 @flask_app.route('/')
 def health_check():
-    return {'status': 'running', 'bot': 'financial-telegram-bot'}, 200
+    return {'status': 'running', 'bot': 'financial-telegram-bot-lite'}, 200
 
 @flask_app.route('/health')
 def health():
     return {'status': 'healthy'}, 200
 
 def run_report():
-    """Execute the full report generation and delivery sequence"""
+    """Execute a lightweight text-only report generation and delivery sequence"""
     print("\n" + "=" * 60)
-    print("Generating Daily Financial Report...")
+    print("Generating Lightweight Financial Report...")
     print(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 60 + "\n")
 
     env_vars = load_environment_variables()
     
     try:
-        # Initialize FRED
-        fred = Fred(api_key=env_vars['FRED_API_KEY'])
-        
-        # 1. Google Sheets
+        # 1. Fetch Google Sheets Indicators (Primary content requested by user)
         gs_text = fetch_google_sheet_indicators()
         if gs_text:
             send_to_telegram(env_vars['TELEGRAM_TOKEN'], env_vars['TELEGRAM_CHAT_ID'], caption=gs_text)
+            print("✓ Sent Google Sheets indicators.")
 
-        # 2. SPY Stats
-        spy_stats = fetch_spy_stats()
-        spy_chart = create_spy_stats_chart(spy_stats)
-        spy_caption = f"📊 SPY Overview | Current: ${spy_stats['current']:.2f} | RSI: {spy_stats['rsi_9d']:.2f}"
-        send_to_telegram(env_vars['TELEGRAM_TOKEN'], env_vars['TELEGRAM_CHAT_ID'], image_path=spy_chart, caption=spy_caption)
+        # 2. Add a quick text summary for SPY (Optional but high value, no plots needed)
+        try:
+            spy = fetch_spy_stats()
+            spy_text = f"📈 *SPY Market Snapshot*\nPrice: ${spy['current']:.2f} ({spy['change_pct']:+.2f}%)\n9D RSI: {spy['rsi_9d']:.2f}"
+            send_to_telegram(env_vars['TELEGRAM_TOKEN'], env_vars['TELEGRAM_CHAT_ID'], caption=spy_text)
+            print("✓ Sent SPY text summary.")
+        except Exception as e:
+            print(f"Skipping SPY summary: {e}")
 
-        # 3. Yield Curve
-        yield_file, yield_val, _ = create_yield_curve_chart(fred)
-        send_to_telegram(env_vars['TELEGRAM_TOKEN'], env_vars['TELEGRAM_CHAT_ID'], image_path=yield_file, caption=f"📊 Yield Curve Spread (10Y-2Y): {yield_val:+.3f}%")
-
-        # 4. Fear & Greed
-        fg_file, fg_score, fg_rating = create_fear_greed_chart()
-        send_to_telegram(env_vars['TELEGRAM_TOKEN'], env_vars['TELEGRAM_CHAT_ID'], image_path=fg_file, caption=f"😨📈 Fear & Greed: {int(round(fg_score))} ({fg_rating})")
-
-        # 5. Profit Margins
-        margin_file, margin_val, _ = create_profit_margin_chart(fred)
-        send_to_telegram(env_vars['TELEGRAM_TOKEN'], env_vars['TELEGRAM_CHAT_ID'], image_path=margin_file, caption=f"📈 Profit Margin: {margin_val:.2f}%")
-
-        # 6. AI Assessment
-        data = {
-            'yield_curve': yield_val,
-            'profit_margin': margin_val,
-            'fear_greed': fg_score,
-            'sahm_rule': 0.0, 'initial_claims': 200, 'consumer_sentiment': 70.0,
-            'lei_change': 0.5, 'credit_spread': 1.2, 'real_yields': 1.5
-        }
-        assessment = generate_ai_assessment(data)
-        send_to_telegram(env_vars['TELEGRAM_TOKEN'], env_vars['TELEGRAM_CHAT_ID'], caption=assessment)
-        
-        print("\n✓ Report processing complete.")
+        # 3. AI Assessment (Text-based intelligence)
+        # We use a subset of data for the assessment to keep it fast
+        try:
+            assessment_data = {
+                'spy_rsi': spy['rsi_9d'] if 'spy' in locals() else 50.0,
+                'vix_current': 20.0, # Placeholders if we don't fetch them specifically
+                'fear_greed': 50,
+            }
+            assessment = generate_ai_assessment(assessment_data)
+            send_to_telegram(env_vars['TELEGRAM_TOKEN'], env_vars['TELEGRAM_CHAT_ID'], caption=assessment)
+            print("✓ Sent AI Market Assessment.")
+        except Exception as e:
+            print(f"Skipping AI assessment: {e}")
+            
+        print("\n✓ Lightweight report processing complete.")
         return True
     except Exception as e:
         print(f"CRITICAL ERROR in report generation: {e}")
@@ -103,7 +88,7 @@ async def report_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if str(update.effective_chat.id) != env_vars['TELEGRAM_CHAT_ID']:
         return
 
-    await update.message.reply_text("🔄 Generating your financial report... this will take about 30 seconds.")
+    await update.message.reply_text("🔄 Generating your financial summary...")
     
     # Run in a separate thread to avoid blocking the bot's event loop
     def job():
@@ -113,7 +98,7 @@ async def report_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /start command"""
-    await update.message.reply_text("👋 Financial Report Bot\n\nUse /report to generate a report.")
+    await update.message.reply_text("👋 Financial Report Bot (Lite)\n\nUse /report for a quick market summary.")
 
 def run_flask():
     """Run Flask server for health checks"""
@@ -125,7 +110,7 @@ def run_flask():
 def main():
     """Start the integrated bot service"""
     global global_scheduler
-    print("Starting Integrated Financial Bot Service...")
+    print("Starting Lightweight Financial Bot Service...")
 
     env_vars = load_environment_variables()
     tz = pytz.timezone(TIMEZONE)
@@ -157,7 +142,6 @@ def main():
     telegram_app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
 
 if __name__ == "__main__":
-    # If one argument 'report' is passed, just run the report once
     if len(sys.argv) > 1 and sys.argv[1] == 'report':
         run_report()
     else:

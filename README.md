@@ -1,10 +1,10 @@
 # 📊 Financial Telegram Bot & Dashboard
 
-A professional, high-precision financial monitoring system. It delivers daily economic reports to Telegram and provides a live web dashboard for real-time analysis.
+A professional financial monitoring system delivered via a lightweight Telegram bot and a deep-dive interactive dashboard.
 
 ## 🌟 Features
 
-- **Automated Daily Reports**: Delivered every morning (Configurable, default 4:15 AM EST).
+- **Automated Daily Summaries**: Compact text-only reports delivered every morning.
 - **Interactive Dashboard**: Next.js-powered UI with real-time FRED and Stooq data.
 - **AI-Powered Assessment**: Quantitative market analysis using LLMs (Groq/OpenAI/Gemini).
 - **Core Indicators**:
