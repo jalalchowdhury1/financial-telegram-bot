@@ -8,11 +8,7 @@ on:
         description: 'Number of retry attempts so far'
         required: false
         default: '0'
-  schedule:
-    # Run every day at 4:15 AM EST (9:15 UTC)
-    - cron: '15 9 * * *'
-
-  # Allow triggering via Telegram bot or API
+  # Allow triggering via GitHub UI or API
   repository_dispatch:
     types: [telegram-report]
 
@@ -68,7 +64,7 @@ jobs:
 
       - name: Generate and send financial charts
         id: report
-        run: python main.py
+        run: python -m bot.main report
         continue-on-error: true
 
       - name: Retry on failure

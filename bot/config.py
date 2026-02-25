@@ -51,3 +51,10 @@ REGIME_COLORS = {
     'CAUTIOUS': '#FFD700',
     'BEAR': '#FFB6C1'
 }
+
+# Scheduling (for bot/main.py)
+TIMEZONE = "America/New_York"
+REPORT_TIME = {
+    'hour': 4,
+    'minute': 15
+}
