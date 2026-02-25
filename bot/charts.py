@@ -11,13 +11,15 @@ import matplotlib.patches as patches
 import seaborn as sns
 import requests
 from datetime import datetime
+from typing import Dict, Any, List, Tuple, Optional
+from bot.config import FRED_SERIES, URLS, CHART_STYLE, DEFAULT_FIGSIZE, REGIME_COLORS
 
 # Set style for professional-looking charts
-sns.set_style("whitegrid")
-plt.rcParams['figure.figsize'] = (12, 6)
+sns.set_style(CHART_STYLE)
+plt.rcParams['figure.figsize'] = DEFAULT_FIGSIZE
 plt.rcParams['font.size'] = 10
 
-def create_spy_stats_chart(stats, output_file='spy_stats.png'):
+def create_spy_stats_chart(stats: Dict[str, float], output_file: str = 'spy_stats.png') -> str:
     """Create SPY statistics chart with a modern card design"""
     print("Creating SPY statistics chart...")
     
@@ -113,19 +115,19 @@ def create_spy_stats_chart(stats, output_file='spy_stats.png'):
         print(f"ERROR: Failed to create SPY chart: {str(e)}")
         raise
 
-def create_yield_curve_chart(fred, output_file='yield_curve.png'):
+def create_yield_curve_chart(fred: Any, output_file: str = 'yield_curve.png') -> Tuple[str, float, datetime]:
     """Create yield curve inversion chart (10Y-2Y Treasury spread)"""
     print("Fetching yield curve data (T10Y2Y)...")
     try:
         end_date = datetime.now()
         start_date = end_date - pd.Timedelta(days=20*365)
-        data = fred.get_series('T10Y2Y', start_date=start_date, end_date=end_date)
+        data = fred.get_series(FRED_SERIES['YIELD_10Y2Y'], start_date=start_date, end_date=end_date)
         if data.empty: raise ValueError("No data returned for T10Y2Y")
-        latest_value = data.dropna().iloc[-1]
+        latest_value = float(data.dropna().iloc[-1])
         latest_date = data.dropna().index[-1]
         fig, ax = plt.subplots(figsize=(12, 6))
         try:
-            recessions = fred.get_series('USREC')
+            recessions = fred.get_series(FRED_SERIES['RECESSIONS'])
             recessions = recessions[recessions.index >= data.index.min()]
             in_recession, start = False, None
             for date, value in recessions.items():
@@ -146,15 +148,15 @@ def create_yield_curve_chart(fred, output_file='yield_curve.png'):
     except Exception as e:
         print(f"ERROR: Failed yield curve chart: {str(e)}"); raise
 
-def create_profit_margin_chart(fred, output_file='profit_margin.png'):
+def create_profit_margin_chart(fred: Any, output_file: str = 'profit_margin.png') -> Tuple[str, float, datetime]:
     """Create US economy-wide profit margin chart"""
     print("Fetching profit margin data...")
     try:
-        nos = fred.get_series('A053RC1Q027SBEA')
-        gdp = fred.get_series('GDP')
+        nos = fred.get_series(FRED_SERIES['CORP_PROFITS'])
+        gdp = fred.get_series(FRED_SERIES['GDP'])
         df = pd.DataFrame({'nos': nos, 'gdp': gdp}).dropna()
         df['margin'] = (df['nos'] / df['gdp']) * 100
-        latest_value, latest_date = df['margin'].iloc[-1], df.index[-1]
+        latest_value, latest_date = float(df['margin'].iloc[-1]), df.index[-1]
         fig, ax = plt.subplots(figsize=(12, 6))
         ax.plot(df.index, df['margin'], color='green', linewidth=2, label='Profit Margin')
         ax.set_title('US Economy-Wide Profit Margin', fontsize=14, fontweight='bold', pad=20)
@@ -165,15 +167,15 @@ def create_profit_margin_chart(fred, output_file='profit_margin.png'):
     except Exception as e:
         print(f"ERROR: Failed profit margin chart: {str(e)}"); raise
 
-def create_fear_greed_chart(output_file='fear_greed.png'):
+def create_fear_greed_chart(output_file: str = 'fear_greed.png') -> Tuple[str, float, str]:
     """Create Fear & Greed Index chart from CNN data"""
     print("Fetching Fear & Greed Index data...")
     try:
         headers = {'User-Agent': 'Mozilla/5.0', 'Referer': 'https://edition.cnn.com/', 'Accept': 'application/json'}
-        r = requests.get("https://production.dataviz.cnn.io/index/fearandgreed/graphdata", headers=headers, timeout=10)
+        r = requests.get(URLS['FEAR_GREED'], headers=headers, timeout=10)
         r.raise_for_status(); data = r.json()
         fg = data['fear_and_greed']
-        score, rating = fg['score'], fg['rating'].upper()
+        score, rating = float(fg['score']), fg['rating'].upper()
         
         fig = plt.figure(figsize=(10, 6), facecolor='white')
         ax = fig.add_axes([0, 0, 1, 1]); ax.axis('off')
@@ -204,20 +206,20 @@ def create_fear_greed_chart(output_file='fear_greed.png'):
     except Exception as e:
         print(f"ERROR: Failed Fear & Greed chart: {str(e)}"); raise
 
-def create_indicators_table(fred, output_file='indicators_table.png'):
+def create_indicators_table(fred: Any, output_file: str = 'indicators_table.png') -> Tuple[str, List[Dict[str, str]]]:
     """Create a table of advanced economic indicators"""
     print("Creating indicators table...")
     try:
         indicators_data = []
         # Sahm Rule
-        unrate = fred.get_series('UNRATE').dropna().tail(12)
-        sahm = unrate.tail(3).mean() - unrate.min()
+        unrate = fred.get_series(FRED_SERIES['UNEMPLOYMENT']).dropna().tail(12)
+        sahm = float(unrate.tail(3).mean() - unrate.min())
         indicators_data.append({'Indicator': 'Sahm Rule', 'Value': f'{sahm:.2f}', 'Change': '🔴 Signal' if sahm >= 0.5 else '🟢 Safe', 'Status': '⚠️' if sahm >= 0.5 else '✅'})
         # Consumer Sentiment
-        sent = fred.get_series('UMCSENT').dropna()
+        sent = fred.get_series(FRED_SERIES['SENTIMENT']).dropna()
         indicators_data.append({'Indicator': 'Consumer Sentiment', 'Value': f'{sent.iloc[-1]:.1f}', 'Change': '🟢 Strong' if sent.iloc[-1] > 80 else '🔴 Weak', 'Status': '🛒'})
         # Initial Claims
-        claims = fred.get_series('ICSA').dropna().tail(4).mean() / 1000
+        claims = float(fred.get_series(FRED_SERIES['CLAIMS']).dropna().tail(4).mean() / 1000)
         indicators_data.append({'Indicator': 'Initial Claims (4wk)', 'Value': f'{claims:.0f}K', 'Change': '🟢 Healthy' if claims < 250 else '🔴 Weak', 'Status': '📋'})
         
         fig, ax = plt.subplots(figsize=(12, 8))
@@ -232,15 +234,16 @@ def create_indicators_table(fred, output_file='indicators_table.png'):
     except Exception as e:
         print(f"ERROR: Failed indicators table: {str(e)}"); raise
 
-def create_bull_market_checklist(fred, output_file='bull_checklist.png'):
+def create_bull_market_checklist(fred: Any, output_file: str = 'bull_checklist.png') -> Tuple[str, int, int]:
     """Create a comprehensive Bull Market Checklist table"""
     print("Creating Bull Market Checklist...")
     try:
         checklist_data = []
-        # Simplified checklist generation for brevity, can be expanded to full list
-        sp500 = fred.get_series('SP500').dropna()
-        trend_bullish = sp500.iloc[-1] > sp500.tail(200).mean()
-        checklist_data.append({'Indicator': 'Market Trend', 'Criteria': 'S&P 500 > 200d MA', 'Reading': f'{sp500.iloc[-1]:.0f}', 'Status': '✅ Bullish' if trend_bullish else '❌ Bearish', 'Bullish': trend_bullish})
+        sp500 = fred.get_series(FRED_SERIES['SP500']).dropna()
+        current_sp = float(sp500.iloc[-1])
+        ma_200_sp = float(sp500.tail(200).mean())
+        trend_bullish = current_sp > ma_200_sp
+        checklist_data.append({'Indicator': 'Market Trend', 'Criteria': 'S&P 500 > 200d MA', 'Reading': f'{current_sp:.0f}', 'Status': '✅ Bullish' if trend_bullish else '❌ Bearish', 'Bullish': trend_bullish})
         
         bullish_count = sum(1 for item in checklist_data if item['Bullish'])
         total_count = len(checklist_data)

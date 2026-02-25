@@ -1,4 +1,6 @@
 import fs from 'fs';
+import { GOOGLE_SHEETS } from '../../../lib/constants';
+import { fetchText } from '../../../lib/fetcher';
 
 export const dynamic = 'force-dynamic';
 const CACHE_FILE = '/tmp/financial-dashboard-sheets-cache.json';
@@ -8,22 +10,22 @@ export async function GET() {
         const sheets = [
             {
                 name: 'NotSoBoring',
-                url: 'https://docs.google.com/spreadsheets/d/10Y8Jus8_fMwH9H69vWh7thSzl2hH34Ri3BRbDw_GEgw/export?format=csv&gid=0',
+                url: GOOGLE_SHEETS.NOT_SO_BORING,
                 parse: (rows) => rows[2]?.[1]?.trim() || 'N/A'
             },
             {
                 name: 'FrontRunner',
-                url: 'https://docs.google.com/spreadsheets/d/1vdlPNlT6gRpzMHuQUT7olqUNb455CQM3ab4wPuCE5R0/export?format=csv&gid=1668420064',
+                url: GOOGLE_SHEETS.FRONT_RUNNER,
                 parse: (rows) => (rows[1]?.[0]?.trim() || 'N/A').split('\n')[0].trim()
             },
             {
                 name: 'AAIIDiff',
-                url: 'https://docs.google.com/spreadsheets/d/1zQQ2am1yhzTwY7nx8xPak4Q0WoNMwxWj7Ekr-fDEIF4/export?format=csv&gid=0',
+                url: GOOGLE_SHEETS.AAII,
                 parse: (rows) => rows[1]?.[4]?.trim() || 'N/A'
             },
             {
                 name: 'VIX',
-                url: 'https://docs.google.com/spreadsheets/d/1vdlPNlT6gRpzMHuQUT7olqUNb455CQM3ab4wPuCE5R0/export?format=csv&gid=790638481',
+                url: GOOGLE_SHEETS.VIX,
                 parse: (rows) => ({
                     current: rows[1]?.[0]?.trim() || 'N/A',
                     threeMonth: rows[1]?.[1]?.trim() || 'N/A',
@@ -37,14 +39,9 @@ export async function GET() {
         let usedCache = false;
         let fetchFailed = false;
 
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5.0s timeout for Vercel
-
         try {
             const fetchPromises = sheets.map(async (sheet) => {
-                const res = await fetch(sheet.url, { next: { revalidate: 0 }, signal: controller.signal });
-                if (!res.ok) throw new Error(`Status ${res.status}`);
-                const text = await res.text();
+                const text = await fetchText(sheet.url);
                 const rows = text.split('\n').map(row => {
                     const result = [];
                     let current = '';

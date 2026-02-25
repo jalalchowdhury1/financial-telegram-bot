@@ -1,12 +1,9 @@
-// /api/fred - Fetch all FRED economic data
-export const dynamic = 'force-dynamic';
-const FRED_BASE = 'https://api.stlouisfed.org/fred/series/observations';
+import { FRED_SERIES, EXTERNAL_URLS } from '../../../lib/constants';
+import { fetchJson, proxyFetch } from '../../../lib/fetcher';
 
 async function fetchSeries(seriesId, apiKey, limit = 15) {
-    const url = `${FRED_BASE}?series_id=${seriesId}&api_key=${apiKey}&file_type=json&sort_order=desc&limit=${limit}`;
-    const res = await fetch(url, { next: { revalidate: 0 } });
-    if (!res.ok) throw new Error(`FRED ${seriesId}: ${res.status}`);
-    const data = await res.json();
+    const url = `${EXTERNAL_URLS.FRED_BASE}?series_id=${seriesId}&api_key=${apiKey}&file_type=json&sort_order=desc&limit=${limit}`;
+    const data = await fetchJson(url, { revalidate: 0 });
     return data.observations
         .filter(o => o.value !== '.')
         .map(o => ({ date: o.date, value: parseFloat(o.value) }));
@@ -20,24 +17,24 @@ export async function GET() {
 
     try {
         const results = await Promise.allSettled([
-            fetchSeries('T10Y2Y', apiKey, 100000),
-            fetchSeries('UNRATE', apiKey, 15),
-            fetchSeries('UMCSENT', apiKey, 5),
-            fetchSeries('ICSA', apiKey, 10),
-            fetchSeries('BAMLC0A4CBBB', apiKey, 252),
-            fetchSeries('DFII10', apiKey, 5),
-            fetchSeries('USSLIND', apiKey, 5),
-            fetchSeries('NFCI', apiKey, 5),
-            fetchSeries('M2SL', apiKey, 15),
-            fetchSeries('RSXFS', apiKey, 5),
-            fetchSeries('HOUST', apiKey, 10),
-            fetchSeries('INDPRO', apiKey, 10),
-            fetchSeries('JTSJOL', apiKey, 5),
-            fetchSeries('DGORDER', apiKey, 5),
-            fetchSeries('PSAVERT', apiKey, 5),
-            fetchSeries('A053RC1Q027SBEA', apiKey, 100000),
-            fetchSeries('GDP', apiKey, 100000),
-            fetchSeries('USREC', apiKey, 100000)
+            fetchSeries(FRED_SERIES.YIELD_CURVE, apiKey, 100000),
+            fetchSeries(FRED_SERIES.UNEMPLOYMENT, apiKey, 15),
+            fetchSeries(FRED_SERIES.SENTIMENT, apiKey, 5),
+            fetchSeries(FRED_SERIES.CLAIMS, apiKey, 10),
+            fetchSeries(FRED_SERIES.CREDIT_SPREAD, apiKey, 252),
+            fetchSeries(FRED_SERIES.REAL_YIELDS, apiKey, 5),
+            fetchSeries(FRED_SERIES.LEI, apiKey, 5),
+            fetchSeries(FRED_SERIES.NFCI, apiKey, 5),
+            fetchSeries(FRED_SERIES.M2_MONEY, apiKey, 15),
+            fetchSeries(FRED_SERIES.RETAIL_SALES, apiKey, 5),
+            fetchSeries(FRED_SERIES.HOUSING_STARTS, apiKey, 10),
+            fetchSeries(FRED_SERIES.INDUSTRIAL_PROD, apiKey, 10),
+            fetchSeries(FRED_SERIES.JOLTS, apiKey, 5),
+            fetchSeries(FRED_SERIES.DURABLE_GOODS, apiKey, 5),
+            fetchSeries(FRED_SERIES.SAVINGS_RATE, apiKey, 5),
+            fetchSeries(FRED_SERIES.CORP_PROFITS, apiKey, 100000),
+            fetchSeries(FRED_SERIES.GDP, apiKey, 100000),
+            fetchSeries(FRED_SERIES.RECESSIONS, apiKey, 100000)
         ]);
 
         const safeValue = (res) => res.status === 'fulfilled' ? res.value : [];
@@ -53,10 +50,7 @@ export async function GET() {
 
         // Method 1: multpl.com (Current S&P 500)
         try {
-            const peRes = await fetch('https://www.multpl.com/s-p-500-pe-ratio', {
-                headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' },
-                next: { revalidate: 3600 }
-            });
+            const peRes = await proxyFetch(EXTERNAL_URLS.MULTPL_PE, { revalidate: 3600 });
             const peHtml = await peRes.text();
             const peMatch = peHtml.match(/Current S&P 500 PE Ratio[^\d]*(\d+\.\d+)/);
             if (peMatch) peRatio = parseFloat(peMatch[1]);
@@ -67,10 +61,7 @@ export async function GET() {
         // Method 2: Yahoo Finance Fallback (SPY Trailing P/E - Operating)
         if (!peRatio) {
             try {
-                const yRes = await fetch('https://finance.yahoo.com/quote/SPY/key-statistics', {
-                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
-                    next: { revalidate: 3600 }
-                });
+                const yRes = await proxyFetch(EXTERNAL_URLS.YAHOO_PE, { revalidate: 3600 });
                 const yHtml = await yRes.text();
                 const peMatch = yHtml.match(/PE Ratio \(TTM\)[\s\S]*?(\d+\.\d+)/i);
                 if (peMatch) {

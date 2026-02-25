@@ -6,24 +6,26 @@ Handles environment variables and Telegram communication.
 import os
 import sys
 import requests
+from typing import Dict, Optional
 
-def load_environment_variables():
+def load_environment_variables() -> Dict[str, str]:
     """Load and validate required environment variables"""
-    required_vars = {
+    config = {
         'FRED_API_KEY': os.getenv('FRED_API_KEY'),
         'TELEGRAM_TOKEN': os.getenv('TELEGRAM_TOKEN'),
         'TELEGRAM_CHAT_ID': os.getenv('TELEGRAM_CHAT_ID')
     }
 
-    missing_vars = [var for var, value in required_vars.items() if not value]
+    missing_vars = [var for var, value in config.items() if not value]
 
     if missing_vars:
         print(f"ERROR: Missing required environment variables: {', '.join(missing_vars)}")
         sys.exit(1)
 
-    return required_vars
+    # We can safely cast because we checked for missing vars
+    return {k: str(v) for k, v in config.items()}
 
-def send_to_telegram(token, chat_id, image_path=None, caption=""):
+def send_to_telegram(token: str, chat_id: str, image_path: Optional[str] = None, caption: str = "") -> bool:
     """Send message or image to Telegram chat"""
     if image_path:
         url = f"https://api.telegram.org/bot{token}/sendPhoto"
