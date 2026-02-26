@@ -23,6 +23,17 @@ This document is for AI agents (like Antigravity, Claude, or ChatGPT) assisting 
 | **Bot Logic** | `bot/` (Modular package) |
 | **Deployment** | `render.yaml` (Render), Dashboard Settings (Vercel) |
 
+## 🛡️ Data Resilience & Sourcing
+The project implements a cascading fallback strategy for critical metrics to ensure the dashboard remains functional even if primary APIs fail.
+
+| Metric Group | Primary Source | Fallback Mechanism |
+| :--- | :--- | :--- |
+| **SPY Data** | Stooq API | Yahoo Finance API |
+| **S&P 500 P/E** | multpl.com | Yahoo Finance (Operating P/E * 1.07) |
+| **F&G Index** | CNN Business | RapidAPI -> Yahoo VIX Proxy |
+| **AI Assessment** | OpenRouter (Free) | GPT-4o -> Groq -> Rule-Based Fallback |
+| **Eco Data** | FRED API | Graceful skip (Promised-based isolation) |
+
 ## 🛠️ Common AI Tasks
 1. **Adding a New Indicator**:
    - Add Series ID to `bot/config.py` and `dashboard/lib/constants.js`.
@@ -40,6 +51,9 @@ This document is for AI agents (like Antigravity, Claude, or ChatGPT) assisting 
   - Isolated: Only the Google Sheet indicator block is sent via `/report`.
   - No Status: Avoid sending "Generating..." or other transition messages to keep the chat clean.
 - **Data Cleaning**: Use the `clean_val` helper in `bot/fetchers.py` to strip trailing digits or junk characters from Google Sheet cells.
+- **API Implementation**:
+  - Always use `proxyFetch` from `lib/fetcher.js` in Dashboard routes to ensure 8000ms timeouts.
+  - Implement Tiered fallbacks for any new high-value metrics.
 - **Do not** add heavy plotting libraries to the Bot.
 - **Keep it modular**: Extract new UI features into standalone components in `dashboard/components/`.
 - **Ensure** `requirements.txt` is updated after any new Python imports.
