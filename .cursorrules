@@ -1,9 +1,9 @@
 # AI Instructions & Context
 
-Always read `AI_CONTEXT.md` in the root directory before performing any tasks or refactoring. This file contains the "Source of Truth" for:
-- Repository URLs
-- Deployment hosting (Vercel/Render)
-- Modular package structure
-- Maintenance constraints
+Always read `docs/AI_MAINTAINER_GUIDE.md` and check `.gemini/antigravity/brain/task.md` before performing any tasks.
 
-Do not ignore the `AI_CONTEXT.md` guidelines.
+## 🛡️ Core Rules
+- **Keep Bot Lite**: Never add heavy plotting or bulky dependencies to the `bot/` package.
+- **Modular UI**: Always extract new dashboard features into standalone components in `dashboard/components/`.
+- **Transparency**: Update `task.md` and use `task_boundary` for complex multi-step work.
+- **Data Resilience**: Ensure every new API route has error handling or fallbacks.

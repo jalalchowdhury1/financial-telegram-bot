@@ -46,21 +46,20 @@ pip install -r requirements.txt
 python -m bot.main
 ```
 
+## 📂 Project Structure
+
+- `bot/`: Python Telegram Bot (Report Service)
+- `dashboard/`: Next.js Web Application
+- `docs/`: Technical Documentation & [AI Maintainer Guide](docs/AI_MAINTAINER_GUIDE.md)
+- `scripts/`: Development and deployment utilities
+- `requirements.txt`: Bot dependencies
+
+---
+
 ## 🏗️ Architecture
 
-The system is split into two main components:
-1. **Next.js Dashboard**: A serverless web app hosted on Vercel.
-2. **Modular Python Bot**: A long-running service hosted on Render with a built-in Flask health-check server and APScheduler.
-
-For a detailed visual guide, see [ARCHITECTURE.md](docs/ARCHITECTURE.md).
-
-## 🛠️ Project Structure
-
-- `bot/`: Modular Python package for all report generation logic.
-- `dashboard/`: Next.js web application.
-- `docs/`: System documentation and architectural diagrams.
-- `requirements.txt`: Python dependencies.
-- `render.yaml`: Configuration for Render cloud deployment.
+- **Dashboard**: Next.js deployed on Vercel.
+- **Bot**: Python service deployed on Render.
 
 ## 📜 Commands
 
