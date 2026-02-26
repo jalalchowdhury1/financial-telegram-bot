@@ -62,7 +62,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Generate and send financial charts
+      - name: Generate and send financial report
         id: report
         run: python -m bot.main report
         continue-on-error: true
@@ -101,11 +101,4 @@ jobs:
         if: steps.report.outcome == 'failure'
         run: exit 1
 
-      - name: Upload charts as artifacts (for debugging)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: financial-charts-${{ github.run_number }}
-          path: |
-            *.png
-          retention-days: 7
+

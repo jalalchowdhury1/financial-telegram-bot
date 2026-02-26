@@ -9,7 +9,7 @@ This document is for AI agents (like Antigravity, Claude, or ChatGPT) assisting 
 ## 🏗️ Deployment Architecture
 - **Web Dashboard**: Next.js (Dashboard folder). Deployed on **Vercel**.
 - **Bot Service**: Python (Bot folder). Deployed on **Render**.
-  - *Start Command*: `python -m bot.main` (or `python telegram_bot_server.py` for legacy compatibility).
+  - *Start Command*: `python -m bot.main`
   - *Internal Scheduler*: APScheduler runs in `bot/main.py`.
 
 ## 📂 Source of Truth Locations

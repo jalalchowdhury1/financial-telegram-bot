@@ -30,7 +30,9 @@ export const EXTERNAL_URLS = {
     YAHOO_SPY: 'https://query1.finance.yahoo.com/v8/finance/chart/SPY?range=5y&interval=1d',
     MULTPL_PE: 'https://www.multpl.com/s-p-500-pe-ratio',
     YAHOO_PE: 'https://finance.yahoo.com/quote/SPY/key-statistics',
-    CNN_FEAR_GREED: 'https://production.dataviz.cnn.io/index/fearandgreed/graphdata'
+    CNN_FEAR_GREED: 'https://production.dataviz.cnn.io/index/fearandgreed/graphdata',
+    RAPIDAPI_FEAR_GREED: 'https://fear-and-greed-index.p.rapidapi.com/v1/fgi',
+    YAHOO_VIX: 'https://query1.finance.yahoo.com/v8/finance/chart/^VIX?range=1mo&interval=1d'
 };
 
 export const GOOGLE_SHEETS = {
