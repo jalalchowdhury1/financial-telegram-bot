@@ -44,9 +44,14 @@ def fetch_google_sheet_indicators() -> str:
         import re
         def clean_val(v):
             if not v: return v
-            # If it's a numeric status like "BIL (T-Bill ETF)1", strip the trailing number
-            # But keep the % if it's meant to be there once.
-            return re.sub(r'\d+$', '', v.strip())
+            v_stripped = v.strip()
+            # If the value is a pure number or decimal (e.g. "17.5", "20"), don't strip digits
+            try:
+                float(v_stripped)
+                return v_stripped
+            except ValueError:
+                # If it's a string with trailing digits (e.g. "BIL (T-Bill ETF)1"), strip them
+                return re.sub(r'\d+$', '', v_stripped)
 
         output = (
             f"🛡️ NotSoBoring : {clean_val(not_so_boring_val)}\n\n"
