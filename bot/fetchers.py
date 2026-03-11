@@ -67,12 +67,20 @@ def fetch_google_sheet_indicators() -> str:
         return ""
 
 def calculate_rsi(prices: pd.Series, period: int = RSI_PERIOD) -> float:
-    """Calculate Relative Strength Index (RSI)"""
+    """Calculate Relative Strength Index (RSI) using Wilder's Smoothing"""
     delta = prices.diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+    
+    # Isolate gains and losses
+    gain = delta.where(delta > 0, 0)
+    loss = -delta.where(delta < 0, 0)
+    
+    # Calculate Wilder's smoothed moving average using Exponential Weighted Math (EWM)
+    # alpha=1/period is the exact mathematical equivalent to Wilder's smoothing
+    avg_gain = gain.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
 
-    rs = gain / loss
+    # Calculate RS and RSI
+    rs = avg_gain / avg_loss
     rsi = 100 - (100 / (1 + rs))
 
     return float(rsi.iloc[-1])
