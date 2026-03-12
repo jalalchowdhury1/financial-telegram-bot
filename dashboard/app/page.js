@@ -17,7 +17,6 @@ export default function Dashboard() {
     const [spy, setSpy] = useState(null);
     const [fg, setFg] = useState(null);
     const [fred, setFred] = useState(null);
-    const [assessment, setAssessment] = useState(null);
     const [loading, setLoading] = useState(true);
     const [lastUpdated, setLastUpdated] = useState(null);
     const [systemStatus, setSystemStatus] = useState(null);
@@ -63,39 +62,6 @@ export default function Dashboard() {
             const hours = String(now.getHours()).padStart(2, '0');
             const minutes = String(now.getMinutes()).padStart(2, '0');
             setLastUpdated(`${year}-${month}-${day} ${hours}:${minutes}`);
-
-            if (fredRes && fgRes && !fredRes.error && !fgRes.error) {
-                const assessData = {
-                    yieldCurve: fredRes.yieldCurve?.current,
-                    sahmRule: fredRes.indicators?.sahmRule?.value,
-                    sentiment: fredRes.indicators?.sentiment?.value,
-                    claims: fredRes.indicators?.claims?.value,
-                    creditSpread: fredRes.indicators?.creditSpread?.value,
-                    realYields: fredRes.indicators?.realYields?.value,
-                    leiChange: fredRes.indicators?.lei?.change,
-                    fearGreed: fgRes.score
-                };
-                try {
-                    const assessRes = await fetch('/api/assessment', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(assessData)
-                    });
-                    if (!assessRes.ok) {
-                        const errText = await assessRes.text();
-                        console.error('Assessment API returned non-OK:', errText);
-                        setAssessment(`⚠️ Network Error: Could not reach Assessment API (${assessRes.status})`);
-                        setApiErrors(prev => [...prev, `[ASSESSMENT] ${assessRes.status} Error: ${errText.substring(0, 50)}`]);
-                    } else {
-                        const json = await assessRes.json();
-                        setAssessment(json.assessment);
-                    }
-                } catch (assessFetchErr) {
-                    console.error('Failed to parse or fetch assessment:', assessFetchErr);
-                    setAssessment('⚠️ Fetch Error: Failed to contact Assessment API.');
-                    setApiErrors(prev => [...prev, `[ASSESSMENT] Fetch failed: ${assessFetchErr.message}`]);
-                }
-            }
         } catch (e) {
             console.error('Dashboard fetch error:', e);
             setApiErrors(prev => [...prev, `[NETWORK] ${e.toString()}`]);
@@ -330,19 +296,16 @@ export default function Dashboard() {
                 {/* BULL MARKET CHECKLIST */}
                 <BullChecklist fred={fred} loading={loading} />
 
-                {/* AI ASSESSMENT */}
-                <div className="card full-width" style={{ animationDelay: '0.7s' }}>
-                    <div className="card-header">
-                        <h2>🤖 AI Market Assessment</h2>
-                        <span className="badge badge-purple">AI-Powered</span>
-                    </div>
-                    <ErrorBoundary>
-                        {loading || !assessment ? (
-                            loading ? <Skeleton count={4} /> : <div className="error-message">Assessment unavailable</div>
-                        ) : (
-                            <div className="ai-assessment">{assessment}</div>
-                        )}
-                    </ErrorBoundary>
+                {/* FINANCIAL DASHBOARD HISTORY LINK */}
+                <div style={{ gridColumn: '1 / -1', textAlign: 'center', marginTop: '1rem' }}>
+                    <a 
+                        href="https://docs.google.com/spreadsheets/d/1lA-_yjLMc3qDTt9sogSPQrCohNULIk5wwJYfb5wIHfc/edit?gid=0#gid=0" 
+                        target="_blank" 
+                        rel="noopener noreferrer" 
+                        style={{ color: 'var(--text-muted)', fontSize: '0.75rem', textDecoration: 'none', opacity: 0.5 }}
+                    >
+                        Financial Dashboard History
+                    </a>
                 </div>
             </div>
 

@@ -58,6 +58,7 @@ def fetch_google_sheet_indicators() -> str:
             f"🔑 FrontRunner : {clean_val(front_runner_val)}\n\n"
             f"🔸 AAII Diff : {clean_val(aaii_val)} (G | >20% | 6mths out)\n\n"
             f"🎢 VIX: (Current | 3M) : {clean_val(vix_current)} | {clean_val(vix_3m)} | {clean_val(fear_greed_status)}\n"
+            f"\n[Financial Dashboard History](https://docs.google.com/spreadsheets/d/1lA-_yjLMc3qDTt9sogSPQrCohNULIk5wwJYfb5wIHfc/edit?gid=0#gid=0)"
         )
         print("✓ Successfully fetched and parsed Google Sheet indicators")
         return output

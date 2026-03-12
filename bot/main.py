@@ -22,7 +22,7 @@ from apscheduler.triggers.cron import CronTrigger
 # Import from the modular bot package
 from bot.utils import load_environment_variables, send_to_telegram
 from bot.fetchers import fetch_google_sheet_indicators, fetch_spy_stats
-from bot.assessment import generate_ai_assessment
+
 from bot.config import TIMEZONE, REPORT_TIME
 
 # Flask app for health checks
@@ -63,18 +63,7 @@ def run_report():
         #     print(f"Skipping SPY summary: {e}")
         pass
 
-        # 3. AI Assessment (Disabled per user request)
-        # try:
-        #     assessment_data = {
-        #         'spy_rsi': spy['rsi_9d'] if 'spy' in locals() else 50.0,
-        #         'vix_current': 20.0,
-        #         'fear_greed': 50,
-        #     }
-        #     assessment = generate_ai_assessment(assessment_data)
-        #     send_to_telegram(env_vars['TELEGRAM_TOKEN'], env_vars['TELEGRAM_CHAT_ID'], caption=assessment)
-        #     print("✓ Sent AI Market Assessment.")
-        # except Exception as e:
-        #     print(f"Skipping AI assessment: {e}")
+        pass
             
         print("\n✓ Lightweight report processing complete.")
         return True
