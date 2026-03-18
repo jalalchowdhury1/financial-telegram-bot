@@ -173,7 +173,7 @@ export async function GET() {
                 claims: { value: claims4wk / 1000, status: claims4wk < 250000 ? 'healthy' : claims4wk < 350000 ? 'elevated' : 'weak' },
                 creditSpread: { value: bbbCurrent, status: bbbCurrent < 1.5 ? 'tight' : bbbCurrent < 2.5 ? 'normal' : 'stressed' },
                 realYields: { value: tipsCurrent, change: tipsCurrent - tipsPrev, status: tipsCurrent > 2.0 ? 'restrictive' : tipsCurrent > 0 ? 'neutral' : 'easy' },
-                lei: { value: leiCurrent, change: leiChange, status: leiChange > 0 ? 'rising' : 'falling' }
+                lei: { value: leiCurrent, change: leiChange, status: leiCurrent > 0 ? 'rising' : 'falling' }
             },
             checklist: {
                 nfci: { value: nfciCurrent, bullish: nfciCurrent < 0, status: nfciCurrent < -0.5 ? 'strong' : nfciCurrent < 0 ? 'good' : 'weak', label: 'Financial Conditions' },
