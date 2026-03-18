@@ -1,6 +1,8 @@
 import { FRED_SERIES, EXTERNAL_URLS } from '../../../lib/constants';
 import { fetchJson, proxyFetch } from '../../../lib/fetcher';
 
+export const dynamic = 'force-dynamic';
+
 async function fetchSeries(seriesId, apiKey, limit = 15) {
     const url = `${EXTERNAL_URLS.FRED_BASE}?series_id=${seriesId}&api_key=${apiKey}&file_type=json&sort_order=desc&limit=${limit}`;
     const data = await fetchJson(url, { revalidate: 0 });
@@ -50,7 +52,7 @@ export async function GET() {
 
         // Method 1: multpl.com (Current S&P 500)
         try {
-            const peRes = await proxyFetch(EXTERNAL_URLS.MULTPL_PE, { revalidate: 3600 });
+            const peRes = await proxyFetch(EXTERNAL_URLS.MULTPL_PE, { revalidate: 0 });
             const peHtml = await peRes.text();
             const peMatch = peHtml.match(/Current S&P 500 PE Ratio[^\d]*(\d+\.\d+)/);
             if (peMatch) peRatio = parseFloat(peMatch[1]);
@@ -61,7 +63,7 @@ export async function GET() {
         // Method 2: Yahoo Finance Fallback (SPY Trailing P/E - Operating)
         if (!peRatio) {
             try {
-                const yRes = await proxyFetch(EXTERNAL_URLS.YAHOO_PE, { revalidate: 3600 });
+                const yRes = await proxyFetch(EXTERNAL_URLS.YAHOO_PE, { revalidate: 0 });
                 const yHtml = await yRes.text();
                 const peMatch = yHtml.match(/PE Ratio \(TTM\)[\s\S]*?(\d+\.\d+)/i);
                 if (peMatch) {
