@@ -320,9 +320,9 @@ export default function Dashboard() {
 
             {/* FOOTER */}
             <footer className="dashboard-footer">
-                <p>Jalal's Financial Dashboard v7.0 — Data from FRED, CNN, Stooq, ExchangeRate-API &amp; Google Sheets</p>
+                <p>Jalal's Financial Dashboard v7.0 — Data from FRED, CNN, Stooq, ExchangeRate-API, Yahoo Finance &amp; Google Sheets</p>
                 <p style={{ fontSize: '0.7rem', opacity: 0.6, marginTop: '4px' }}>
-                    Deployed: {new Date(process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_MESSAGE ? Date.now() : Date.now()).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    Deployed: {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                 </p>
             </footer>
 
@@ -367,9 +367,15 @@ export default function Dashboard() {
                         <span className={`status-item ${systemStatus.sheets?.source === 'Failed' ? 'status-error' : systemStatus.sheets?.hasErrors ? 'status-warn' : ''}`}>
                             [SHEETS: {systemStatus.sheets?.source === 'Failed' ? 'FAILED' : systemStatus.sheets?.hasErrors ? 'CACHE' : 'LIVE OK'}]
                         </span>
-                        {systemStatus.extra && (
-                            <span className={`status-item ${systemStatus.extra?.hasErrors ? 'status-error' : ''}`}>
-                                [MKTS: {systemStatus.extra?.hasErrors ? 'PARTIAL' : 'LIVE OK'}]
+                    {systemStatus.extra && (
+                            <span className={`status-item ${
+                                systemStatus.extra?.sourceLog && Object.values(systemStatus.extra.sourceLog).some(s => s === 'null')
+                                    ? 'status-error'
+                                    : systemStatus.extra?.messages?.some(m => m.includes('Yahoo') || m.includes('GSheet'))
+                                    ? 'status-warn'
+                                    : ''
+                            }`}>
+                                [MKTS: {systemStatus.extra?.messages?.join(' | ') || 'LIVE OK'}]
                             </span>
                         )}
                     </div>

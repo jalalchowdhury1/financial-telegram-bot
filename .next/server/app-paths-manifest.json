@@ -1,0 +1,8 @@
+{
+  "/page": "app/page.js",
+  "/api/sheets/route": "app/api/sheets/route.js",
+  "/api/spy/route": "app/api/spy/route.js",
+  "/api/fear-greed/route": "app/api/fear-greed/route.js",
+  "/api/fred/route": "app/api/fred/route.js",
+  "/api/assessment/route": "app/api/assessment/route.js"
+}

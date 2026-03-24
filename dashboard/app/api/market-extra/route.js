@@ -1,5 +1,5 @@
-import { FRED_SERIES, EXTERNAL_URLS } from '../../../lib/constants';
-import { fetchJson, fetchText } from '../../../lib/fetcher';
+import { FRED_SERIES, EXTERNAL_URLS, YAHOO_TICKERS } from '../../../lib/constants';
+import { fetchJson, fetchText, fetchYahooFinanceSeries, fetchGoogleSheetExport } from '../../../lib/fetcher';
 
 export const dynamic = 'force-dynamic';
 
@@ -140,40 +140,91 @@ export async function GET() {
             }
         }
 
-        const [fredResults, erRates] = await Promise.all([
+        const [fredResults, erRates, gsheetData] = await Promise.all([
             Promise.resolve(fredResultsRaw),
-            fetchExchangeRates()
+            fetchExchangeRates(),
+            fetchGoogleSheetExport()
         ]);
 
         const [mortgageRateData, rentData, homeData, oilData, tnxData, t2yData, cadData, inrData] =
             fredResults.map(r => r.status === 'fulfilled' ? r.value : []);
 
         // --- 2. Fetch Stooq sequentially (BTC + Gold only — minimize rate-limit risk) ---
-        const [btc, gold] = await fetchStooqSequential(['btc.v', 'xauusd']);
+        const [btcStooq, goldStooq] = await fetchStooqSequential(['btc.v', 'xauusd']);
 
         // --- 3. Compute from live ER-API ---
         const bdtRate = erRates?.BDT;
         const inrRate = erRates?.INR;
         const dxyValue = computeDXY(erRates);
 
-        // USD/BDT from ER-API (live, ~122.5 BDT per USD)
-        const usdbdt = bdtRate ? spotOnly(bdtRate) : null;
-
-        // INR/BDT = BDT_per_USD / INR_per_USD (live spot)
-        const inrbdt = (bdtRate && inrRate) ? spotOnly(bdtRate / inrRate) : null;
-
-        // DXY computed via ICE formula from live rates
-        const dxy = dxyValue ? spotOnly(dxyValue) : null;
+        const usdbdt_primary = bdtRate ? spotOnly(bdtRate) : null;
+        const inrbdt_primary = (bdtRate && inrRate) ? spotOnly(bdtRate / inrRate) : null;
+        const dxy_primary = dxyValue ? spotOnly(dxyValue) : null;
 
         // --- 4. Standardize FRED series ---
-        const usdcad = standardizeFred(cadData);
-        const usdinr = standardizeFred(inrData);
-        const cadinr = crossRateFred(cadData, inrData); // INR/CAD = DEXINUS / DEXCAUS
-        const cl = standardizeFred(oilData);
-        const tnx = standardizeFred(tnxData);
-        const t2y = standardizeFred(t2yData);
+        const usdcad_fred = standardizeFred(cadData);
+        const usdinr_fred = standardizeFred(inrData);
+        const cadinr_fred = crossRateFred(cadData, inrData); // INR/CAD (DEXINUS / DEXCAUS)
+        const cl_fred = standardizeFred(oilData);
+        const tnx_fred = standardizeFred(tnxData);
+        const t2y_fred = standardizeFred(t2yData);
         const mortStd = standardizeFred(mortgageRateData);
+        // 4.41 scales the CPI shelter index (~410) to approximate nominal rent dollars (~$1800/mo)
         const rentStd = standardizeFred(rentData, 4.41);
+
+        // --- 4.5 FALLBACK HELPER ---
+        const sourceLog = {};
+        async function getWithFallback(primaryValue, yfTicker, gsheetKey, transformOpts = {}, logKey) {
+            if (primaryValue && primaryValue.current != null) {
+                if (logKey) sourceLog[logKey] = 'FRED/ER-API';
+                return primaryValue;
+            }
+            
+            // Try YF
+            if (yfTicker) {
+                const yfData = await fetchYahooFinanceSeries(yfTicker);
+                if (yfData && yfData.current != null) {
+                    let val = yfData.current;
+                    let hist = yfData.history;
+                    if (transformOpts.divideBy10) {
+                        val = val / 10;
+                        hist = hist.map(h => ({ ...h, price: h.price / 10 }));
+                        const prev = hist.length >= 2 ? hist[hist.length-2].price : null;
+                        return {
+                            ...yfData,
+                            current: val,
+                            history: hist,
+                            ...(prev ? { dailyChange: { value: val - prev, pct: ((val - prev) / prev) * 100 } } : {})
+                        };
+                    }
+                    if (logKey) sourceLog[logKey] = 'Yahoo';
+                    return yfData;
+                }
+            }
+
+            // Try Google Sheets
+            if (gsheetKey && gsheetData && gsheetData[gsheetKey] != null) {
+                if (logKey) sourceLog[logKey] = 'GSheet';
+                return spotOnly(gsheetData[gsheetKey]);
+            }
+            if (logKey) sourceLog[logKey] = 'null';
+            return null;
+        }
+
+        // --- 4.6 APPLY FALLBACKS ---
+        const usdcad = await getWithFallback(usdcad_fred, YAHOO_TICKERS.USD_CAD, 'USD/CAD', {}, 'usdcad');
+        const usdinr = await getWithFallback(usdinr_fred, YAHOO_TICKERS.USD_INR, 'USD/INR', {}, 'usdinr');
+        const usdbdt = await getWithFallback(usdbdt_primary, YAHOO_TICKERS.USD_BDT, 'USD/BDT', {}, 'usdbdt');
+        const inrbdt = await getWithFallback(inrbdt_primary, null, 'INR/BDT', {}, 'inrbdt');
+        const cadinr = await getWithFallback(cadinr_fred, null, 'CAD/INR', {}, 'cadinr');
+        const dxy = await getWithFallback(dxy_primary, YAHOO_TICKERS.DXY, null, {}, 'dxy');
+        
+        const cl = await getWithFallback(cl_fred, YAHOO_TICKERS.CRUDE_OIL, null, {}, 'cl');
+        const btc = await getWithFallback(btcStooq, YAHOO_TICKERS.BTC, 'BTC/USD', {}, 'btc');
+        const gold = await getWithFallback(goldStooq, YAHOO_TICKERS.GOLD, 'Gold Spot', {}, 'gold');
+        
+        const tnx = await getWithFallback(tnx_fred, YAHOO_TICKERS.TNX_10Y, '10-Year Treasury', { divideBy10: true }, 'tnx');
+        const t2y = await getWithFallback(t2y_fred, null, null, {}, 't2y');
 
         // --- 5. Compute Mortgage Payment ---
         let mortPayment = null;
@@ -189,15 +240,32 @@ export async function GET() {
             mortPayment = { current, dailyChange: { value: current - prev, pct: prev ? ((current - prev) / prev) * 100 : 0 }, history };
         }
 
+        // Compute which unique sources were used
+        const usedSources = [...new Set(Object.values(sourceLog))];
+        const nullCount = Object.values(sourceLog).filter(s => s === 'null').length;
+        const yahooCount = Object.values(sourceLog).filter(s => s === 'Yahoo').length;
+        const gsheetCount = Object.values(sourceLog).filter(s => s === 'GSheet').length;
+        const primaryCount = Object.values(sourceLog).filter(s => s === 'FRED/ER-API').length;
+        const stooqBtc = btcStooq != null;
+        const stooqGold = goldStooq != null;
+
+        const sourceMessages = [];
+        if (primaryCount > 0) sourceMessages.push(`FRED/ER-API: ${primaryCount} series`);
+        if (stooqBtc || stooqGold) sourceMessages.push(`Stooq: ${[stooqBtc && 'BTC', stooqGold && 'Gold'].filter(Boolean).join(', ')}`);
+        if (yahooCount > 0) sourceMessages.push(`Yahoo fallback: ${yahooCount} metrics`);
+        if (gsheetCount > 0) sourceMessages.push(`GSheet fallback: ${gsheetCount} metrics`);
+        if (nullCount > 0) sourceMessages.push(`unavailable: ${nullCount} metrics`);
+
         return Response.json({
             fx: { usdcad, usdinr, usdbdt, inrbdt, cadinr, dxy },
             commodities: { cl, gc: gold, btc },
             rates: { tnx, t2y, mortgageRate: mortStd },
             realEstate: { rentIndex: rentStd, mortgagePayment: mortPayment },
             _meta: {
-                source: 'Stooq, ExchangeRate-API & FRED',
-                hasErrors: !btc || !usdcad,
-                messages: ['Stooq: BTC, Gold | ER-API: BDT, DXY | FRED: FX, Oil, Rates, Real Estate']
+                source: usedSources.filter(s => s !== 'null').join(' + ') || 'unknown',
+                hasErrors: nullCount > 0,
+                sourceLog,
+                messages: sourceMessages
             }
         });
     } catch (error) {

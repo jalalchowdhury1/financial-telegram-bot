@@ -42,7 +42,20 @@ export const GOOGLE_SHEETS = {
     NOT_SO_BORING: 'https://docs.google.com/spreadsheets/d/10Y8Jus8_fMwH9H69vWh7thSzl2hH34Ri3BRbDw_GEgw/export?format=csv&gid=0',
     FRONT_RUNNER: 'https://docs.google.com/spreadsheets/d/1vdlPNlT6gRpzMHuQUT7olqUNb455CQM3ab4wPuCE5R0/export?format=csv&gid=1668420064',
     AAII: 'https://docs.google.com/spreadsheets/d/1zQQ2am1yhzTwY7nx8xPak4Q0WoNMwxWj7Ekr-fDEIF4/export?format=csv&gid=0',
-    VIX: 'https://docs.google.com/spreadsheets/d/1vdlPNlT6gRpzMHuQUT7olqUNb455CQM3ab4wPuCE5R0/export?format=csv&gid=790638481'
+    VIX: 'https://docs.google.com/spreadsheets/d/1vdlPNlT6gRpzMHuQUT7olqUNb455CQM3ab4wPuCE5R0/export?format=csv&gid=790638481',
+    MARKET_BACKUP: 'https://docs.google.com/spreadsheets/d/1dexvcTRuwHFh8DuFyBdkgP0J5FofLkQrV9YltQRHE3Q/export?format=csv&gid=1165823281'
+};
+
+export const YAHOO_TICKERS = {
+    SPY: 'SPY',
+    TNX_10Y: '^TNX', // Need to divide by 10 for yield
+    DXY: 'DX-Y.NYB',
+    CRUDE_OIL: 'CL=F',
+    USD_CAD: 'CAD=X',
+    USD_INR: 'INR=X',
+    USD_BDT: 'BDT=X',
+    GOLD: 'GC=F',
+    BTC: 'BTC-USD'
 };
 
 export const DEFAULT_HEADERS = {

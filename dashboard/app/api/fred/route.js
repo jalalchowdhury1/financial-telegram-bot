@@ -11,6 +11,18 @@ async function fetchSeries(seriesId, apiKey, limit = 15) {
         .map(o => ({ date: o.date, value: parseFloat(o.value) }));
 }
 
+// Find the observation closest to N calendar months before the most recent entry.
+// Safer than a fixed array index, which drifts if FRED filters out missing values.
+function findByMonthOffset(arr, nMonths) {
+    if (!arr?.length) return undefined;
+    const target = new Date(arr[0].date);
+    target.setMonth(target.getMonth() - nMonths);
+    return arr.reduce((best, obs) => {
+        const d = Math.abs(new Date(obs.date) - target);
+        return d < Math.abs(new Date(best.date) - target) ? obs : best;
+    });
+}
+
 export async function GET() {
     const apiKey = process.env.FRED_API_KEY;
     if (!apiKey) {
@@ -135,24 +147,24 @@ export async function GET() {
         // LEI
         const leiCurrent = usslind[0]?.value;
         const leiPrev = usslind[1]?.value;
-        const leiChange = ((leiCurrent - leiPrev) / leiPrev) * 100;
+        const leiChange = leiPrev ? ((leiCurrent - leiPrev) / leiPrev) * 100 : 0;
 
         // Bull Market Checklist
         const nfciCurrent = nfci[0]?.value;
         const m2Current = m2sl[0]?.value;
-        const m2YearAgo = m2sl[12]?.value;
+        const m2YearAgo = findByMonthOffset(m2sl, 12)?.value;
         const m2Growth = m2YearAgo ? ((m2Current - m2YearAgo) / m2YearAgo) * 100 : 0;
         const retailCurrent = rsxfs[0]?.value;
-        const retail3mo = rsxfs[3]?.value;
+        const retail3mo = findByMonthOffset(rsxfs, 3)?.value;
         const retailGrowth = retail3mo ? ((retailCurrent - retail3mo) / retail3mo) * 100 : 0;
         const housingCurrent = houst[0]?.value;
         const housing6moAvg = houst.length >= 6 ? houst.slice(0, 6).reduce((s, v) => s + v.value, 0) / 6 : 0;
         const indproCurrent = indpro[0]?.value;
-        const indpro6mo = indpro[6]?.value;
+        const indpro6mo = findByMonthOffset(indpro, 6)?.value;
         const indproChange = indpro6mo ? ((indproCurrent - indpro6mo) / indpro6mo) * 100 : 0;
         const joltsCurrent = jtsjol[0]?.value;
         const durableCurrent = dgorder[0]?.value;
-        const durable3mo = dgorder[3]?.value;
+        const durable3mo = findByMonthOffset(dgorder, 3)?.value;
         const durableChange = durable3mo ? ((durableCurrent - durable3mo) / durable3mo) * 100 : 0;
         const savingsCurrent = psavert[0]?.value;
 
@@ -202,7 +214,7 @@ export async function GET() {
                 source: 'St. Louis Fed',
                 hasErrors: results.some(r => r.status === 'rejected'),
                 messages: [
-                    `Loaded ${results.filter(r => r.status === 'fulfilled').length}/26 series`,
+                    `Loaded ${results.filter(r => r.status === 'fulfilled').length}/${fredRequests.length} series`,
                     ...results.filter(r => r.status === 'rejected').map(r => `Failed to load a series: ${r.reason.message}`)
                 ]
             }
