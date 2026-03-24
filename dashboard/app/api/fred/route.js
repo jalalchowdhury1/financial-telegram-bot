@@ -18,26 +18,39 @@ export async function GET() {
     }
 
     try {
-        const results = await Promise.allSettled([
-            fetchSeries(FRED_SERIES.YIELD_CURVE, apiKey, 100000),
-            fetchSeries(FRED_SERIES.UNEMPLOYMENT, apiKey, 15),
-            fetchSeries(FRED_SERIES.SENTIMENT, apiKey, 5),
-            fetchSeries(FRED_SERIES.CLAIMS, apiKey, 10),
-            fetchSeries(FRED_SERIES.CREDIT_SPREAD, apiKey, 252),
-            fetchSeries(FRED_SERIES.REAL_YIELDS, apiKey, 5),
-            fetchSeries(FRED_SERIES.LEI, apiKey, 5),
-            fetchSeries(FRED_SERIES.NFCI, apiKey, 5),
-            fetchSeries(FRED_SERIES.M2_MONEY, apiKey, 15),
-            fetchSeries(FRED_SERIES.RETAIL_SALES, apiKey, 5),
-            fetchSeries(FRED_SERIES.HOUSING_STARTS, apiKey, 10),
-            fetchSeries(FRED_SERIES.INDUSTRIAL_PROD, apiKey, 10),
-            fetchSeries(FRED_SERIES.JOLTS, apiKey, 5),
-            fetchSeries(FRED_SERIES.DURABLE_GOODS, apiKey, 5),
-            fetchSeries(FRED_SERIES.SAVINGS_RATE, apiKey, 5),
-            fetchSeries(FRED_SERIES.CORP_PROFITS, apiKey, 100000),
-            fetchSeries(FRED_SERIES.GDP, apiKey, 100000),
-            fetchSeries(FRED_SERIES.RECESSIONS, apiKey, 100000)
-        ]);
+        const fredRequests = [
+            [FRED_SERIES.YIELD_CURVE, 100000],
+            [FRED_SERIES.UNEMPLOYMENT, 15],
+            [FRED_SERIES.SENTIMENT, 5],
+            [FRED_SERIES.CLAIMS, 10],
+            [FRED_SERIES.CREDIT_SPREAD, 252],
+            [FRED_SERIES.REAL_YIELDS, 5],
+            [FRED_SERIES.LEI, 5],
+            [FRED_SERIES.NFCI, 5],
+            [FRED_SERIES.M2_MONEY, 15],
+            [FRED_SERIES.RETAIL_SALES, 5],
+            [FRED_SERIES.HOUSING_STARTS, 10],
+            [FRED_SERIES.INDUSTRIAL_PROD, 10],
+            [FRED_SERIES.JOLTS, 5],
+            [FRED_SERIES.DURABLE_GOODS, 5],
+            [FRED_SERIES.SAVINGS_RATE, 5],
+            [FRED_SERIES.CORP_PROFITS, 100000],
+            [FRED_SERIES.GDP, 100000],
+            [FRED_SERIES.RECESSIONS, 100000]
+        ];
+
+        const results = [];
+        for (let i = 0; i < fredRequests.length; i += 3) {
+            const batch = fredRequests.slice(i, i + 3).map(([id, limit]) => 
+                fetchSeries(id, apiKey, limit)
+                    .then(v => ({ status: 'fulfilled', value: v }))
+                    .catch(e => ({ status: 'rejected', reason: e }))
+            );
+            results.push(...(await Promise.all(batch)));
+            if (i + 3 < fredRequests.length) {
+                await new Promise(r => setTimeout(r, 200)); // 200ms delay between batches of 3
+            }
+        }
 
         const safeValue = (res) => res.status === 'fulfilled' ? res.value : [];
 

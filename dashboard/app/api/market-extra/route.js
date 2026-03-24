@@ -116,18 +116,32 @@ export async function GET() {
     if (!apiKey) return Response.json({ error: 'FRED_API_KEY not configured' }, { status: 500 });
 
     try {
-        // --- 1. Fetch FRED series and ExchangeRate API in parallel ---
+        const fredRequests = [
+            [FRED_SERIES.MORTGAGE30, 30],         // 0 30Y rate
+            [FRED_SERIES.RENT_INDEX, 30],          // 1 rent CPI
+            [FRED_SERIES.MEDIAN_HOME_PRICE, 5],    // 2 home price
+            ['DCOILWTICO', 35],                    // 3 WTI oil
+            ['DGS10', 35],                         // 4 10Y treasury
+            ['DGS2', 35],                          // 5 2Y treasury
+            ['DEXCAUS', 35],                       // 6 USD/CAD
+            ['DEXINUS', 35]                        // 7 USD/INR
+        ];
+
+        const fredResultsRaw = [];
+        for (let i = 0; i < fredRequests.length; i += 3) {
+            const batch = fredRequests.slice(i, i + 3).map(([id, limit]) =>
+                fetchFredSeries(id, apiKey, limit)
+                    .then(v => ({ status: 'fulfilled', value: v }))
+                    .catch(e => ({ status: 'rejected', reason: e }))
+            );
+            fredResultsRaw.push(...(await Promise.all(batch)));
+            if (i + 3 < fredRequests.length) {
+                await new Promise(r => setTimeout(r, 200));
+            }
+        }
+
         const [fredResults, erRates] = await Promise.all([
-            Promise.allSettled([
-                fetchFredSeries(FRED_SERIES.MORTGAGE30, apiKey, 30),  // 0 30Y rate
-                fetchFredSeries(FRED_SERIES.RENT_INDEX, apiKey, 30),   // 1 rent CPI
-                fetchFredSeries(FRED_SERIES.MEDIAN_HOME_PRICE, apiKey, 5), // 2 home price
-                fetchFredSeries('DCOILWTICO', apiKey, 35),              // 3 WTI oil
-                fetchFredSeries('DGS10', apiKey, 35),                   // 4 10Y treasury
-                fetchFredSeries('DGS2', apiKey, 35),                    // 5 2Y treasury
-                fetchFredSeries('DEXCAUS', apiKey, 35),                 // 6 USD/CAD
-                fetchFredSeries('DEXINUS', apiKey, 35),                 // 7 USD/INR
-            ]),
+            Promise.resolve(fredResultsRaw),
             fetchExchangeRates()
         ]);
 
