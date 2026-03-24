@@ -136,7 +136,7 @@ export async function GET() {
             );
             fredResultsRaw.push(...(await Promise.all(batch)));
             if (i + 3 < fredRequests.length) {
-                await new Promise(r => setTimeout(r, 200));
+                await new Promise(r => setTimeout(r, 300));
             }
         }
 

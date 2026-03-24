@@ -320,7 +320,7 @@ export default function Dashboard() {
 
             {/* FOOTER */}
             <footer className="dashboard-footer">
-                <p>Jalal's Financial Dashboard v7.0 — Data from FRED, CNN, Stooq & Google Sheets</p>
+                <p>Jalal's Financial Dashboard v7.0 — Data from FRED, CNN, Stooq, ExchangeRate-API &amp; Google Sheets</p>
                 <p style={{ fontSize: '0.7rem', opacity: 0.6, marginTop: '4px' }}>
                     Deployed: {new Date(process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_MESSAGE ? Date.now() : Date.now()).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                 </p>
@@ -359,7 +359,7 @@ export default function Dashboard() {
                             [SPY: {systemStatus.spy?.source?.includes('Yahoo') ? 'Yahoo Fallback' : systemStatus.spy?.source || 'OK'}]
                         </span>
                         <span className={`status-item ${systemStatus.fred?.hasErrors ? 'status-error' : ''}`}>
-                            [FRED: {systemStatus.fred?.messages?.[0]?.replace('Loaded ', '').replace(' series', '') || '18/18'}]
+                            [FRED: {systemStatus.fred?.messages?.[0]?.replace('Loaded ', '').replace(' series', '') || '18/26'}]
                         </span>
                         <span className={`status-item ${systemStatus.fg?.hasErrors ? 'status-error' : ''}`}>
                             [F&G: {systemStatus.fg?.hasErrors ? 'PARTIAL' : 'LIVE OK'}]
@@ -369,7 +369,7 @@ export default function Dashboard() {
                         </span>
                         {systemStatus.extra && (
                             <span className={`status-item ${systemStatus.extra?.hasErrors ? 'status-error' : ''}`}>
-                                [EXTRA: {systemStatus.extra?.hasErrors ? 'PARTIAL' : 'LIVE OK'}]
+                                [MKTS: {systemStatus.extra?.hasErrors ? 'PARTIAL' : 'LIVE OK'}]
                             </span>
                         )}
                     </div>

@@ -48,7 +48,7 @@ export async function GET() {
             );
             results.push(...(await Promise.all(batch)));
             if (i + 3 < fredRequests.length) {
-                await new Promise(r => setTimeout(r, 200)); // 200ms delay between batches of 3
+                await new Promise(r => setTimeout(r, 300)); // 300ms delay between batches of 3
             }
         }
 
@@ -202,7 +202,7 @@ export async function GET() {
                 source: 'St. Louis Fed',
                 hasErrors: results.some(r => r.status === 'rejected'),
                 messages: [
-                    `Loaded ${results.filter(r => r.status === 'fulfilled').length}/${results.length} series`,
+                    `Loaded ${results.filter(r => r.status === 'fulfilled').length}/26 series`,
                     ...results.filter(r => r.status === 'rejected').map(r => `Failed to load a series: ${r.reason.message}`)
                 ]
             }
