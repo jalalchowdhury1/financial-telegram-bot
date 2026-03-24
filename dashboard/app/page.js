@@ -10,6 +10,7 @@ import MarketPulse from '../components/MarketPulse';
 import CustomIndicatorBar from '../components/CustomIndicatorBar';
 import EconomicIndicatorGrid from '../components/EconomicIndicatorGrid';
 import BullChecklist from '../components/BullChecklist';
+import ExtraMarketsGrid from '../components/ExtraMarketsGrid';
 
 // ============ MAIN DASHBOARD ============
 export default function Dashboard() {
@@ -17,6 +18,7 @@ export default function Dashboard() {
     const [spy, setSpy] = useState(null);
     const [fg, setFg] = useState(null);
     const [fred, setFred] = useState(null);
+    const [extraMarkets, setExtraMarkets] = useState(null);
     const [loading, setLoading] = useState(true);
     const [lastUpdated, setLastUpdated] = useState(null);
     const [systemStatus, setSystemStatus] = useState(null);
@@ -29,23 +31,26 @@ export default function Dashboard() {
         setApiErrors([]);
         try {
             const timestamp = Date.now();
-            const [sheetsRes, spyRes, fgRes, fredRes] = await Promise.all([
+            const [sheetsRes, spyRes, fgRes, fredRes, extraRes] = await Promise.all([
                 fetch(`/api/sheets?_t=${timestamp}`, { cache: 'no-store' }).then(r => r.json()).catch(() => null),
                 fetch(`/api/spy?_t=${timestamp}`, { cache: 'no-store' }).then(r => r.json()).catch(() => null),
                 fetch(`/api/fear-greed?_t=${timestamp}`, { cache: 'no-store' }).then(r => r.json()).catch(() => null),
                 fetch(`/api/fred?_t=${timestamp}`, { cache: 'no-store' }).then(r => r.json()).catch(() => null),
+                fetch(`/api/market-extra?_t=${timestamp}`, { cache: 'no-store' }).then(r => r.json()).catch(() => null),
             ]);
 
             setSheets(sheetsRes);
             setSpy(spyRes);
             setFg(fgRes);
             setFred(fredRes);
+            setExtraMarkets(extraRes);
 
             setSystemStatus({
                 spy: spyRes?._meta,
                 fred: fredRes?._meta,
                 fg: fgRes?._meta,
-                sheets: sheetsRes?._meta
+                sheets: sheetsRes?._meta,
+                extra: extraRes?._meta
             });
 
             const errors = [];
@@ -53,6 +58,7 @@ export default function Dashboard() {
             if (spyRes?.error) errors.push(`[SPY] ${spyRes.error}`);
             if (fgRes?.error) errors.push(`[F&G] ${fgRes.error}`);
             if (fredRes?.error) errors.push(`[FRED] ${fredRes.error}`);
+            if (extraRes?.error) errors.push(`[EXTRA] ${extraRes.error}`);
             setApiErrors(errors);
 
             const now = new Date();
@@ -296,6 +302,9 @@ export default function Dashboard() {
                 {/* BULL MARKET CHECKLIST */}
                 <BullChecklist fred={fred} loading={loading} />
 
+                {/* EXTRA MARKETS GRID */}
+                <ExtraMarketsGrid data={extraMarkets} loading={loading} />
+
                 {/* FINANCIAL DASHBOARD HISTORY LINK */}
                 <div style={{ gridColumn: '1 / -1', textAlign: 'center', marginTop: '1rem' }}>
                     <a 
@@ -358,6 +367,11 @@ export default function Dashboard() {
                         <span className={`status-item ${systemStatus.sheets?.source === 'Failed' ? 'status-error' : systemStatus.sheets?.hasErrors ? 'status-warn' : ''}`}>
                             [SHEETS: {systemStatus.sheets?.source === 'Failed' ? 'FAILED' : systemStatus.sheets?.hasErrors ? 'CACHE' : 'LIVE OK'}]
                         </span>
+                        {systemStatus.extra && (
+                            <span className={`status-item ${systemStatus.extra?.hasErrors ? 'status-error' : ''}`}>
+                                [EXTRA: {systemStatus.extra?.hasErrors ? 'PARTIAL' : 'LIVE OK'}]
+                            </span>
+                        )}
                     </div>
                 </div>
             )}
