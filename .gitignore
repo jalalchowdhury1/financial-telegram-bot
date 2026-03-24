@@ -54,3 +54,8 @@ Thumbs.db
 dashboard/node_modules/
 dashboard/.next/
 dashboard/.env.local
+
+# Dev/test scratch files
+sandbox/
+*.csv
+node_modules/
