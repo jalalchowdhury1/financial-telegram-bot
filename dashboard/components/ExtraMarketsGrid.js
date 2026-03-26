@@ -120,29 +120,21 @@ export default function ExtraMarketsGrid({ data, loading }) {
             ticker: 'CL', name: 'Crude Oil WTI ($/bbl)',
             data: commodities.cl, prefix: '$', suffix: '', decimals: 2
         } : null,
+        realEstate?.atnhpi ? {
+            ticker: 'ATNHPI', name: 'US House Price Index',
+            data: realEstate.atnhpi, prefix: '', suffix: '', decimals: 2
+        } : null,
     ].filter(Boolean);
 
-    // ---- RIGHT: FX + Commodities + Crypto (7 items) ----
+    // ---- RIGHT: FX + Commodities + Crypto (8 items) ----
     const right = [
-        fx?.usdcad ? {
-            ticker: 'USD/CAD', name: 'US Dollar to Canadian Dollar',
-            data: fx.usdcad, prefix: '', suffix: '', decimals: 4
-        } : null,
-        fx?.usdinr ? {
-            ticker: 'USD/INR', name: 'US Dollar to Indian Rupee',
-            data: fx.usdinr, prefix: '', suffix: '', decimals: 2
-        } : null,
         fx?.usdbdt ? {
             ticker: 'USD/BDT', name: 'US Dollar to Bangladeshi Taka',
             data: fx.usdbdt, prefix: '', suffix: '', decimals: 2
         } : null,
-        fx?.inrbdt ? {
-            ticker: 'INR/BDT', name: 'Indian Rupee to Bangladeshi Taka',
-            data: fx.inrbdt, prefix: '', suffix: '', decimals: 4
-        } : null,
-        fx?.cadinr ? {
-            ticker: 'CAD/INR', name: 'Canadian Dollar to Indian Rupee',
-            data: fx.cadinr, prefix: '', suffix: '', decimals: 2
+        fx?.usdcad ? {
+            ticker: 'USD/CAD', name: 'US Dollar to Canadian Dollar',
+            data: fx.usdcad, prefix: '', suffix: '', decimals: 4
         } : null,
         commodities?.gc ? {
             ticker: 'GOLD', name: 'Gold Spot (USD/oz)',
@@ -153,6 +145,22 @@ export default function ExtraMarketsGrid({ data, loading }) {
             ticker: 'BTC', name: 'Bitcoin / US Dollar',
             data: commodities.btc,
             format: v => `$${v ? v.toLocaleString(undefined, { maximumFractionDigits: 0 }) : 'N/A'}`
+        } : null,
+        fx?.cadbdt ? {
+            ticker: 'CAD/BDT', name: 'Canadian Dollar to Bangladeshi Taka',
+            data: fx.cadbdt, prefix: '', suffix: '', decimals: 2
+        } : null,
+        fx?.usdinr ? {
+            ticker: 'USD/INR', name: 'US Dollar to Indian Rupee',
+            data: fx.usdinr, prefix: '', suffix: '', decimals: 2
+        } : null,
+        fx?.inrbdt ? {
+            ticker: 'INR/BDT', name: 'Indian Rupee to Bangladeshi Taka',
+            data: fx.inrbdt, prefix: '', suffix: '', decimals: 4
+        } : null,
+        fx?.cadinr ? {
+            ticker: 'CAD/INR', name: 'Canadian Dollar to Indian Rupee',
+            data: fx.cadinr, prefix: '', suffix: '', decimals: 2
         } : null,
     ].filter(Boolean);
 

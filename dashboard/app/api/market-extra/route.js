@@ -124,7 +124,8 @@ export async function GET() {
             ['DGS10', 35],                         // 4 10Y treasury
             ['DGS2', 35],                          // 5 2Y treasury
             ['DEXCAUS', 35],                       // 6 USD/CAD
-            ['DEXINUS', 35]                        // 7 USD/INR
+            ['DEXINUS', 35],                       // 7 USD/INR
+            [FRED_SERIES.ATNHPI, 35]               // 8 ATNHPI
         ];
 
         const fredResultsRaw = [];
@@ -146,7 +147,7 @@ export async function GET() {
             fetchGoogleSheetExport()
         ]);
 
-        const [mortgageRateData, rentData, homeData, oilData, tnxData, t2yData, cadData, inrData] =
+        const [mortgageRateData, rentData, homeData, oilData, tnxData, t2yData, cadData, inrData, atnhpiData] =
             fredResults.map(r => r.status === 'fulfilled' ? r.value : []);
 
         // --- 2. Fetch Stooq sequentially (BTC + Gold only — minimize rate-limit risk) ---
@@ -159,6 +160,7 @@ export async function GET() {
 
         const usdbdt_primary = bdtRate ? spotOnly(bdtRate) : null;
         const inrbdt_primary = (bdtRate && inrRate) ? spotOnly(bdtRate / inrRate) : null;
+        const cadbdt_primary = (bdtRate && erRates?.CAD) ? spotOnly(bdtRate / erRates.CAD) : null;
         const dxy_primary = dxyValue ? spotOnly(dxyValue) : null;
 
         // --- 4. Standardize FRED series ---
@@ -171,6 +173,7 @@ export async function GET() {
         const mortStd = standardizeFred(mortgageRateData);
         // 4.41 scales the CPI shelter index (~410) to approximate nominal rent dollars (~$1800/mo)
         const rentStd = standardizeFred(rentData, 4.41);
+        const atnhpiStd = standardizeFred(atnhpiData);
 
         // --- 4.5 FALLBACK HELPER ---
         const sourceLog = {};
@@ -217,6 +220,7 @@ export async function GET() {
         const usdbdt = await getWithFallback(usdbdt_primary, YAHOO_TICKERS.USD_BDT, 'USD/BDT', {}, 'usdbdt');
         const inrbdt = await getWithFallback(inrbdt_primary, null, 'INR/BDT', {}, 'inrbdt');
         const cadinr = await getWithFallback(cadinr_fred, null, 'CAD/INR', {}, 'cadinr');
+        const cadbdt = await getWithFallback(cadbdt_primary, null, 'CAD/BDT', {}, 'cadbdt');
         const dxy = await getWithFallback(dxy_primary, YAHOO_TICKERS.DXY, null, {}, 'dxy');
         
         const cl = await getWithFallback(cl_fred, YAHOO_TICKERS.CRUDE_OIL, null, {}, 'cl');
@@ -257,10 +261,10 @@ export async function GET() {
         if (nullCount > 0) sourceMessages.push(`unavailable: ${nullCount} metrics`);
 
         return Response.json({
-            fx: { usdcad, usdinr, usdbdt, inrbdt, cadinr, dxy },
+            fx: { usdcad, usdinr, usdbdt, inrbdt, cadinr, cadbdt, dxy },
             commodities: { cl, gc: gold, btc },
             rates: { tnx, t2y, mortgageRate: mortStd },
-            realEstate: { rentIndex: rentStd, mortgagePayment: mortPayment },
+            realEstate: { rentIndex: rentStd, mortgagePayment: mortPayment, atnhpi: atnhpiStd },
             _meta: {
                 source: usedSources.filter(s => s !== 'null').join(' + ') || 'unknown',
                 hasErrors: nullCount > 0,
