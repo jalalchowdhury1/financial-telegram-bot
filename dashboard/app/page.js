@@ -355,19 +355,51 @@ export default function Dashboard() {
             {systemStatus && (
                 <div className="system-status-bar">
                     <div className="status-items">
-                        <span className={`status-item ${systemStatus.spy?.hasErrors ? 'status-error' : systemStatus.spy?.source?.includes('Yahoo') ? 'status-warn' : ''}`}>
-                            [SPY: {systemStatus.spy?.source?.includes('Yahoo') ? 'Yahoo Fallback' : systemStatus.spy?.source || 'OK'}]
+                        <span className={`status-item ${
+                            systemStatus.spy?.hasErrors ? 'status-error' :
+                            (systemStatus.spy?.source?.includes('Yahoo') || systemStatus.spy?.source?.includes('FRED')) ? 'status-warn' : ''
+                        }`}>
+                            [SPY: {
+                                systemStatus.spy?.source?.includes('Stooq') ? 'Stooq' :
+                                systemStatus.spy?.source?.includes('FRED') ? 'FRED Fallback' :
+                                systemStatus.spy?.source?.includes('Yahoo') ? 'Yahoo Fallback' :
+                                systemStatus.spy?.source || 'OK'
+                            }]
                         </span>
                         <span className={`status-item ${systemStatus.fred?.hasErrors ? 'status-error' : ''}`}>
-                            [FRED: {systemStatus.fred?.messages?.[0]?.replace('Loaded ', '').replace(' series', '') || '18/26'}]
+                            [FRED: {systemStatus.fred?.messages?.[0]?.replace('Loaded ', '').replace(' series', '') || '18/18'}]
                         </span>
-                        <span className={`status-item ${systemStatus.fg?.hasErrors ? 'status-error' : ''}`}>
-                            [F&G: {systemStatus.fg?.hasErrors ? 'PARTIAL' : 'LIVE OK'}]
+                        <span className={`status-item ${
+                            systemStatus.fg?.source?.includes('Stale') || systemStatus.fg?.source?.includes('Failed') ? 'status-error' :
+                            (systemStatus.fg?.source?.includes('VIX') || systemStatus.fg?.source?.includes('Proxy')) ? 'status-warn' :
+                            systemStatus.fg?.hasErrors ? 'status-warn' : ''
+                        }`}>
+                            [F&G: {
+                                systemStatus.fg?.source?.includes('CNN') ? 'CNN' :
+                                systemStatus.fg?.source?.includes('RapidAPI') ? 'RapidAPI' :
+                                systemStatus.fg?.source?.includes('VIXCLS') ? 'FRED VIX' :
+                                systemStatus.fg?.source?.includes('VIX') ? 'VIX Proxy' :
+                                systemStatus.fg?.source?.includes('Stale') ? 'STALE' :
+                                systemStatus.fg?.source?.includes('Failed') ? 'FAILED' :
+                                systemStatus.fg?.hasErrors ? 'PARTIAL' : 'LIVE OK'
+                            }]
                         </span>
-                        <span className={`status-item ${systemStatus.sheets?.source === 'Failed' ? 'status-error' : systemStatus.sheets?.hasErrors ? 'status-warn' : ''}`}>
-                            [SHEETS: {systemStatus.sheets?.source === 'Failed' ? 'FAILED' : systemStatus.sheets?.hasErrors ? 'CACHE' : 'LIVE OK'}]
+                        <span className={`status-item ${
+                            (systemStatus.sheets?.source?.includes('Failed') || systemStatus.sheets?.source?.includes('Static')) ? 'status-error' :
+                            systemStatus.sheets?.source?.includes('Stale') ? 'status-error' :
+                            (systemStatus.sheets?.source?.includes('Cached') || systemStatus.sheets?.source?.includes('Alt') || systemStatus.sheets?.source?.includes('Proxy') || systemStatus.sheets?.source?.includes('FRED')) ? 'status-warn' :
+                            ''
+                        }`}>
+                            [SHEETS: {
+                                (systemStatus.sheets?.source?.includes('Failed') || systemStatus.sheets?.source?.includes('Static')) ? 'FAILED' :
+                                systemStatus.sheets?.source?.includes('Stale') ? 'STALE' :
+                                systemStatus.sheets?.source?.includes('Cached') ? 'CACHE' :
+                                systemStatus.sheets?.source?.includes('Alt') ? 'ALT OK' :
+                                (systemStatus.sheets?.source?.includes('Proxy') || systemStatus.sheets?.source?.includes('FRED')) ? 'FRED Proxy' :
+                                'LIVE OK'
+                            }]
                         </span>
-                    {systemStatus.extra && (
+                        {systemStatus.extra && (
                             <span className={`status-item ${
                                 systemStatus.extra?.sourceLog && Object.values(systemStatus.extra.sourceLog).some(s => s === 'null')
                                     ? 'status-error'
