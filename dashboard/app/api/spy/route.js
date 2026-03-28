@@ -7,6 +7,8 @@ export async function GET() {
     try {
         let rows = [];
         let dataSource = 'Stooq';
+
+        // --- Source 1: Stooq ---
         try {
             const text = await fetchText(EXTERNAL_URLS.STOOQ_SPY);
             const lines = text.trim().split('\n');
@@ -16,44 +18,57 @@ export async function GET() {
             }).filter(r => !isNaN(r.close));
             if (rows.length < 10) throw new Error('Stooq returned insufficient data');
         } catch (stooqError) {
-            console.warn('Stooq fetch failed, falling back to Yahoo Finance...');
+            console.warn(`[SPY] Stooq failed: ${stooqError.message}`);
+            rows = [];
+
+            // --- Source 2: Yahoo Finance (query1 then query2) ---
             const yahooUrls = [
                 EXTERNAL_URLS.YAHOO_SPY,
                 EXTERNAL_URLS.YAHOO_SPY.replace('query1.finance', 'query2.finance')
             ];
-            let yahooSuccess = false;
             for (const url of yahooUrls) {
                 try {
-                    dataSource = `Yahoo Finance (${url.includes('query2') ? 'query2' : 'query1'} Fallback)`;
+                    dataSource = `Yahoo Finance (${url.includes('query2') ? 'query2' : 'query1'})`;
                     const yData = await fetchJson(url);
                     const result = yData.chart.result[0];
                     const timestamps = result.timestamp;
                     const quotes = result.indicators.quote[0];
-
                     for (let i = 0; i < timestamps.length; i++) {
                         if (quotes.close[i] !== null) {
                             const d = new Date(timestamps[i] * 1000);
                             rows.push({
                                 date: d.toISOString().split('T')[0],
-                                open: quotes.open[i],
-                                high: quotes.high[i],
-                                low: quotes.low[i],
-                                close: quotes.close[i],
-                                volume: quotes.volume[i]
+                                close: quotes.close[i]
                             });
                         }
                     }
-                    if (rows.length >= 10) { yahooSuccess = true; break; }
+                    if (rows.length >= 10) break;
                     rows = [];
                 } catch (yErr) {
-                    console.warn(`Yahoo fallback failed for ${url}: ${yErr.message}`);
+                    console.warn(`[SPY] Yahoo ${url.includes('query2') ? 'query2' : 'query1'} failed: ${yErr.message}`);
                     rows = [];
                 }
             }
-            if (!yahooSuccess) throw new Error('All SPY data sources failed');
+
+            // --- Source 3: FRED SP500 (reliable, uses existing API key) ---
+            if (rows.length < 10) {
+                try {
+                    dataSource = 'FRED S&P 500 Index';
+                    console.warn('[SPY] Falling back to FRED SP500...');
+                    const fredKey = process.env.FRED_API_KEY;
+                    const fredUrl = `https://api.stlouisfed.org/fred/series/observations?series_id=SP500&api_key=${fredKey}&file_type=json&observation_start=2010-01-01&limit=5000&sort_order=asc`;
+                    const fredData = await fetchJson(fredUrl);
+                    rows = fredData.observations
+                        .filter(o => o.value !== '.')
+                        .map(o => ({ date: o.date, close: parseFloat(o.value) }));
+                } catch (fredErr) {
+                    console.warn(`[SPY] FRED fallback failed: ${fredErr.message}`);
+                    rows = [];
+                }
+            }
         }
 
-        if (rows.length < 10) throw new Error('Insufficient SPY data');
+        if (rows.length < 10) throw new Error('Insufficient SPY data — all sources failed');
 
         const current = rows[rows.length - 1].close;
         const prevClose = rows[rows.length - 2].close;
@@ -103,7 +118,7 @@ export async function GET() {
             _meta: {
                 source: dataSource,
                 hasErrors: false,
-                messages: [`Loaded ${rows.length} days of SPY history from ${dataSource}`]
+                messages: [`Loaded ${rows.length} days from ${dataSource}`]
             }
         });
     } catch (error) {
