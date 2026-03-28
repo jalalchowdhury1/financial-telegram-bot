@@ -14,27 +14,43 @@ export async function GET() {
                 const [date, open, high, low, close, volume] = line.split(',');
                 return { date, open: +open, high: +high, low: +low, close: +close, volume: +volume };
             }).filter(r => !isNaN(r.close));
+            if (rows.length < 10) throw new Error('Stooq returned insufficient data');
         } catch (stooqError) {
-            dataSource = 'Yahoo Finance (Fallback)';
             console.warn('Stooq fetch failed, falling back to Yahoo Finance...');
-            const yData = await fetchJson(EXTERNAL_URLS.YAHOO_SPY);
-            const result = yData.chart.result[0];
-            const timestamps = result.timestamp;
-            const quotes = result.indicators.quote[0];
+            const yahooUrls = [
+                EXTERNAL_URLS.YAHOO_SPY,
+                EXTERNAL_URLS.YAHOO_SPY.replace('query1.finance', 'query2.finance')
+            ];
+            let yahooSuccess = false;
+            for (const url of yahooUrls) {
+                try {
+                    dataSource = `Yahoo Finance (${url.includes('query2') ? 'query2' : 'query1'} Fallback)`;
+                    const yData = await fetchJson(url);
+                    const result = yData.chart.result[0];
+                    const timestamps = result.timestamp;
+                    const quotes = result.indicators.quote[0];
 
-            for (let i = 0; i < timestamps.length; i++) {
-                if (quotes.close[i] !== null) {
-                    const d = new Date(timestamps[i] * 1000);
-                    rows.push({
-                        date: d.toISOString().split('T')[0],
-                        open: quotes.open[i],
-                        high: quotes.high[i],
-                        low: quotes.low[i],
-                        close: quotes.close[i],
-                        volume: quotes.volume[i]
-                    });
+                    for (let i = 0; i < timestamps.length; i++) {
+                        if (quotes.close[i] !== null) {
+                            const d = new Date(timestamps[i] * 1000);
+                            rows.push({
+                                date: d.toISOString().split('T')[0],
+                                open: quotes.open[i],
+                                high: quotes.high[i],
+                                low: quotes.low[i],
+                                close: quotes.close[i],
+                                volume: quotes.volume[i]
+                            });
+                        }
+                    }
+                    if (rows.length >= 10) { yahooSuccess = true; break; }
+                    rows = [];
+                } catch (yErr) {
+                    console.warn(`Yahoo fallback failed for ${url}: ${yErr.message}`);
+                    rows = [];
                 }
             }
+            if (!yahooSuccess) throw new Error('All SPY data sources failed');
         }
 
         if (rows.length < 10) throw new Error('Insufficient SPY data');
