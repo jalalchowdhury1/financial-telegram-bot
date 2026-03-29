@@ -35,12 +35,12 @@ The project implements a cascading fallback strategy for critical metrics.
 | **AI Assessment** | OpenRouter (Free) | GPT-4o -> Groq -> Rule-Based Fallback |
 | **Eco Data** | FRED API | Graceful skip (Promised-based isolation) |
 
-> **SPY 5-Layer Fallback (Dashboard, tested 2026-03-28)**:
-> 1. Yahoo query1 ✅
-> 2. Yahoo query2 ✅
-> 3. **Nasdaq API** ✅ (NEW - no key)
-> 4. Stooq ⚠️ (intermittent - returns empty)
-> 5. FRED SP500 (needs API key)
+> **SPY 5-Layer Fallback (Dashboard, Vercel-optimized)**:
+> 1. **FRED SP500** ✅ (primary - works from Vercel datacenter)
+> 2. Nasdaq API ✅ (backup - no key)
+> 3. Stooq ⚠️ (intermittent - returns empty)
+> 4. Yahoo query1 ❌ (blocked from Vercel IPs)
+> 5. Yahoo query2 ❌ (blocked from Vercel IPs)
 
 ## 🛠️ Common AI Tasks
 1. **Adding a New Indicator**:
