@@ -29,11 +29,18 @@ The project implements a cascading fallback strategy for critical metrics.
 
 | Metric Group | Primary Source | Fallback Mechanism |
 | :--- | :--- | :--- |
-| **SPY Data** | Stooq API | Yahoo Finance API |
+| **SPY Data** | Yahoo Finance | Nasdaq → Stooq → FRED |
 | **S&P 500 P/E** | multpl.com | Yahoo Finance (Operating P/E * 1.07) |
 | **F&G Index** | CNN Business | RapidAPI -> Yahoo VIX Proxy |
 | **AI Assessment** | OpenRouter (Free) | GPT-4o -> Groq -> Rule-Based Fallback |
 | **Eco Data** | FRED API | Graceful skip (Promised-based isolation) |
+
+> **SPY 5-Layer Fallback (Dashboard, tested 2026-03-28)**:
+> 1. Yahoo query1 ✅
+> 2. Yahoo query2 ✅
+> 3. **Nasdaq API** ✅ (NEW - no key)
+> 4. Stooq ⚠️ (intermittent - returns empty)
+> 5. FRED SP500 (needs API key)
 
 ## 🛠️ Common AI Tasks
 1. **Adding a New Indicator**:

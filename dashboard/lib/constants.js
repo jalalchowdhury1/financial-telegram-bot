@@ -32,6 +32,7 @@ export const EXTERNAL_URLS = {
     FRED_BASE: 'https://api.stlouisfed.org/fred/series/observations',
     STOOQ_SPY: 'https://stooq.com/q/d/l/?s=spy.us&i=d',
     YAHOO_SPY: 'https://query1.finance.yahoo.com/v8/finance/chart/SPY?range=5y&interval=1d',
+    NASDAQ_SPY: 'https://api.nasdaq.com/api/quote/SPY/historical',
     MULTPL_PE: 'https://www.multpl.com/s-p-500-pe-ratio',
     YAHOO_PE: 'https://finance.yahoo.com/quote/SPY/key-statistics',
     CNN_FEAR_GREED: 'https://production.dataviz.cnn.io/index/fearandgreed/graphdata',
