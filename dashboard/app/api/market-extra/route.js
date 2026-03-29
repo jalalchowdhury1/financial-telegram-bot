@@ -85,7 +85,17 @@ function standardizeFred(data, multiplier = 1) {
     const history = [...data].reverse().map(d => ({ date: d.date, price: d.value * multiplier }));
     const current = history[history.length - 1].price;
     const prev = history[history.length - 2].price;
-    return { current, dailyChange: { value: current - prev, pct: prev ? ((current - prev) / prev) * 100 : 0 }, history };
+    return { current, dailyChange: { value: current - prev, pct: prev ? ((current - prev) / prev) * 100 : 0 }, history, lastDate: history[history.length - 1].date };
+}
+
+// ---- Check if FRED FX data is stale (>1 day old, considering weekends) ----
+function isFredFxStale(data) {
+    if (!data || data.length < 1) return true;
+    const lastDate = new Date(data[data.length - 1].date);
+    const today = new Date();
+    const diffDays = Math.floor((today - lastDate) / (1000 * 60 * 60 * 24));
+    // Allow up to 1 day lag normally, 3 days over weekends
+    return diffDays > 1;
 }
 
 // ---- Build a cross-rate series from two USD-quoted FRED arrays ----
@@ -177,12 +187,17 @@ export async function GET() {
 
         // --- 4.5 FALLBACK HELPER ---
         const sourceLog = {};
-        async function getWithFallback(primaryValue, yfTicker, gsheetKey, transformOpts = {}, logKey) {
+        async function getWithFallback(primaryValue, yfTicker, gsheetKey, transformOpts = {}, logKey, checkStale = false) {
+            // For FX pairs, check if FRED data is stale before using it
             if (primaryValue && primaryValue.current != null) {
-                if (logKey) sourceLog[logKey] = 'FRED/ER-API';
-                return primaryValue;
+                if (checkStale && primaryValue.lastDate && isFredFxStale(primaryValue.history)) {
+                    console.warn(`[FX] ${logKey} FRED data is stale (last: ${primaryValue.lastDate}), skipping to Yahoo...`);
+                } else {
+                    if (logKey) sourceLog[logKey] = 'FRED/ER-API';
+                    return primaryValue;
+                }
             }
-            
+
             // Try YF
             if (yfTicker) {
                 const yfData = await fetchYahooFinanceSeries(yfTicker);
@@ -192,7 +207,7 @@ export async function GET() {
                     if (transformOpts.divideBy10) {
                         val = val / 10;
                         hist = hist.map(h => ({ ...h, price: h.price / 10 }));
-                        const prev = hist.length >= 2 ? hist[hist.length-2].price : null;
+                        const prev = hist.length >= 2 ? hist[hist.length - 2].price : null;
                         return {
                             ...yfData,
                             current: val,
@@ -215,18 +230,19 @@ export async function GET() {
         }
 
         // --- 4.6 APPLY FALLBACKS ---
-        const usdcad = await getWithFallback(usdcad_fred, YAHOO_TICKERS.USD_CAD, 'USD/CAD', {}, 'usdcad');
-        const usdinr = await getWithFallback(usdinr_fred, YAHOO_TICKERS.USD_INR, 'USD/INR', {}, 'usdinr');
-        const usdbdt = await getWithFallback(usdbdt_primary, YAHOO_TICKERS.USD_BDT, 'USD/BDT', {}, 'usdbdt');
-        const inrbdt = await getWithFallback(inrbdt_primary, null, 'INR/BDT', {}, 'inrbdt');
-        const cadinr = await getWithFallback(cadinr_fred, null, 'CAD/INR', {}, 'cadinr');
-        const cadbdt = await getWithFallback(cadbdt_primary, null, 'CAD/BDT', {}, 'cadbdt');
-        const dxy = await getWithFallback(dxy_primary, YAHOO_TICKERS.DXY, null, {}, 'dxy');
-        
+        // Use checkStale=true for FRED FX data (CAD, INR) since FRED only updates on business days
+        const usdcad = await getWithFallback(usdcad_fred, YAHOO_TICKERS.USD_CAD, 'USD/CAD', {}, 'usdcad', true);
+        const usdinr = await getWithFallback(usdinr_fred, YAHOO_TICKERS.USD_INR, 'USD/INR', {}, 'usdinr', true);
+        const usdbdt = await getWithFallback(usdbdt_primary, YAHOO_TICKERS.USD_BDT, 'USD/BDT', {}, 'usdbdt', true);
+        const inrbdt = await getWithFallback(inrbdt_primary, null, 'INR/BDT', {}, 'inrbdt', true);
+        const cadinr = await getWithFallback(cadinr_fred, YAHOO_TICKERS.USD_CAD, 'CAD/INR', {}, 'cadinr', true);
+        const cadbdt = await getWithFallback(cadbdt_primary, null, 'CAD/BDT', {}, 'cadbdt', true);
+        const dxy = await getWithFallback(dxy_primary, YAHOO_TICKERS.DXY, null, {}, 'dxy', true);
+
         const cl = await getWithFallback(cl_fred, YAHOO_TICKERS.CRUDE_OIL, null, {}, 'cl');
         const btc = await getWithFallback(btcStooq, YAHOO_TICKERS.BTC, 'BTC/USD', {}, 'btc');
         const gold = await getWithFallback(goldStooq, YAHOO_TICKERS.GOLD, 'Gold Spot', {}, 'gold');
-        
+
         const tnx = await getWithFallback(tnx_fred, YAHOO_TICKERS.TNX_10Y, '10-Year Treasury', { divideBy10: true }, 'tnx');
         const t2y = await getWithFallback(t2y_fred, null, null, {}, 't2y');
 
