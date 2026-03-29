@@ -47,9 +47,10 @@ export async function GET() {
                     ma200: parsed['200d MA SPY'],
                     rsi: parsed['9d RSI SPY'],
                     week52High: parsed['SPY 52 week high'],
-                    current: parsed['Current SPY']
+                    current: parsed['Current SPY'],
+                    return3y: parsed['Three-Year Return'] || null
                 };
-                console.warn(`[SPY] Google Sheet indicators: MA200=${indicators.ma200}, RSI=${indicators.rsi}, 52wHigh=${indicators.week52High}, Current=${indicators.current}`);
+                console.warn(`[SPY] Google Sheet indicators: MA200=${indicators.ma200}, RSI=${indicators.rsi}, 52wHigh=${indicators.week52High}, Current=${indicators.current}, 3YReturn=${indicators.return3y}`);
             } else {
                 throw new Error('Missing required indicators in Google Sheet');
             }
@@ -133,10 +134,40 @@ export async function GET() {
             // Calculate percentages from current values
             ma200Pct = calculatePctChange(current, ma200);
             high52wPct = calculatePctChange(current, week52High);
-            return3y = null; // Not available from Google Sheet
+            return3y = indicators.return3y;
 
-            // For chart, we still need price history - will be empty if only Google Sheet worked
-            chartHistory = [];
+            // Fetch chart history from FRED for the SPY chart
+            try {
+                const fredKey = process.env.FRED_API_KEY;
+                if (fredKey) {
+                    const fredUrl = `https://api.stlouisfed.org/fred/series/observations?series_id=SP500&api_key=${fredKey}&file_type=json&observation_start=2010-01-01&limit=5000&sort_order=asc`;
+                    const fredData = await fetchJson(fredUrl);
+                    const fredRows = fredData.observations
+                        .filter(o => o.value !== '.')
+                        .map(o => ({ date: o.date, close: parseFloat(o.value) }));
+
+                    if (fredRows.length >= 10) {
+                        chartHistory = [];
+                        for (let i = 199; i < fredRows.length; i++) {
+                            const slice200 = fredRows.slice(i - 199, i + 1);
+                            const ma200v = slice200.reduce((s, r) => s + r.close, 0) / 200;
+                            const slice50 = fredRows.slice(Math.max(0, i - 49), i + 1);
+                            const ma50v = slice50.reduce((s, r) => s + r.close, 0) / slice50.length;
+                            chartHistory.push({
+                                date: fredRows[i].date,
+                                price: fredRows[i].close,
+                                ma50: Math.round(ma50v * 100) / 100,
+                                ma200: Math.round(ma200v * 100) / 100
+                            });
+                        }
+                    }
+                }
+            } catch (e) {
+                console.warn(`[SPY] Could not fetch FRED chart data: ${e.message}`);
+            }
+            if (!chartHistory || chartHistory.length === 0) {
+                chartHistory = [];
+            }
         } else if (rows.length >= 10) {
             // Calculate from raw price data
             current = rows[rows.length - 1].close;
