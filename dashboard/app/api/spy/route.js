@@ -22,47 +22,48 @@ function parseYahooChart(data) {
 export async function GET() {
     try {
         let rows = [];
-        let dataSource = 'FRED SP500';
+        let dataSource = 'Nasdaq API';
 
-        // Layer 1: FRED SP500 (most reliable from Vercel - government source)
+        // Layer 1: Nasdaq API (TESTING - no API key required)
         try {
-            dataSource = 'FRED S&P 500 Index';
-            const fredKey = process.env.FRED_API_KEY;
-            if (!fredKey) throw new Error('FRED_API_KEY not configured');
-            const fredUrl = `https://api.stlouisfed.org/fred/series/observations?series_id=SP500&api_key=${fredKey}&file_type=json&observation_start=2010-01-01&limit=5000&sort_order=asc`;
-            const fredData = await fetchJson(fredUrl);
-            rows = fredData.observations
-                .filter(o => o.value !== '.')
-                .map(o => ({ date: o.date, close: parseFloat(o.value) }));
+            dataSource = 'Nasdaq API';
+            console.warn('[SPY] Layer 1: Testing Nasdaq API...');
+            const today = new Date();
+            const fiveYearsAgo = new Date(today);
+            fiveYearsAgo.setFullYear(today.getFullYear() - 5);
+            const formatDate = (d) => {
+                const mm = String(d.getMonth() + 1).padStart(2, '0');
+                const dd = String(d.getDate()).padStart(2, '0');
+                return `${mm}/${dd}/${d.getFullYear()}`;
+            };
+            const nasdaqUrl = `${EXTERNAL_URLS.NASDAQ_SPY}?assetclass=Etf&limit=99999&fromdate=${formatDate(fiveYearsAgo)}&todate=${formatDate(today)}`;
+            const nasdaqData = await fetchJson(nasdaqUrl);
+            const tradeRows = nasdaqData?.data?.tradesTable?.rows || [];
+            rows = tradeRows
+                .map(r => ({ date: r.date, close: parseFloat(r.close) }))
+                .filter(r => !isNaN(r.close))
+                .reverse();
             if (rows.length < 10) throw new Error('insufficient rows');
         } catch (e) {
-            console.warn(`[SPY] Layer 1 (FRED SP500) failed: ${e.message}`);
+            console.warn(`[SPY] Layer 1 (Nasdaq) failed: ${e.message}`);
             rows = [];
         }
 
-        // Layer 2: Nasdaq API (no API key required, works from Vercel)
+        // Layer 2: FRED SP500 (most reliable - government source)
         if (rows.length < 10) {
             try {
-                dataSource = 'Nasdaq API';
-                console.warn('[SPY] Layer 2: Falling back to Nasdaq...');
-                const today = new Date();
-                const fiveYearsAgo = new Date(today);
-                fiveYearsAgo.setFullYear(today.getFullYear() - 5);
-                const formatDate = (d) => {
-                    const mm = String(d.getMonth() + 1).padStart(2, '0');
-                    const dd = String(d.getDate()).padStart(2, '0');
-                    return `${mm}/${dd}/${d.getFullYear()}`;
-                };
-                const nasdaqUrl = `${EXTERNAL_URLS.NASDAQ_SPY}?assetclass=Etf&limit=99999&fromdate=${formatDate(fiveYearsAgo)}&todate=${formatDate(today)}`;
-                const nasdaqData = await fetchJson(nasdaqUrl);
-                const tradeRows = nasdaqData?.data?.tradesTable?.rows || [];
-                rows = tradeRows
-                    .map(r => ({ date: r.date, close: parseFloat(r.close) }))
-                    .filter(r => !isNaN(r.close))
-                    .reverse();
+                dataSource = 'FRED S&P 500 Index';
+                console.warn('[SPY] Layer 2: Falling back to FRED SP500...');
+                const fredKey = process.env.FRED_API_KEY;
+                if (!fredKey) throw new Error('FRED_API_KEY not configured');
+                const fredUrl = `https://api.stlouisfed.org/fred/series/observations?series_id=SP500&api_key=${fredKey}&file_type=json&observation_start=2010-01-01&limit=5000&sort_order=asc`;
+                const fredData = await fetchJson(fredUrl);
+                rows = fredData.observations
+                    .filter(o => o.value !== '.')
+                    .map(o => ({ date: o.date, close: parseFloat(o.value) }));
                 if (rows.length < 10) throw new Error('insufficient rows');
             } catch (e) {
-                console.warn(`[SPY] Layer 2 (Nasdaq) failed: ${e.message}`);
+                console.warn(`[SPY] Layer 2 (FRED SP500) failed: ${e.message}`);
                 rows = [];
             }
         }
