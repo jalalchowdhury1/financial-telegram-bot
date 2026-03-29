@@ -22,53 +22,25 @@ function parseYahooChart(data) {
 export async function GET() {
     try {
         let rows = [];
-        let dataSource = 'Nasdaq API';
+        let dataSource = 'FRED SP500';
 
-        // Layer 1: Nasdaq API (TESTING - no API key required)
+        // Layer 1: FRED SP500 (ONLY source that works from Vercel - government source)
         try {
-            dataSource = 'Nasdaq API';
-            console.warn('[SPY] Layer 1: Testing Nasdaq API...');
-            const today = new Date();
-            const fiveYearsAgo = new Date(today);
-            fiveYearsAgo.setFullYear(today.getFullYear() - 5);
-            const formatDate = (d) => {
-                const mm = String(d.getMonth() + 1).padStart(2, '0');
-                const dd = String(d.getDate()).padStart(2, '0');
-                return `${mm}/${dd}/${d.getFullYear()}`;
-            };
-            const nasdaqUrl = `${EXTERNAL_URLS.NASDAQ_SPY}?assetclass=Etf&limit=99999&fromdate=${formatDate(fiveYearsAgo)}&todate=${formatDate(today)}`;
-            const nasdaqData = await fetchJson(nasdaqUrl);
-            const tradeRows = nasdaqData?.data?.tradesTable?.rows || [];
-            rows = tradeRows
-                .map(r => ({ date: r.date, close: parseFloat(r.close) }))
-                .filter(r => !isNaN(r.close))
-                .reverse();
+            dataSource = 'FRED S&P 500 Index';
+            const fredKey = process.env.FRED_API_KEY;
+            if (!fredKey) throw new Error('FRED_API_KEY not configured');
+            const fredUrl = `https://api.stlouisfed.org/fred/series/observations?series_id=SP500&api_key=${fredKey}&file_type=json&observation_start=2010-01-01&limit=5000&sort_order=asc`;
+            const fredData = await fetchJson(fredUrl);
+            rows = fredData.observations
+                .filter(o => o.value !== '.')
+                .map(o => ({ date: o.date, close: parseFloat(o.value) }));
             if (rows.length < 10) throw new Error('insufficient rows');
         } catch (e) {
-            console.warn(`[SPY] Layer 1 (Nasdaq) failed: ${e.message}`);
+            console.warn(`[SPY] Layer 1 (FRED SP500) failed: ${e.message}`);
             rows = [];
         }
 
-        // Layer 2: FRED SP500 (most reliable - government source)
-        if (rows.length < 10) {
-            try {
-                dataSource = 'FRED S&P 500 Index';
-                console.warn('[SPY] Layer 2: Falling back to FRED SP500...');
-                const fredKey = process.env.FRED_API_KEY;
-                if (!fredKey) throw new Error('FRED_API_KEY not configured');
-                const fredUrl = `https://api.stlouisfed.org/fred/series/observations?series_id=SP500&api_key=${fredKey}&file_type=json&observation_start=2010-01-01&limit=5000&sort_order=asc`;
-                const fredData = await fetchJson(fredUrl);
-                rows = fredData.observations
-                    .filter(o => o.value !== '.')
-                    .map(o => ({ date: o.date, close: parseFloat(o.value) }));
-                if (rows.length < 10) throw new Error('insufficient rows');
-            } catch (e) {
-                console.warn(`[SPY] Layer 2 (FRED SP500) failed: ${e.message}`);
-                rows = [];
-            }
-        }
-
-        // Layer 3: Stooq CSV (may be intermittent)
+        // Layer 2: Stooq CSV (may be intermittent)
         if (rows.length < 10) {
             try {
                 dataSource = 'Stooq';
@@ -82,36 +54,36 @@ export async function GET() {
                 if (parsed.length < 10) throw new Error('Stooq returned insufficient data');
                 rows = parsed;
             } catch (e) {
-                console.warn(`[SPY] Layer 3 (Stooq) failed: ${e.message}`);
+                console.warn(`[SPY] Layer 2 (Stooq) failed: ${e.message}`);
                 rows = [];
             }
         }
 
-        // Layer 4: Yahoo Finance v8 (works locally, may be blocked from Vercel)
+        // Layer 3: Yahoo Finance v8 (works locally, may be blocked from Vercel)
         if (rows.length < 10) {
             try {
                 dataSource = 'Yahoo Finance (query1)';
                 rows = parseYahooChart(await fetchJson(EXTERNAL_URLS.YAHOO_SPY));
                 if (rows.length < 10) throw new Error('insufficient rows');
             } catch (e) {
-                console.warn(`[SPY] Layer 4 (Yahoo query1) failed: ${e.message}`);
+                console.warn(`[SPY] Layer 3 (Yahoo query1) failed: ${e.message}`);
                 rows = [];
             }
         }
 
-        // Layer 5: Yahoo Finance v8 query2 (backup)
+        // Layer 4: Yahoo Finance v8 query2 (backup)
         if (rows.length < 10) {
             try {
                 dataSource = 'Yahoo Finance (query2)';
                 rows = parseYahooChart(await fetchJson(EXTERNAL_URLS.YAHOO_SPY.replace('query1.finance', 'query2.finance')));
                 if (rows.length < 10) throw new Error('insufficient rows');
             } catch (e) {
-                console.warn(`[SPY] Layer 5 (Yahoo query2) failed: ${e.message}`);
+                console.warn(`[SPY] Layer 4 (Yahoo query2) failed: ${e.message}`);
                 rows = [];
             }
         }
 
-        if (rows.length < 10) throw new Error('Insufficient SPY data — all 5 sources failed');
+        if (rows.length < 10) throw new Error('Insufficient SPY data — all 4 sources failed');
 
         const current = rows[rows.length - 1].close;
         const prevClose = rows[rows.length - 2].close;
