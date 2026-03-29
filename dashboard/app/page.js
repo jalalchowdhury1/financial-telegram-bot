@@ -170,7 +170,7 @@ export default function Dashboard() {
                                     </div>
                                     <div className="stat-mini">
                                         <span className="stat-mini-label">3Y Return</span>
-                                        <span className={`stat-mini-value ${spy.return3y >= 0 ? 'stat-positive' : 'stat-negative'}`}>{spy.return3y >= 0 ? '+' : ''}{spy.return3y.toFixed(2)}%</span>
+                                        <span className={`stat-mini-value ${spy.return3y == null ? '' : spy.return3y >= 0 ? 'stat-positive' : 'stat-negative'}`}>{spy.return3y == null ? 'N/A' : `${spy.return3y >= 0 ? '+' : ''}${spy.return3y.toFixed(2)}%`}</span>
                                     </div>
                                     <div className="stat-mini">
                                         <span className="stat-mini-label">9d RSI</span>
