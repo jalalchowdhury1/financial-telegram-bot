@@ -235,7 +235,22 @@ export async function GET() {
         const usdinr = await getWithFallback(usdinr_fred, YAHOO_TICKERS.USD_INR, 'USD/INR', {}, 'usdinr', true);
         const usdbdt = await getWithFallback(usdbdt_primary, YAHOO_TICKERS.USD_BDT, 'USD/BDT', {}, 'usdbdt', true);
         const inrbdt = await getWithFallback(inrbdt_primary, null, 'INR/BDT', {}, 'inrbdt', true);
-        const cadinr = await getWithFallback(cadinr_fred, YAHOO_TICKERS.USD_CAD, 'CAD/INR', {}, 'cadinr', true);
+
+        // CAD/INR: No direct Yahoo ticker, compute from USD/CAD and USD/INR
+        let cadinr = null;
+        if (cadinr_fred && cadinr_fred.current != null && (!isFredFxStale(cadinr_fred.history) || !cadinr_fred.lastDate)) {
+            cadinr = cadinr_fred;
+            sourceLog['cadinr'] = 'FRED';
+        } else if (usdcad && usdcad.current && usdinr && usdinr.current) {
+            // CAD/INR = USD/INR / USD/CAD
+            cadinr = spotOnly(usdinr.current / usdcad.current);
+            sourceLog['cadinr'] = 'Yahoo-computed';
+        } else if (gsheetData?.['CAD/INR'] != null) {
+            cadinr = spotOnly(gsheetData['CAD/INR']);
+            sourceLog['cadinr'] = 'GSheet';
+        }
+        if (!cadinr) sourceLog['cadinr'] = 'null';
+
         const cadbdt = await getWithFallback(cadbdt_primary, null, 'CAD/BDT', {}, 'cadbdt', true);
         const dxy = await getWithFallback(dxy_primary, YAHOO_TICKERS.DXY, null, {}, 'dxy', true);
 
