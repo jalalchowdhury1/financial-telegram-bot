@@ -23,32 +23,13 @@ export async function GET() {
         const text = await fetchText(GOOGLE_SHEETS.SPY_DAILY_MOVE);
         const rows = parseCSV(text);
 
-        // Debug: log first few rows to understand structure
-        console.log('[spy-daily-move] Total rows:', rows.length);
-
-        // Return all rows for debugging - check Vercel logs
-        const debugRows = {};
-        for (let i = 0; i < Math.min(15, rows.length); i++) {
-            debugRows[`row${i}`] = rows[i];
-        }
-        console.log('[spy-daily-move] Debug rows:', JSON.stringify(debugRows));
-
-        // Try multiple row indices to find the value - look for % sign
-        let value = null;
-        for (let i = 0; i < Math.min(20, rows.length); i++) {
-            const cellB = rows[i]?.[1]?.trim();
-            // Look for values containing % sign
-            if (cellB && cellB.includes('%')) {
-                value = cellB;
-                console.log(`[spy-daily-move] Found value '${value}' at row ${i}, col B`);
-                break;
-            }
-        }
+        // B12 = row index 11 (0-indexed), column B = index 1
+        const value = rows[11]?.[1]?.trim() || null;
+        console.log('[spy-daily-move] B12 value:', value);
 
         return Response.json({
             value,
-            source: 'Google Sheets',
-            debug: { totalRows: rows.length, debugRows }
+            source: 'Google Sheets'
         });
     } catch (e) {
         console.error('[spy-daily-move] Error:', e.message);
