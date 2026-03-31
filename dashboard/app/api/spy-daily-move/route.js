@@ -25,16 +25,29 @@ export async function GET() {
 
         // Debug: log first few rows to understand structure
         console.log('[spy-daily-move] Total rows:', rows.length);
-        if (rows.length > 0) {
-            console.log('[spy-daily-move] Row 0:', rows[0]);
-            console.log('[spy-daily-move] Row 11:', rows[11]);
-        }
 
-        const value = rows[11]?.[1]?.trim() || null;
+        // Return all rows for debugging - check Vercel logs
+        const debugRows = {};
+        for (let i = 0; i < Math.min(15, rows.length); i++) {
+            debugRows[`row${i}`] = rows[i];
+        }
+        console.log('[spy-daily-move] Debug rows:', JSON.stringify(debugRows));
+
+        // Try multiple row indices to find the value
+        let value = null;
+        for (let i = 0; i < Math.min(20, rows.length); i++) {
+            const cellB = rows[i]?.[1]?.trim();
+            if (cellB && cellB !== '' && !isNaN(parseFloat(cellB))) {
+                value = cellB;
+                console.log(`[spy-daily-move] Found value '${value}' at row ${i}, col B`);
+                break;
+            }
+        }
 
         return Response.json({
             value,
-            source: 'Google Sheets'
+            source: 'Google Sheets',
+            debug: { totalRows: rows.length, debugRows }
         });
     } catch (e) {
         console.error('[spy-daily-move] Error:', e.message);
