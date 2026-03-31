@@ -1,14 +1,19 @@
 'use client';
 
-export default function MarketPulse({ spy, fg, fred, loading, fgColor }) {
+export default function MarketPulse({ spy, spyDailyMove, fg, fred, loading, fgColor }) {
     if (loading || !spy || !fg || spy.error || fg.error) return null;
+
+    // Parse the % move from spyDailyMove if available
+    const dailyMoveValue = spyDailyMove?.value;
+    const dailyMovePct = dailyMoveValue ? parseFloat(dailyMoveValue) : spy.dailyChange?.pct || 0;
+    const isPositive = dailyMovePct >= 0;
 
     return (
         <div className="market-pulse">
             <span className="pulse-label">📡 Market Pulse</span>
             <span className="pulse-items">
-                <span className={spy.dailyChange?.pct >= 0 ? 'stat-positive' : 'stat-negative'}>
-                    SPY {spy.dailyChange?.pct >= 0 ? '▲' : '▼'}{Math.abs(spy.dailyChange?.pct || 0).toFixed(2)}%
+                <span className={isPositive ? 'stat-positive' : 'stat-negative'}>
+                    SPY {isPositive ? '▲' : '▼'}{Math.abs(dailyMovePct).toFixed(2)}%
                 </span>
                 <span className="pulse-sep">·</span>
                 <span style={{ color: fgColor(fg.score) }}>

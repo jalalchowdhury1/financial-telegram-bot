@@ -131,7 +131,7 @@ export default function Dashboard() {
             <CustomIndicatorBar sheets={sheets} loading={loading} />
 
             {/* MARKET PULSE - Quick summary at top */}
-            <MarketPulse spy={spy} fg={fg} fred={fred} loading={loading} fgColor={fgColor} />
+            <MarketPulse spy={spy} spyDailyMove={spyDailyMove} fg={fg} fred={fred} loading={loading} fgColor={fgColor} />
 
             {/* MAIN GRID */}
             <div className="dashboard-grid">
