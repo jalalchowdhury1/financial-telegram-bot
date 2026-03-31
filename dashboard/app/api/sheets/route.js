@@ -32,7 +32,8 @@ const SHEETS = [
     { name: 'NotSoBoring', url: GOOGLE_SHEETS.NOT_SO_BORING, parse: (rows) => rows[2]?.[1]?.trim() || 'N/A' },
     { name: 'FrontRunner', url: GOOGLE_SHEETS.FRONT_RUNNER, parse: (rows) => (rows[1]?.[0]?.trim() || 'N/A').split('\n')[0].trim() },
     { name: 'AAIIDiff', url: GOOGLE_SHEETS.AAII, parse: (rows) => rows[1]?.[4]?.trim() || 'N/A' },
-    { name: 'VIX', url: GOOGLE_SHEETS.VIX, parse: (rows) => ({ current: rows[1]?.[0]?.trim() || 'N/A', threeMonth: rows[1]?.[1]?.trim() || 'N/A', fearGreed: rows[1]?.[2]?.trim() || 'N/A' }) }
+    { name: 'VIX', url: GOOGLE_SHEETS.VIX, parse: (rows) => ({ current: rows[1]?.[0]?.trim() || 'N/A', threeMonth: rows[1]?.[1]?.trim() || 'N/A', fearGreed: rows[1]?.[2]?.trim() || 'N/A' }) },
+    { name: 'SPYDallyMove', url: GOOGLE_SHEETS.SPY_DAILY_MOVE, parse: (rows) => rows[11]?.[1]?.trim() || 'N/A' } // B12 = row 11 (0-indexed), col 1 (B)
 ];
 
 // Alternative export URL formats for Google Sheets
@@ -52,13 +53,13 @@ async function fetchSheets(sheets) {
 }
 
 function saveCache(data) {
-    try { fs.writeFileSync(CACHE_FILE, JSON.stringify({ ...data, _cachedAt: new Date().toISOString() })); } catch {}
+    try { fs.writeFileSync(CACHE_FILE, JSON.stringify({ ...data, _cachedAt: new Date().toISOString() })); } catch { }
 }
 
 function loadCache() {
     try {
         if (fs.existsSync(CACHE_FILE)) return JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
-    } catch {}
+    } catch { }
     return null;
 }
 
@@ -117,7 +118,7 @@ export async function GET() {
                 );
                 const vixObs = vixData.observations.filter(o => o.value !== '.');
                 if (vixObs.length > 0) vixCurrent = parseFloat(vixObs[0].value).toFixed(2);
-            } catch {}
+            } catch { }
 
             // AAII diff proxy from FRED UMCSENT (consumer sentiment)
             // Not a perfect match, but correlated — use as estimate
@@ -131,7 +132,7 @@ export async function GET() {
                     const diff = parseFloat(sentObs[0].value) - parseFloat(sentObs[1].value);
                     aaiDiff = `${diff >= 0 ? '+' : ''}${diff.toFixed(2)}% (UMCSENT proxy)`;
                 }
-            } catch {}
+            } catch { }
         }
 
         const results = {

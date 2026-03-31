@@ -145,7 +145,11 @@ export default function Dashboard() {
                                 {/* Hero price */}
                                 <div className="hero-price-section">
                                     <div className="hero-price">${spy.current.toFixed(2)}</div>
-                                    {spy.dailyChange && (
+                                    {sheets?.SPYDallyMove && sheets.SPYDallyMove !== 'N/A' ? (
+                                        <div className={`daily-change-badge ${parseFloat(sheets.SPYDallyMove) >= 0 ? 'daily-up' : 'daily-down'}`}>
+                                            {parseFloat(sheets.SPYDallyMove) >= 0 ? '▲' : '▼'} {sheets.SPYDallyMove} today
+                                        </div>
+                                    ) : spy.dailyChange && (
                                         <div className={`daily-change-badge ${spy.dailyChange.pct >= 0 ? 'daily-up' : 'daily-down'}`}>
                                             {spy.dailyChange.pct >= 0 ? '▲' : '▼'} ${Math.abs(spy.dailyChange.value).toFixed(2)} ({spy.dailyChange.pct >= 0 ? '+' : ''}{spy.dailyChange.pct.toFixed(2)}%) today
                                         </div>
@@ -307,10 +311,10 @@ export default function Dashboard() {
 
                 {/* FINANCIAL DASHBOARD HISTORY LINK */}
                 <div style={{ gridColumn: '1 / -1', textAlign: 'center', marginTop: '1rem' }}>
-                    <a 
-                        href="https://docs.google.com/spreadsheets/d/1lA-_yjLMc3qDTt9sogSPQrCohNULIk5wwJYfb5wIHfc/edit?gid=0#gid=0" 
-                        target="_blank" 
-                        rel="noopener noreferrer" 
+                    <a
+                        href="https://docs.google.com/spreadsheets/d/1lA-_yjLMc3qDTt9sogSPQrCohNULIk5wwJYfb5wIHfc/edit?gid=0#gid=0"
+                        target="_blank"
+                        rel="noopener noreferrer"
                         style={{ color: 'var(--text-muted)', fontSize: '0.75rem', textDecoration: 'none', opacity: 0.5 }}
                     >
                         Financial Dashboard History
@@ -355,58 +359,54 @@ export default function Dashboard() {
             {systemStatus && (
                 <div className="system-status-bar">
                     <div className="status-items">
-                        <span className={`status-item ${
-                            systemStatus.spy?.hasErrors ? 'status-error' :
-                            (systemStatus.spy?.source?.includes('Yahoo') || systemStatus.spy?.source?.includes('FRED')) ? 'status-warn' : ''
-                        }`}>
+                        <span className={`status-item ${systemStatus.spy?.hasErrors ? 'status-error' :
+                                (systemStatus.spy?.source?.includes('Yahoo') || systemStatus.spy?.source?.includes('FRED')) ? 'status-warn' : ''
+                            }`}>
                             [SPY: {
                                 systemStatus.spy?.source?.includes('Stooq') ? 'Stooq' :
-                                systemStatus.spy?.source?.includes('FRED') ? 'FRED Fallback' :
-                                systemStatus.spy?.source?.includes('Yahoo') ? 'Yahoo Fallback' :
-                                systemStatus.spy?.source || 'OK'
+                                    systemStatus.spy?.source?.includes('FRED') ? 'FRED Fallback' :
+                                        systemStatus.spy?.source?.includes('Yahoo') ? 'Yahoo Fallback' :
+                                            systemStatus.spy?.source || 'OK'
                             }]
                         </span>
                         <span className={`status-item ${systemStatus.fred?.hasErrors ? 'status-error' : ''}`}>
                             [FRED: {systemStatus.fred?.messages?.[0]?.replace('Loaded ', '').replace(' series', '') || '18/18'}]
                         </span>
-                        <span className={`status-item ${
-                            systemStatus.fg?.source?.includes('Stale') || systemStatus.fg?.source?.includes('Failed') ? 'status-error' :
-                            (systemStatus.fg?.source?.includes('VIX') || systemStatus.fg?.source?.includes('Proxy')) ? 'status-warn' :
-                            systemStatus.fg?.hasErrors ? 'status-warn' : ''
-                        }`}>
+                        <span className={`status-item ${systemStatus.fg?.source?.includes('Stale') || systemStatus.fg?.source?.includes('Failed') ? 'status-error' :
+                                (systemStatus.fg?.source?.includes('VIX') || systemStatus.fg?.source?.includes('Proxy')) ? 'status-warn' :
+                                    systemStatus.fg?.hasErrors ? 'status-warn' : ''
+                            }`}>
                             [F&G: {
                                 systemStatus.fg?.source?.includes('CNN') ? 'CNN' :
-                                systemStatus.fg?.source?.includes('RapidAPI') ? 'RapidAPI' :
-                                systemStatus.fg?.source?.includes('VIXCLS') ? 'FRED VIX' :
-                                systemStatus.fg?.source?.includes('VIX') ? 'VIX Proxy' :
-                                systemStatus.fg?.source?.includes('Stale') ? 'STALE' :
-                                systemStatus.fg?.source?.includes('Failed') ? 'FAILED' :
-                                systemStatus.fg?.hasErrors ? 'PARTIAL' : 'LIVE OK'
+                                    systemStatus.fg?.source?.includes('RapidAPI') ? 'RapidAPI' :
+                                        systemStatus.fg?.source?.includes('VIXCLS') ? 'FRED VIX' :
+                                            systemStatus.fg?.source?.includes('VIX') ? 'VIX Proxy' :
+                                                systemStatus.fg?.source?.includes('Stale') ? 'STALE' :
+                                                    systemStatus.fg?.source?.includes('Failed') ? 'FAILED' :
+                                                        systemStatus.fg?.hasErrors ? 'PARTIAL' : 'LIVE OK'
                             }]
                         </span>
-                        <span className={`status-item ${
-                            (systemStatus.sheets?.source?.includes('Failed') || systemStatus.sheets?.source?.includes('Static')) ? 'status-error' :
-                            systemStatus.sheets?.source?.includes('Stale') ? 'status-error' :
-                            (systemStatus.sheets?.source?.includes('Cached') || systemStatus.sheets?.source?.includes('Alt') || systemStatus.sheets?.source?.includes('Proxy') || systemStatus.sheets?.source?.includes('FRED')) ? 'status-warn' :
-                            ''
-                        }`}>
+                        <span className={`status-item ${(systemStatus.sheets?.source?.includes('Failed') || systemStatus.sheets?.source?.includes('Static')) ? 'status-error' :
+                                systemStatus.sheets?.source?.includes('Stale') ? 'status-error' :
+                                    (systemStatus.sheets?.source?.includes('Cached') || systemStatus.sheets?.source?.includes('Alt') || systemStatus.sheets?.source?.includes('Proxy') || systemStatus.sheets?.source?.includes('FRED')) ? 'status-warn' :
+                                        ''
+                            }`}>
                             [SHEETS: {
                                 (systemStatus.sheets?.source?.includes('Failed') || systemStatus.sheets?.source?.includes('Static')) ? 'FAILED' :
-                                systemStatus.sheets?.source?.includes('Stale') ? 'STALE' :
-                                systemStatus.sheets?.source?.includes('Cached') ? 'CACHE' :
-                                systemStatus.sheets?.source?.includes('Alt') ? 'ALT OK' :
-                                (systemStatus.sheets?.source?.includes('Proxy') || systemStatus.sheets?.source?.includes('FRED')) ? 'FRED Proxy' :
-                                'LIVE OK'
+                                    systemStatus.sheets?.source?.includes('Stale') ? 'STALE' :
+                                        systemStatus.sheets?.source?.includes('Cached') ? 'CACHE' :
+                                            systemStatus.sheets?.source?.includes('Alt') ? 'ALT OK' :
+                                                (systemStatus.sheets?.source?.includes('Proxy') || systemStatus.sheets?.source?.includes('FRED')) ? 'FRED Proxy' :
+                                                    'LIVE OK'
                             }]
                         </span>
                         {systemStatus.extra && (
-                            <span className={`status-item ${
-                                systemStatus.extra?.sourceLog && Object.values(systemStatus.extra.sourceLog).some(s => s === 'null')
+                            <span className={`status-item ${systemStatus.extra?.sourceLog && Object.values(systemStatus.extra.sourceLog).some(s => s === 'null')
                                     ? 'status-error'
                                     : systemStatus.extra?.messages?.some(m => m.includes('Yahoo') || m.includes('GSheet'))
-                                    ? 'status-warn'
-                                    : ''
-                            }`}>
+                                        ? 'status-warn'
+                                        : ''
+                                }`}>
                                 [MKTS: {systemStatus.extra?.messages?.join(' | ') || 'LIVE OK'}]
                             </span>
                         )}
