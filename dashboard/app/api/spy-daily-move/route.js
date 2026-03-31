@@ -33,11 +33,12 @@ export async function GET() {
         }
         console.log('[spy-daily-move] Debug rows:', JSON.stringify(debugRows));
 
-        // Try multiple row indices to find the value
+        // Try multiple row indices to find the value - look for % sign
         let value = null;
         for (let i = 0; i < Math.min(20, rows.length); i++) {
             const cellB = rows[i]?.[1]?.trim();
-            if (cellB && cellB !== '' && !isNaN(parseFloat(cellB))) {
+            // Look for values containing % sign
+            if (cellB && cellB.includes('%')) {
                 value = cellB;
                 console.log(`[spy-daily-move] Found value '${value}' at row ${i}, col B`);
                 break;
