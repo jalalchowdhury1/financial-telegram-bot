@@ -1,42 +1,8 @@
-import { GOOGLE_SHEETS } from '../../../lib/constants';
-import { fetchText } from '../../../lib/fetcher';
-
 export const dynamic = 'force-dynamic';
 
-function parseCSV(text) {
-    return text.split('\n').map(row => {
-        const result = [];
-        let current = '';
-        let inQuotes = false;
-        for (const char of row) {
-            if (char === '"') inQuotes = !inQuotes;
-            else if (char === ',' && !inQuotes) { result.push(current); current = ''; }
-            else current += char;
-        }
-        result.push(current);
-        return result;
-    });
-}
-
 export async function GET() {
-    try {
-        const text = await fetchText(GOOGLE_SHEETS.SPY_DAILY_MOVE);
-        const rows = parseCSV(text);
-
-        // B12 = row index 11 (0-indexed), column B = index 1
-        const value = rows[11]?.[1]?.trim() || null;
-        console.log('[spy-daily-move] B12 value:', value);
-
-        return Response.json({
-            value,
-            source: 'Google Sheets'
-        });
-    } catch (e) {
-        console.error('[spy-daily-move] Error:', e.message);
-        return Response.json({
-            value: null,
-            source: 'Failed',
-            error: e.message
-        });
-    }
+    const lambdaUrl = process.env.LAMBDA_URL;
+    if (!lambdaUrl) return Response.json({ error: 'LAMBDA_URL not configured' }, { status: 500 });
+    const res = await fetch(`${lambdaUrl}/api/spy-daily-move`, { cache: 'no-store' });
+    return Response.json(await res.json(), { status: res.status });
 }
