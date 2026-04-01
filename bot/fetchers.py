@@ -248,8 +248,8 @@ def _fetch_yfinance(symbol: str, invert: bool = False, days: int = 1500) -> Opti
         import yfinance as yf
         from datetime import datetime, timedelta
         start = (datetime.now() - timedelta(days=days + 60)).strftime('%Y-%m-%d')
-        end = datetime.now().strftime('%Y-%m-%d')
-        hist = yf.Ticker(symbol).history(start=start, end=end, auto_adjust=True)
+        # We omit 'end' to ensure we get up to the latest available live/closed price (including today)
+        hist = yf.Ticker(symbol).history(start=start, auto_adjust=True)
         if hist.empty or len(hist) < 2:
             return None
         rows = []
