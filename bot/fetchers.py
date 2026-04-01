@@ -246,6 +246,14 @@ def _fetch_yfinance(symbol: str, invert: bool = False, days: int = 1500) -> Opti
     """Fetch daily history from Yahoo Finance via yfinance. Top of every waterfall."""
     try:
         import yfinance as yf
+        import os
+        
+        # In AWS Lambda, only /tmp is writable. yfinance needs to store tz and cookie cache
+        # or else Yahoo Finance triggers instant rate-limiting for repeated cookie-less scrapes.
+        cache_dir = '/tmp/yfinance'
+        os.makedirs(cache_dir, exist_ok=True)
+        yf.set_tz_cache_location(cache_dir)
+        
         from datetime import datetime, timedelta
         start = (datetime.now() - timedelta(days=days + 60)).strftime('%Y-%m-%d')
         # We omit 'end' to ensure we get up to the latest available live/closed price (including today)
@@ -505,6 +513,22 @@ def fetch_spy_with_fallback(fred_api_key: Optional[str] = None,
     else:
         current = rows[-1]['close']
         prev_close = rows[-2]['close']
+        
+        # Override with Finnhub spot price to guarantee live data if Polygon/Stooq metrics are stale
+        # Finnhub 'c' (current) / 'pc' (previous close)
+        if finnhub_api_key:
+            try:
+                fh = _fetch_finnhub_quote('SPY', finnhub_api_key)
+                if fh and fh.get('current') and fh['current'] > 0:
+                    current = fh['current']
+                    # Ensure prev_close correctly targets the actual previous close depending on date staleness
+                    # Finnhub handles "previous close" identically in `fh['dailyChange']['value']` via pc reference.
+                    # so we calculate backwards from the dailyChange.value!
+                    prev_close = current - fh['dailyChange']['value']
+                    data_source += " + Finnhub Spot"
+            except Exception:
+                pass
+
         daily_change = {'value': current - prev_close, 'pct': _calc_pct(current, prev_close)}
 
         closes = pd.Series([row['close'] for row in rows])
