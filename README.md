@@ -1,163 +1,112 @@
-# 📊 Financial Telegram Bot & Dashboard
+# Financial Telegram Bot & Dashboard - AI Maintainer Guide
 
-> [!IMPORTANT]
-> **AI MAINTAINERS**: Read [AI_CONTEXT.md](docs/AI_MAINTAINER_GUIDE.md) before making changes.
-
-A professional financial monitoring system featuring a real-time interactive dashboard deployed on Vercel, and a lightweight Telegram bot delivering daily market summaries.
+> **CRITICAL READING FOR ALL LLMs**: Do NOT modify, deploy, or touch the backend of this repository without reading this document entirely. This project seamlessly integrates a Next.js `dashboard` with an **AWS Lambda Python Backend**. Overlooking these rules will result in production crashes, 500 API Gateway errors, and rate-limit IP bans.
 
 ---
 
-## 🌟 Features
-
-### 📈 Dashboard (`/dashboard`)
-A Next.js application with live data from **FRED**, **Stooq**, and the **ExchangeRate API**.
-
-#### Core Market Sections
-| Section | Data |
-|---|---|
-| **SPY Chart** | Price, 200D MA, 52W High, RSI, Volume |
-| **Fear & Greed Index** | CNN F&G via Stooq, with gauge visualization |
-| **Economic Indicators** | Yield Curve, LEI, Profit Margin, Consumer Sentiment, Credit Spread, Real Yields, Claims |
-| **Bull Market Checklist** | 8-factor checklist: NFCI, M2, Retail Sales, Housing Starts, Industrial Production, JOLTS, Durables, Savings Rate |
-| **🌐 Global Markets** | FX, Commodities, Crypto, Real Estate & Rates (see below) |
-
-#### Global Markets Widget
-| Left Column — Real Estate & Rates | Right Column — FX, Commodities & Crypto |
-|---|---|
-| ZRI — US Median Monthly Rent | USD/CAD |
-| MTGPMT — Estimated Monthly Mortgage | USD/INR |
-| MORT30 — 30-Year Fixed Mortgage Rate | USD/BDT |
-| TNX — 10-Year Treasury Yield | INR/BDT |
-| T2Y — 2-Year Treasury Yield | CAD/INR |
-| DXY — US Dollar Index | GOLD (Spot) |
-| CL — Crude Oil WTI | BTC/USD |
-
-#### Data Sources
-- **[FRED](https://fred.stlouisfed.org/)** — Rates, Real Estate, Oil, Treasuries, Economic Indicators
-- **[Stooq](https://stooq.com/)** — BTC, Gold, SPY (live market data)
-- **[ExchangeRate-API](https://open.er-api.com/)** — USD/BDT, DXY basket calculation (free, no key required)
-- **[Google Sheets](https://sheets.google.com/)** — Proprietary indicators (NotSoBoring, FrontRunner, AAII)
-- **CNN** — Fear & Greed Index
-
-### 🤖 Telegram Bot (`/bot`)
-- **Daily Reports**: Automated morning market summaries sent to your Telegram channel.
-- **AI Assessment**: Quantitative analysis powered by Groq/OpenAI/Gemini.
-- **Commands**: `/report`, `/start`
+## 1. Project Architecture
+- **Frontend**: A Next.js application located in `/dashboard`. It fetches live data from the AWS Lambda backend.
+- **Backend (Python)**: An AWS Lambda function (`financial-telegram-report`) deployed via zip packaged code.
+- **Fetchers (`bot/fetchers.py`)**: A multi-tier waterfall system that fetches from Yahoo Finance (yfinance), Polygon, Finnhub, Stooq, FRED, and Google Sheets. 
 
 ---
 
-## 🚀 Quick Start
+## 2. AWS Lambda Deployment Rules (Crucial!)
 
-### Prerequisites
-- **Python 3.10+** (for the Bot)
-- **Node.js 18+** (for the Dashboard)
-- **[FRED API Key](https://fred.stlouisfed.org/docs/api/api_key.html)**
-- **Telegram Bot** — Create one via [@BotFather](https://t.me/botfather)
+**You cannot simply push local dependencies to AWS Lambda.** If you build `numpy` or `pandas` on a Mac, it will crash `Runtime.ImportModuleError` on Lambda`s Linux environment.
 
-### Dashboard (Local Development)
+**How to package dependencies for deployment:**
+When adding or updating `aws/requirements-lambda.txt`, you MUST compile for the `manylinux2014_x86_64` platform using Python 3.11:
+
 ```bash
-cd dashboard
-npm install
-npm run dev
-# Open http://localhost:3000
+# 1. Install to a fresh package/ folder
+pip install \
+    --platform manylinux2014_x86_64 \
+    --target=package \
+    --implementation cp \
+    --python-version 3.11 \
+    --only-binary=:all: \
+    -r aws/requirements-lambda.txt
+
+# 2. Zip the dependencies
+cd package && zip -r ../deployment_full.zip . && cd ..
+
+# 3. Add the application code
+zip -g deployment_full.zip lambda_handler.py bot/*.py
+
+# 4. Deploy
+aws lambda update-function-code \
+    --function-name financial-telegram-report \
+    --zip-file fileb://deployment_full.zip
+```
+*(Always clean up the `package/` and `.zip` so they do not pollute the git history).*
+
+---
+
+## 3. The `yfinance` Cache & AWS Rate Limits
+
+**The Problem**:
+AWS Lambda runs a read-only file system (except for `/tmp`). The `yfinance` library requires writable directories to store TZ and Session Cookies. If it cannot store cookies, EVERY scrape hit to Yahoo Finance registers as a fresh, cookieless scrape. Yahoo Finance will instantly **RATE-LIMIT (HTTP 429)** and IP-ban the Lambda function.
+
+**The Fix**:
+You MUST explicitly tell `yfinance` to cache in the `/tmp` folder before making any calls. This codebase handles it in `_fetch_yfinance`:
+
+```python
+import yfinance as yf
+import os
+
+cache_dir = '/tmp/yfinance'
+os.makedirs(cache_dir, exist_ok=True)
+yf.set_tz_cache_location(cache_dir)
+# Now you can safely call yfinance
 ```
 
-### Bot (Local Development)
+---
+
+## 4. API Gateway Proxy 500 Errors (The `NaN` JSON Bug)
+
+**The Problem**:
+If the Lambda succeeds (returns HTTP 200 locally) but the live API Gateway URL returns `{ "message": "Internal Server Error" }` (HTTP 500), the Gateway Proxy Parser is failing. 
+
+AWS HTTP API Gateway (Payload format 2.0) requires exact JSON strings if you use proxy mappings. **Python's `json.dumps()` converts missing pandas floats directly into unquoted `NaN` variables.** Standard JSON parsers (including Vercel Edge functions and API Gateway) will violently crash trying to parse `NaN`.
+
+**The Fix**:
+Any float returned by pandas or math must be sanitized before `json.dumps`. We use `_clean_nans` in `lambda_handler.py` to recursively override `NaN` and `Infinity` into standard `null` (`None`). 
+
+---
+
+## 5. Finnhub Real-time Spot Override
+
+**The Problem**:
+If `yfinance` is completely blocked on AWS, the waterfall falls back to Polygon's free API. Polygon's free aggregates strictly delay data by a full day, causing the dashboard to show 1-day stale prices (e.g. returning yesterday's close instead of today's spot).
+
+**The Fix**:
+Do not accept stale data. In `fetch_spy_with_fallback`, we use `Finnhub` (`_fetch_finnhub_quote`) as a bulletproof spot-price override hook. Finnhub reliably returns second-by-second live SPY data. We overwrite the stale Polygon `current` spot variable dynamically before it reaches the dashboard.
+
+---
+
+## 6. AWS IAM API Gateway Integration
+
+If you hook up a new API Gateway to the Lambda function and it receives an instant `500` error with NO logs generated in CloudWatch, it is because AWS Lambda restricts execution via Resource-based policies. 
+
+You must manually grant the API Gateway permission to trigger the Lambda:
 ```bash
-pip install -r requirements.txt
-python -m bot.main
+aws lambda add-permission \
+    --function-name financial-telegram-report \
+    --statement-id AllowMyAPIGateway \
+    --action lambda:InvokeFunction \
+    --principal apigateway.amazonaws.com \
+    --source-arn "arn:aws:execute-api:us-east-1:<ACCOUNT_ID>:<API_ID>/*/*"
 ```
-
-### Environment Variables
-Create `dashboard/.env.local`:
-```env
-FRED_API_KEY=your_fred_api_key_here
-```
-
-Create `.env` in the root for the bot:
-```env
-TELEGRAM_BOT_TOKEN=your_bot_token
-TELEGRAM_CHAT_ID=your_chat_id
-FRED_API_KEY=your_fred_api_key
-# Optional: GROQ_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY
-```
+Ensure `.env.local` in `dashboard/` points to the fully authorized gateway.
 
 ---
 
-## 📂 Project Structure
+### Final Checklist for AI Modifications
+1. Did you double check that your Python maths don't leak `NaN` into the API Gateway payload?
+2. Are your `yfinance` fetches caching to `/tmp`?
+3. Did you bundle your lambda deployment strictly for `manylinux2014_x86_64`?
+4. Are you gracefully falling back to Finnhub for live spot overrides if Polygon returns 1-day stale data? 
+5. Does the API Gateway have IAM Resource Policy invoke permissions?
 
-```
-financial-telegram-bot/
-├── bot/                        # Python Telegram bot
-│   ├── main.py                 # Bot entry point
-│   └── ...
-├── dashboard/                  # Next.js web dashboard
-│   ├── app/
-│   │   ├── page.js             # Main dashboard page
-│   │   ├── globals.css         # Design system & CSS variables
-│   │   └── api/
-│   │       ├── fred/           # FRED economic indicators (batched)
-│   │       ├── market-extra/   # Global Markets: FX, Oil, Rates
-│   │       ├── spy/            # SPY price & technicals (Stooq)
-│   │       ├── fear-greed/     # CNN Fear & Greed Index
-│   │       ├── assessment/     # AI market assessment
-│   │       ├── sheets/         # Google Sheets proprietary data
-│   │       └── last-run/       # Bot last-run timestamp
-│   ├── components/
-│   │   ├── ExtraMarketsGrid.js # 🌐 Global Markets widget
-│   │   ├── BullChecklist.js    # 8-factor bull market checklist
-│   │   ├── SpyChart.js         # Interactive SPY price chart
-│   │   ├── MiniChart.js        # Reusable sparkline chart
-│   │   ├── EconomicIndicatorGrid.js
-│   │   ├── Gauge.js            # Fear & Greed gauge
-│   │   ├── ErrorBoundary.js
-│   │   ├── Skeleton.js
-│   │   └── ...
-│   └── lib/
-│       ├── constants.js        # FRED series IDs, API URLs
-│       └── fetcher.js          # Standardized HTTP fetcher
-├── docs/                       # Technical documentation
-├── scripts/                    # Dev & deployment utilities
-├── requirements.txt            # Bot Python dependencies
-└── README.md
-```
-
----
-
-## 🏗️ Architecture
-
-```
-Vercel (Dashboard)          Render (Bot)
-┌─────────────────┐         ┌─────────────┐
-│  Next.js App    │         │ Python Bot  │
-│  ┌───────────┐  │         │ ┌─────────┐ │
-│  │ page.js   │  │ ◄──────►│ │ main.py │ │
-│  └───────────┘  │         │ └─────────┘ │
-│  API Routes:    │         └─────────────┘
-│  /api/fred      ├── FRED API
-│  /api/market-   ├── Stooq
-│    extra        ├── ExchangeRate-API
-│  /api/spy       └── Google Sheets
-└─────────────────┘
-```
-
-### Key Design Decisions
-- **Batched FRED Requests**: All FRED API calls are sent in batches of 3 with 200ms delays to avoid Vercel Datacenter IP blocking (HTTP 429).
-- **Multi-Source Data**: FX pairs use FRED daily spot rates; BTC/Gold use Stooq (live); BDT/DXY use ExchangeRate-API (no key required).
-- **DXY Calculation**: Computed server-side using the official ICE basket formula from live exchange rates.
-- **Rent Proxy**: `CUUR0000SEHA` (FRED Rent of Primary Residence index) × 4.41 to approximate US median monthly rent (~$1,950).
-- **Mortgage Payment**: Calculated from FRED median home price (`MSPUS`) × 80% (20% down) + current 30-year rate.
-
----
-
-## 📜 Bot Commands
-
-| Command | Description |
-|---|---|
-| `/report` | Triggers an immediate financial report |
-| `/start` | Shows the welcome message and guide |
-
----
-
-## 📄 License
-MIT
+By adhering to this guide, you guarantee a 100% stable, rate-limit resilient, and bug-free production environment.
