@@ -59,3 +59,7 @@ dashboard/.env.local
 sandbox/
 *.csv
 node_modules/
+
+package/
+deployment_full.zip
+output.json
