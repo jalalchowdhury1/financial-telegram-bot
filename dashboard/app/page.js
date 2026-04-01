@@ -363,13 +363,15 @@ export default function Dashboard() {
                 <div className="system-status-bar">
                     <div className="status-items">
                         <span className={`status-item ${systemStatus.spy?.hasErrors ? 'status-error' :
-                            (systemStatus.spy?.source?.includes('Yahoo') || systemStatus.spy?.source?.includes('FRED')) ? 'status-warn' : ''
+                            (systemStatus.spy?.source?.includes('Stooq') || systemStatus.spy?.source?.includes('FRED')) ? 'status-warn' : ''
                             }`}>
                             [SPY: {
-                                systemStatus.spy?.source?.includes('Stooq') ? 'Stooq' :
-                                    systemStatus.spy?.source?.includes('FRED') ? 'FRED Fallback' :
-                                        systemStatus.spy?.source?.includes('Yahoo') ? 'Yahoo Fallback' :
-                                            systemStatus.spy?.source || 'OK'
+                                systemStatus.spy?.source?.includes('yfinance') ? 'yfinance' :
+                                    systemStatus.spy?.source?.includes('Polygon') ? 'Polygon' :
+                                        systemStatus.spy?.source?.includes('Google Sheet') ? 'GSheet' :
+                                            systemStatus.spy?.source?.includes('Stooq') ? 'Stooq' :
+                                                systemStatus.spy?.source?.includes('FRED') ? 'FRED Fallback' :
+                                                    systemStatus.spy?.source || 'OK'
                             }]
                         </span>
                         <span className={`status-item ${systemStatus.fred?.hasErrors ? 'status-error' : ''}`}>
@@ -404,9 +406,9 @@ export default function Dashboard() {
                             }]
                         </span>
                         {systemStatus.extra && (
-                            <span className={`status-item ${systemStatus.extra?.sourceLog && Object.values(systemStatus.extra.sourceLog).some(s => s === 'null')
+                            <span className={`status-item ${systemStatus.extra?.messages?.some(m => m.includes('unavailable'))
                                 ? 'status-error'
-                                : systemStatus.extra?.messages?.some(m => m.includes('Yahoo') || m.includes('GSheet'))
+                                : systemStatus.extra?.hasErrors
                                     ? 'status-warn'
                                     : ''
                                 }`}>
