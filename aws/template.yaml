@@ -1,0 +1,200 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+
+Description: >
+  Financial Telegram Bot — AWS Lambda + EventBridge deployment.
+  Sends a daily financial market report to Telegram at 4:15 AM EST.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Parameters
+# These are injected as Lambda environment variables.
+# Recommended: store actual values in AWS Secrets Manager and reference them
+# via SSM Parameter Store or hardcode them in the Lambda console after deploy.
+# ─────────────────────────────────────────────────────────────────────────────
+Parameters:
+  TelegramToken:
+    Type: String
+    Description: "Telegram Bot API token (e.g. 123456:ABCdef...)"
+    NoEcho: true
+
+  TelegramChatId:
+    Type: String
+    Description: "Telegram chat ID to deliver the report to"
+    NoEcho: true
+
+  FredApiKey:
+    Type: String
+    Description: "FRED API key from api.stlouisfed.org"
+    NoEcho: true
+
+  PolygonApiKey:
+    Type: String
+    Description: "Polygon.io API key (used as Layer 2 data source)"
+    NoEcho: true
+    Default: ""
+
+  GroqApiKey:
+    Type: String
+    Description: "(Optional) Groq API key for Llama-3.3-70B AI assessment"
+    NoEcho: true
+    Default: ""
+
+  OpenAiApiKey:
+    Type: String
+    Description: "(Optional) OpenAI API key for GPT-4o AI assessment"
+    NoEcho: true
+    Default: ""
+
+  GeminiApiKey:
+    Type: String
+    Description: "(Optional) Google Gemini API key for AI assessment"
+    NoEcho: true
+    Default: ""
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Globals (applied to all SAM functions unless overridden)
+# ─────────────────────────────────────────────────────────────────────────────
+Globals:
+  Function:
+    Runtime: python3.11
+    Timeout: 300          # 5-minute max (Lambda hard limit is 15 min)
+    MemorySize: 512
+    Environment:
+      Variables:
+        TELEGRAM_TOKEN:   !Ref TelegramToken
+        TELEGRAM_CHAT_ID: !Ref TelegramChatId
+        FRED_API_KEY:     !Ref FredApiKey
+        POLYGON_API_KEY:  !Ref PolygonApiKey
+        GROQ_API_KEY:     !Ref GroqApiKey
+        OPENAI_API_KEY:   !Ref OpenAiApiKey
+        GEMINI_API_KEY:   !Ref GeminiApiKey
+        TZ:               "America/New_York"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Resources
+# ─────────────────────────────────────────────────────────────────────────────
+Resources:
+
+  # ── IAM Execution Role ──────────────────────────────────────────────────────
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: financial-bot-lambda-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        # Allows writing logs to CloudWatch
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: SecretsManagerReadPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:DescribeSecret
+                Resource:
+                  - !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:prod/financial-bot/*"
+        - PolicyName: CloudWatchLogsPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+
+  # ── Lambda Function ─────────────────────────────────────────────────────────
+  FinancialReportFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: financial-telegram-report
+      Description: "Sends daily financial market report to Telegram via EventBridge trigger"
+      Handler: lambda_handler.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+
+      # Point SAM at the project root — it will zip everything except
+      # .git, node_modules, __pycache__, .venv, dashboard/.
+      CodeUri: ../
+      # For production: use a pre-built Docker image or a Lambda Layer for
+      # heavy dependencies (pandas, yfinance). See Makefile target: build-lambda.
+
+      Events:
+        DailyReportSchedule:
+          Type: Schedule
+          Properties:
+            Name: daily-financial-report-trigger
+            # 4:15 AM America/New_York  = 08:15 UTC (EST) / 09:15 UTC (EDT)
+            # EventBridge uses UTC only. During EDT (Mar–Nov) NY is UTC-4,
+            # so 08:15 UTC = 4:15 AM EDT. During EST (Nov–Mar) NY is UTC-5,
+            # so 09:15 UTC = 4:15 AM EST.
+            # Deploy two rules or use 08:15 as a reasonable compromise:
+            Schedule: "cron(15 8 * * ? *)"
+            Description: "Trigger daily financial report at ~4:15 AM New York time"
+            Enabled: true
+
+      # Retain logs for 30 days
+      LoggingConfig:
+        LogFormat: Text
+
+      FunctionUrlConfig:
+        AuthType: NONE
+        Cors:
+          AllowOrigins:
+            - "*"
+          AllowMethods:
+            - "GET"
+            - "POST"
+          AllowHeaders:
+            - "x-bot-secret"
+            - "content-type"
+
+  # ── CloudWatch Log Group (explicit retention control) ─────────────────────
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${FinancialReportFunction}"
+      RetentionInDays: 30
+
+  # ── EventBridge → Lambda Permission ────────────────────────────────────────
+  # SAM auto-creates this when using the Schedule event type above,
+  # but we define it explicitly for clarity and auditability.
+  LambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt FinancialReportFunction.Arn
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !Sub "arn:aws:events:${AWS::Region}:${AWS::AccountId}:rule/daily-financial-report-trigger"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Outputs
+# ─────────────────────────────────────────────────────────────────────────────
+Outputs:
+  LambdaFunctionArn:
+    Description: "ARN of the deployed Lambda function"
+    Value: !GetAtt FinancialReportFunction.Arn
+
+  LambdaFunctionUrl:
+    Description: "Public Function URL for Dashboard to fetch data"
+    Value: !GetAtt FinancialReportFunctionUrl.FunctionUrl
+
+  LambdaFunctionName:
+    Description: "Name of the deployed Lambda function"
+    Value: !Ref FinancialReportFunction
+
+  ExecutionRoleArn:
+    Description: "ARN of the IAM execution role"
+    Value: !GetAtt LambdaExecutionRole.Arn
+
+  LogGroupName:
+    Description: "CloudWatch Log Group for Lambda output"
+    Value: !Ref LambdaLogGroup

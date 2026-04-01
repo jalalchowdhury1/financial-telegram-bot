@@ -16,6 +16,18 @@ from typing import Dict, Any
 
 import pytz
 
+def _clean_nans(obj: Any) -> Any:
+    import math
+    if isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+        return obj
+    elif isinstance(obj, dict):
+        return {k: _clean_nans(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [_clean_nans(v) for v in obj]
+    return obj
+
 from bot.fetchers import (
     fetch_google_sheet_indicators,
     fetch_spy_with_fallback,
@@ -42,11 +54,12 @@ def _cors_headers() -> Dict[str, str]:
 
 
 def _ok(body: Any) -> Dict[str, Any]:
-    return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps(body)}
+    cleaned_body = _clean_nans(body)
+    return {'isBase64Encoded': False, 'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps(cleaned_body)}
 
 
 def _err(status: int, message: str) -> Dict[str, Any]:
-    return {'statusCode': status, 'headers': _cors_headers(), 'body': json.dumps({'error': message})}
+    return {'isBase64Encoded': False, 'statusCode': status, 'headers': _cors_headers(), 'body': json.dumps({'error': message})}
 
 
 def handle_http_api(event: Dict[str, Any], env_vars: Dict[str, str]) -> Dict[str, Any]:

@@ -1,0 +1,11 @@
+# AWS Lambda deployment requirements
+# Excludes Flask and APScheduler (Render-only dependencies)
+# Install with: pip install -r aws/requirements-lambda.txt -t ./package/
+
+pandas==2.2.3
+requests==2.32.3
+python-telegram-bot==21.0
+python-dotenv==1.0.0
+pytz==2024.1
+pandas-datareader==0.10.0
+yfinance==0.2.54
