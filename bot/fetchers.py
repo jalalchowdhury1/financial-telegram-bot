@@ -7,6 +7,7 @@ import csv
 import requests
 import pandas as pd
 import pandas_datareader.data as web
+import numpy as np
 from io import StringIO
 from typing import Dict, Any, List, Optional
 from bot.config import URLS, RSI_PERIOD
@@ -68,23 +69,42 @@ def fetch_google_sheet_indicators() -> str:
         return ""
 
 def calculate_rsi(prices: pd.Series, period: int = RSI_PERIOD) -> float:
-    """Calculate Relative Strength Index (RSI) using Wilder's Smoothing"""
-    delta = prices.diff()
-    
-    # Isolate gains and losses
-    gain = delta.where(delta > 0, 0)
-    loss = -delta.where(delta < 0, 0)
-    
-    # Calculate Wilder's smoothed moving average using Exponential Weighted Math (EWM)
-    # alpha=1/period is the exact mathematical equivalent to Wilder's smoothing
-    avg_gain = gain.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
-    avg_loss = loss.ewm(alpha=1/period, min_periods=period, adjust=False).mean()
+    """
+    Calculate Relative Strength Index (RSI) using Wilder's Smoothing.
 
-    # Calculate RS and RSI
-    rs = avg_gain / avg_loss
+    Implements the traditional two-phase approach:
+    1. Seed: SMA of first `period` bars
+    2. Wilder's smoothing: exponential smoothing for subsequent bars
+
+    Formula: RSI = 100 - (100 / (1 + RS)) where RS = avg_up / avg_down
+
+    Must have at least `period + 1` prices to compute one diff and seed.
+    """
+    prices_array = prices.values.astype(float)
+
+    # Step 1: Compute price differences
+    diffs = np.diff(prices_array)
+    ups = np.where(diffs > 0, diffs, 0.0)
+    downs = np.where(diffs < 0, np.abs(diffs), 0.0)
+
+    # Step 2: Seed with SMA of first `period` periods
+    avg_up = np.mean(ups[:period])
+    avg_down = np.mean(downs[:period])
+
+    # Step 3: Apply Wilder's smoothing for all subsequent bars
+    for i in range(period, len(diffs)):
+        avg_up = (avg_up * (period - 1) + ups[i]) / period
+        avg_down = (avg_down * (period - 1) + downs[i]) / period
+
+    # Step 4: Calculate RS and RSI
+    # Edge case: if avg_down == 0, RSI = 100
+    if avg_down == 0:
+        return 100.0
+
+    rs = avg_up / avg_down
     rsi = 100 - (100 / (1 + rs))
 
-    return float(rsi.iloc[-1])
+    return float(rsi)
 
 def fetch_spy_stats() -> Dict[str, float]:
     """
