@@ -126,6 +126,10 @@ def fetch_spy_stats() -> Dict[str, float]:
     """
     print("Fetching SPY data from Stooq (pandas-datareader)...")
 
+    if pd is None or web is None:
+        logging.warning("pandas/pandas-datareader not available, skipping SPY fetcher")
+        raise ImportError("pandas dependencies not available")
+
     try:
         df = web.DataReader('SPY.US', 'stooq')
         
