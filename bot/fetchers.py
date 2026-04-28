@@ -949,14 +949,30 @@ def fetch_polymarket_trending(limit: int = 10) -> List[Dict[str, Any]]:
     """
     # Sports keywords to filter out (checked against question, slug, and event titles)
     SPORTS_KEYWORDS = {
-        'nfl', 'nba', 'nhl', 'mlb', 'fifa', 'world cup', 'super bowl',
-        'champions league', 'premier league', 'laliga', 'f1', 'formula 1',
-        'tennis', 'golf', 'cricket', 'rugby', 'soccer', 'football', 'basketball',
-        'baseball', 'hockey', 'mma', 'ufc', 'boxing', 'esports', 'europa league',
-        'bundesliga', 'serie a', 'ligue 1', 'pfa player', 'wimbledon', 'masters',
-        'stanley cup', 'world series', 'super league', 'arsenal', 'manchester',
-        'chelsea', 'tottenham', 'liverpool', 'bayern', 'real madrid', 'barcelona',
-        'juventus', 'ac milan', 'psg', 'pfa', 'nhl', 'nba draft', 'nfl draft'
+        # US Sports
+        'nfl', 'nba', 'nhl', 'mlb', 'nba draft', 'nfl draft', 'mlb draft', 'ncaa', 'march madness',
+        'super bowl', 'world series', 'stanley cup', 'nba finals', 'nfl playoffs',
+        # European Football/Soccer
+        'fifa', 'world cup', 'champions league', 'premier league', 'laliga', 'bundesliga',
+        'serie a', 'ligue 1', 'europa league', 'conference league', 'super league',
+        'arsenal', 'manchester', 'chelsea', 'tottenham', 'liverpool', 'real madrid',
+        'barcelona', 'juventus', 'ac milan', 'psg', 'bayern', 'borussia', 'dortmund',
+        'atletico', 'napoli', 'ajax', 'celtic', 'rangers', 'galatasaray', 'roma',
+        'lazio', 'fiorentina', 'inter', 'marseille', 'monaco', 'rennes', 'lyon',
+        # South American Football/Soccer
+        'palmeiras', 'flamengo', 'santos', 'vasco', 'corinthians', 'sao paulo', 'gremio',
+        'internacional', 'cruzeiro', 'atletico mineiro', 'river plate', 'boca juniors',
+        'independiente', 'racing', 'velez', 'deportivo cali', 'america', 'chivas',
+        # Other Sports
+        'tennis', 'wimbledon', 'us open', 'french open', 'australian open', 'atp', 'wta',
+        'golf', 'masters', 'us pga', 'the open', 'ryder cup', 'pga tour',
+        'cricket', 'ipl', 'bpl', 'rugby', 'super rugby', 'six nations',
+        'rugby world cup', 'nrl', 'afl', 'australian football',
+        'formula 1', 'f1', 'formula e', 'motogp', 'moto2', 'moto3',
+        'mma', 'ufc', 'boxing', 'wwe', 'wrestling', 'esports', 'dota', 'valorant', 'lol',
+        'basketball', 'soccer', 'football', 'baseball', 'hockey', 'ice hockey',
+        'pfa player', 'golden ball', 'player of the year', 'manager of the year',
+        'ballon dor', 'coach of the year', 'rookie of the year'
     }
 
     try:
