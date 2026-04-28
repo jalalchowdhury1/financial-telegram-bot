@@ -920,61 +920,70 @@ def fetch_market_extra(fred_api_key: str,
 def fetch_polymarket_trending(limit: int = 10) -> List[Dict[str, Any]]:
     """
     Fetch top trending Polymarket predictions (non-resolved, non-sports).
-
-    Requires poly_client module to be installed and available (gracefully fails if not).
+    Uses Polymarket Gamma REST API directly — no API key required.
 
     Args:
         limit (int): Maximum number of bets to return (default 10)
 
     Returns:
         list: [{name, odds, volume}, ...] sorted by volume descending
-              Returns [] on API failure or if poly_client unavailable (graceful degradation)
+              Returns [] on API failure (graceful degradation)
 
     Raises:
         None (all errors logged and gracefully handled)
     """
     try:
-        if poly_client is None:
-            raise ImportError("poly_client not available")
+        url = "https://gamma-api.polymarket.com/markets"
+        params = {
+            "active": "true",
+            "closed": "false",
+            "order": "volume",
+            "ascending": "false",
+            "limit": 50  # Fetch more to allow filtering
+        }
+        response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()
+        markets = response.json()
 
-        markets = poly_client.get_markets()
-
-        # Filter: non-resolved, non-sports, active only
-        filtered = [
-            m for m in markets
-            if not m.get('resolved', False)
-            and m.get('category', '').lower() != 'sports'
-            and m.get('active', True)
-        ]
-
-        # Calculate odds from orderbook midpoint
         bets = []
-        for market in filtered:
+        for market in markets:
             try:
-                orderbook = market.get('orderbook', {})
-                bids = orderbook.get('bids', [])
-                asks = orderbook.get('asks', [])
+                # Skip sports category
+                tags = market.get("tags") or []
+                if any(t.get("label", "").lower() == "sports" for t in tags):
+                    continue
 
-                if bids and asks:
-                    bid_price = bids[0].get('price', 0.5)
-                    ask_price = asks[0].get('price', 0.5)
-                    odds = (bid_price + ask_price) / 2
-                else:
+                # Get question/name
+                name = market.get("question") or market.get("groupItemTitle") or "Unknown"
+
+                # Get odds from outcomePrices (first outcome = "Yes" probability)
+                outcome_prices_raw = market.get("outcomePrices", "[]")
+                try:
+                    import ast
+                    prices = ast.literal_eval(outcome_prices_raw)
+                    if prices:
+                        odds = float(f"{float(prices[0]):.2f}")
+                    else:
+                        odds = 0.5
+                except Exception:
                     odds = 0.5  # Default: 50% probability when no orderbook data
 
-                bet = {
-                    'name': market.get('title', 'Unknown'),
-                    'odds': round(odds, 2),
-                    'volume': market.get('volume', 0)
-                }
-                bets.append(bet)
+                volume = float(market.get("volume") or 0)
+
+                bets.append({
+                    "name": name,
+                    "odds": odds,
+                    "volume": volume
+                })
+
+                if len(bets) >= limit:
+                    break
+
             except Exception as e:
                 logging.warning(f"Error parsing market {market.get('id')}: {e}")
                 continue
 
-        # Sort by volume descending, take top N
-        sorted_bets = sorted(bets, key=lambda x: x['volume'], reverse=True)
-        return sorted_bets[:limit]
+        return bets
 
     except Exception as e:
         logging.error(f"Polymarket API error: {e}", exc_info=True)
