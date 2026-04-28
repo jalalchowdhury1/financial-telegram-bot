@@ -44,21 +44,17 @@ export default function PolymarketTable() {
 
   if (loading) {
     return (
-      <div className="full-width">
-        <div className="card">
-          <Skeleton count={8} />
-        </div>
+      <div className="card">
+        <Skeleton count={8} />
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="full-width">
-        <div className="card">
-          <div className="error-message" style={{ color: 'var(--red)' }}>
-            ⚠️ Data unavailable — {error}. Try refreshing the page.
-          </div>
+      <div className="card">
+        <div className="error-message" style={{ color: 'var(--red)' }}>
+          ⚠️ Data unavailable — {error}. Try refreshing the page.
         </div>
       </div>
     );
@@ -66,10 +62,8 @@ export default function PolymarketTable() {
 
   if (bets.length === 0) {
     return (
-      <div className="full-width">
-        <div className="card">
-          <div className="error-message">No betting markets available.</div>
-        </div>
+      <div className="card">
+        <div className="error-message">No betting markets available.</div>
       </div>
     );
   }
@@ -84,7 +78,7 @@ export default function PolymarketTable() {
   };
 
   return (
-    <section aria-label="Polymarket Trending Bets" className="full-width">
+    <section aria-label="Polymarket Trending Bets">
       <div className="card" style={{ animationDelay: '0.8s' }}>
         <div className="card-header">
           <h2>📊 Polymarket Trending Bets</h2>
