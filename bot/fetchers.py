@@ -947,12 +947,16 @@ def fetch_polymarket_trending(limit: int = 10) -> List[Dict[str, Any]]:
     Raises:
         None (all errors logged and gracefully handled)
     """
-    # Sports keywords to filter out
+    # Sports keywords to filter out (checked against question, slug, and event titles)
     SPORTS_KEYWORDS = {
         'nfl', 'nba', 'nhl', 'mlb', 'fifa', 'world cup', 'super bowl',
-        'champions league', 'premier league', 'f1', 'formula 1',
+        'champions league', 'premier league', 'laliga', 'f1', 'formula 1',
         'tennis', 'golf', 'cricket', 'rugby', 'soccer', 'football', 'basketball',
-        'baseball', 'hockey', 'mma', 'ufc', 'boxing', 'esports'
+        'baseball', 'hockey', 'mma', 'ufc', 'boxing', 'esports', 'europa league',
+        'bundesliga', 'serie a', 'ligue 1', 'pfa player', 'wimbledon', 'masters',
+        'stanley cup', 'world series', 'super league', 'arsenal', 'manchester',
+        'chelsea', 'tottenham', 'liverpool', 'bayern', 'real madrid', 'barcelona',
+        'juventus', 'ac milan', 'psg', 'pfa', 'nhl', 'nba draft', 'nfl draft'
     }
 
     try:
@@ -962,7 +966,7 @@ def fetch_polymarket_trending(limit: int = 10) -> List[Dict[str, Any]]:
             "closed": "false",
             "order": "volume",
             "ascending": "false",
-            "limit": 50  # Fetch more to allow filtering for sports
+            "limit": 100  # Fetch more to allow aggressive sports filtering
         }
         response = requests.get(url, params=params, timeout=10)
         response.raise_for_status()
@@ -975,13 +979,23 @@ def fetch_polymarket_trending(limit: int = 10) -> List[Dict[str, Any]]:
                 name = market.get("question") or market.get("groupItemTitle") or "Unknown"
                 name_lower = name.lower()
 
-                # Skip sports category (by tags)
-                tags = market.get("tags") or []
-                if any(t.get("label", "").lower() == "sports" for t in tags):
-                    continue
+                # Build searchable text from all relevant fields
+                search_text = name_lower
 
-                # Skip sports category (by market name keywords)
-                if any(keyword in name_lower for keyword in SPORTS_KEYWORDS):
+                # Add slug to searchable text
+                slug = market.get("slug", "").lower()
+                search_text += " " + slug
+
+                # Add event titles to searchable text (events is a list of dicts)
+                events = market.get("events") or []
+                if events and isinstance(events, list):
+                    for event in events:
+                        if isinstance(event, dict):
+                            event_title = event.get("title", "").lower()
+                            search_text += " " + event_title
+
+                # Skip sports category (keyword matching across all fields)
+                if any(keyword in search_text for keyword in SPORTS_KEYWORDS):
                     continue
 
                 # Get odds from outcomePrices (first outcome = "Yes" probability)
