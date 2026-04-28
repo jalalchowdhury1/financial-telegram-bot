@@ -4,6 +4,7 @@ Handles FRED API, Stooq (SPY), and Google Sheets integration.
 """
 
 import csv
+import logging
 import requests
 import pandas as pd
 import pandas_datareader.data as web
@@ -11,6 +12,12 @@ import numpy as np
 from io import StringIO
 from typing import Dict, Any, List, Optional
 from bot.config import URLS, RSI_PERIOD
+
+# Try to import poly_client for Polymarket data fetching
+try:
+    from poly_client import poly_client
+except ImportError:
+    poly_client = None
 
 def fetch_google_sheet_indicators() -> str:
     """
@@ -908,3 +915,67 @@ def fetch_market_extra(fred_api_key: str,
             'messages': msgs,
         },
     }
+
+
+def fetch_polymarket_trending(limit: int = 10) -> List[Dict[str, Any]]:
+    """
+    Fetch top trending Polymarket predictions (non-resolved, non-sports).
+
+    Requires poly_client module to be installed and available (gracefully fails if not).
+
+    Args:
+        limit (int): Maximum number of bets to return (default 10)
+
+    Returns:
+        list: [{name, odds, volume}, ...] sorted by volume descending
+              Returns [] on API failure or if poly_client unavailable (graceful degradation)
+
+    Raises:
+        None (all errors logged and gracefully handled)
+    """
+    try:
+        if poly_client is None:
+            raise ImportError("poly_client not available")
+
+        markets = poly_client.get_markets()
+
+        # Filter: non-resolved, non-sports, active only
+        filtered = [
+            m for m in markets
+            if not m.get('resolved', False)
+            and m.get('category', '').lower() != 'sports'
+            and m.get('active', True)
+        ]
+
+        # Calculate odds from orderbook midpoint
+        bets = []
+        for market in filtered:
+            try:
+                orderbook = market.get('orderbook', {})
+                bids = orderbook.get('bids', [])
+                asks = orderbook.get('asks', [])
+
+                if bids and asks:
+                    bid_price = bids[0].get('price', 0.5)
+                    ask_price = asks[0].get('price', 0.5)
+                    odds = (bid_price + ask_price) / 2
+                else:
+                    odds = 0.5  # Default: 50% probability when no orderbook data
+
+                bet = {
+                    'name': market.get('title', 'Unknown'),
+                    'odds': round(odds, 2),
+                    'volume': market.get('volume', 0)
+                }
+                bets.append(bet)
+            except Exception as e:
+                logging.warning(f"Error parsing market {market.get('id')}: {e}")
+                continue
+
+        # Sort by volume descending, take top N
+        sorted_bets = sorted(bets, key=lambda x: x['volume'], reverse=True)
+        return sorted_bets[:limit]
+
+    except Exception as e:
+        logging.error(f"Polymarket API error: {e}", exc_info=True)
+        return []
