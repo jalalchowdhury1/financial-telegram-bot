@@ -33,18 +33,8 @@ export default function MarketModal({ bet, isOpen, onClose }) {
     return `$${(volume || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
   };
 
-  // Generate Polymarket URL - use slug if available, fallback to generating from name
-  const generatePolymarketUrl = () => {
-    if (bet.slug) {
-      return `https://polymarket.com/market/${bet.slug}`;
-    }
-    if (bet.name) {
-      // Generate slug from name: lowercase, replace spaces with dashes
-      const slug = bet.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-      return `https://polymarket.com/market/${slug}`;
-    }
-    return 'https://polymarket.com';
-  };
+  // Link to Polymarket homepage (specific market URLs may not work reliably)
+  const polymarketUrl = 'https://polymarket.com';
 
   // Use 'odds' from API (not 'probability')
   const odds = bet.odds || 0;
@@ -257,7 +247,7 @@ export default function MarketModal({ bet, isOpen, onClose }) {
 
           {/* Link button */}
           <a
-            href={generatePolymarketUrl()}
+            href={polymarketUrl}
             target="_blank"
             rel="noopener noreferrer"
             style={{
