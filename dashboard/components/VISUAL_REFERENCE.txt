@@ -1,0 +1,179 @@
+================================================================================
+                    MARKETMODAL VISUAL REFERENCE
+================================================================================
+
+MODAL APPEARANCE (Desktop)
+================================================================================
+
+                              ┌─────────────────────────────────────┐
+                              │ Market Details                    × │
+                              ├─────────────────────────────────────┤
+                              │                                     │
+                              │ Will Espanyol qualify for the      │
+                              │ League Phase of the 2026-27 UEFA   │
+                              │ Europa League?                      │
+                              │                                     │
+                              │ Probability:                        │
+                              │ [███████░░░░░░░░░░░░░░░░░] 47%    │
+                              │                                     │
+                              │ Trading Volume:                     │
+                              │ $99,990                             │
+                              │                                     │
+                              │ [View on Polymarket →]              │
+                              │                                     │
+                              └─────────────────────────────────────┘
+                      (centered on viewport, backdrop darkens)
+
+
+PROBABILITY BAR COLORS
+================================================================================
+
+Probability Range    Color       Hex/CSS Variable    Visual
+────────────────────────────────────────────────────────────────────────────
+< 20%               Red         #ef4444 (--red)     ████░░░░░░░░░░ 15%
+20%-40%             Orange      #f97316             ████████░░░░░░░ 35%
+40%-60%             Yellow      #eab308 (--yellow)  ████████████░░░ 55%
+60%-80%             Green       #22c55e             ████████████████ 75%
+> 80%               Bright Green var(--green)       ██████████████████ 95%
+
+
+VOLUME FORMATTING EXAMPLES
+================================================================================
+
+Input Value         Output Display      Format Rule
+────────────────────────────────────────────────────────────────────────────
+0                   $0                  toLocaleString
+99                  $99
+1234                $1,234              (comma every 3 digits)
+99990               $99,990
+1234567             $1,234,567
+9999999             $9,999,999
+
+
+RESPONSIVE BEHAVIOR
+================================================================================
+
+Mobile (< 768px)              Tablet (768-1200px)         Desktop (> 1200px)
+────────────────────────────────────────────────────────────────────────────
+Width: 90vw                   Width: 85vw                 Width: 520px (max)
+Padding: 20px                 Padding: 24px               Padding: 28px
+Centered: transform           Centered: transform         Centered: transform
+Max-height: 90vh              Max-height: 80vh            Max-height: 85vh
+Overflow: auto                Overflow: auto              Overflow: auto
+
+
+INTERACTION STATES
+================================================================================
+
+Element              Normal State              Hover State
+────────────────────────────────────────────────────────────────────────────
+Close Button (×)     rgba(255,255,255,0.05)   rgba(255,255,255,0.1)
+                     text-secondary            text-primary
+                     
+Polymarket Link      rgba(99,102,241,0.15)    rgba(99,102,241,0.25)
+                     border: medium            border: brighter
+                     no glow                   glow: 12px
+
+Card Content         transparent               transparent
+                     cursor: default           cursor: default
+                     
+Backdrop Overlay     rgba(30,41,59,0.8)       rgba(30,41,59,0.8)
+                     blur: 4px                 blur: 4px
+                     (no change on hover)      (no change on hover)
+
+
+COLOR SCHEME
+================================================================================
+
+Component Part          Color                           CSS Variable
+────────────────────────────────────────────────────────────────────────────
+Card Background         rgba(17, 24, 39, 0.9)          --bg-card
+Card Border             rgba(255, 255, 255, 0.1)       --border-card
+Header Text             #f1f5f9                         --text-primary
+Label Text              #94a3b8                         --text-secondary
+Link Text               #818cf8                         --text-accent
+Backdrop                rgba(30, 41, 59, 0.8)          custom
+
+
+TYPOGRAPHY
+================================================================================
+
+Element              Font Family                Size    Weight
+────────────────────────────────────────────────────────────────────────────
+Header               Inter                      1.1rem  700
+Question             Inter                      1rem    500
+Labels               Inter                      0.85rem 600
+Percentage           JetBrains Mono             0.9rem  700
+Volume               JetBrains Mono             1.1rem  700
+Link Text            Inter                      0.9rem  600
+
+
+SPACING & DIMENSIONS
+================================================================================
+
+Element              Padding/Margin             Height/Width
+────────────────────────────────────────────────────────────────────────────
+Modal Card           28px (desktop)             520px max width
+                     20px (mobile)
+Header               margin-bottom: 24px        full width
+Question Section     margin-bottom: 28px        full width
+Probability Section  margin-bottom: 28px        full width
+Volume Section       margin-bottom: 28px        full width
+Probability Bar      height: 6px                100% width
+Close Button         width: 32px                height: 32px
+Link Button          padding: 12px 18px         full width
+
+
+ANIMATION TIMINGS
+================================================================================
+
+Element              Animation           Duration    Easing      Delay
+────────────────────────────────────────────────────────────────────────────
+Backdrop            fadeIn              0.2s        ease        0ms
+Modal Card          fadeInUp            0.3s        ease        0ms
+Probability Bar     width transition    0.3s        ease        N/A
+Close Button Hover  background color    0.2s        ease        0ms
+Link Hover          all properties      0.2s        ease        0ms
+
+
+ACCESSIBILITY FEATURES
+================================================================================
+
+Feature                          Implementation
+────────────────────────────────────────────────────────────────────────────
+Close Button aria-label         "Close modal"
+Backdrop aria-label             "Close modal"
+Link Security                   target="_blank" rel="noopener noreferrer"
+Semantic HTML                   Proper heading, button, and link elements
+Color Contrast                  Text: AAA compliant (7:1+)
+Keyboard Accessible             Click-based, no complex keyboard shortcuts
+Screen Reader Support           Labels and structure optimized
+
+
+EXAMPLE PROP VALUES
+================================================================================
+
+{
+  question: "Will Espanyol qualify for the League Phase of the 2026-27 UEFA Europa League?",
+  probability: 0.47,
+  volume: 99990,
+  slug: "will-espanyol-qualify-europa-league"
+}
+
+
+DISMISSAL TRIGGERS
+================================================================================
+
+Action                          Callback Triggered      Notes
+────────────────────────────────────────────────────────────────────────────
+Click × button                  onClose()              Always triggered
+Click backdrop                  onClose()              Always triggered
+Click modal content             No action              Prevents accidental close
+Escape key                      Not implemented*       Future enhancement
+Outside click                   See: backdrop click
+Parent unmount                  Modal disappears       isOpen={false}
+
+
+*Keyboard support (Escape) can be added in future enhancement
+
+================================================================================

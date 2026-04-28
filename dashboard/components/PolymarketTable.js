@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Skeleton from './Skeleton';
+import MarketModal from './MarketModal';
 
 /**
  * PolymarketTable component - Displays trending Polymarket bets in a premium dark theme
@@ -17,6 +18,8 @@ export default function PolymarketTable() {
   const [bets, setBets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [selectedBet, setSelectedBet] = useState(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   useEffect(() => {
     const fetchPolymarketData = async () => {
@@ -77,6 +80,17 @@ export default function PolymarketTable() {
     return 'var(--green)';
   };
 
+  // Handle row click - open modal with selected bet
+  const handleRowClick = (bet) => {
+    setSelectedBet(bet);
+    setIsModalOpen(true);
+  };
+
+  // Handle modal close
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+  };
+
   return (
     <section aria-label="Polymarket Trending Bets">
       <div className="card" style={{ animationDelay: '0.8s' }}>
@@ -90,6 +104,7 @@ export default function PolymarketTable() {
           {bets.slice(0, 8).map((bet, idx) => (
             <div
               key={bet.name}
+              onClick={() => handleRowClick(bet)}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -104,7 +119,7 @@ export default function PolymarketTable() {
                 fontSize: '0.8rem'
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.02)';
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.background = 'transparent';
@@ -188,6 +203,13 @@ export default function PolymarketTable() {
           Data refreshes every 5 minutes · Powered by Polymarket API
         </div>
       </div>
+
+      {/* Market Modal */}
+      <MarketModal
+        bet={selectedBet}
+        isOpen={isModalOpen}
+        onClose={handleCloseModal}
+      />
     </section>
   );
 }
