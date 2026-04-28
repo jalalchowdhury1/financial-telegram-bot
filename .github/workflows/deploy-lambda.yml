@@ -46,9 +46,18 @@ jobs:
 
       - name: Deploy to AWS Lambda
         run: |
+          # Upload to S3 (deployment packages over ~50MB must use S3)
+          BUCKET="financial-telegram-bot-deployments"
+          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+          S3_KEY="lambda-deployments/deployment_${TIMESTAMP}.zip"
+
+          aws s3 cp deployment_full.zip "s3://${BUCKET}/${S3_KEY}"
+
+          # Update Lambda function to use S3
           aws lambda update-function-code \
             --function-name financial-telegram-report \
-            --zip-file fileb://deployment_full.zip \
+            --s3-bucket "${BUCKET}" \
+            --s3-key "${S3_KEY}" \
             --region us-east-1
 
           # Wait for update to complete
@@ -56,7 +65,7 @@ jobs:
             --function-name financial-telegram-report \
             --region us-east-1
 
-          echo "✓ Deployed to Lambda"
+          echo "✓ Deployed to Lambda from S3"
 
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
