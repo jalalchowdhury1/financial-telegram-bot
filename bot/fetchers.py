@@ -991,9 +991,9 @@ def fetch_polymarket_trending(limit: int = 10) -> List[Dict[str, Any]]:
         params = {
             "active": "true",
             "closed": "false",
-            "order": "volume",  # Sort by highest trading volume (trending)
-            "ascending": "false",  # Highest volume first
-            "limit": 100  # Get top 100, filter down to highest-volume non-sports
+            "order": "volume24hr",  # Sort by 24-hour volume (recent activity = trending)
+            "ascending": "false",  # Highest 24h volume first
+            "limit": 100  # Get top 100, filter down to trending non-sports
         }
         response = requests.get(url, params=params, timeout=10)
         response.raise_for_status()
