@@ -91,154 +91,103 @@ export default function PolymarketTable() {
           <span className="badge badge-blue">Real-time · Top 10 Markets</span>
         </div>
 
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{
-            width: '100%',
-            borderCollapse: 'collapse',
-            fontSize: '0.9rem',
-          }}>
-            <thead>
-              <tr style={{
-                borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-                marginBottom: '8px'
-              }}>
-                <th scope="col" style={{
-                  textAlign: 'left',
-                  padding: '12px 0',
-                  fontWeight: 700,
-                  fontSize: '0.72rem',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.06em',
-                  color: 'var(--text-muted)',
-                  fontFamily: 'Inter'
+        {/* Mobile-friendly list view */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+          {bets.map((bet, idx) => (
+            <div
+              key={bet.name}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '8px 0',
+                borderBottom: '1px solid rgba(255, 255, 255, 0.03)',
+                transition: 'background 0.2s ease',
+                animationDelay: `${0.8 + idx * 0.05}s`,
+                animation: 'fadeInUp 0.6s ease forwards',
+                opacity: 0,
+                cursor: 'pointer'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.02)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'transparent';
+              }}
+            >
+              {/* Left side: Bet name and odds bar */}
+              <div style={{ flex: 1, minWidth: 0, marginRight: '12px' }}>
+                {/* Bet Name */}
+                <div style={{
+                  color: 'var(--text-secondary)',
+                  fontWeight: 500,
+                  fontSize: '0.85rem',
+                  marginBottom: '4px',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  display: 'block'
                 }}>
-                  Market
-                </th>
-                <th scope="col" style={{
-                  textAlign: 'center',
-                  padding: '12px 0',
-                  fontWeight: 700,
-                  fontSize: '0.72rem',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.06em',
-                  color: 'var(--text-muted)',
-                  fontFamily: 'Inter'
+                  {bet.name}
+                </div>
+
+                {/* Odds Visualization */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
                 }}>
-                  Odds
-                </th>
-                <th scope="col" style={{
-                  textAlign: 'right',
-                  padding: '12px 0',
-                  fontWeight: 700,
-                  fontSize: '0.72rem',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.06em',
-                  color: 'var(--text-muted)',
-                  fontFamily: 'Inter'
-                }}>
-                  Volume
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {bets.map((bet, idx) => (
-                <tr
-                  key={bet.name}
-                  style={{
-                    borderBottom: '1px solid rgba(255, 255, 255, 0.03)',
-                    transition: 'background 0.2s ease',
-                    animationDelay: `${0.8 + idx * 0.05}s`,
-                    animation: 'fadeInUp 0.6s ease forwards',
-                    opacity: 0
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.02)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'transparent';
-                  }}
-                >
-                  {/* Bet Name Column */}
-                  <td style={{
-                    padding: '14px 0',
-                    color: 'var(--text-secondary)',
-                    fontWeight: 500,
-                    fontSize: '0.9rem',
-                    maxWidth: '400px',
+                  {/* Probability bar */}
+                  <div style={{
+                    flex: 1,
+                    height: '3px',
+                    background: 'rgba(255, 255, 255, 0.08)',
+                    borderRadius: '2px',
                     overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap'
+                    position: 'relative',
+                    minWidth: '30px'
                   }}>
-                    {bet.name}
-                  </td>
-
-                  {/* Odds Column with Visualization */}
-                  <td style={{
-                    padding: '14px 0',
-                    textAlign: 'center',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '8px',
-                    minHeight: '50px'
-                  }}>
-                    {/* Odds Bar */}
                     <div style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px'
-                    }}>
-                      {/* Probability bar background */}
-                      <div style={{
-                        width: '40px',
-                        height: '4px',
-                        background: 'rgba(255, 255, 255, 0.08)',
-                        borderRadius: '2px',
-                        overflow: 'hidden',
-                        position: 'relative'
-                      }}>
-                        {/* Filled portion */}
-                        <div style={{
-                          width: `${bet.odds * 100}%`,
-                          height: '100%',
-                          background: getOddsColor(bet.odds),
-                          borderRadius: '2px',
-                          transition: 'width 0.3s ease',
-                          boxShadow: `0 0 8px ${getOddsColor(bet.odds)}40`
-                        }} />
-                      </div>
-                      {/* Odds percentage */}
-                      <span style={{
-                        fontFamily: "'JetBrains Mono', monospace",
-                        fontWeight: 700,
-                        fontSize: '0.9rem',
-                        color: getOddsColor(bet.odds),
-                        minWidth: '35px',
-                        textAlign: 'right'
-                      }}>
-                        {(bet.odds * 100).toFixed(0)}%
-                      </span>
-                    </div>
-                  </td>
-
-                  {/* Volume Column */}
-                  <td style={{
-                    padding: '14px 0',
-                    textAlign: 'right',
+                      width: `${bet.odds * 100}%`,
+                      height: '100%',
+                      background: getOddsColor(bet.odds),
+                      borderRadius: '2px',
+                      transition: 'width 0.3s ease',
+                      boxShadow: `0 0 6px ${getOddsColor(bet.odds)}40`
+                    }} />
+                  </div>
+                  {/* Odds percentage */}
+                  <span style={{
                     fontFamily: "'JetBrains Mono', monospace",
-                    fontWeight: 600,
-                    fontSize: '0.85rem',
-                    color: 'var(--text-primary)'
+                    fontWeight: 700,
+                    fontSize: '0.75rem',
+                    color: getOddsColor(bet.odds),
+                    whiteSpace: 'nowrap',
+                    minWidth: '28px',
+                    textAlign: 'right'
                   }}>
-                    {bet.volume.toLocaleString(undefined, {
-                      minimumFractionDigits: 0,
-                      maximumFractionDigits: 2
-                    })}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                    {(bet.odds * 100).toFixed(0)}%
+                  </span>
+                </div>
+              </div>
+
+              {/* Right side: Volume */}
+              <div style={{
+                fontFamily: "'JetBrains Mono', monospace",
+                fontWeight: 600,
+                fontSize: '0.8rem',
+                color: 'var(--text-primary)',
+                textAlign: 'right',
+                whiteSpace: 'nowrap',
+                minWidth: '70px'
+              }}>
+                {bet.volume.toLocaleString(undefined, {
+                  minimumFractionDigits: 0,
+                  maximumFractionDigits: 0
+                })}
+              </div>
+            </div>
+          ))}
         </div>
 
         {/* Footer */}
