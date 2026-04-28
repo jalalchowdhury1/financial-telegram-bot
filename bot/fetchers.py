@@ -977,7 +977,13 @@ def fetch_polymarket_trending(limit: int = 10) -> List[Dict[str, Any]]:
         'mma', 'ufc', 'boxing', 'wwe', 'wrestling', 'esports', 'dota', 'valorant', 'lol',
         'basketball', 'soccer', 'football', 'baseball', 'hockey', 'ice hockey',
         'pfa player', 'golden ball', 'player of the year', 'manager of the year',
-        'ballon dor', 'coach of the year', 'rookie of the year'
+        'ballon dor', 'coach of the year', 'rookie of the year',
+        # Gaming / Esports
+        'counter-strike', 'cs:go', 'cs2', 'call of duty', 'cod', 'overwatch',
+        'starcraft', 'sc2', 'pubg', 'fortnite', 'minecraft', 'twitch', 'gaming',
+        'streamer', 'esports tournament', 'esports league', 'fps', 'moba',
+        'map 1', 'map 2', 'map 3', 'odd/even total kills', 'total rounds',
+        'eternal premium', 'bushido', 'immortals', 'fnatic', 'heroic', 'astralis'
     }
 
     try:
