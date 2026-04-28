@@ -33,6 +33,7 @@ from bot.fetchers import (
     fetch_spy_with_fallback,
     fetch_spy_daily_move,
     fetch_market_extra,
+    fetch_polymarket_trending,
 )
 from bot.utils import load_environment_variables, send_to_telegram
 from bot.config import TIMEZONE
@@ -41,7 +42,7 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 # Read-only dashboard endpoints — no auth required (public market data)
-_PUBLIC_GET_PATHS = {'/api/spy', '/api/spy-daily-move', '/api/market-extra'}
+_PUBLIC_GET_PATHS = {'/api/spy', '/api/spy-daily-move', '/api/market-extra', '/api/polymarket'}
 
 
 def _cors_headers() -> Dict[str, str]:
@@ -100,6 +101,15 @@ def handle_http_api(event: Dict[str, Any], env_vars: Dict[str, str]) -> Dict[str
                                       polygon_api_key=polygon_api_key,
                                       finnhub_api_key=finnhub_api_key)
             return _ok(data)
+
+        elif path == '/api/polymarket':
+            logger.info('Dashboard: GET /api/polymarket')
+            bets = fetch_polymarket_trending()
+            return _ok({
+                'bets': bets,
+                'timestamp': datetime.utcnow().isoformat() + 'Z',
+                'error': None if bets else 'Polymarket API unavailable'
+            })
 
         else:
             return _err(404, f'Not Found: {path}')
