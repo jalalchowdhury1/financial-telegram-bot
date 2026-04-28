@@ -1000,8 +1000,21 @@ def fetch_polymarket_trending(limit: int = 10) -> List[Dict[str, Any]]:
         markets = response.json()
 
         bets = []
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc)
+
         for market in markets:
             try:
+                # Skip expired markets (endDate has passed)
+                end_date_str = market.get("endDate")
+                if end_date_str:
+                    try:
+                        end_date = datetime.fromisoformat(end_date_str.replace("Z", "+00:00"))
+                        if end_date < now:
+                            continue  # Skip this market, it's expired
+                    except Exception:
+                        pass  # If parsing fails, continue with the market
+
                 # Get question/name
                 name = market.get("question") or market.get("groupItemTitle") or "Unknown"
                 name_lower = name.lower()
