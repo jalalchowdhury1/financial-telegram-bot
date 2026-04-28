@@ -949,6 +949,8 @@ def fetch_polymarket_trending(limit: int = 10) -> List[Dict[str, Any]]:
     """
     # Sports keywords to filter out (checked against question, slug, and event titles)
     SPORTS_KEYWORDS = {
+        # Betting notation patterns
+        'spread:', 'o/u', 'over/under', 'exact score', 'moneyline', 'parlay',
         # US Sports
         'nfl', 'nba', 'nhl', 'mlb', 'nba draft', 'nfl draft', 'mlb draft', 'ncaa', 'march madness',
         'super bowl', 'world series', 'stanley cup', 'nba finals', 'nfl playoffs',
@@ -963,6 +965,9 @@ def fetch_polymarket_trending(limit: int = 10) -> List[Dict[str, Any]]:
         'palmeiras', 'flamengo', 'santos', 'vasco', 'corinthians', 'sao paulo', 'gremio',
         'internacional', 'cruzeiro', 'atletico mineiro', 'river plate', 'boca juniors',
         'independiente', 'racing', 'velez', 'deportivo cali', 'america', 'chivas',
+        # Asian Football/Soccer
+        'fc', 'fc.', ' vs ', ' vs.', 'kagoshima', 'kyoto', 'grampus', 'nagoya', 'lanús',
+        'lecce', 'pisa', 'ready', 'villarreal', 'betis', 'getafe', 'girona',
         # Other Sports
         'tennis', 'wimbledon', 'us open', 'french open', 'australian open', 'atp', 'wta',
         'golf', 'masters', 'us pga', 'the open', 'ryder cup', 'pga tour',
@@ -980,9 +985,9 @@ def fetch_polymarket_trending(limit: int = 10) -> List[Dict[str, Any]]:
         params = {
             "active": "true",
             "closed": "false",
-            "order": "updatedAt",  # Sort by recently updated (trending) markets
-            "ascending": "false",  # Most recent first
-            "limit": 50  # Reduce limit to focus on recent activity
+            "order": "volume",  # Sort by highest trading volume (trending)
+            "ascending": "false",  # Highest volume first
+            "limit": 100  # Get top 100, filter down to highest-volume non-sports
         }
         response = requests.get(url, params=params, timeout=10)
         response.raise_for_status()
@@ -1027,6 +1032,11 @@ def fetch_polymarket_trending(limit: int = 10) -> List[Dict[str, Any]]:
                     odds = 0.5  # Default: 50% probability when no orderbook data
 
                 volume = float(market.get("volume") or 0)
+
+                # Only include markets with significant trading volume ($1M+)
+                # Matches Polymarket's "Trending" tab which shows high-volume markets
+                if volume < 1_000_000:
+                    continue
 
                 bets.append({
                     "name": name,
