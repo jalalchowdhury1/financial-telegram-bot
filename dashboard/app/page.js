@@ -11,7 +11,6 @@ import CustomIndicatorBar from '../components/CustomIndicatorBar';
 import EconomicIndicatorGrid from '../components/EconomicIndicatorGrid';
 import BullChecklist from '../components/BullChecklist';
 import ExtraMarketsGrid from '../components/ExtraMarketsGrid';
-import PolymarketTable from '../components/PolymarketTable';
 
 // ============ MAIN DASHBOARD ============
 export default function Dashboard() {
@@ -312,9 +311,6 @@ export default function Dashboard() {
 
                 {/* EXTRA MARKETS GRID */}
                 <ExtraMarketsGrid data={extraMarkets} loading={loading} />
-
-                {/* POLYMARKET TABLE */}
-                <PolymarketTable />
 
                 {/* FINANCIAL DASHBOARD HISTORY LINK */}
                 <div style={{ gridColumn: '1 / -1', textAlign: 'center', marginTop: '1rem' }}>
