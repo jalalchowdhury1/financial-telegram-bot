@@ -1039,11 +1039,6 @@ def fetch_polymarket_trending(limit: int = 10) -> List[Dict[str, Any]]:
 
                 volume = float(market.get("volume") or 0)
 
-                # Only include markets with significant trading volume ($1M+)
-                # Matches Polymarket's "Trending" tab which shows high-volume markets
-                if volume < 1_000_000:
-                    continue
-
                 bets.append({
                     "name": name,
                     "odds": odds,
