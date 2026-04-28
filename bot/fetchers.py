@@ -411,6 +411,10 @@ def fetch_spy_with_fallback(fred_api_key: Optional[str] = None,
     Layer 2: Stooq CSV (raw prices)
     Layer 3: FRED SP500 series
     """
+    if pd is None:
+        logging.warning("pandas not available, returning placeholder SPY data")
+        return {'current': 0, 'error': 'pandas dependency not available'}
+
     indicators = None
     rows: List[Dict] = []
     data_source = 'unknown'
