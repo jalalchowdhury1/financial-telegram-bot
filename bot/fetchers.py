@@ -934,19 +934,27 @@ def fetch_market_extra(fred_api_key: str,
 
 def fetch_polymarket_trending(limit: int = 10) -> List[Dict[str, Any]]:
     """
-    Fetch top trending Polymarket predictions (non-resolved, non-sports).
+    Fetch top trending Polymarket predictions (non-resolved, non-sports, highest volume).
     Uses Polymarket Gamma REST API directly — no API key required.
 
     Args:
         limit (int): Maximum number of bets to return (default 10)
 
     Returns:
-        list: [{name, odds, volume}, ...] sorted by volume descending
+        list: [{name, odds, volume}, ...] sorted by volume descending (highest volumes first)
               Returns [] on API failure (graceful degradation)
 
     Raises:
         None (all errors logged and gracefully handled)
     """
+    # Sports keywords to filter out
+    SPORTS_KEYWORDS = {
+        'nfl', 'nba', 'nhl', 'mlb', 'fifa', 'world cup', 'super bowl',
+        'champions league', 'premier league', 'f1', 'formula 1',
+        'tennis', 'golf', 'cricket', 'rugby', 'soccer', 'football', 'basketball',
+        'baseball', 'hockey', 'mma', 'ufc', 'boxing', 'esports'
+    }
+
     try:
         url = "https://gamma-api.polymarket.com/markets"
         params = {
@@ -954,7 +962,7 @@ def fetch_polymarket_trending(limit: int = 10) -> List[Dict[str, Any]]:
             "closed": "false",
             "order": "volume",
             "ascending": "false",
-            "limit": 50  # Fetch more to allow filtering
+            "limit": 50  # Fetch more to allow filtering for sports
         }
         response = requests.get(url, params=params, timeout=10)
         response.raise_for_status()
@@ -963,13 +971,18 @@ def fetch_polymarket_trending(limit: int = 10) -> List[Dict[str, Any]]:
         bets = []
         for market in markets:
             try:
-                # Skip sports category
+                # Get question/name
+                name = market.get("question") or market.get("groupItemTitle") or "Unknown"
+                name_lower = name.lower()
+
+                # Skip sports category (by tags)
                 tags = market.get("tags") or []
                 if any(t.get("label", "").lower() == "sports" for t in tags):
                     continue
 
-                # Get question/name
-                name = market.get("question") or market.get("groupItemTitle") or "Unknown"
+                # Skip sports category (by market name keywords)
+                if any(keyword in name_lower for keyword in SPORTS_KEYWORDS):
+                    continue
 
                 # Get odds from outcomePrices (first outcome = "Yes" probability)
                 outcome_prices_raw = market.get("outcomePrices", "[]")
