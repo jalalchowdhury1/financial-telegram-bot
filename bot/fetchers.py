@@ -82,7 +82,7 @@ def fetch_google_sheet_indicators() -> str:
         print(f"WARNING: Failed to fetch Google Sheet indicators: {e}")
         return ""
 
-def calculate_rsi(prices: pd.Series, period: int = RSI_PERIOD) -> float:
+def calculate_rsi(prices: Any, period: int = RSI_PERIOD) -> float:
     """
     Calculate Relative Strength Index (RSI) using Wilder's Smoothing.
 
