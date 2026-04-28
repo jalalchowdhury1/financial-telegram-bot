@@ -980,9 +980,9 @@ def fetch_polymarket_trending(limit: int = 10) -> List[Dict[str, Any]]:
         params = {
             "active": "true",
             "closed": "false",
-            "order": "volume",
-            "ascending": "false",
-            "limit": 100  # Fetch more to allow aggressive sports filtering
+            "order": "updatedAt",  # Sort by recently updated (trending) markets
+            "ascending": "false",  # Most recent first
+            "limit": 50  # Reduce limit to focus on recent activity
         }
         response = requests.get(url, params=params, timeout=10)
         response.raise_for_status()
