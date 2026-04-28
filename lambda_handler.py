@@ -11,10 +11,13 @@ import json
 import logging
 import os
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any
 
-import pytz
+try:
+    import pytz
+except ImportError:
+    pytz = None
 
 def _clean_nans(obj: Any) -> Any:
     import math
@@ -192,8 +195,11 @@ def handle_eventbridge(env_vars: Dict[str, str], run_time: str) -> Dict[str, Any
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Main entry point invoked by EventBridge schedule or Lambda Function URL."""
-    tz = pytz.timezone(TIMEZONE)
-    run_time = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S %Z')
+    if pytz:
+        tz = pytz.timezone(TIMEZONE)
+        run_time = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S %Z')
+    else:
+        run_time = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
     logger.info('=' * 60)
     logger.info(f'Lambda triggered at {run_time}')
 
