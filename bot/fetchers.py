@@ -6,12 +6,19 @@ Handles FRED API, Stooq (SPY), and Google Sheets integration.
 import csv
 import logging
 import requests
-import pandas as pd
-import pandas_datareader.data as web
-import numpy as np
 from io import StringIO
 from typing import Dict, Any, List, Optional
 from bot.config import URLS, RSI_PERIOD
+
+# Optional heavy dependencies (for fetchers that need them)
+try:
+    import pandas as pd
+    import pandas_datareader.data as web
+    import numpy as np
+except ImportError:
+    pd = None
+    web = None
+    np = None
 
 # Try to import poly_client for Polymarket data fetching
 try:
