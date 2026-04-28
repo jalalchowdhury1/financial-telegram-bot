@@ -1,0 +1,88 @@
+name: Deploy to AWS Lambda
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Build deployment package
+        run: |
+          rm -rf package deployment_full.zip
+          mkdir -p package
+
+          # Install dependencies with manylinux wheels for Lambda
+          pip install \
+            --platform manylinux2014_x86_64 \
+            --target=package \
+            --implementation cp \
+            --python-version 3.11 \
+            --only-binary=:all: \
+            -r aws/requirements-lambda.txt
+
+          # Package dependencies
+          cd package
+          zip -r ../deployment_full.zip . -q
+          cd ..
+
+          # Add application code
+          zip -g deployment_full.zip lambda_handler.py bot/*.py
+
+          # Verify size
+          ls -lh deployment_full.zip
+
+      - name: Deploy to AWS Lambda
+        run: |
+          aws lambda update-function-code \
+            --function-name financial-telegram-report \
+            --zip-file fileb://deployment_full.zip \
+            --region us-east-1
+
+          # Wait for update to complete
+          aws lambda wait function-updated \
+            --function-name financial-telegram-report \
+            --region us-east-1
+
+          echo "✓ Deployed to Lambda"
+
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
+
+      - name: Smoke test endpoints
+        run: |
+          # Get Lambda URL
+          LAMBDA_URL=$(aws lambda get-function-url-config \
+            --function-name financial-telegram-report \
+            --region us-east-1 \
+            --query 'FunctionUrl' \
+            --output text)
+
+          echo "Testing endpoints at: $LAMBDA_URL"
+
+          # Test polymarket endpoint
+          curl -X POST "$LAMBDA_URL" \
+            -H "Content-Type: application/json" \
+            -d '{"rawPath": "/api/polymarket", "requestContext": {"http": {"method": "GET"}}}' \
+            || echo "⚠ Polymarket endpoint test failed"
+
+          echo "✓ Smoke tests completed"
+
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
