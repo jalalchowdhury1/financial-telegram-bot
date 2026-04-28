@@ -91,22 +91,23 @@ export default function PolymarketTable() {
           <span className="badge badge-blue">Real-time · Top 10 Markets</span>
         </div>
 
-        {/* Mobile-friendly list view */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
-          {bets.map((bet, idx) => (
+        {/* Compact mobile-friendly list - matches ExtraMarketsGrid density */}
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          {bets.slice(0, 8).map((bet, idx) => (
             <div
               key={bet.name}
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                padding: '8px 0',
-                borderBottom: '1px solid rgba(255, 255, 255, 0.03)',
+                padding: '6px 0',
+                borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
                 transition: 'background 0.2s ease',
-                animationDelay: `${0.8 + idx * 0.05}s`,
+                animationDelay: `${0.8 + idx * 0.04}s`,
                 animation: 'fadeInUp 0.6s ease forwards',
                 opacity: 0,
-                cursor: 'pointer'
+                cursor: 'pointer',
+                fontSize: '0.8rem'
               }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.background = 'rgba(255, 255, 255, 0.02)';
@@ -115,55 +116,49 @@ export default function PolymarketTable() {
                 e.currentTarget.style.background = 'transparent';
               }}
             >
-              {/* Left side: Bet name and odds bar */}
-              <div style={{ flex: 1, minWidth: 0, marginRight: '12px' }}>
-                {/* Bet Name */}
+              {/* Left: Name + Bar */}
+              <div style={{ flex: 1, minWidth: 0, marginRight: '8px' }}>
+                {/* Name */}
                 <div style={{
                   color: 'var(--text-secondary)',
                   fontWeight: 500,
-                  fontSize: '0.85rem',
-                  marginBottom: '4px',
+                  fontSize: '0.75rem',
+                  marginBottom: '2px',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                  display: 'block'
+                  whiteSpace: 'nowrap'
                 }}>
-                  {bet.name}
+                  {bet.name.length > 45 ? bet.name.substring(0, 42) + '...' : bet.name}
                 </div>
 
-                {/* Odds Visualization */}
+                {/* Odds Bar */}
                 <div style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '6px'
+                  gap: '4px'
                 }}>
-                  {/* Probability bar */}
                   <div style={{
                     flex: 1,
-                    height: '3px',
+                    height: '2px',
                     background: 'rgba(255, 255, 255, 0.08)',
-                    borderRadius: '2px',
+                    borderRadius: '1px',
                     overflow: 'hidden',
-                    position: 'relative',
-                    minWidth: '30px'
+                    minWidth: '25px'
                   }}>
                     <div style={{
                       width: `${bet.odds * 100}%`,
                       height: '100%',
                       background: getOddsColor(bet.odds),
-                      borderRadius: '2px',
-                      transition: 'width 0.3s ease',
-                      boxShadow: `0 0 6px ${getOddsColor(bet.odds)}40`
+                      boxShadow: `0 0 4px ${getOddsColor(bet.odds)}40`
                     }} />
                   </div>
-                  {/* Odds percentage */}
                   <span style={{
                     fontFamily: "'JetBrains Mono', monospace",
                     fontWeight: 700,
-                    fontSize: '0.75rem',
+                    fontSize: '0.68rem',
                     color: getOddsColor(bet.odds),
                     whiteSpace: 'nowrap',
-                    minWidth: '28px',
+                    minWidth: '22px',
                     textAlign: 'right'
                   }}>
                     {(bet.odds * 100).toFixed(0)}%
@@ -171,20 +166,17 @@ export default function PolymarketTable() {
                 </div>
               </div>
 
-              {/* Right side: Volume */}
+              {/* Right: Volume */}
               <div style={{
                 fontFamily: "'JetBrains Mono', monospace",
                 fontWeight: 600,
-                fontSize: '0.8rem',
+                fontSize: '0.7rem',
                 color: 'var(--text-primary)',
                 textAlign: 'right',
                 whiteSpace: 'nowrap',
-                minWidth: '70px'
+                minWidth: '55px'
               }}>
-                {bet.volume.toLocaleString(undefined, {
-                  minimumFractionDigits: 0,
-                  maximumFractionDigits: 0
-                })}
+                {bet.volume > 1000 ? (bet.volume / 1000).toFixed(0) + 'k' : bet.volume.toFixed(0)}
               </div>
             </div>
           ))}
