@@ -53,7 +53,7 @@ export default function MarketModal({ bet, isOpen, onClose }) {
 
   return (
     <>
-      {/* Backdrop overlay - click to close */}
+      {/* Backdrop overlay and centering container */}
       <div
         style={{
           position: 'fixed',
@@ -64,27 +64,28 @@ export default function MarketModal({ bet, isOpen, onClose }) {
           background: 'rgba(30, 41, 59, 0.8)',
           backdropFilter: 'blur(4px)',
           zIndex: 9998,
-          animation: 'fadeIn 0.2s ease forwards'
+          animation: 'fadeIn 0.2s ease forwards',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '20px'
         }}
         onClick={onClose}
         aria-label="Close modal"
-      />
-
-      {/* Modal container */}
-      <div
-        style={{
-          position: 'fixed',
-          top: '50%',
-          left: '50%',
-          transform: 'translate(-50%, -50%)',
-          width: '90%',
-          maxWidth: '520px',
-          maxHeight: '90vh',
-          overflowY: 'auto',
-          zIndex: 9999,
-          animation: 'fadeInUp 0.3s ease forwards'
-        }}
       >
+        {/* Modal card - prevent click from propagating to backdrop */}
+        <div
+          style={{
+            width: '100%',
+            maxWidth: '520px',
+            maxHeight: '90vh',
+            overflowY: 'auto',
+            zIndex: 9999,
+            animation: 'fadeInUp 0.3s ease forwards',
+            pointerEvents: 'auto'
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
         {/* Glass card */}
         <div
           style={{
@@ -289,6 +290,7 @@ export default function MarketModal({ bet, isOpen, onClose }) {
             View on Polymarket
             <span>→</span>
           </a>
+        </div>
         </div>
       </div>
     </>
