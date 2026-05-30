@@ -207,17 +207,20 @@ export async function GET(request) {
         [FRED_SERIES.RECESSIONS, 100000],
     ];
 
-    // Fetch in small batches with a short stagger to be polite to FRED. Most
-    // calls are served instantly from the 30-min cache, so this rarely hits FRED.
+    // Fetch in small batches with a short stagger to be polite to FRED on a cold
+    // cache. Cache hits resolve instantly, so the stagger is kept light (it adds
+    // latency on every load regardless of cache state).
+    const BATCH_SIZE = 4;
+    const STAGGER_MS = 150;
     const settled = [];
-    for (let i = 0; i < REQUESTS.length; i += 2) {
-        const batch = REQUESTS.slice(i, i + 2).map(([id, limit]) =>
+    for (let i = 0; i < REQUESTS.length; i += BATCH_SIZE) {
+        const batch = REQUESTS.slice(i, i + BATCH_SIZE).map(([id, limit]) =>
             fetchSeries(id, apiKey, limit)
                 .then(value => ({ id, status: 'fulfilled', value }))
                 .catch(e => ({ id, status: 'rejected', reason: e })),
         );
         settled.push(...(await Promise.all(batch)));
-        if (i + 2 < REQUESTS.length) await new Promise(r => setTimeout(r, 400));
+        if (i + BATCH_SIZE < REQUESTS.length) await new Promise(r => setTimeout(r, STAGGER_MS));
     }
 
     const series = {};
