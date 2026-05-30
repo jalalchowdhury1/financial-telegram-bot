@@ -3,7 +3,11 @@ import { FRED_SERIES, FRED_FRESHNESS, EXTERNAL_URLS } from '../../../lib/constan
 import { fetchJson, proxyFetch } from '../../../lib/fetcher';
 import { withFreshness } from '../../../lib/freshness';
 
-export const dynamic = 'force-dynamic';
+// Keep the route dynamic (runs per request — fresh fetchedAt, no build-time
+// bake) WITHOUT forcing fetches to no-store. Unlike `dynamic = 'force-dynamic'`,
+// `revalidate = 0` "leaves fetch requests that opt into force-cache as is", so
+// the unstable_cache wrappers below can cache FRED for 30 min.
+export const revalidate = 0;
 
 const REVALIDATE_SECONDS = 1800; // 30 minutes
 const RETRY_DELAYS_MS = [400, 900, 1800]; // back-off on 429
