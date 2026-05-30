@@ -35,30 +35,37 @@ export const FRED_SERIES = {
  * (never a misleadingly old number). Deadlines are generous on monthly/quarterly
  * series because the government itself reports those weeks late.
  */
+// NOTE: FRED data points are dated the START of their period (a monthly series'
+// newest point is the 1st of the month) and are reported weeks late, so a
+// perfectly current monthly series can legitimately be ~2 months old by date,
+// and JOLTS (a ~2-month lag) ~3 months. Deadlines are therefore generous: they
+// exist only to catch a genuinely DEAD feed (e.g. USSLIND, frozen since 2020),
+// not to flag normal reporting lag.
 export const FRED_FRESHNESS = {
-    // Daily (markets) — must be within a few trading days
-    T10Y2Y: 5,
-    DFII10: 5,
-    BAMLC0A4CBBB: 5,
+    // Daily (markets) — allow long holiday weekends
+    T10Y2Y: 7,
+    DFII10: 7,
+    BAMLC0A4CBBB: 7,
     // Weekly
-    ICSA: 10,
-    // Monthly
-    UNRATE: 50,
-    UMCSENT: 50,
-    USSLIND: 50,
-    NFCI: 50,
-    M2SL: 50,
-    RSXFS: 50,
-    HOUST: 50,
-    INDPRO: 50,
-    JTSJOL: 50,
-    DGORDER: 50,
-    PSAVERT: 50,
-    USREC: 60,
-    PE10: 50,
-    // Quarterly
-    A053RC1Q027SBEA: 130,
-    GDP: 130,
+    ICSA: 14,
+    NFCI: 14,
+    // Monthly (dated 1st of month + multi-week reporting lag)
+    UNRATE: 80,
+    UMCSENT: 80,
+    USSLIND: 80,   // discontinued since 2020 -> correctly flagged N/A
+    M2SL: 80,
+    RSXFS: 80,
+    HOUST: 80,
+    INDPRO: 80,
+    DGORDER: 80,
+    PSAVERT: 80,
+    USREC: 80,
+    PE10: 80,
+    // Monthly but heavily lagged
+    JTSJOL: 110,   // JOLTS publishes ~2 months behind
+    // Quarterly (GDP/corp profits — newest quarter is months old by date)
+    A053RC1Q027SBEA: 200,
+    GDP: 200,
 };
 
 export const EXTERNAL_URLS = {

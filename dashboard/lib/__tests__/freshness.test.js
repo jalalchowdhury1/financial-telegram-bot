@@ -1,4 +1,5 @@
 import { isStale, withFreshness, formatAsOf, freshnessNote } from '../freshness';
+import { FRED_FRESHNESS } from '../constants';
 
 const NOW = new Date('2026-05-30T12:00:00Z');
 
@@ -65,6 +66,34 @@ describe('freshnessNote', () => {
     test('unavailable value is amber', () => {
         const note = freshnessNote({ value: null, asOf: null, stale: false });
         expect(note.amber).toBe(true);
+    });
+});
+
+// Regression guard: real FRED reporting lag must NOT be flagged stale, but a
+// genuinely dead feed must be. (On 2026-05-30, monthly data is dated 2026-04-01
+// or earlier; JOLTS ~2026-03-01; quarterly ~2026-01-01.)
+describe('FRED_FRESHNESS vs real reporting lag', () => {
+    test('monthly series dated Apr 1 (59 days) is NOT stale', () => {
+        for (const id of ['UMCSENT', 'M2SL', 'RSXFS', 'HOUST', 'INDPRO', 'DGORDER', 'PSAVERT', 'UNRATE']) {
+            expect(isStale('2026-04-01', FRED_FRESHNESS[id], NOW)).toBe(false);
+        }
+    });
+
+    test('JOLTS dated Mar 1 (90 days) is NOT stale', () => {
+        expect(isStale('2026-03-01', FRED_FRESHNESS.JTSJOL, NOW)).toBe(false);
+    });
+
+    test('quarterly dated Jan 1 (149 days) is NOT stale', () => {
+        expect(isStale('2026-01-01', FRED_FRESHNESS.GDP, NOW)).toBe(false);
+        expect(isStale('2026-01-01', FRED_FRESHNESS.A053RC1Q027SBEA, NOW)).toBe(false);
+    });
+
+    test('discontinued LEI (USSLIND, frozen 2020) IS stale', () => {
+        expect(isStale('2020-02-01', FRED_FRESHNESS.USSLIND, NOW)).toBe(true);
+    });
+
+    test('daily series 2 days old is NOT stale', () => {
+        expect(isStale('2026-05-28', FRED_FRESHNESS.DFII10, NOW)).toBe(false);
     });
 });
 

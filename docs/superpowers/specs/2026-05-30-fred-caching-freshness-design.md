@@ -42,12 +42,13 @@ Plus: the FRED **API key is leaked** in `_meta.messages` (echoed in the failing 
 
 | Cadence | Metrics | Deadline (days) |
 |---|---|---|
-| Daily | yieldCurve, realYields, creditSpread | 5 |
-| Weekly | claims | 10 |
-| Monthly | sentiment, lei, sahm, nfci, m2, retail, housing, indpro, jolts, durable, savings, peRatio | 50 |
-| Quarterly | profitMargin | 130 |
+| Daily | yieldCurve, realYields, creditSpread | 7 |
+| Weekly | claims, nfci | 14 |
+| Monthly | sentiment, lei, sahm, m2, retail, housing, indpro, durable, savings, peRatio | 80 |
+| Monthly (heavily lagged) | jolts | 110 |
+| Quarterly | profitMargin | 200 |
 
-(Monthly/quarterly are generous because the government reports those weeks late — e.g. current-quarter GDP doesn't exist yet. The deadline only trips on a genuinely broken/delayed feed.)
+These were widened after live testing: FRED dates each data point at the START of its period and reports weeks late, so a perfectly current monthly series is legitimately ~2 months old by date (JOLTS ~3 months; quarterly ~5 months). With the original tighter values (monthly 50 / quarterly 130) the dashboard wrongly flagged current data (M2, JOLTS, etc.) as N/A. The widened deadlines still catch a genuinely dead feed — e.g. LEI (`USSLIND`), frozen since Feb 2020, correctly shows N/A.
 
 Each metric in the API response gains:
 - `asOf`: ISO date of the latest underlying observation used.
