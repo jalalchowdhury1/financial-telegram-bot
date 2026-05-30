@@ -15,16 +15,17 @@ async function lambdaPoly(messages) {
     return null;
 }
 
-/** Polymarket public Gamma API -> top-10 active markets by 24h volume. */
+/** Polymarket public Gamma API -> top-10 active markets by TOTAL volume
+ *  (matches the Lambda's high-volume selection rather than 24h movers). */
 async function fallbackPoly(messages) {
-    const url = 'https://gamma-api.polymarket.com/markets?active=true&closed=false&order=volume24hr&ascending=false&limit=10';
+    const url = 'https://gamma-api.polymarket.com/markets?active=true&closed=false&order=volume&ascending=false&limit=10';
     const data = await fetchJson(url, { revalidate: 300 });
     const arr = Array.isArray(data) ? data : data?.markets || [];
     const bets = arr.map((m) => {
         let odds = null;
         try { const p = JSON.parse(m.outcomePrices || '[]'); odds = p.length ? parseFloat(p[0]) : null; } catch {}
         if (odds == null && m.lastTradePrice != null) odds = parseFloat(m.lastTradePrice);
-        const volume = parseFloat(m.volume24hr ?? m.volumeNum ?? m.volume ?? 0);
+        const volume = parseFloat(m.volumeNum ?? m.volume ?? 0);
         return { name: m.question || m.title || 'Unknown market', odds, volume };
     }).filter((b) => b.name && b.odds != null);
     if (!bets.length) throw new Error('Gamma API returned no usable markets');
