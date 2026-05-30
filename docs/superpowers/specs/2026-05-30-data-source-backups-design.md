@@ -84,3 +84,18 @@ Branch `feat/data-source-backups`. Order: spy → spy-daily-move → polymarket 
 - Crude (`cl`) has no Stooq layer → nulls when 3 sources miss. Dashboard fills from FRED `DCOILWTICO`.
 
 **Dropped:** DBnomics (per-series dataset path unresolved; FRED is reliable via cache+retry). Stooq (now key-gated).
+
+## Error-proofing + fault verification (shipped 2026-05-30, main f901684)
+
+**Never-throw routes.** Every data route is wrapped in `lib/store.js` `serve(key, produce, opts)`:
+live → fallbacks → durable last-known-good (`/tmp`) → safe default. Always HTTP 200 valid JSON.
+
+**Deeper chains added:** BTC = Polygon→Coinbase→CoinGecko→Kraken; FX/DXY = ER-API→Frankfurter→Fawaz(currency-api)→computed crosses. New source fns: `krakenSpot`, `fawazRates` (+ existing Polygon/Finnhub/Coinbase/CoinGecko/ER-API/Frankfurter/FRED).
+
+**Fault-injection harness (`lib/faults.js`, `?_fail=` param) — KEPT in production.** Safe by design: only degrades the caller's OWN response, never writes caches/last-good, inert without the param. Used to verify every layer.
+
+**Fault matrix result (preview):** every source knocked out in sequence; each layer's next fallback engaged; total-wipeout fell to last-known-good then safe default; never a non-200. BTC chain cascaded 73369→Coinbase→CoinGecko→Kraken→null correctly.
+
+**Bug the harness caught:** FRED route returned HTTP 500 empty-body because `liveKey`/`faults` were used-but-undefined and `buildResponse`/fetch ran outside `serve()`'s try/catch. Fixed: GET defines both and runs the ENTIRE body inside `serve()`; `isGood` requires `_meta.loadedCount > 0` (0/18 → last-known-good). Verified: `/api/fred?_fail=fred` → HTTP 200 last-known-good; `?_fail=fred,lastgood` → HTTP 200 safe default `{error}`.
+
+**Production verified (beryl):** fred 18/18, spy 756.48, daily-move +0.25% (Finnhub fallback — fixes Lambda's broken endpoint), market-extra btc+crude present, polymarket 10 bets, homepage 200.
