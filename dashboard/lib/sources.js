@@ -121,6 +121,39 @@ export async function dbnomicsFred(seriesId, { revalidate = 1800 } = {}) {
     return out;
 }
 
+/**
+ * Polygon daily aggregates (server-friendly, the same vendor the Lambda uses) ->
+ * { current, prevClose, history }. ticker examples: 'SPY', 'C:XAUUSD' (gold),
+ * 'C:USDCAD' (fx), 'X:BTCUSD' (crypto). Requires a Polygon API key.
+ */
+export async function polygonDaily(ticker, key, { years = 2, revalidate = 1800 } = {}) {
+    if (!key) throw new Error('Polygon: no API key');
+    const to = new Date().toISOString().slice(0, 10);
+    const from = new Date(Date.now() - years * 365 * 864e5).toISOString().slice(0, 10);
+    const url = `https://api.polygon.io/v2/aggs/ticker/${encodeURIComponent(ticker)}/range/1/day/${from}/${to}?adjusted=true&sort=asc&limit=50000&apiKey=${key}`;
+    const data = await withRetry(() => fetchJson(url, { revalidate }));
+    if (data?.status === 'ERROR' || !Array.isArray(data?.results)) throw new Error(`Polygon: ${data?.error || data?.message || 'no results'} for ${ticker}`);
+    const history = data.results.map((r) => ({ date: new Date(r.t).toISOString().slice(0, 10), price: r.c })).filter((h) => h.price != null);
+    if (!history.length) throw new Error(`Polygon: empty ${ticker}`);
+    return { current: history[history.length - 1].price, prevClose: history[history.length - 2]?.price ?? history[history.length - 1].price, history };
+}
+
+/** Finnhub real-time quote (stocks) -> { current, prevClose }. Requires a key. */
+export async function finnhubQuote(symbol, key, { revalidate = 120 } = {}) {
+    if (!key) throw new Error('Finnhub: no API key');
+    const data = await withRetry(() => fetchJson(`https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${key}`, { revalidate }));
+    if (data?.c == null || data.c === 0) throw new Error('Finnhub: no quote');
+    return { current: data.c, prevClose: data.pc ?? data.c };
+}
+
+/** Compute the US Dollar Index (DXY) from USD-base rates (ICE formula). */
+export function dxyFromUsdRates(r) {
+    const need = ['EUR', 'JPY', 'GBP', 'CAD', 'SEK', 'CHF'];
+    if (!r || need.some((k) => !(typeof r[k] === 'number'))) return null;
+    const EURUSD = 1 / r.EUR, USDJPY = r.JPY, GBPUSD = 1 / r.GBP, USDCAD = r.CAD, USDSEK = r.SEK, USDCHF = r.CHF;
+    return 50.14348112 * EURUSD ** -0.576 * USDJPY ** 0.136 * GBPUSD ** -0.119 * USDCAD ** 0.091 * USDSEK ** 0.042 * USDCHF ** 0.036;
+}
+
 /** FRED observations (newest-first [{date,value}]) with retry. */
 export async function fredObservations(seriesId, apiKey, { limit = 400, revalidate = 1800 } = {}) {
     const url = `https://api.stlouisfed.org/fred/series/observations?series_id=${seriesId}&api_key=${apiKey}&file_type=json&sort_order=desc&limit=${limit}`;

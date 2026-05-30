@@ -1,59 +1,58 @@
-import { yahooChart, coinbaseSpot, erApiRates, fredObservations, dailyChange } from '../../../lib/sources';
+import { polygonDaily, erApiRates, dxyFromUsdRates, coinbaseSpot, fredObservations, dailyChange } from '../../../lib/sources';
 
 export const fetchCache = 'default-cache';
 
 const HIST = 260;
-const isNum = (x) => typeof x === 'number' && !Number.isNaN(x);
+const flat = (current) => ({ current, dailyChange: { value: 0, pct: 0 }, history: [], lastDate: null });
+const safe = (fn) => fn().then((v) => v).catch(() => null);
+const toMetric = (p) => { const history = p.history.slice(-HIST); return { current: p.current, dailyChange: dailyChange(p.current, p.prevClose), history, lastDate: history[history.length - 1]?.date ?? null }; };
 
-/** A normalized market metric: { current, dailyChange:{value,pct}, history, lastDate }. */
-async function yahooMetric(ticker, range = '1y') {
-    const y = await yahooChart(ticker, { range, interval: '1d', revalidate: 300 });
-    const history = y.history.slice(-HIST);
-    return { current: y.current, dailyChange: dailyChange(y.current, y.prevClose), history, lastDate: history[history.length - 1]?.date ?? null };
-}
-
-async function fredMetric(seriesId, apiKey, limit = 400) {
-    const obs = await fredObservations(seriesId, apiKey, { limit, revalidate: 1800 });
+async function fredMetric(seriesId, apiKey) {
+    const obs = await fredObservations(seriesId, apiKey, { limit: 400, revalidate: 1800 });
     const asc = [...obs].reverse().map((o) => ({ date: o.date, price: o.value }));
     return { current: obs[0].value, dailyChange: dailyChange(obs[0].value, obs[1]?.value ?? obs[0].value), history: asc.slice(-HIST), lastDate: obs[0].date };
 }
-
-const flat = (current) => ({ current, dailyChange: { value: 0, pct: 0 }, history: [], lastDate: null });
-const safe = (fn) => fn().then((v) => v).catch(() => null);
-
-/** Builders for each metric, used both to fill Lambda nulls and to build a full
- *  fallback when the Lambda is unreachable. Each is independent + reliable
- *  (Yahoo / ER-API / FRED / Coinbase — all measured reachable from Vercel). */
-function builders(apiKey) {
-    return {
-        'fx.usdcad': () => yahooMetric('CAD=X'),
-        'fx.usdinr': () => yahooMetric('INR=X'),
-        'fx.dxy': () => yahooMetric('DX-Y.NYB'),
-        'commodities.gc': () => yahooMetric('GC=F'),
-        'commodities.cl': () => yahooMetric('CL=F'),
-        'commodities.btc': () => yahooMetric('BTC-USD').catch(async () => flat((await coinbaseSpot('BTC-USD', { revalidate: 300 })).current)),
-        'rates.tnx': () => fredMetric('DGS10', apiKey),
-        'rates.t2y': () => fredMetric('DGS2', apiKey),
-        'rates.mortgageRate': () => fredMetric('MORTGAGE30US', apiKey),
-    };
-}
+const polyMetric = (ticker, key) => async () => toMetric(await polygonDaily(ticker, key, { years: 2, revalidate: 1800 }));
 
 const getPath = (o, p) => p.split('.').reduce((a, k) => (a ? a[k] : undefined), o);
 const setPath = (o, p, v) => { const ks = p.split('.'); const last = ks.pop(); let cur = o; for (const k of ks) cur = cur[k] ??= {}; cur[last] = v; };
 
-/** Fill ER-API-derived FX (BDT + cross rates) which Yahoo doesn't cover well. */
-async function fillFxCrosses(fx, log) {
-    let er = null;
-    try { er = await erApiRates('USD', { revalidate: 600 }); } catch { return; }
-    const cad = fx.usdcad?.current ?? er.CAD;
-    const inr = fx.usdinr?.current ?? er.INR;
-    const bdt = er.BDT;
-    if ((!fx.usdbdt || fx.usdbdt.current == null) && isNum(bdt)) { fx.usdbdt = flat(bdt); log.usdbdt = 'ER-API'; }
-    const cross = (a, b) => (isNum(a) && isNum(b) && b !== 0 ? flat(a / b) : null);
-    const set = (key, a, b, src) => { if ((!fx[key] || fx[key].current == null) && cross(a, b)) { fx[key] = cross(a, b); log[key] = src; } };
-    set('inrbdt', bdt, inr, 'computed'); // INR->BDT = BDT/INR
-    set('cadinr', inr, cad, 'computed'); // CAD->INR = INR/CAD
-    set('cadbdt', bdt, cad, 'computed'); // CAD->BDT = BDT/CAD
+/** Build one metric from the best available direct source. Returns {metric, src} or null. */
+async function directMetric(path, apiKey, poly, er) {
+    switch (path) {
+        case 'fx.usdcad': { if (poly) { const p = await safe(polyMetric('C:USDCAD', poly)); if (p) return { metric: p, src: 'Polygon' }; } return er?.CAD != null ? { metric: flat(er.CAD), src: 'ER-API' } : null; }
+        case 'fx.usdinr': { if (poly) { const p = await safe(polyMetric('C:USDINR', poly)); if (p) return { metric: p, src: 'Polygon' }; } return er?.INR != null ? { metric: flat(er.INR), src: 'ER-API' } : null; }
+        case 'fx.usdbdt': return er?.BDT != null ? { metric: flat(er.BDT), src: 'ER-API' } : null;
+        case 'fx.dxy': { const d = dxyFromUsdRates(er); return d != null ? { metric: flat(d), src: 'computed (ER-API)' } : null; }
+        case 'commodities.gc': { const p = poly && await safe(polyMetric('C:XAUUSD', poly)); if (p) return { metric: p, src: 'Polygon' }; const f = await safe(() => fredMetric('GOLDPMGBD228NLBM', apiKey)); return f ? { metric: f, src: 'FRED (London fix)' } : null; }
+        case 'commodities.cl': { const f = await safe(() => fredMetric('DCOILWTICO', apiKey)); return f ? { metric: f, src: 'FRED' } : null; }
+        case 'commodities.btc': { const p = poly && await safe(polyMetric('X:BTCUSD', poly)); if (p) return { metric: p, src: 'Polygon' }; const c = await safe(() => coinbaseSpot('BTC-USD', { revalidate: 300 })); return c ? { metric: flat(c.current), src: 'Coinbase' } : null; }
+        case 'rates.tnx': { const f = await safe(() => fredMetric('DGS10', apiKey)); return f ? { metric: f, src: 'FRED' } : null; }
+        case 'rates.t2y': { const f = await safe(() => fredMetric('DGS2', apiKey)); return f ? { metric: f, src: 'FRED' } : null; }
+        case 'rates.mortgageRate': { const f = await safe(() => fredMetric('MORTGAGE30US', apiKey)); return f ? { metric: f, src: 'FRED' } : null; }
+        default: return null;
+    }
+}
+
+const BASE_PATHS = ['fx.usdcad', 'fx.usdinr', 'fx.usdbdt', 'fx.dxy', 'commodities.gc', 'commodities.cl', 'commodities.btc', 'rates.tnx', 'rates.t2y', 'rates.mortgageRate'];
+
+/** Add the computed cross-rates from whatever USD pairs are present. */
+function addCrosses(out, log) {
+    const cad = out.fx?.usdcad?.current, inr = out.fx?.usdinr?.current, bdt = out.fx?.usdbdt?.current;
+    const cross = (a, b) => (a != null && b != null && b !== 0 ? flat(a / b) : null);
+    const set = (k, m) => { if (m && (!out.fx[k] || out.fx[k].current == null)) { out.fx[k] = m; log[k] = 'computed'; } };
+    if (!out.fx) out.fx = {};
+    set('inrbdt', cross(bdt, inr));
+    set('cadinr', cross(inr, cad));
+    set('cadbdt', cross(bdt, cad));
+}
+
+async function buildDirect(apiKey, poly, er, messages) {
+    const out = { fx: {}, commodities: {}, rates: {}, realEstate: {}, _meta: { source: 'Direct sources (fallback)', hasErrors: true, sourceLog: {}, messages } };
+    const built = await Promise.all(BASE_PATHS.map((p) => directMetric(p, apiKey, poly, er).then((r) => [p, r]).catch(() => [p, null])));
+    for (const [p, r] of built) if (r?.metric?.current != null) { setPath(out, p, r.metric); out._meta.sourceLog[p.split('.').pop()] = r.src; }
+    addCrosses(out, out._meta.sourceLog);
+    return out;
 }
 
 async function lambdaExtra(messages) {
@@ -69,54 +68,42 @@ async function lambdaExtra(messages) {
     return null;
 }
 
-async function buildDirect(apiKey, messages) {
-    const data = { fx: {}, commodities: {}, rates: {}, realEstate: {}, _meta: { source: 'Direct sources (fallback)', hasErrors: true, sourceLog: {}, messages } };
-    const B = builders(apiKey);
-    const results = await Promise.all(Object.keys(B).map((p) => safe(B[p]).then((v) => [p, v])));
-    for (const [p, v] of results) if (v && v.current != null) { setPath(data, p, v); data._meta.sourceLog[p.split('.').pop()] = p.startsWith('rates') ? 'FRED' : 'Yahoo'; }
-    await fillFxCrosses(data.fx, data._meta.sourceLog);
-    return data;
-}
-
 export async function GET(request) {
     request.headers.get('user-agent');
     const debug = new URL(request.url).searchParams.get('debug');
     const apiKey = process.env.FRED_API_KEY;
+    const poly = process.env.POLYGON_KEY || '';
     const messages = [];
 
+    const er = await safe(() => erApiRates('USD', { revalidate: 600 }));
     const lam = await lambdaExtra(messages);
 
     if (debug === 'compare') {
-        const direct = await buildDirect(apiKey, []).catch((e) => ({ _err: e.message }));
-        const summ = (o) => o && !o._err ? {
-            usdcad: o.fx?.usdcad?.current, usdinr: o.fx?.usdinr?.current, dxy: o.fx?.dxy?.current,
+        const direct = await buildDirect(apiKey, poly, er, []);
+        const summ = (o) => o ? {
+            usdcad: o.fx?.usdcad?.current, usdinr: o.fx?.usdinr?.current, usdbdt: o.fx?.usdbdt?.current, dxy: o.fx?.dxy?.current,
             gold: o.commodities?.gc?.current, crude: o.commodities?.cl?.current, btc: o.commodities?.btc?.current,
             tnx: o.rates?.tnx?.current, t2y: o.rates?.t2y?.current, mortgage: o.rates?.mortgageRate?.current,
         } : o;
-        return Response.json({ lambda: summ(lam), direct: summ(direct), messages });
+        return Response.json({ polygonKeyPresent: !!poly, sourceLog: direct._meta.sourceLog, lambda: summ(lam), direct: summ(direct), messages });
     }
 
-    // Lambda up: fill only the metrics it left null/missing (e.g. crude `cl`).
+    // Lambda up: fill only the metrics it left null/missing.
     if (lam) {
-        const B = builders(apiKey);
         const log = (lam._meta = lam._meta || {}).sourceLog = lam._meta.sourceLog || {};
+        const nullPaths = BASE_PATHS.filter((p) => { const m = getPath(lam, p); return !m || m.current == null; });
+        const fills = await Promise.all(nullPaths.map((p) => directMetric(p, apiKey, poly, er).then((r) => [p, r]).catch(() => [p, null])));
         const filled = [];
-        const fills = await Promise.all(
-            Object.keys(B).filter((p) => { const m = getPath(lam, p); return !m || m.current == null; })
-                .map((p) => safe(B[p]).then((v) => [p, v])),
-        );
-        for (const [p, v] of fills) if (v && v.current != null) { setPath(lam, p, v); log[p.split('.').pop()] = (p.startsWith('rates') ? 'FRED' : 'Yahoo') + ' (filled)'; filled.push(p); }
+        for (const [p, r] of fills) if (r?.metric?.current != null) { setPath(lam, p, r.metric); log[p.split('.').pop()] = `${r.src} (filled)`; filled.push(p.split('.').pop()); }
         if (!lam.fx) lam.fx = {};
-        await fillFxCrosses(lam.fx, log);
+        addCrosses(lam, log);
         if (filled.length) (lam._meta.messages = lam._meta.messages || []).push(`Filled from direct sources: ${filled.join(', ')}`);
         return Response.json(lam);
     }
 
     // Lambda down: build everything from direct sources.
-    try {
-        const direct = await buildDirect(apiKey, messages);
-        return Response.json(direct);
-    } catch (e) {
-        return Response.json({ error: 'All market sources failed', detail: [...messages, e.message].join(' | ') }, { status: 500 });
-    }
+    const direct = await buildDirect(apiKey, poly, er, messages);
+    const ok = Object.keys(direct.fx).length + Object.keys(direct.commodities).length + Object.keys(direct.rates).length;
+    if (ok === 0) return Response.json({ error: 'All market sources failed', detail: messages.join(' | ') }, { status: 500 });
+    return Response.json(direct);
 }

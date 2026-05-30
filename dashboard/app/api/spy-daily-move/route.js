@@ -1,4 +1,4 @@
-import { yahooChart, stooqDaily, dailyChange } from '../../../lib/sources';
+import { yahooChart, finnhubQuote, polygonDaily, dailyChange } from '../../../lib/sources';
 
 export const fetchCache = 'default-cache';
 
@@ -18,14 +18,18 @@ async function lambdaMove(messages) {
 }
 
 async function fallbackMove(messages) {
-    try {
-        const y = await yahooChart('SPY', { range: '5d', interval: '1d', revalidate: 300 });
-        return { value: fmtPct(dailyChange(y.current, y.prevClose).pct), source: 'Yahoo Finance (fallback)' };
-    } catch (e1) {
-        messages.push(`Yahoo fallback failed: ${e1.message}`);
-        const s = await stooqDaily('spy.us', { revalidate: 300 });
-        return { value: fmtPct(dailyChange(s.current, s.prevClose).pct), source: 'Stooq (fallback)' };
+    const finnhub = process.env.FINNHUB_KEY || '';
+    const poly = process.env.POLYGON_KEY || '';
+    if (finnhub) {
+        try { const q = await finnhubQuote('SPY', finnhub); return { value: fmtPct(dailyChange(q.current, q.prevClose).pct), source: 'Finnhub (fallback)' }; }
+        catch (e) { messages.push(`Finnhub failed: ${e.message}`); }
     }
+    if (poly) {
+        try { const p = await polygonDaily('SPY', poly, { years: 1, revalidate: 600 }); return { value: fmtPct(dailyChange(p.current, p.prevClose).pct), source: 'Polygon (fallback)' }; }
+        catch (e) { messages.push(`Polygon failed: ${e.message}`); }
+    }
+    const y = await yahooChart('SPY', { range: '5d', interval: '1d', revalidate: 300 });
+    return { value: fmtPct(dailyChange(y.current, y.prevClose).pct), source: 'Yahoo Finance (fallback)' };
 }
 
 export async function GET(request) {

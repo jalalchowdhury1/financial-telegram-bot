@@ -1,4 +1,4 @@
-import { yahooChart, stooqDaily, dailyChange } from '../../../lib/sources';
+import { yahooChart, polygonDaily, finnhubQuote, dailyChange } from '../../../lib/sources';
 import { calculateRSI } from '../../../lib/finance';
 
 // default-cache lets the fallback source fetches use the Data Cache even though
@@ -8,10 +8,13 @@ export const fetchCache = 'default-cache';
 const r2 = (x) => (x == null ? null : Math.round(x * 100) / 100);
 const sma = (arr, i, p) => (i >= p - 1 ? arr.slice(i - p + 1, i + 1).reduce((s, v) => s + v, 0) / p : null);
 
-/** Build the exact /api/spy shape from an oldest->newest [{date,price}] history. */
+/** Build the exact /api/spy shape from an oldest->newest [{date,price}] history.
+ *  Requires enough history (>=220 trading days) so MA200/52w/RSI are real —
+ *  otherwise throws, so the card never receives a broken partial object. */
 function buildSpy(history, current, prevClose, source) {
     const prices = history.map((h) => h.price);
     const n = prices.length;
+    if (n < 220) throw new Error(`${source}: insufficient history (${n} rows)`);
     const ma200v = sma(prices, n - 1, 200);
     const dc = dailyChange(current, prevClose);
     const last252 = prices.slice(-252);
@@ -38,14 +41,23 @@ function buildSpy(history, current, prevClose, source) {
 }
 
 async function fallbackSpy(messages) {
-    try {
-        const y = await yahooChart('SPY', { range: '5y', interval: '1d', revalidate: 300 });
-        return buildSpy(y.history, y.current, y.prevClose, 'Yahoo Finance (fallback)');
-    } catch (e1) {
-        messages.push(`Yahoo fallback failed: ${e1.message}`);
-        const s = await stooqDaily('spy.us', { revalidate: 300 });
-        return buildSpy(s.history, s.current, s.prevClose, 'Stooq (fallback)');
+    const poly = process.env.POLYGON_KEY || '';
+    const finnhub = process.env.FINNHUB_KEY || '';
+    // 1) Polygon (server-friendly, 5y daily) — the reliable path.
+    if (poly) {
+        try {
+            const p = await polygonDaily('SPY', poly, { years: 5, revalidate: 1800 });
+            // Prefer a real-time current price from Finnhub if available.
+            let current = p.current, prevClose = p.prevClose;
+            if (finnhub) { try { const q = await finnhubQuote('SPY', finnhub); current = q.current; prevClose = q.prevClose; } catch {} }
+            return buildSpy(p.history, current, prevClose, finnhub ? 'Polygon + Finnhub (fallback)' : 'Polygon (fallback)');
+        } catch (e) { messages.push(`Polygon fallback failed: ${e.message}`); }
+    } else {
+        messages.push('POLYGON_KEY not configured');
     }
+    // 2) Yahoo 5y — best effort (often rate-limited from cloud IPs).
+    const y = await yahooChart('SPY', { range: '5y', interval: '1d', revalidate: 300 });
+    return buildSpy(y.history, y.current, y.prevClose, 'Yahoo Finance (fallback)');
 }
 
 async function lambdaSpy(messages) {

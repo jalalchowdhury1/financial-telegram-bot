@@ -1,4 +1,4 @@
-import { yahooChart, stooqDaily, coingeckoPrice, dbnomicsFred, dailyChange } from '../sources';
+import { yahooChart, stooqDaily, coingeckoPrice, dbnomicsFred, dailyChange, dxyFromUsdRates, polygonDaily, fredObservations } from '../sources';
 
 // Mock the network: proxyFetch -> global.fetch. Return ok + json()/text().
 function mockFetch(payload, { text = false } = {}) {
@@ -74,5 +74,47 @@ describe('coingeckoPrice', () => {
         const out = await coingeckoPrice('bitcoin');
         expect(out.current).toBe(70000);
         expect(out.prevClose).toBeCloseTo(70000 / 1.02, 2);
+    });
+});
+
+describe('dxyFromUsdRates', () => {
+    test('computes a realistic DXY (~98-100) from typical USD rates', () => {
+        // Rates are "currency per USD"
+        const dxy = dxyFromUsdRates({ EUR: 0.92, JPY: 150, GBP: 0.79, CAD: 1.38, SEK: 9.5, CHF: 0.83 });
+        expect(dxy).toBeGreaterThan(90);
+        expect(dxy).toBeLessThan(110);
+    });
+    test('returns null when a currency is missing', () => {
+        expect(dxyFromUsdRates({ EUR: 0.92 })).toBeNull();
+    });
+});
+
+describe('polygonDaily', () => {
+    test('parses aggregates into history + current/prev', async () => {
+        mockFetch({ status: 'OK', results: [
+            { t: 1700000000000, c: 100 }, { t: 1700086400000, c: 101 }, { t: 1700172800000, c: 102 },
+        ] });
+        const out = await polygonDaily('SPY', 'KEY');
+        expect(out.current).toBe(102);
+        expect(out.prevClose).toBe(101);
+        expect(out.history).toHaveLength(3);
+    });
+    test('throws without a key', async () => {
+        await expect(polygonDaily('SPY', '')).rejects.toThrow('no API key');
+    });
+    test('throws on Polygon ERROR status', async () => {
+        mockFetch({ status: 'ERROR', error: 'unknown ticker' });
+        await expect(polygonDaily('BAD', 'KEY')).rejects.toThrow();
+    });
+});
+
+describe('fredObservations', () => {
+    test('parses, drops dots, newest-first', async () => {
+        mockFetch({ observations: [
+            { date: '2026-05-28', value: '4.45' }, { date: '2026-05-27', value: '.' }, { date: '2026-05-26', value: '4.40' },
+        ] });
+        const out = await fredObservations('DGS10', 'KEY');
+        expect(out[0]).toEqual({ date: '2026-05-28', value: 4.45 });
+        expect(out).toHaveLength(2);
     });
 });
