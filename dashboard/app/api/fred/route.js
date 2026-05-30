@@ -2,6 +2,7 @@ import { FRED_SERIES, FRED_FRESHNESS, EXTERNAL_URLS } from '../../../lib/constan
 import { fetchJson, proxyFetch } from '../../../lib/fetcher';
 import { withFreshness } from '../../../lib/freshness';
 import { serve } from '../../../lib/store';
+import { faultsFrom } from '../../../lib/faults';
 
 // In Next 13.5 the route's default fetchCache is 'only-no-store', which ERRORS
 // on cached fetches. 'default-cache' permits caching (and never errors), so the
@@ -216,7 +217,7 @@ export async function GET(request) {
     const settled = [];
     for (let i = 0; i < REQUESTS.length; i += BATCH_SIZE) {
         const batch = REQUESTS.slice(i, i + BATCH_SIZE).map(([id, limit]) =>
-            fetchSeries(id, apiKey, limit)
+            fetchSeries(id, liveKey, limit)
                 .then(value => ({ id, status: 'fulfilled', value }))
                 .catch(e => ({ id, status: 'rejected', reason: e })),
         );
@@ -253,7 +254,7 @@ export async function GET(request) {
     }
     if (!peRatio) {
         try {
-            const cape = await fetchSeries('PE10', apiKey, 3);
+            const cape = await fetchSeries('PE10', liveKey, 3);
             if (cape.length > 0) peRatio = cape[0].value;
         } catch (e) { messages.push(`P/E CAPE failed: ${maskKey(e.message)}`); }
     }
@@ -269,5 +270,6 @@ export async function GET(request) {
     return serve('fred', async () => payload, {
         isGood: () => failed.length < REQUESTS.length,
         fallback: { error: 'FRED temporarily unavailable' },
+        faults,
     });
 }

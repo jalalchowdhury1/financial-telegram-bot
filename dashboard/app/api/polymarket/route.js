@@ -1,5 +1,6 @@
 import { fetchJson } from '../../../lib/fetcher';
 import { serve } from '../../../lib/store';
+import { faultsFrom } from '../../../lib/faults';
 
 export const fetchCache = 'default-cache';
 
@@ -49,13 +50,16 @@ export async function GET(request) {
     }
 
     // Never-throws: Lambda -> Gamma -> last-known-good -> empty list.
+    const faults = faultsFrom(request);
     return serve('polymarket', async () => {
-        const lam = await lambdaPoly(messages);
+        const lam = faults.has('lambda') ? null : await lambdaPoly(messages);
         if (lam) return lam;
+        if (faults.has('gamma')) throw new Error('[injected fault: gamma]');
         const fb = await fallbackPoly(messages);
         return { bets: fb.bets, source: fb.source, timestamp: new Date().toISOString(), _meta: { messages } };
     }, {
         isGood: (x) => x && Array.isArray(x.bets) && x.bets.length > 0,
         fallback: { bets: [], timestamp: new Date().toISOString() },
+        faults,
     });
 }

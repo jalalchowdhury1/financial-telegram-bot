@@ -1,6 +1,7 @@
 import { yahooChart, polygonDaily, finnhubQuote, dailyChange } from '../../../lib/sources';
 import { calculateRSI } from '../../../lib/finance';
 import { serve } from '../../../lib/store';
+import { faultsFrom } from '../../../lib/faults';
 
 // default-cache lets the fallback source fetches use the Data Cache even though
 // the handler is dynamic (Lambda call stays no-store). See fred/route.js note.
@@ -41,9 +42,9 @@ function buildSpy(history, current, prevClose, source) {
     };
 }
 
-async function fallbackSpy(messages) {
-    const poly = process.env.POLYGON_KEY || '';
-    const finnhub = process.env.FINNHUB_KEY || '';
+async function fallbackSpy(messages, faults = new Set()) {
+    const poly = (process.env.POLYGON_KEY || '') && !faults.has('polygon') ? process.env.POLYGON_KEY : '';
+    const finnhub = (process.env.FINNHUB_KEY || '') && !faults.has('finnhub') ? process.env.FINNHUB_KEY : '';
     // 1) Polygon (server-friendly, 5y daily) — the reliable path.
     if (poly) {
         try {
@@ -54,9 +55,10 @@ async function fallbackSpy(messages) {
             return buildSpy(p.history, current, prevClose, finnhub ? 'Polygon + Finnhub (fallback)' : 'Polygon (fallback)');
         } catch (e) { messages.push(`Polygon fallback failed: ${e.message}`); }
     } else {
-        messages.push('POLYGON_KEY not configured');
+        messages.push(faults.has('polygon') ? 'Polygon disabled (injected)' : 'POLYGON_KEY not configured');
     }
     // 2) Yahoo 5y — best effort (often rate-limited from cloud IPs).
+    if (faults.has('yahoo')) throw new Error('[injected fault: yahoo]');
     const y = await yahooChart('SPY', { range: '5y', interval: '1d', revalidate: 300 });
     return buildSpy(y.history, y.current, y.prevClose, 'Yahoo Finance (fallback)');
 }
@@ -86,14 +88,16 @@ export async function GET(request) {
     }
 
     // Never-throws: Lambda -> Polygon(+Finnhub) -> Yahoo -> last-known-good -> error skeleton.
+    const faults = faultsFrom(request);
     return serve('spy', async () => {
-        const lam = await lambdaSpy(messages);
+        const lam = faults.has('lambda') ? null : await lambdaSpy(messages);
         if (lam) return lam;
-        const fb = await fallbackSpy(messages);
+        const fb = await fallbackSpy(messages, faults);
         fb._meta.messages = [...messages, ...fb._meta.messages];
         return fb;
     }, {
         isGood: (x) => x && x.current != null && x.ma200 && x.week52High,
         fallback: { error: 'SPY temporarily unavailable' },
+        faults,
     });
 }

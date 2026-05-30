@@ -1,5 +1,6 @@
 import { yahooChart, finnhubQuote, polygonDaily, dailyChange } from '../../../lib/sources';
 import { serve } from '../../../lib/store';
+import { faultsFrom } from '../../../lib/faults';
 
 export const fetchCache = 'default-cache';
 
@@ -18,9 +19,9 @@ async function lambdaMove(messages) {
     return null;
 }
 
-async function fallbackMove(messages) {
-    const finnhub = process.env.FINNHUB_KEY || '';
-    const poly = process.env.POLYGON_KEY || '';
+async function fallbackMove(messages, faults = new Set()) {
+    const finnhub = (process.env.FINNHUB_KEY || '') && !faults.has('finnhub') ? process.env.FINNHUB_KEY : '';
+    const poly = (process.env.POLYGON_KEY || '') && !faults.has('polygon') ? process.env.POLYGON_KEY : '';
     if (finnhub) {
         try { const q = await finnhubQuote('SPY', finnhub); return { value: fmtPct(dailyChange(q.current, q.prevClose).pct), source: 'Finnhub (fallback)' }; }
         catch (e) { messages.push(`Finnhub failed: ${e.message}`); }
@@ -29,6 +30,7 @@ async function fallbackMove(messages) {
         try { const p = await polygonDaily('SPY', poly, { years: 1, revalidate: 600 }); return { value: fmtPct(dailyChange(p.current, p.prevClose).pct), source: 'Polygon (fallback)' }; }
         catch (e) { messages.push(`Polygon failed: ${e.message}`); }
     }
+    if (faults.has('yahoo')) throw new Error('[injected fault: yahoo]');
     const y = await yahooChart('SPY', { range: '5d', interval: '1d', revalidate: 300 });
     return { value: fmtPct(dailyChange(y.current, y.prevClose).pct), source: 'Yahoo Finance (fallback)' };
 }
@@ -45,13 +47,15 @@ export async function GET(request) {
     }
 
     // Never-throws: Lambda -> Finnhub/Polygon/Yahoo -> last-known-good -> null.
+    const faults = faultsFrom(request);
     return serve('spy-daily-move', async () => {
-        const lam = await lambdaMove(messages);
+        const lam = faults.has('lambda') ? null : await lambdaMove(messages);
         if (lam) return lam;
-        const fb = await fallbackMove(messages);
+        const fb = await fallbackMove(messages, faults);
         return { ...fb, _meta: { messages } };
     }, {
         isGood: (x) => x && x.value != null,
         fallback: { value: null, source: 'Unavailable' },
+        faults,
     });
 }
