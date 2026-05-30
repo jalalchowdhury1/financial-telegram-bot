@@ -1,6 +1,7 @@
 'use client';
 import ErrorBoundary from './ErrorBoundary';
 import Skeleton from './Skeleton';
+import { freshnessNote } from '../lib/freshness';
 
 const TOOLTIPS = {
     nfci: 'National Financial Conditions Index. Measures the tightness of US financial systems. Below 0 means conditions are accommodative (good for stocks).',
@@ -51,14 +52,17 @@ export default function BullChecklist({ fred, loading }) {
                 {loading || !fred || fred.error ? <Skeleton count={8} /> : (
                     <>
                         <div className="checklist-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
-                            {Object.entries(fred.checklist).map(([key, item]) => (
+                            {Object.entries(fred.checklist).map(([key, item]) => {
+                                const note = freshnessNote(item);
+                                const icon = note.amber ? '⚪' : item.bullish ? '✅' : '🔴';
+                                return (
                                 <div className="checklist-item" key={key} style={{ padding: '12px 14px', alignItems: 'center' }}>
-                                    <span className="checklist-icon">{item.bullish ? '✅' : '🔴'}</span>
+                                    <span className="checklist-icon">{icon}</span>
                                     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '3px' }}>
                                         <span
                                             className="checklist-text tooltip-trigger"
                                             style={{ flex: 'none', color: 'var(--text-primary)' }}
-                                            data-tooltip={TOOLTIPS[key]}
+                                            data-tooltip={`${TOOLTIPS[key]}${note.suffix}`}
                                         >
                                             {item.label}
                                         </span>
@@ -67,19 +71,20 @@ export default function BullChecklist({ fred, loading }) {
                                         </span>
                                     </div>
                                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '3px' }}>
-                                        <span className={`checklist-value ${item.bullish ? 'stat-positive' : 'stat-negative'}`} style={{ fontSize: '0.95rem' }}>
+                                        <span className={`checklist-value ${item.bullish ? 'stat-positive' : 'stat-negative'}`} style={{ fontSize: '0.95rem', ...(note.amber ? { color: 'var(--yellow)' } : {}) }}>
                                             {typeof item.value === 'number' ? (
                                                 key === 'housing' || key === 'jolts' ? `${item.value.toFixed(0)}K` :
                                                     key === 'nfci' ? `${item.value.toFixed(2)}` :
                                                         `${item.value >= 0 && key !== 'nfci' ? '+' : ''}${item.value.toFixed(1)}%`
-                                            ) : item.value}
+                                            ) : 'N/A'}
                                         </span>
                                         <span className="checklist-benchmark" style={{ opacity: 0.9 }}>
                                             {BENCHMARKS[key] ? BENCHMARKS[key](item.status) : '—'}
                                         </span>
                                     </div>
                                 </div>
-                            ))}
+                                );
+                            })}
                         </div>
                         {(() => {
                             const items = Object.values(fred.checklist);

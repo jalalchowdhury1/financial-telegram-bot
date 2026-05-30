@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import ErrorBoundary from '../components/ErrorBoundary';
+import { freshnessNote, formatAsOf } from '../lib/freshness';
 
 import Gauge from '../components/Gauge';
 import Skeleton from '../components/Skeleton';
@@ -126,6 +127,11 @@ export default function Dashboard() {
                         </svg>
                     </button>
                 </div>
+                {fred?._meta?.fetchedAt && (
+                    <p className="subtitle" style={{ fontSize: '0.7rem', opacity: 0.6, marginTop: '6px' }}>
+                        Economic data as of {new Date(fred._meta.fetchedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })} · refreshes every 30 min · hover any number for its date
+                    </p>
+                )}
             </header>
 
             {/* CUSTOM INDICATOR BAR */}
@@ -254,11 +260,18 @@ export default function Dashboard() {
                 {/* YIELD CURVE */}
                 <div className="card" style={{ animationDelay: '0.4s' }}>
                     <div className="card-header">
-                        <h2><span className="tooltip-trigger" data-tooltip="When the 2-year yield is higher than the 10-year, it is a classic recession warning.">📈 Yield Curve (10Y-2Y)</span></h2>
-                        {fred?.yieldCurve?.current !== undefined && <span className={`badge ${fred.yieldCurve.current >= 0 ? 'badge-green' : 'badge-red'}`}>{fred.yieldCurve.current >= 0 ? 'Positive' : 'Inverted'}</span>}
+                        <h2><span className="tooltip-trigger" data-tooltip={`When the 2-year yield is higher than the 10-year, it is a classic recession warning.${freshnessNote({ value: fred?.yieldCurve?.current, asOf: fred?.yieldCurve?.asOf, stale: fred?.yieldCurve?.stale }).suffix}`}>📈 Yield Curve (10Y-2Y)</span></h2>
+                        {fred?.yieldCurve?.current != null && <span className={`badge ${fred.yieldCurve.current >= 0 ? 'badge-green' : 'badge-red'}`}>{fred.yieldCurve.current >= 0 ? 'Positive' : 'Inverted'}</span>}
                     </div>
                     <ErrorBoundary>
-                        {loading || !fred || fred.error || fred.yieldCurve?.current === undefined ? <Skeleton count={2} /> : (
+                        {loading || !fred ? <Skeleton count={2} /> : (fred.error || fred.yieldCurve?.current == null) ? (
+                            <div className="hero-price-section">
+                                <div className="hero-price" style={{ fontSize: '2.2rem', color: 'var(--yellow)' }}>N/A</div>
+                                <div className="hero-change" style={{ color: 'var(--text-muted)', fontSize: '0.72rem', marginTop: '4px' }}>
+                                    {fred.yieldCurve?.stale ? `Last data ${formatAsOf(fred.yieldCurve.asOf)} — couldn't refresh` : 'Unavailable — source busy, try again shortly'}
+                                </div>
+                            </div>
+                        ) : (
                             <>
                                 <div className="hero-price-section">
                                     <div className="hero-price" style={{ fontSize: '2.2rem', color: fred.yieldCurve.current >= 0 ? 'var(--green)' : 'var(--red)' }}>
@@ -274,11 +287,18 @@ export default function Dashboard() {
                 {/* PROFIT MARGIN */}
                 <div className="card" style={{ animationDelay: '0.45s' }}>
                     <div className="card-header">
-                        <h2><span className="tooltip-trigger" data-tooltip="Corporate Profits / GDP: High margins indicate strong corporate pricing power.">💰 Profit Margin</span></h2>
-                        {fred?.profitMargin && <span className="badge badge-blue">Corp Profits / GDP</span>}
+                        <h2><span className="tooltip-trigger" data-tooltip={`Corporate Profits / GDP: High margins indicate strong corporate pricing power.${freshnessNote({ value: fred?.profitMargin?.current, asOf: fred?.profitMargin?.asOf, stale: fred?.profitMargin?.stale }).suffix}`}>💰 Profit Margin</span></h2>
+                        {fred?.profitMargin?.current != null && <span className="badge badge-blue">Corp Profits / GDP</span>}
                     </div>
                     <ErrorBoundary>
-                        {loading || !fred || fred.error || !fred.profitMargin ? <Skeleton count={2} /> : (
+                        {loading || !fred ? <Skeleton count={2} /> : (fred.error || fred.profitMargin?.current == null) ? (
+                            <div className="hero-price-section">
+                                <div className="hero-price" style={{ fontSize: '2.2rem', color: 'var(--yellow)' }}>N/A</div>
+                                <div className="hero-change" style={{ color: 'var(--text-muted)', fontSize: '0.72rem', marginTop: '4px' }}>
+                                    {fred.profitMargin?.stale ? `Last data ${formatAsOf(fred.profitMargin.asOf)} — couldn't refresh` : 'Unavailable — source busy, try again shortly'}
+                                </div>
+                            </div>
+                        ) : (
                             <>
                                 <div className="hero-price-section">
                                     <div className="hero-price" style={{ fontSize: '2.2rem', color: 'var(--green)' }}>

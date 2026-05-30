@@ -28,6 +28,39 @@ export const FRED_SERIES = {
     ATNHPI: 'ATNHPIUS39300Q'
 };
 
+/**
+ * Maximum acceptable age (in days) of the latest observation for each FRED
+ * series, based on how often the series actually updates. If the newest data
+ * point is older than this, the metric is treated as STALE and shown as N/A
+ * (never a misleadingly old number). Deadlines are generous on monthly/quarterly
+ * series because the government itself reports those weeks late.
+ */
+export const FRED_FRESHNESS = {
+    // Daily (markets) — must be within a few trading days
+    T10Y2Y: 5,
+    DFII10: 5,
+    BAMLC0A4CBBB: 5,
+    // Weekly
+    ICSA: 10,
+    // Monthly
+    UNRATE: 50,
+    UMCSENT: 50,
+    USSLIND: 50,
+    NFCI: 50,
+    M2SL: 50,
+    RSXFS: 50,
+    HOUST: 50,
+    INDPRO: 50,
+    JTSJOL: 50,
+    DGORDER: 50,
+    PSAVERT: 50,
+    USREC: 60,
+    PE10: 50,
+    // Quarterly
+    A053RC1Q027SBEA: 130,
+    GDP: 130,
+};
+
 export const EXTERNAL_URLS = {
     FRED_BASE: 'https://api.stlouisfed.org/fred/series/observations',
     STOOQ_SPY: 'https://stooq.com/q/d/l/?s=spy.us&i=d',
