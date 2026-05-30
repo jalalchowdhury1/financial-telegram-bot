@@ -1,13 +1,12 @@
-import { unstable_cache } from 'next/cache';
 import { FRED_SERIES, FRED_FRESHNESS, EXTERNAL_URLS } from '../../../lib/constants';
 import { fetchJson, proxyFetch } from '../../../lib/fetcher';
 import { withFreshness } from '../../../lib/freshness';
 
-// Keep the route dynamic (runs per request — fresh fetchedAt, no build-time
-// bake) WITHOUT forcing fetches to no-store. Unlike `dynamic = 'force-dynamic'`,
-// `revalidate = 0` "leaves fetch requests that opt into force-cache as is", so
-// the unstable_cache wrappers below can cache FRED for 30 min.
-export const revalidate = 0;
+// In Next 13.5 the route's default fetchCache is 'only-no-store', which ERRORS
+// on cached fetches. 'default-cache' permits caching (and never errors), so the
+// FRED calls below can use the 30-min Data Cache. Reading the request in GET()
+// keeps the handler running per request (fresh fetchedAt, no build-time bake).
+export const fetchCache = 'default-cache';
 
 const REVALIDATE_SECONDS = 1800; // 30 minutes
 const RETRY_DELAYS_MS = [400, 900, 1800]; // back-off on 429
@@ -30,7 +29,8 @@ async function fetchSeriesRaw(seriesId, apiKey, limit) {
     let lastErr;
     for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
         try {
-            const data = await fetchJson(url, { revalidate: 0 });
+            // Cached in the Data Cache for 30 min (fetchCache='default-cache').
+            const data = await fetchJson(url, { revalidate: REVALIDATE_SECONDS });
             return data.observations
                 .filter(o => o.value !== '.')
                 .map(o => ({ date: o.date, value: parseFloat(o.value) }));
@@ -46,22 +46,14 @@ async function fetchSeriesRaw(seriesId, apiKey, limit) {
 }
 
 function fetchSeries(seriesId, apiKey, limit = 15) {
-    return unstable_cache(
-        () => fetchSeriesRaw(seriesId, apiKey, limit),
-        [`fred-series-${seriesId}-${limit}`],
-        { revalidate: REVALIDATE_SECONDS, tags: ['fred'] },
-    )();
+    return fetchSeriesRaw(seriesId, apiKey, limit);
 }
 
 // Cache the slow HTML P/E scrapes the same way (30 min).
-const cachedText = (key, url, ms) => unstable_cache(
-    async () => {
-        const res = await proxyFetch(url, { revalidate: 0, timeout: ms });
-        return res.text();
-    },
-    [`fred-text-${key}`],
-    { revalidate: REVALIDATE_SECONDS, tags: ['fred'] },
-)();
+const cachedText = async (key, url, ms) => {
+    const res = await proxyFetch(url, { revalidate: REVALIDATE_SECONDS, timeout: ms });
+    return res.text();
+};
 
 function findByMonthOffset(arr, nMonths) {
     if (!arr?.length) return undefined;
@@ -184,7 +176,11 @@ function buildResponse(series, peRatio, now) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function GET() {
+export async function GET(request) {
+    // Touch the request so Next renders this handler dynamically (per request),
+    // while individual FRED fetches still come from the 30-min Data Cache.
+    request.headers.get('user-agent');
+
     const apiKey = process.env.FRED_API_KEY;
     if (!apiKey) return Response.json({ error: 'FRED_API_KEY not configured' }, { status: 500 });
 
