@@ -178,97 +178,108 @@ function buildResponse(series, peRatio, now) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+const FRED_REQUESTS = [
+    [FRED_SERIES.YIELD_CURVE, 100000],
+    [FRED_SERIES.UNEMPLOYMENT, 15],
+    [FRED_SERIES.SENTIMENT, 5],
+    [FRED_SERIES.CLAIMS, 10],
+    [FRED_SERIES.CREDIT_SPREAD, 252],
+    [FRED_SERIES.REAL_YIELDS, 5],
+    [FRED_SERIES.LEI, 5],
+    [FRED_SERIES.NFCI, 5],
+    [FRED_SERIES.M2_MONEY, 15],
+    [FRED_SERIES.RETAIL_SALES, 5],
+    [FRED_SERIES.HOUSING_STARTS, 10],
+    [FRED_SERIES.INDUSTRIAL_PROD, 10],
+    [FRED_SERIES.JOLTS, 5],
+    [FRED_SERIES.DURABLE_GOODS, 5],
+    [FRED_SERIES.SAVINGS_RATE, 5],
+    [FRED_SERIES.CORP_PROFITS, 100000],
+    [FRED_SERIES.GDP, 100000],
+    [FRED_SERIES.RECESSIONS, 100000],
+];
+
 export async function GET(request) {
     // Touch the request so Next renders this handler dynamically (per request),
     // while individual FRED fetches still come from the 30-min Data Cache.
     request.headers.get('user-agent');
 
+    const faults = faultsFrom(request);
     const apiKey = process.env.FRED_API_KEY;
-    if (!apiKey) return Response.json({ error: 'FRED_API_KEY not configured' }, { status: 500 });
+    // `?_fail=fred` forces a bad key so every series fails (tests last-good path).
+    const liveKey = faults.has('fred') ? 'INVALID_INJECTED' : apiKey;
 
-    const now = new Date();
+    // EVERYTHING runs inside serve(): any throw (missing key, all series failing,
+    // buildResponse error, etc.) is caught -> last-known-good -> safe default.
+    // The route can never 500 or return an empty body.
+    return serve('fred', async () => {
+        if (!apiKey) throw new Error('FRED_API_KEY not configured');
+        const now = new Date();
 
-    const REQUESTS = [
-        [FRED_SERIES.YIELD_CURVE, 100000],
-        [FRED_SERIES.UNEMPLOYMENT, 15],
-        [FRED_SERIES.SENTIMENT, 5],
-        [FRED_SERIES.CLAIMS, 10],
-        [FRED_SERIES.CREDIT_SPREAD, 252],
-        [FRED_SERIES.REAL_YIELDS, 5],
-        [FRED_SERIES.LEI, 5],
-        [FRED_SERIES.NFCI, 5],
-        [FRED_SERIES.M2_MONEY, 15],
-        [FRED_SERIES.RETAIL_SALES, 5],
-        [FRED_SERIES.HOUSING_STARTS, 10],
-        [FRED_SERIES.INDUSTRIAL_PROD, 10],
-        [FRED_SERIES.JOLTS, 5],
-        [FRED_SERIES.DURABLE_GOODS, 5],
-        [FRED_SERIES.SAVINGS_RATE, 5],
-        [FRED_SERIES.CORP_PROFITS, 100000],
-        [FRED_SERIES.GDP, 100000],
-        [FRED_SERIES.RECESSIONS, 100000],
-    ];
+        // Fetch in small batches with a short stagger to be polite to FRED on a
+        // cold cache. Cache hits resolve instantly.
+        const BATCH_SIZE = 4;
+        const STAGGER_MS = 150;
+        const settled = [];
+        for (let i = 0; i < FRED_REQUESTS.length; i += BATCH_SIZE) {
+            const batch = FRED_REQUESTS.slice(i, i + BATCH_SIZE).map(([id, limit]) =>
+                fetchSeries(id, liveKey, limit)
+                    .then(value => ({ id, status: 'fulfilled', value }))
+                    .catch(e => ({ id, status: 'rejected', reason: e })),
+            );
+            settled.push(...(await Promise.all(batch)));
+            if (i + BATCH_SIZE < FRED_REQUESTS.length) await new Promise(r => setTimeout(r, STAGGER_MS));
+        }
 
-    // Fetch in small batches with a short stagger to be polite to FRED on a cold
-    // cache. Cache hits resolve instantly, so the stagger is kept light (it adds
-    // latency on every load regardless of cache state).
-    const BATCH_SIZE = 4;
-    const STAGGER_MS = 150;
-    const settled = [];
-    for (let i = 0; i < REQUESTS.length; i += BATCH_SIZE) {
-        const batch = REQUESTS.slice(i, i + BATCH_SIZE).map(([id, limit]) =>
-            fetchSeries(id, liveKey, limit)
-                .then(value => ({ id, status: 'fulfilled', value }))
-                .catch(e => ({ id, status: 'rejected', reason: e })),
-        );
-        settled.push(...(await Promise.all(batch)));
-        if (i + BATCH_SIZE < REQUESTS.length) await new Promise(r => setTimeout(r, STAGGER_MS));
-    }
+        const series = {};
+        const failed = [];
+        for (const s of settled) {
+            series[s.id] = s.status === 'fulfilled' && s.value?.length ? s.value : [];
+            if (s.status === 'rejected' || !s.value?.length) failed.push(s.id);
+        }
 
-    const series = {};
-    const failed = [];
-    for (const s of settled) {
-        series[s.id] = s.status === 'fulfilled' && s.value?.length ? s.value : [];
-        if (s.status === 'rejected' || !s.value?.length) failed.push(s.id);
-    }
+        const messages = [`Loaded ${FRED_REQUESTS.length - failed.length}/${FRED_REQUESTS.length} series`];
+        for (const s of settled) {
+            if (s.status === 'rejected') messages.push(`Series failed: ${maskKey(s.reason?.message || s.id)}`);
+        }
+        if (failed.length) console.warn(`[FRED] ${failed.length} series unavailable this load:`, failed.join(', '));
 
-    const messages = [`Loaded ${REQUESTS.length - failed.length}/${REQUESTS.length} series`];
-    for (const s of settled) {
-        if (s.status === 'rejected') messages.push(`Series failed: ${maskKey(s.reason?.message || s.id)}`);
-    }
-    if (failed.length) console.warn(`[FRED] ${failed.length} series unavailable this load:`, failed.join(', '));
-
-    // P/E ratio — layered, cached scrapes.
-    let peRatio = null;
-    try {
-        const peHtml = await cachedText('multpl', EXTERNAL_URLS.MULTPL_PE, 8000);
-        const m = peHtml.match(/Current S&P 500 PE Ratio[^\d]*(\d+\.\d+)/);
-        if (m) peRatio = parseFloat(m[1]);
-    } catch (e) { messages.push(`P/E multpl failed: ${maskKey(e.message)}`); }
-    if (!peRatio) {
+        // P/E ratio — layered, cached scrapes.
+        let peRatio = null;
         try {
-            const yHtml = await cachedText('yahoo-pe', EXTERNAL_URLS.YAHOO_PE, 8000);
-            const m = yHtml.match(/PE Ratio \(TTM\)[\s\S]*?(\d+\.\d+)/i);
-            if (m) peRatio = parseFloat(m[1]) * 1.07;
-        } catch (e) { messages.push(`P/E Yahoo failed: ${maskKey(e.message)}`); }
-    }
-    if (!peRatio) {
-        try {
-            const cape = await fetchSeries('PE10', liveKey, 3);
-            if (cape.length > 0) peRatio = cape[0].value;
-        } catch (e) { messages.push(`P/E CAPE failed: ${maskKey(e.message)}`); }
-    }
+            const peHtml = await cachedText('multpl', EXTERNAL_URLS.MULTPL_PE, 8000);
+            const m = peHtml.match(/Current S&P 500 PE Ratio[^\d]*(\d+\.\d+)/);
+            if (m) peRatio = parseFloat(m[1]);
+        } catch (e) { messages.push(`P/E multpl failed: ${maskKey(e.message)}`); }
+        if (!peRatio) {
+            try {
+                const yHtml = await cachedText('yahoo-pe', EXTERNAL_URLS.YAHOO_PE, 8000);
+                const m = yHtml.match(/PE Ratio \(TTM\)[\s\S]*?(\d+\.\d+)/i);
+                if (m) peRatio = parseFloat(m[1]) * 1.07;
+            } catch (e) { messages.push(`P/E Yahoo failed: ${maskKey(e.message)}`); }
+        }
+        if (!peRatio) {
+            try {
+                const cape = await fetchSeries('PE10', liveKey, 3);
+                if (cape.length > 0) peRatio = cape[0].value;
+            } catch (e) { messages.push(`P/E CAPE failed: ${maskKey(e.message)}`); }
+        }
 
-    const responseData = buildResponse(series, peRatio, now);
-    const payload = {
-        ...responseData,
-        _meta: { source: 'St. Louis Fed', hasErrors: failed.length > 0, fetchedAt: now.toISOString(), messages },
-    };
-
-    // Never-throws: save as last-known-good if we got real data; if a total
-    // outage left us with 0/18 series, serve the last-known-good instead of N/A.
-    return serve('fred', async () => payload, {
-        isGood: () => failed.length < REQUESTS.length,
+        const responseData = buildResponse(series, peRatio, now);
+        return {
+            ...responseData,
+            _meta: {
+                source: 'St. Louis Fed',
+                hasErrors: failed.length > 0,
+                fetchedAt: now.toISOString(),
+                messages,
+                loadedCount: FRED_REQUESTS.length - failed.length,
+            },
+        };
+    }, {
+        // Good only if at least one series loaded; a total outage (0/18) falls
+        // through to last-known-good instead of N/A everywhere.
+        isGood: (p) => p && p._meta && p._meta.loadedCount > 0,
         fallback: { error: 'FRED temporarily unavailable' },
         faults,
     });
