@@ -1,4 +1,5 @@
 import { yahooChart, finnhubQuote, polygonDaily, dailyChange } from '../../../lib/sources';
+import { serve } from '../../../lib/store';
 
 export const fetchCache = 'default-cache';
 
@@ -43,12 +44,14 @@ export async function GET(request) {
         return Response.json({ lambda: lam, fallback: fb, messages });
     }
 
-    const lam = await lambdaMove(messages);
-    if (lam) return Response.json(lam);
-    try {
+    // Never-throws: Lambda -> Finnhub/Polygon/Yahoo -> last-known-good -> null.
+    return serve('spy-daily-move', async () => {
+        const lam = await lambdaMove(messages);
+        if (lam) return lam;
         const fb = await fallbackMove(messages);
-        return Response.json({ ...fb, messages });
-    } catch (e) {
-        return Response.json({ value: null, source: 'Failed', error: [...messages, e.message].join(' | ') });
-    }
+        return { ...fb, _meta: { messages } };
+    }, {
+        isGood: (x) => x && x.value != null,
+        fallback: { value: null, source: 'Unavailable' },
+    });
 }

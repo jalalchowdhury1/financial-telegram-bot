@@ -96,6 +96,34 @@ export async function erApiRates(base = 'USD', { revalidate = 300 } = {}) {
     return data.rates;
 }
 
+/** Fawaz currency-api (keyless, CDN-hosted, very reliable) -> rates map (UPPERCASE). */
+export async function fawazRates(base = 'usd', { revalidate = 600 } = {}) {
+    const b = base.toLowerCase();
+    const urls = [
+        `https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/${b}.json`,
+        `https://${b}.currency-api.pages.dev/v1/currencies/${b}.json`,
+    ];
+    let last;
+    for (const u of urls) {
+        try {
+            const data = await withRetry(() => fetchJson(u, { revalidate }));
+            const m = data?.[b];
+            if (m) { const out = {}; for (const k in m) out[k.toUpperCase()] = m[k]; return out; }
+        } catch (e) { last = e; }
+    }
+    throw new Error(`Fawaz FX: ${last?.message || 'unavailable'}`);
+}
+
+/** Kraken public ticker (keyless) -> { current } last-trade price for a pair. */
+export async function krakenSpot(pair = 'XBTUSD', { revalidate = 120 } = {}) {
+    const data = await withRetry(() => fetchJson(`https://api.kraken.com/0/public/Ticker?pair=${pair}`, { revalidate }));
+    const res = data?.result;
+    const k = res && Object.keys(res)[0];
+    const px = k && parseFloat(res[k]?.c?.[0]);
+    if (!px || Number.isNaN(px)) throw new Error('Kraken: no price');
+    return { current: px };
+}
+
 /** Frankfurter (ECB, keyless) -> rates map for a base currency. */
 export async function frankfurterRates(base = 'USD', symbols = '', { revalidate = 300 } = {}) {
     const q = symbols ? `&symbols=${symbols}` : '';

@@ -1,4 +1,5 @@
 import { fetchJson } from '../../../lib/fetcher';
+import { serve } from '../../../lib/store';
 
 export const fetchCache = 'default-cache';
 
@@ -47,12 +48,14 @@ export async function GET(request) {
         });
     }
 
-    const lam = await lambdaPoly(messages);
-    if (lam) return Response.json(lam);
-    try {
+    // Never-throws: Lambda -> Gamma -> last-known-good -> empty list.
+    return serve('polymarket', async () => {
+        const lam = await lambdaPoly(messages);
+        if (lam) return lam;
         const fb = await fallbackPoly(messages);
-        return Response.json({ bets: fb.bets, source: fb.source, timestamp: new Date().toISOString(), messages });
-    } catch (e) {
-        return Response.json({ bets: [], error: [...messages, e.message].join(' | ') }, { status: 500 });
-    }
+        return { bets: fb.bets, source: fb.source, timestamp: new Date().toISOString(), _meta: { messages } };
+    }, {
+        isGood: (x) => x && Array.isArray(x.bets) && x.bets.length > 0,
+        fallback: { bets: [], timestamp: new Date().toISOString() },
+    });
 }

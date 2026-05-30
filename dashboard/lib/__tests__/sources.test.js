@@ -1,4 +1,4 @@
-import { yahooChart, stooqDaily, coingeckoPrice, dbnomicsFred, dailyChange, dxyFromUsdRates, polygonDaily, fredObservations } from '../sources';
+import { yahooChart, stooqDaily, coingeckoPrice, dbnomicsFred, dailyChange, dxyFromUsdRates, polygonDaily, fredObservations, krakenSpot, fawazRates } from '../sources';
 
 // Mock the network: proxyFetch -> global.fetch. Return ok + json()/text().
 function mockFetch(payload, { text = false } = {}) {
@@ -105,6 +105,27 @@ describe('polygonDaily', () => {
     test('throws on Polygon ERROR status', async () => {
         mockFetch({ status: 'ERROR', error: 'unknown ticker' });
         await expect(polygonDaily('BAD', 'KEY')).rejects.toThrow();
+    });
+});
+
+describe('krakenSpot', () => {
+    test('parses last-trade price from result', async () => {
+        mockFetch({ result: { XXBTZUSD: { c: ['73000.5', '0.01'] } } });
+        const out = await krakenSpot('XBTUSD');
+        expect(out.current).toBe(73000.5);
+    });
+    test('throws on empty result', async () => {
+        mockFetch({ result: {} });
+        await expect(krakenSpot('XBTUSD')).rejects.toThrow();
+    });
+});
+
+describe('fawazRates', () => {
+    test('uppercases the rate keys', async () => {
+        mockFetch({ date: '2026-05-30', usd: { cad: 1.38, inr: 95, bdt: 122 } });
+        const out = await fawazRates('usd');
+        expect(out.CAD).toBe(1.38);
+        expect(out.BDT).toBe(122);
     });
 });
 

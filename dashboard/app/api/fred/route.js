@@ -1,6 +1,7 @@
 import { FRED_SERIES, FRED_FRESHNESS, EXTERNAL_URLS } from '../../../lib/constants';
 import { fetchJson, proxyFetch } from '../../../lib/fetcher';
 import { withFreshness } from '../../../lib/freshness';
+import { serve } from '../../../lib/store';
 
 // In Next 13.5 the route's default fetchCache is 'only-no-store', which ERRORS
 // on cached fetches. 'default-cache' permits caching (and never errors), so the
@@ -258,14 +259,15 @@ export async function GET(request) {
     }
 
     const responseData = buildResponse(series, peRatio, now);
-
-    return Response.json({
+    const payload = {
         ...responseData,
-        _meta: {
-            source: 'St. Louis Fed',
-            hasErrors: failed.length > 0,
-            fetchedAt: now.toISOString(),
-            messages,
-        },
+        _meta: { source: 'St. Louis Fed', hasErrors: failed.length > 0, fetchedAt: now.toISOString(), messages },
+    };
+
+    // Never-throws: save as last-known-good if we got real data; if a total
+    // outage left us with 0/18 series, serve the last-known-good instead of N/A.
+    return serve('fred', async () => payload, {
+        isGood: () => failed.length < REQUESTS.length,
+        fallback: { error: 'FRED temporarily unavailable' },
     });
 }

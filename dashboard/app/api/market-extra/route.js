@@ -1,6 +1,15 @@
-import { polygonDaily, erApiRates, dxyFromUsdRates, coinbaseSpot, fredObservations, dailyChange } from '../../../lib/sources';
+import { polygonDaily, erApiRates, frankfurterRates, fawazRates, dxyFromUsdRates, coinbaseSpot, coingeckoPrice, krakenSpot, fredObservations, dailyChange } from '../../../lib/sources';
+import { serve } from '../../../lib/store';
 
 export const fetchCache = 'default-cache';
+
+/** USD-base FX rates with a 3-source fallback: ER-API -> Frankfurter -> Fawaz. */
+async function usdRates() {
+    for (const fn of [() => erApiRates('USD', { revalidate: 600 }), () => frankfurterRates('USD', '', { revalidate: 600 }), () => fawazRates('usd', { revalidate: 600 })]) {
+        try { const r = await fn(); if (r && (r.CAD || r.INR || r.EUR)) return r; } catch { /* try next */ }
+    }
+    return null;
+}
 
 const HIST = 260;
 const flat = (current) => ({ current, dailyChange: { value: 0, pct: 0 }, history: [], lastDate: null });
@@ -26,7 +35,13 @@ async function directMetric(path, apiKey, poly, er) {
         case 'fx.dxy': { const d = dxyFromUsdRates(er); return d != null ? { metric: flat(d), src: 'computed (ER-API)' } : null; }
         case 'commodities.gc': { const p = poly && await safe(polyMetric('C:XAUUSD', poly)); if (p) return { metric: p, src: 'Polygon' }; const f = await safe(() => fredMetric('GOLDPMGBD228NLBM', apiKey)); return f ? { metric: f, src: 'FRED (London fix)' } : null; }
         case 'commodities.cl': { const f = await safe(() => fredMetric('DCOILWTICO', apiKey)); return f ? { metric: f, src: 'FRED' } : null; }
-        case 'commodities.btc': { const p = poly && await safe(polyMetric('X:BTCUSD', poly)); if (p) return { metric: p, src: 'Polygon' }; const c = await safe(() => coinbaseSpot('BTC-USD', { revalidate: 300 })); return c ? { metric: flat(c.current), src: 'Coinbase' } : null; }
+        case 'commodities.btc': {
+            const p = poly && await safe(polyMetric('X:BTCUSD', poly)); if (p) return { metric: p, src: 'Polygon' };
+            const cb = await safe(() => coinbaseSpot('BTC-USD', { revalidate: 300 })); if (cb) return { metric: flat(cb.current), src: 'Coinbase' };
+            const cg = await safe(() => coingeckoPrice('bitcoin', { revalidate: 300 })); if (cg) return { metric: { current: cg.current, dailyChange: dailyChange(cg.current, cg.prevClose), history: [], lastDate: null }, src: 'CoinGecko' };
+            const kr = await safe(() => krakenSpot('XBTUSD', { revalidate: 120 })); if (kr) return { metric: flat(kr.current), src: 'Kraken' };
+            return null;
+        }
         case 'rates.tnx': { const f = await safe(() => fredMetric('DGS10', apiKey)); return f ? { metric: f, src: 'FRED' } : null; }
         case 'rates.t2y': { const f = await safe(() => fredMetric('DGS2', apiKey)); return f ? { metric: f, src: 'FRED' } : null; }
         case 'rates.mortgageRate': { const f = await safe(() => fredMetric('MORTGAGE30US', apiKey)); return f ? { metric: f, src: 'FRED' } : null; }
@@ -75,7 +90,7 @@ export async function GET(request) {
     const poly = process.env.POLYGON_KEY || '';
     const messages = [];
 
-    const er = await safe(() => erApiRates('USD', { revalidate: 600 }));
+    const er = await usdRates();
     const lam = await lambdaExtra(messages);
 
     if (debug === 'compare') {
@@ -88,22 +103,25 @@ export async function GET(request) {
         return Response.json({ polygonKeyPresent: !!poly, sourceLog: direct._meta.sourceLog, lambda: summ(lam), direct: summ(direct), messages });
     }
 
-    // Lambda up: fill only the metrics it left null/missing.
-    if (lam) {
-        const log = (lam._meta = lam._meta || {}).sourceLog = lam._meta.sourceLog || {};
-        const nullPaths = BASE_PATHS.filter((p) => { const m = getPath(lam, p); return !m || m.current == null; });
-        const fills = await Promise.all(nullPaths.map((p) => directMetric(p, apiKey, poly, er).then((r) => [p, r]).catch(() => [p, null])));
-        const filled = [];
-        for (const [p, r] of fills) if (r?.metric?.current != null) { setPath(lam, p, r.metric); log[p.split('.').pop()] = `${r.src} (filled)`; filled.push(p.split('.').pop()); }
-        if (!lam.fx) lam.fx = {};
-        addCrosses(lam, log);
-        if (filled.length) (lam._meta.messages = lam._meta.messages || []).push(`Filled from direct sources: ${filled.join(', ')}`);
-        return Response.json(lam);
-    }
-
-    // Lambda down: build everything from direct sources.
-    const direct = await buildDirect(apiKey, poly, er, messages);
-    const ok = Object.keys(direct.fx).length + Object.keys(direct.commodities).length + Object.keys(direct.rates).length;
-    if (ok === 0) return Response.json({ error: 'All market sources failed', detail: messages.join(' | ') }, { status: 500 });
-    return Response.json(direct);
+    // Never-throws: Lambda(+direct null-fill) -> full direct build -> last-known-good -> empty shape.
+    return serve('market-extra', async () => {
+        if (lam) {
+            const log = (lam._meta = lam._meta || {}).sourceLog = lam._meta.sourceLog || {};
+            const nullPaths = BASE_PATHS.filter((p) => { const m = getPath(lam, p); return !m || m.current == null; });
+            const fills = await Promise.all(nullPaths.map((p) => directMetric(p, apiKey, poly, er).then((r) => [p, r]).catch(() => [p, null])));
+            const filled = [];
+            for (const [p, r] of fills) if (r?.metric?.current != null) { setPath(lam, p, r.metric); log[p.split('.').pop()] = `${r.src} (filled)`; filled.push(p.split('.').pop()); }
+            if (!lam.fx) lam.fx = {};
+            addCrosses(lam, log);
+            if (filled.length) (lam._meta.messages = lam._meta.messages || []).push(`Filled from direct sources: ${filled.join(', ')}`);
+            return lam;
+        }
+        const direct = await buildDirect(apiKey, poly, er, messages);
+        const ok = Object.keys(direct.fx).length + Object.keys(direct.commodities).length + Object.keys(direct.rates).length;
+        if (ok === 0) throw new Error(`All market sources failed: ${messages.join(' | ')}`);
+        return direct;
+    }, {
+        isGood: (x) => x && (Object.keys(x.fx || {}).length + Object.keys(x.commodities || {}).length + Object.keys(x.rates || {}).length) > 0,
+        fallback: { fx: {}, commodities: {}, rates: {}, realEstate: {} },
+    });
 }

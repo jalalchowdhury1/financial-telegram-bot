@@ -1,5 +1,6 @@
 import { yahooChart, polygonDaily, finnhubQuote, dailyChange } from '../../../lib/sources';
 import { calculateRSI } from '../../../lib/finance';
+import { serve } from '../../../lib/store';
 
 // default-cache lets the fallback source fetches use the Data Cache even though
 // the handler is dynamic (Lambda call stays no-store). See fred/route.js note.
@@ -84,14 +85,15 @@ export async function GET(request) {
         return Response.json({ lambda: pick(lam), fallback: pick(fb), messages });
     }
 
-    const lam = await lambdaSpy(messages);
-    if (lam) return Response.json(lam);
-
-    try {
+    // Never-throws: Lambda -> Polygon(+Finnhub) -> Yahoo -> last-known-good -> error skeleton.
+    return serve('spy', async () => {
+        const lam = await lambdaSpy(messages);
+        if (lam) return lam;
         const fb = await fallbackSpy(messages);
         fb._meta.messages = [...messages, ...fb._meta.messages];
-        return Response.json(fb);
-    } catch (e) {
-        return Response.json({ error: 'All SPY sources failed', detail: [...messages, e.message].join(' | ') }, { status: 500 });
-    }
+        return fb;
+    }, {
+        isGood: (x) => x && x.current != null && x.ma200 && x.week52High,
+        fallback: { error: 'SPY temporarily unavailable' },
+    });
 }
