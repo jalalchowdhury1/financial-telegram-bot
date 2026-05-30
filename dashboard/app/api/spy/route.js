@@ -1,8 +1,85 @@
-export const dynamic = 'force-dynamic';
+import { yahooChart, stooqDaily, dailyChange } from '../../../lib/sources';
+import { calculateRSI } from '../../../lib/finance';
 
-export async function GET() {
+// default-cache lets the fallback source fetches use the Data Cache even though
+// the handler is dynamic (Lambda call stays no-store). See fred/route.js note.
+export const fetchCache = 'default-cache';
+
+const r2 = (x) => (x == null ? null : Math.round(x * 100) / 100);
+const sma = (arr, i, p) => (i >= p - 1 ? arr.slice(i - p + 1, i + 1).reduce((s, v) => s + v, 0) / p : null);
+
+/** Build the exact /api/spy shape from an oldest->newest [{date,price}] history. */
+function buildSpy(history, current, prevClose, source) {
+    const prices = history.map((h) => h.price);
+    const n = prices.length;
+    const ma200v = sma(prices, n - 1, 200);
+    const dc = dailyChange(current, prevClose);
+    const last252 = prices.slice(-252);
+    const wkHigh = Math.max(...last252);
+    const px3y = prices[Math.max(0, n - 756)];
+    const return3y = px3y ? ((current - px3y) / px3y) * 100 : null;
+    const rsi = calculateRSI(history, 9);
+
+    const chartHistory = [];
+    for (let i = Math.max(0, n - 302); i < n; i++) {
+        chartHistory.push({ date: history[i].date, price: r2(prices[i]), ma50: r2(sma(prices, i, 50)), ma200: r2(sma(prices, i, 200)) });
+    }
+
+    return {
+        current: r2(current),
+        dailyChange: { value: dc.value, pct: dc.pct },
+        ma200: { value: r2(ma200v), pct: ma200v ? ((current - ma200v) / ma200v) * 100 : 0 },
+        week52High: { value: r2(wkHigh), pct: wkHigh ? ((current - wkHigh) / wkHigh) * 100 : 0 },
+        rsi,
+        return3y,
+        chartHistory,
+        _meta: { source, hasErrors: true, messages: [`Served from ${source}`] },
+    };
+}
+
+async function fallbackSpy(messages) {
+    try {
+        const y = await yahooChart('SPY', { range: '5y', interval: '1d', revalidate: 300 });
+        return buildSpy(y.history, y.current, y.prevClose, 'Yahoo Finance (fallback)');
+    } catch (e1) {
+        messages.push(`Yahoo fallback failed: ${e1.message}`);
+        const s = await stooqDaily('spy.us', { revalidate: 300 });
+        return buildSpy(s.history, s.current, s.prevClose, 'Stooq (fallback)');
+    }
+}
+
+async function lambdaSpy(messages) {
     const lambdaUrl = process.env.LAMBDA_URL;
-    if (!lambdaUrl) return Response.json({ error: 'LAMBDA_URL not configured' }, { status: 500 });
-    const res = await fetch(`${lambdaUrl}/api/spy`, { cache: 'no-store' });
-    return Response.json(await res.json(), { status: res.status });
+    if (!lambdaUrl) { messages.push('LAMBDA_URL not configured'); return null; }
+    try {
+        const res = await fetch(`${lambdaUrl}/api/spy`, { cache: 'no-store' });
+        if (!res.ok) { messages.push(`Lambda HTTP ${res.status}`); return null; }
+        const j = await res.json();
+        if (j && j.current != null && !j.error) return j;
+        messages.push('Lambda returned no usable SPY data');
+    } catch (e) { messages.push(`Lambda failed: ${e.message}`); }
+    return null;
+}
+
+export async function GET(request) {
+    request.headers.get('user-agent'); // keep handler dynamic
+    const debug = new URL(request.url).searchParams.get('debug');
+    const messages = [];
+
+    if (debug === 'compare') {
+        const [lam, fb] = [await lambdaSpy(messages), await fallbackSpy(messages).catch((e) => ({ _err: e.message }))];
+        const pick = (o) => o && !o._err ? { current: o.current, ma200: o.ma200?.value, week52High: o.week52High?.value, rsi: o.rsi, return3y: o.return3y, dailyChangePct: o.dailyChange?.pct, source: o._meta?.source } : o;
+        return Response.json({ lambda: pick(lam), fallback: pick(fb), messages });
+    }
+
+    const lam = await lambdaSpy(messages);
+    if (lam) return Response.json(lam);
+
+    try {
+        const fb = await fallbackSpy(messages);
+        fb._meta.messages = [...messages, ...fb._meta.messages];
+        return Response.json(fb);
+    } catch (e) {
+        return Response.json({ error: 'All SPY sources failed', detail: [...messages, e.message].join(' | ') }, { status: 500 });
+    }
 }

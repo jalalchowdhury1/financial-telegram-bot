@@ -1,6 +1,7 @@
 import { FRED_SERIES, FRED_FRESHNESS, EXTERNAL_URLS } from '../../../lib/constants';
 import { fetchJson, proxyFetch } from '../../../lib/fetcher';
 import { withFreshness } from '../../../lib/freshness';
+import { dbnomicsFred } from '../../../lib/sources';
 
 // In Next 13.5 the route's default fetchCache is 'only-no-store', which ERRORS
 // on cached fetches. 'default-cache' permits caching (and never errors), so the
@@ -46,7 +47,16 @@ async function fetchSeriesRaw(seriesId, apiKey, limit) {
 }
 
 function fetchSeries(seriesId, apiKey, limit = 15) {
-    return fetchSeriesRaw(seriesId, apiKey, limit);
+    // FRED primary; on failure (e.g. 429) fall back to the DBnomics mirror,
+    // which serves the identical St. Louis Fed numbers without a key.
+    return fetchSeriesRaw(seriesId, apiKey, limit).catch(async (fredErr) => {
+        try {
+            const obs = await dbnomicsFred(seriesId, { revalidate: REVALIDATE_SECONDS });
+            return obs.slice(0, limit);
+        } catch (dbErr) {
+            throw new Error(`FRED: ${fredErr.message} | DBnomics: ${dbErr.message}`);
+        }
+    });
 }
 
 // Cache the slow HTML P/E scrapes the same way (30 min).
@@ -183,6 +193,21 @@ export async function GET(request) {
 
     const apiKey = process.env.FRED_API_KEY;
     if (!apiKey) return Response.json({ error: 'FRED_API_KEY not configured' }, { status: 500 });
+
+    // Equality check: FRED vs the DBnomics mirror for a few series.
+    if (new URL(request.url).searchParams.get('debug') === 'dbnomics') {
+        const out = {};
+        for (const id of ['T10Y2Y', 'M2SL', 'GDP', 'UNRATE']) {
+            try {
+                const [fred, db] = [await fetchSeriesRaw(id, apiKey, 3), (await dbnomicsFred(id)).slice(0, 3)];
+                out[id] = {
+                    fred: fred[0], dbnomics: db[0],
+                    match: !!(fred[0] && db[0] && fred[0].date === db[0].date && Math.abs(fred[0].value - db[0].value) < 1e-6),
+                };
+            } catch (e) { out[id] = { error: e.message }; }
+        }
+        return Response.json(out);
+    }
 
     const now = new Date();
 
