@@ -101,7 +101,7 @@ export async function frankfurterRates(base = 'USD', symbols = '', { revalidate 
  * Numbers are identical to FRED (DBnomics ingests the same St. Louis Fed data).
  */
 export async function dbnomicsFred(seriesId, { revalidate = 1800 } = {}) {
-    const url = `https://api.db.nomics.world/v22/series/FRED/${seriesId}?observations=1&format=json`;
+    const url = `https://api.db.nomics.world/v22/series?provider_code=FRED&series_code=${seriesId}&observations=1`;
     const data = await fetchJson(url, { revalidate });
     const doc = data?.series?.docs?.[0];
     if (!doc?.period || !doc?.value) throw new Error(`DBnomics: no series ${seriesId}`);
