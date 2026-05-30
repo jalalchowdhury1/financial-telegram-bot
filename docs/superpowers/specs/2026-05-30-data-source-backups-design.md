@@ -66,3 +66,21 @@ Branch `feat/data-source-backups`. Order: spy → spy-daily-move → polymarket 
 
 - Not modifying the AWS Lambda itself.
 - Not changing the dashboard UI (response shapes preserved exactly).
+
+## Final implementation notes (after live verification on Vercel)
+
+**Two-layer defense-in-depth.** The Lambda (in AWS, clean egress IP) already has 4–5 source chains per metric (yfinance→Polygon→Finnhub→Stooq→FRED for prices; FRED for rates; Gamma for Polymarket). It stays PRIMARY. The dashboard-layer fallbacks below engage only if the whole Lambda is unreachable.
+
+**Measured source reliability from Vercel egress** (8+ hits each, repeated):
+- Reliable: ER-API, Frankfurter, Coinbase, Gamma, FRED (when cached, not bursty). Yahoo is reliable for *single small* queries but 429s on *large/bursty* historical queries. Stooq now requires an API key (dead). CoinGecko rate-limits.
+- Therefore: price-history feeds (SPY, Gold, exact FX) use **Polygon** (`POLYGON_KEY`) + **Finnhub** (`FINNHUB_KEY`) — server-friendly, the same vendors the Lambda uses. Keyless fallbacks: FX→ER-API, DXY→computed from the ER-API basket, crude+rates→FRED, BTC→Coinbase.
+
+**Verified equality (preview vs live Lambda):** SPY price/52w/RSI exact, MA200 0.4%; USD/CAD exact (Polygon); USD/BDT + rates + DXY exact; Gold/BTC within ~0.5%; crude filled (Lambda's was null).
+
+**Env vars added (Vercel, Production+Preview):** `POLYGON_KEY`, `FINNHUB_KEY`. Never hardcoded (public repo).
+
+**Lambda bugs the dashboard layer now masks** (fix at the Lambda for a permanent cure — needs AWS redeploy):
+- `fetch_spy_daily_move()` uses `URLS['SPY_DAILY_MOVE']` which is missing from `bot/config.py` → always errors. Dashboard now serves it via Finnhub.
+- Crude (`cl`) has no Stooq layer → nulls when 3 sources miss. Dashboard fills from FRED `DCOILWTICO`.
+
+**Dropped:** DBnomics (per-series dataset path unresolved; FRED is reliable via cache+retry). Stooq (now key-gated).
