@@ -1,0 +1,72 @@
+name: Fix Function URL Auth
+
+# One-shot maintenance workflow: makes the Lambda Function URL match the
+# documented design (aws/template.yaml -> FunctionUrlConfig.AuthType: NONE) so
+# the dashboard's server-side fetch can reach it. The CI deploy uses
+# update-function-code, which never applies the SAM template, so the live URL
+# drifted to a state that returns 403. This diagnoses, fixes, and verifies.
+on:
+  workflow_dispatch:
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Diagnose, set public auth, verify
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
+        run: |
+          set +e   # keep going through errors so the full diagnostic prints
+          FUNCTION=financial-telegram-report
+          REGION=us-east-1
+
+          echo "===== caller identity ====="
+          aws sts get-caller-identity
+
+          echo; echo "===== BEFORE: function-url-config ====="
+          aws lambda get-function-url-config --function-name "$FUNCTION" --region "$REGION"
+
+          echo; echo "===== BEFORE: resource policy (public invoke present?) ====="
+          aws lambda get-policy --function-name "$FUNCTION" --region "$REGION" --query Policy --output text
+
+          echo; echo "===== BEFORE: function state ====="
+          aws lambda get-function-configuration --function-name "$FUNCTION" --region "$REGION" \
+            --query '{State:State,LastUpdateStatus:LastUpdateStatus,LastModified:LastModified,Runtime:Runtime,Handler:Handler}'
+
+          URL=$(aws lambda get-function-url-config --function-name "$FUNCTION" --region "$REGION" --query FunctionUrl --output text)
+          echo; echo "Function URL: $URL"
+          echo "===== BEFORE: live GET /api/polymarket ====="
+          curl -s -m 25 -o /dev/null -w "HTTP %{http_code}\n" "${URL}api/polymarket"
+
+          echo; echo "===== FIX 1: set Function URL AuthType = NONE ====="
+          aws lambda update-function-url-config --function-name "$FUNCTION" --region "$REGION" --auth-type NONE
+          echo "update-function-url-config rc=$?"
+
+          echo; echo "===== FIX 2: grant public lambda:InvokeFunctionUrl ====="
+          aws lambda add-permission --function-name "$FUNCTION" --region "$REGION" \
+            --statement-id FunctionURLAllowPublicAccess \
+            --action lambda:InvokeFunctionUrl \
+            --principal '*' \
+            --function-url-auth-type NONE
+          echo "add-permission rc=$? (a ResourceConflictException here just means it already exists — fine)"
+
+          echo; echo "===== AFTER: function-url-config ====="
+          aws lambda get-function-url-config --function-name "$FUNCTION" --region "$REGION"
+
+          echo; echo "===== AFTER: live endpoint checks ====="
+          fail=0
+          for p in api/polymarket api/spy api/market-extra api/spy-daily-move; do
+            code=$(curl -s -m 30 -o /tmp/r.json -w "%{http_code}" "${URL}${p}")
+            bytes=$(wc -c </tmp/r.json | tr -d ' ')
+            echo "GET /$p -> HTTP $code (${bytes} bytes)"
+            head -c 180 /tmp/r.json; echo; echo "---"
+            [ "$code" = "200" ] || fail=1
+          done
+
+          if [ "$fail" -ne 0 ]; then
+            echo "::error::One or more endpoints did not return HTTP 200 after the fix."
+            exit 1
+          fi
+          echo "✓ Function URL is public and all endpoints return 200."
