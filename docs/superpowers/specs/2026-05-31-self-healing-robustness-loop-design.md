@@ -109,9 +109,14 @@ Report: `{ "generated_at": "...", "overall": "ok|warn|critical", "findings": [ .
 written to `health-report.json` (artifact) and appended to `health/history/<date>.json`.
 
 ### Checks (each → a finding)
-1. **Report delivered today** — read `state/last_run.json` *heartbeat* (written only on
-   confirmed Telegram delivery; see Component D). Cross-check `/api/last-run`. `critical`
-   if no heartbeat for today after report time.
+1. **Report delivered today** — the true daily sender is the Lambda (`handle_eventbridge`,
+   EventBridge-triggered), which cannot write a git-committed file. So the source of truth is
+   a **stable CloudWatch marker** the Lambda emits *after confirmed Telegram delivery*
+   (`REPORT_DELIVERED …` / `REPORT_FAILED …`; see Component D). The prober queries
+   CloudWatch Logs for today's marker. Cross-check `/api/last-run` + the `daily_report.yml`
+   run status. `REPORT_FAILED`/error today → `critical`; marker present → `ok`; if CloudWatch
+   can't be read (IAM/no logs) and no corroborating signal exists → `warn` ("could not
+   confirm delivery"), never a false `critical`.
 2. **Dashboard `/api/*` endpoints** — for each of `spy`, `spy-daily-move`, `market-extra`,
    `polymarket`, `fred`, `assessment`, `sheets`, `fear-greed`, via the real Vercel base
    URL: HTTP 200, valid JSON, **no bare `NaN`/`Infinity`** in the body,
@@ -186,8 +191,11 @@ The detection layer is only honest if these hold, so they are fixed up front:
 2. **Telegram delivery hardening** (`bot/utils.py:send_to_telegram`): on a `parse_mode`
    400, **retry as plain text**; **chunk** messages > 4096 chars. A stray ``_ * [ ] ` ``
    in sheet content can no longer silently drop the whole report.
-3. **Delivery heartbeat** (`state/last_run.json`): written **only after** Telegram confirms
-   `ok:true`. This is the prober's source of truth for "did it send today."
+3. **Stable CloudWatch delivery marker**: the Lambda (`handle_eventbridge`) and the runner
+   (`bot/main.py`) both emit a single greppable line **only after** Telegram confirms
+   delivery — `REPORT_DELIVERED ok=true sections=N errors=M` — and `REPORT_FAILED …` on
+   failure. CloudWatch Logs are the prober's source of truth for "did it send today"
+   (no committed state file needed; the Lambda can't commit).
 
 **Carried, not auto-fixed** (handed to the owner as a checklist; agent forbidden from
 secrets):
