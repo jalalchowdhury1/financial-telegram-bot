@@ -117,7 +117,16 @@ export async function GET(request) {
             for (const [p, r] of fills) if (r?.metric?.current != null) { setPath(lam, p, r.metric); log[p.split('.').pop()] = `${r.src} (filled)`; filled.push(p.split('.').pop()); }
             if (!lam.fx) lam.fx = {};
             addCrosses(lam, log);
-            if (filled.length) (lam._meta.messages = lam._meta.messages || []).push(`Filled from direct sources: ${filled.join(', ')}`);
+            // Reconcile the Lambda's _meta with what we actually serve after the
+            // direct backfill: drop its now-stale "unavailable: N metrics" note and
+            // recompute health from what is STILL missing. Otherwise the status
+            // footer stays red for metrics we already successfully backfilled.
+            const stillNull = BASE_PATHS.filter((p) => { const m = getPath(lam, p); return !m || m.current == null; });
+            lam._meta = lam._meta || {};
+            lam._meta.messages = (lam._meta.messages || []).filter((m) => !/unavailable:\s*\d+\s*metrics/i.test(m));
+            if (filled.length) lam._meta.messages.push(`Filled from direct sources: ${filled.join(', ')}`);
+            if (stillNull.length) lam._meta.messages.push(`unavailable: ${stillNull.length} metrics`);
+            lam._meta.hasErrors = stillNull.length > 0;
             return lam;
         }
         const direct = await buildDirect(apiKey, poly, er, messages, faults);

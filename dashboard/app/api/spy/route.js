@@ -38,7 +38,11 @@ function buildSpy(history, current, prevClose, source) {
         rsi,
         return3y,
         chartHistory,
-        _meta: { source, hasErrors: true, messages: [`Served from ${source}`] },
+        // Reaching this return means a full, validated build (n>=220, all stats
+        // computed) — that is healthy data, not an error. A degraded *source*
+        // (Stooq/FRED) is conveyed by the source label, which the status footer
+        // colours separately; hard-coding hasErrors:true made SPY perpetually red.
+        _meta: { source, hasErrors: false, messages: [`Served from ${source}`] },
     };
 }
 
