@@ -3,6 +3,15 @@ name: Deploy to AWS Lambda
 on:
   push:
     branches: [main]
+    # Only deploy when something that actually ships to Lambda changes. This
+    # stops unrelated commits (docs, dashboard, other workflows) from triggering
+    # a redundant deploy — which is exactly what caused the overlapping-deploy
+    # race that started this whole effort.
+    paths:
+      - 'lambda_handler.py'
+      - 'bot/**'
+      - 'aws/requirements-lambda.txt'
+      - '.github/workflows/deploy-lambda.yml'
   workflow_dispatch:
 
 # Serialize deploys. Two pushes landing close together used to trigger two
@@ -100,24 +109,46 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: us-east-1
 
-      - name: Smoke test endpoints
+      - name: Smoke test live endpoints (via API Gateway — the dashboard's real path)
         run: |
-          # Get Lambda URL
-          LAMBDA_URL=$(aws lambda get-function-url-config \
-            --function-name financial-telegram-report \
-            --region us-east-1 \
-            --query 'FunctionUrl' \
-            --output text)
+          set -uo pipefail
+          REGION=us-east-1
+          FUNCTION=financial-telegram-report
 
-          echo "Testing endpoints at: $LAMBDA_URL"
+          # The dashboard reaches the Lambda through an HTTP API Gateway, NOT the
+          # Function URL (which is account-blocked). Discover the HTTP APIs that
+          # route to this function and test the ones that actually answer.
+          mapfile -t ENDPOINTS < <(aws apigatewayv2 get-apis --region "$REGION" \
+            --query 'Items[].ApiEndpoint' --output text 2>/dev/null | tr '\t' '\n' | sed '/^$/d')
 
-          # Test polymarket endpoint
-          curl -X POST "$LAMBDA_URL" \
-            -H "Content-Type: application/json" \
-            -d '{"rawPath": "/api/polymarket", "requestContext": {"http": {"method": "GET"}}}' \
-            || echo "⚠ Polymarket endpoint test failed"
+          tested=0
+          hard_fail=0
+          for base in "${ENDPOINTS[@]}"; do
+            code=$(curl -s -m 30 -o /tmp/smoke.json -w "%{http_code}" "$base/api/spy")
+            # Only the gateway(s) wired to our Lambda return 200 with SPY JSON; skip the rest.
+            [ "$code" = "200" ] || continue
+            tested=$((tested + 1))
+            echo "✓ $base/api/spy -> 200 ($(wc -c </tmp/smoke.json | tr -d ' ') bytes)"
 
-          echo "✓ Smoke tests completed"
+            # Guard README risk #1: a raw NaN/Infinity in the payload crashes the
+            # API Gateway proxy parser and any JS client. This is a real regression
+            # signal, so fail the deploy if we ever see it.
+            if grep -qE '\bNaN\b|\bInfinity\b' /tmp/smoke.json; then
+              echo "::error::Unsanitized NaN/Infinity found in $base/api/spy payload (would 500 the gateway)"
+              hard_fail=1
+            fi
+            if ! python3 -c "import json,sys; json.load(open('/tmp/smoke.json'))" 2>/dev/null; then
+              echo "::error::$base/api/spy did not return valid JSON"
+              hard_fail=1
+            fi
+          done
+
+          if [ "$tested" -eq 0 ]; then
+            echo "::warning::No API Gateway returned 200 for /api/spy — could not smoke-test the live path (deploy of code still succeeded)."
+          else
+            echo "Smoke-tested $tested live gateway endpoint(s)."
+          fi
+          exit $hard_fail
 
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}

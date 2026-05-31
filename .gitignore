@@ -66,3 +66,7 @@ output.json
 
 # Git worktrees
 .worktrees/
+
+# Build artifacts / virtualenvs that must never be committed (root-level)
+.next/
+.venv/
