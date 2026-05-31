@@ -1034,6 +1034,15 @@ def fetch_polymarket_trending(limit: int = 10) -> List[Dict[str, Any]]:
                             event_title = event.get("title", "").lower()
                             search_text += " " + event_title
 
+                # Skip sports by CATEGORY first — more robust than keyword whack-a-mole.
+                # Polymarket tags each market; a "Sports" tag is authoritative and catches
+                # markets (e.g. "Will the Lakers win the Championship?") whose text has no
+                # keyword in SPORTS_KEYWORDS.
+                tags = market.get("tags") or []
+                tag_labels = {(t.get("label") or "").lower() for t in tags if isinstance(t, dict)}
+                if any("sport" in lbl for lbl in tag_labels):
+                    continue
+
                 # Skip sports category (keyword matching across all fields)
                 if any(keyword in search_text for keyword in SPORTS_KEYWORDS):
                     continue
