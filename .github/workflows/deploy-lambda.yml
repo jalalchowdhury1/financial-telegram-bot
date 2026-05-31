@@ -5,6 +5,15 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Serialize deploys. Two pushes landing close together used to trigger two
+# deploy runs that both called update-function-code at the same instant, and
+# Lambda rejects concurrent updates with ResourceConflictException. This makes
+# the second run wait for the first to finish instead of racing it.
+# cancel-in-progress: false → never abort an in-flight deploy; queue behind it.
+concurrency:
+  group: deploy-lambda-financial-telegram-report
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -46,24 +55,43 @@ jobs:
 
       - name: Deploy to AWS Lambda
         run: |
+          set -euo pipefail
+
           # Upload to S3 (deployment packages over ~50MB must use S3)
           BUCKET="financial-telegram-bot-deployments"
+          FUNCTION="financial-telegram-report"
+          REGION="us-east-1"
           TIMESTAMP=$(date +%Y%m%d_%H%M%S)
           S3_KEY="lambda-deployments/deployment_${TIMESTAMP}.zip"
 
           aws s3 cp deployment_full.zip "s3://${BUCKET}/${S3_KEY}"
 
-          # Update Lambda function to use S3
-          aws lambda update-function-code \
-            --function-name financial-telegram-report \
-            --s3-bucket "${BUCKET}" \
-            --s3-key "${S3_KEY}" \
-            --region us-east-1
+          # Make sure no other update (manual console deploy, an overlapping run)
+          # is still settling before we start. Non-fatal if it returns quickly.
+          echo "Waiting for function to be idle before update..."
+          aws lambda wait function-updated --function-name "$FUNCTION" --region "$REGION" || true
 
-          # Wait for update to complete
-          aws lambda wait function-updated \
-            --function-name financial-telegram-report \
-            --region us-east-1
+          # Update the function code, retrying on the ResourceConflictException
+          # that occurs if another update sneaks in just ahead of us.
+          for attempt in 1 2 3 4 5; do
+            if aws lambda update-function-code \
+                 --function-name "$FUNCTION" \
+                 --s3-bucket "$BUCKET" \
+                 --s3-key "$S3_KEY" \
+                 --region "$REGION" >/dev/null; then
+              echo "update-function-code accepted (attempt $attempt)."
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "update-function-code still conflicting after 5 attempts." >&2
+              exit 1
+            fi
+            echo "Another update is in progress; waiting for it to settle, then retry $attempt..."
+            aws lambda wait function-updated --function-name "$FUNCTION" --region "$REGION" || sleep 15
+          done
+
+          # Wait for our update to finish applying.
+          aws lambda wait function-updated --function-name "$FUNCTION" --region "$REGION"
 
           echo "✓ Deployed to Lambda from S3"
 
