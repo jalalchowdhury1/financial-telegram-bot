@@ -35,6 +35,43 @@ def test_check_endpoint_has_errors_is_warn():
     assert f["severity"] == "warn"
 
 
+def test_check_indicators_na_lei_is_expected_not_alarmed():
+    indicators = {
+        "lei": {"value": None, "asOf": "2020-02-01", "stale": True, "unavailable": False},
+        "sentiment": {"value": 49.8, "stale": False, "unavailable": False},
+    }
+    f = hc.check_indicators_na(indicators)
+    assert f["severity"] == "ok"
+    assert "lei" in f["evidence"]["expected_na"]
+
+
+def test_check_indicators_na_unexpected_null_is_warn():
+    indicators = {
+        "sentiment": {"value": None, "asOf": "2026-04-01", "stale": True, "unavailable": False},
+        "lei": {"value": None, "stale": True, "unavailable": False},
+    }
+    f = hc.check_indicators_na(indicators)
+    assert f["severity"] == "warn"
+    assert "sentiment" in f["detail"]      # the unexpected one is named
+    assert "lei" not in f["detail"]        # the discontinued one is NOT alarmed
+
+
+def test_check_indicators_na_unavailable_is_warn():
+    indicators = {"claims": {"value": None, "unavailable": True}}
+    f = hc.check_indicators_na(indicators)
+    assert f["severity"] == "warn"
+    assert "claims" in f["detail"]
+
+
+def test_check_indicators_na_all_present_is_ok():
+    indicators = {"claims": {"value": 209, "stale": False, "unavailable": False}}
+    assert hc.check_indicators_na(indicators)["severity"] == "ok"
+
+
+def test_check_indicators_na_missing_object_is_warn():
+    assert hc.check_indicators_na(None)["severity"] == "warn"
+
+
 def test_check_report_delivered_ok_from_cloudwatch():
     ev = {"cloudwatch_readable": True, "markers": ["REPORT_DELIVERED ok=true sections=2 errors=0"], "gha_success_today": False}
     assert hc.check_report_delivered(ev)["severity"] == "ok"
