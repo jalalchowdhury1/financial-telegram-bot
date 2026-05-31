@@ -96,6 +96,48 @@ def test_assemble_report_overall_is_worst_severity():
     assert hc.assemble_report(findings)["overall"] == "critical"
 
 
+class _Resp:
+    def __init__(self, status, text=""):
+        self.status_code = status
+        self.text = text
+
+
+def test_fetch_endpoint_retries_a_cold_start_then_succeeds(monkeypatch):
+    import requests
+    calls = {"n": 0}
+
+    def fake_get(url, timeout=0):
+        calls["n"] += 1
+        if calls["n"] < 2:
+            raise Exception("cold start / connection timed out")
+        return _Resp(200, '{"ok": true}')
+
+    monkeypatch.setattr(requests, "get", fake_get)
+    status, _ = hc.fetch_endpoint("http://x", "spy", attempts=3, sleeper=lambda s: None)
+    assert status == 200          # a slow first load is NOT flagged as down
+    assert calls["n"] == 2        # it retried once, then succeeded
+
+
+def test_fetch_endpoint_recovers_from_a_cold_5xx(monkeypatch):
+    import requests
+    seq = [_Resp(503, "cold"), _Resp(200, '{"ok": true}')]
+
+    monkeypatch.setattr(requests, "get", lambda url, timeout=0: seq.pop(0))
+    status, _ = hc.fetch_endpoint("http://x", "spy", attempts=3, sleeper=lambda s: None)
+    assert status == 200
+
+
+def test_fetch_endpoint_returns_failure_after_exhausting_attempts(monkeypatch):
+    import requests
+
+    def always_down(url, timeout=0):
+        raise Exception("genuinely down")
+
+    monkeypatch.setattr(requests, "get", always_down)
+    status, _ = hc.fetch_endpoint("http://x", "spy", attempts=2, sleeper=lambda s: None)
+    assert status == 0            # a truly dead endpoint is still flagged
+
+
 def test_format_alert_is_claude_actionable_and_omits_ok():
     report = {
         "overall": "critical",

@@ -135,14 +135,45 @@ def format_alert(report):
 
 
 # --- I/O layer (never-throw) -----------------------------------------------
-def fetch_endpoint(base, name):
-    """Return (status_code, body_text). Network errors → (0, '')."""
+# Cold-start tolerance: a cold Vercel/Lambda stack can be slow or 5xx on the FIRST hit.
+# We warm it up once, then retry each probe with backoff, so a slow first load is never
+# mistaken for an outage. Tunable via env without a code change.
+PROBE_TIMEOUT = int(os.environ.get("PROBE_TIMEOUT", "45"))
+PROBE_ATTEMPTS = int(os.environ.get("PROBE_ATTEMPTS", "3"))
+PROBE_BACKOFF = (3, 10, 20)
+
+
+def warm_up(base):
+    """Wake a cold stack once before probing so the first real probe isn't a false
+    failure. Best-effort; errors are ignored."""
     import requests
     try:
-        r = requests.get(f"{base}/api/{name}", timeout=30)
-        return r.status_code, r.text
-    except Exception as e:
-        return 0, f"request failed: {e}"
+        requests.get(f"{base}/api/spy", timeout=max(PROBE_TIMEOUT, 60))
+    except Exception:
+        pass
+
+
+def fetch_endpoint(base, name, attempts=None, sleeper=None):
+    """Return (status_code, body_text), retrying transient failures so a cold start or a
+    slow first load is NOT mistaken for an outage. Returns immediately on the first HTTP
+    200; otherwise retries with backoff and returns the last result so a genuinely-down
+    endpoint is still flagged."""
+    import requests
+    import time
+    attempts = attempts or PROBE_ATTEMPTS
+    sleep = sleeper or time.sleep
+    last = (0, "")
+    for i in range(attempts):
+        try:
+            r = requests.get(f"{base}/api/{name}", timeout=PROBE_TIMEOUT)
+            last = (r.status_code, r.text)
+            if r.status_code == 200:
+                return last
+        except Exception as e:
+            last = (0, f"request failed: {e}")
+        if i < attempts - 1:
+            sleep(PROBE_BACKOFF[min(i, len(PROBE_BACKOFF) - 1)])
+    return last
 
 
 def _load_json_file(path, default):
@@ -155,6 +186,7 @@ def _load_json_file(path, default):
 
 def run_all_checks(generated_at):
     findings = []
+    warm_up(VERCEL_BASE)   # absorb the cold-start cost once before probing
     for name in ENDPOINTS:
         status, body = fetch_endpoint(VERCEL_BASE, name)
         findings.append(check_endpoint(name, status, body))
