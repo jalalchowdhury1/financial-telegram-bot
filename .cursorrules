@@ -1,9 +1,12 @@
 # AI Instructions & Context
 
-Always read `docs/AI_MAINTAINER_GUIDE.md` and check `.gemini/antigravity/brain/task.md` before performing any tasks.
+**Before doing anything in this repo, read [`AGENTS.md`](./AGENTS.md) in full.**
+It is the single source of truth — architecture, deploy rules, dashboard conventions,
+known gotchas, and a never-break checklist.
 
-## 🛡️ Core Rules
-- **Keep Bot Lite**: Never add heavy plotting or bulky dependencies to the `bot/` package.
-- **Modular UI**: Always extract new dashboard features into standalone components in `dashboard/components/`.
-- **Transparency**: Update `task.md` and use `task_boundary` for complex multi-step work.
-- **Data Resilience**: Ensure every new API route has error handling or fallbacks.
+Quick reminders (full detail in AGENTS.md):
+- Keep `bot/` lite — no heavy/bulky deps (Lambda size & cold start).
+- Put new dashboard features in standalone `dashboard/components/` (with `'use client'`).
+- Every `/api/*` route must be never-throw (wrap the whole body in `lib/store.js: serve()`)
+  and return 200 + valid JSON. Sanitize `NaN` before responding.
+- Never hardcode secrets — the repo is public.
