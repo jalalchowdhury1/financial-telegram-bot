@@ -57,7 +57,10 @@ export async function GET() {
 
     // Layer 2: RapidAPI
     try {
-        const rapidApiKey = process.env.RAPIDAPI_KEY || '7a22060824mshabd4fb2494530d3p1cee20jsnb5257930e869';
+        // No hardcoded fallback — a committed key is a leaked key. If RAPIDAPI_KEY
+        // isn't set, skip this layer (CNN is primary; Yahoo VIX etc. follow).
+        const rapidApiKey = process.env.RAPIDAPI_KEY;
+        if (!rapidApiKey) throw new Error('RAPIDAPI_KEY not configured — skipping RapidAPI layer');
         const res = await proxyFetch(EXTERNAL_URLS.RAPIDAPI_FEAR_GREED, {
             headers: { 'X-RapidAPI-Key': rapidApiKey, 'X-RapidAPI-Host': 'fear-and-greed-index.p.rapidapi.com' },
             next: { revalidate: 0 }
