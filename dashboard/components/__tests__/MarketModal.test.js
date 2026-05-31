@@ -78,13 +78,15 @@ describe('MarketModal Component', () => {
     expect(screen.getByText('$1,234,567')).toBeInTheDocument();
   });
 
-  test('link has correct href to Polymarket', () => {
+  test('link points to the Polymarket homepage', () => {
     render(
       <MarketModal bet={mockBet} isOpen={true} onClose={mockOnClose} />
     );
 
     const link = screen.getByRole('link');
-    expect(link).toHaveAttribute('href', `https://polymarket.com/market/${mockBet.slug}`);
+    // Per AGENTS.md: per-market deep links were deliberately removed as unreliable
+    // (the Polymarket API doesn't surface a usable slug). The modal links to the homepage.
+    expect(link).toHaveAttribute('href', 'https://polymarket.com');
   });
 
   test('link opens in new tab with security attributes', () => {
