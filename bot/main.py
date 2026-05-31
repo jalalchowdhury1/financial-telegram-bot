@@ -20,7 +20,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 # Import from the modular bot package
-from bot.utils import load_environment_variables, send_to_telegram
+from bot.utils import load_environment_variables, send_to_telegram, report_marker
 from bot.fetchers import fetch_google_sheet_indicators, fetch_spy_stats
 
 from bot.config import TIMEZONE, REPORT_TIME
@@ -49,9 +49,16 @@ def run_report():
     try:
         # 1. Fetch Google Sheets Indicators (Primary content requested by user)
         gs_text = fetch_google_sheet_indicators()
-        if gs_text:
-            send_to_telegram(env_vars['TELEGRAM_TOKEN'], env_vars['TELEGRAM_CHAT_ID'], caption=gs_text)
-            print("✓ Sent Google Sheets indicators.")
+        if not gs_text:
+            print("⚠ Google Sheets returned empty result — nothing to send.")
+            print(report_marker(False, reason="empty_content"))
+            return False
+
+        sent = send_to_telegram(env_vars['TELEGRAM_TOKEN'], env_vars['TELEGRAM_CHAT_ID'], caption=gs_text)
+        if not sent:
+            print(report_marker(False, sections=1, reason="telegram_delivery"))
+            return False
+        print("✓ Sent Google Sheets indicators.")
 
         # 2. Add a quick text summary for SPY (Disabled per user request)
         # try:
@@ -66,9 +73,11 @@ def run_report():
         pass
             
         print("\n✓ Lightweight report processing complete.")
+        print(report_marker(True, sections=1, errors=0))
         return True
     except Exception as e:
         print(f"CRITICAL ERROR in report generation: {e}")
+        print(report_marker(False, reason="exception"))
         return False
 
 async def report_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -133,6 +142,6 @@ def main():
 
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == 'report':
-        run_report()
+        sys.exit(0 if run_report() else 1)
     else:
         main()
