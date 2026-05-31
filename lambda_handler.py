@@ -149,21 +149,30 @@ def handle_eventbridge(env_vars: Dict[str, str], run_time: str) -> Dict[str, Any
     logger.info('Step 2/2 – Fetching SPY data...')
     try:
         spy = fetch_spy_with_fallback(fred_api_key=fred_api_key)
-        price      = spy.get('current', 0)
-        ma200_pct  = spy.get('ma200', {}).get('pct', 0)
-        high52_pct = spy.get('week52High', {}).get('pct', 0)
-        rsi        = spy.get('rsi', 0)
-        ret3y      = spy.get('return3y', 0)
-        source     = spy.get('_meta', {}).get('source', 'unknown')
+        # Guard: if the fetch errored or returned no usable price, don't render a
+        # misleading all-zero snapshot — record the error and skip the section.
+        if spy.get('error') or not spy.get('current'):
+            raise ValueError(spy.get('error') or 'no usable SPY price returned')
 
-        daily = spy.get('dailyChange', {})
-        chg_pct = daily.get('pct', 0)
+        # Coalesce nullable numeric fields to 0 so a single None can't raise a
+        # TypeError (e.g. f'{None:+.1f}') and silently drop the whole section.
+        price      = spy.get('current') or 0
+        ma200_pct  = (spy.get('ma200') or {}).get('pct') or 0
+        high52_pct = (spy.get('week52High') or {}).get('pct') or 0
+        rsi        = spy.get('rsi') or 0
+        ret3y      = spy.get('return3y')
+        source     = (spy.get('_meta') or {}).get('source', 'unknown')
 
+        daily = spy.get('dailyChange') or {}
+        chg_pct = daily.get('pct') or 0
+
+        # 3Y return is genuinely optional — show n/a rather than a fake +0.0%.
+        ret3y_str = f'{ret3y:+.1f}%' if isinstance(ret3y, (int, float)) else 'n/a'
         spy_text = (
             f'📈 *SPY Snapshot* _({source})_\n'
             f'Price : ${price:,.2f} ({chg_pct:+.2f}%)\n'
             f'vs MA200 : {ma200_pct:+.2f}% | 52W High : {high52_pct:+.2f}%\n'
-            f'RSI(9) : {rsi:.1f} | 3Y Return : {ret3y:+.1f}%'
+            f'RSI(9) : {rsi:.1f} | 3Y Return : {ret3y_str}'
         )
         report_sections.append(spy_text)
         logger.info(f'✓ SPY fetched via {source}.')
