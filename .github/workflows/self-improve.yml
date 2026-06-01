@@ -3,14 +3,13 @@ name: Weekly Self-Improve
 
 on:
   schedule:
-    - cron: '0 13 * * 3'   # Wednesday 13:00 UTC (~9 ET) — a PR waiting Wednesday morning
-  workflow_dispatch:        # the owner's one-click on-demand override
+    - cron: '0 13 * * 3'   # Wednesday 13:00 UTC (~9 ET)
+  workflow_dispatch:        # owner's on-demand override
 
 permissions:
-  contents: write
-  pull-requests: write
-  actions: read           # download recent health-check run artifacts (the health history)
-  id-token: write         # REQUIRED by claude-code-action@v1 (fetches an OIDC token)
+  contents: write           # create a feature branch (NOT main — branch protection blocks that)
+  pull-requests: write      # open the PR
+  actions: read             # download recent health-check artifacts (the health history)
 
 concurrency:
   group: self-improve
@@ -19,7 +18,7 @@ concurrency:
 jobs:
   self-improve:
     runs-on: ubuntu-latest
-    timeout-minutes: 30     # hard wall-clock backstop
+    timeout-minutes: 30      # hard wall-clock backstop
     steps:
       - uses: actions/checkout@v6
         with:
@@ -30,8 +29,14 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
-      - name: Install deps
-        run: pip install -r requirements-dev.txt
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+
+      - name: Install deps + Claude CLI
+        run: |
+          pip install -r requirements-dev.txt
+          npm install -g @anthropic-ai/claude-code
 
       - name: Pull recent health reports (durable history = health-check run artifacts)
         env:
@@ -48,34 +53,53 @@ jobs:
       - name: Build the health digest
         run: python scripts/collect_health_context.py
 
-      - name: Run the self-improve agent (opens a PR)
+      - name: Run the self-improve agent (headless Claude CLI; edits files only)
         id: agent
-        uses: anthropics/claude-code-action@v1
-        with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          prompt: "@.github/self-improve-prompt.md"
-          base_branch: main
-          branch_prefix: "self-improve/"
-          claude_args: |
-            --max-turns 20
-            --model claude-opus-4-8
-            --allowedTools "Read,Write,Edit,Bash(git:*),Bash(gh:*),Bash(python:*),Bash(pytest:*)"
-
-      - name: Telegram summary
-        if: always()
         env:
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          GH_TOKEN: ${{ github.token }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           set -uo pipefail
+          PROMPT="$(cat .github/self-improve-prompt.md)
+
+          ===== This week's health digest (health-digest.md) =====
+          $(cat health-digest.md)"
+          claude -p "$PROMPT" \
+            --model claude-opus-4-8 \
+            --max-turns 15 \
+            --allowedTools "Read,Edit,Write,Grep,Glob" \
+            --permission-mode acceptEdits \
+            --output-format text
+
+      - name: Open a PR if the agent changed anything, then summarize to Telegram
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          set -uo pipefail
+          # Drop ephemeral run artifacts so they don't show up as "changes".
+          rm -f health-digest.md; rm -rf health/history
+
           if [ "${{ steps.agent.outcome }}" = "failure" ]; then
-            export MSG="🔴 Weekly self-improve FAILED to run — check the Actions log (the agent step errored, so no PR was opened)."
+            export MSG="🔴 Weekly self-improve FAILED to run — check the Actions log (no PR opened)."
+          elif [ -z "$(git status --porcelain)" ]; then
+            export MSG="🛠️ Weekly self-improve: nothing to fix this week. ✅"
           else
-            PRS=$(gh pr list --search "head:self-improve/" --state open --json number,title,url \
-                  --jq '.[] | "PR #\(.number): \(.title) \(.url)"' 2>/dev/null || echo "")
-            export MSG="🛠️ Weekly self-improve: ${PRS:-nothing to fix this week.}"
+            python -m pytest tests/ -q && TESTS="✅ pass" || TESTS="🔴 FAIL"
+            BRANCH="self-improve/run-${{ github.run_id }}"
+            git config user.name "claude-self-improve"
+            git config user.email "actions@github.com"
+            git checkout -b "$BRANCH"
+            git add -A
+            git commit -m "self-improve: automated change (review before merge) [skip ci]"
+            git push origin "$BRANCH"
+            URL=$(gh pr create --base main --head "$BRANCH" \
+              --title "Weekly self-improve: automated change" \
+              --body "Opened by the weekly self-improve agent (headless). Backend tests: ${TESTS}. Review before merging." 2>&1 | tail -1)
+            export MSG="🛠️ Weekly self-improve opened a PR for review: ${URL} (backend tests: ${TESTS})"
           fi
+
           python - <<'PY'
           import os
           from bot.utils import send_to_telegram
