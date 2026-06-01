@@ -19,19 +19,76 @@ async function lambdaPoly(messages) {
 
 /** Polymarket public Gamma API -> top-10 active markets by 24h volume
  *  (highest real trading activity; a reasonable trending-bets backup). */
+// Sports keyword sweep (mirrors bot/fetchers.py — used when the tag is absent).
+const SPORTS_KW = ['nfl', 'nba', 'nhl', 'mlb', 'ncaa', 'super bowl', 'world series', 'fifa',
+    'world cup', 'champions league', 'premier league', 'tennis', 'golf', 'cricket', 'rugby',
+    'formula 1', ' f1', 'motogp', 'mma', 'ufc', 'boxing', 'wwe', 'esports', 'basketball',
+    'soccer', 'football', 'baseball', 'hockey', ' vs ', 'finals'];
+const TOPICS = [
+    ['Crypto', '🪙', ['bitcoin', 'btc', 'ethereum', 'crypto', 'microstrategy', 'solana', 'coinbase', 'xrp']],
+    ['Geopolitics', '🌍', ['iran', 'israel', 'gaza', 'ukraine', 'russia', 'china', 'taiwan', 'ceasefire', 'nuclear', 'hormuz', 'north korea', 'peace deal', 'missile', 'sanction', 'cuba', 'venezuela']],
+    ['Politics', '🏛️', ['trump', 'biden', 'election', 'president', 'senate', 'congress', 'governor', 'democrat', 'republican', 'nominee', 'primary', 'impeach', 'vance', 'mayor']],
+    ['Tech', '🤖', ['openai', 'anthropic', 'gpt', 'nvidia', 'spacex', 'tesla', 'apple', 'google', 'ipo', 'chatgpt', 'claude', 'agi', 'starship']],
+    ['Economy', '📉', ['recession', 'rate cut', 'inflation', 'gdp', 'unemployment', 's&p', 'interest rate', 'valuation']],
+];
+function topicOf(t) {
+    for (const [name, emoji, kws] of TOPICS) if (kws.some((k) => t.includes(k))) return [name, emoji];
+    return ['World', '🌐'];
+}
+
+/** Curated "market sentiment" board (mirrors bot/fetchers.fetch_polymarket_trending):
+ *  paginate -> binary, non-sports, 8-92%, de-duped by event, topic-diverse, spread. */
 async function fallbackPoly(messages) {
-    const url = 'https://gamma-api.polymarket.com/markets?active=true&closed=false&liquidity_num_min=1000&order=volume24hr&ascending=false&limit=10';
-    const data = await fetchJson(url, { revalidate: 300 });
-    const arr = Array.isArray(data) ? data : data?.markets || [];
-    const bets = arr.map((m) => {
-        let odds = null;
-        try { const p = JSON.parse(m.outcomePrices || '[]'); odds = p.length ? parseFloat(p[0]) : null; } catch {}
-        if (odds == null && m.lastTradePrice != null) odds = parseFloat(m.lastTradePrice);
-        const volume = parseFloat(m.volumeNum ?? m.volume ?? m.volume24hr ?? 0);
-        return { name: m.question || m.title || 'Unknown market', odds, volume };
-    }).filter((b) => b.name && b.odds != null && b.volume > 0);
+    const base = 'https://gamma-api.polymarket.com/markets?active=true&closed=false&order=volume1wk&ascending=false&limit=100';
+    let raw = [];
+    for (let off = 0; off < 500; off += 100) {
+        const page = await fetchJson(`${base}&offset=${off}`, { revalidate: 300 });
+        const arr = Array.isArray(page) ? page : page?.markets || [];
+        if (!arr.length) break;
+        raw = raw.concat(arr);
+    }
+    const now = Date.now(), horizon = now + 86400000;
+    const cands = [];
+    for (const m of raw) {
+        try {
+            if (m.endDate) { const ed = Date.parse(m.endDate); if (!Number.isNaN(ed) && ed < horizon) continue; }
+            let outs = []; try { outs = JSON.parse(m.outcomes || '[]').map((o) => String(o).toLowerCase()); } catch {}
+            if (outs.join(',') !== 'yes,no') continue;
+            const name = m.question || m.groupItemTitle || '';
+            const ev = (m.events && m.events[0]) || {};
+            const text = `${name} ${m.slug || ''} ${ev.title || ''}`.toLowerCase();
+            const tags = (m.tags || []).map((t) => (t.label || '').toLowerCase());
+            if (tags.some((l) => l.includes('sport')) || SPORTS_KW.some((k) => text.includes(k))) continue;
+            let odds = null; try { const p = JSON.parse(m.outcomePrices || '[]'); odds = p.length ? parseFloat(p[0]) : null; } catch {}
+            if (odds == null || odds < 0.08 || odds > 0.92) continue;
+            const volume = parseFloat(m.volumeNum ?? m.volume ?? 0);
+            if (volume < 25000) continue;
+            const change = m.oneMonthPriceChange != null ? parseFloat(m.oneMonthPriceChange) : null;
+            const [topic, topicEmoji] = topicOf(text);
+            cands.push({
+                name, odds: Math.round(odds * 100) / 100, volume,
+                change: change != null ? Math.round(change * 1e4) / 1e4 : null,
+                topic, topicEmoji, endDate: m.endDate || null, eventSlug: ev.slug || null,
+                _event: ev.ticker || ev.slug || m.slug || name,
+            });
+        } catch { /* skip bad market */ }
+    }
+    cands.sort((a, b) => b.volume - a.volume);
+    const LIMIT = 8, MAX_LONG = 4, seen = new Set(), perTopic = {}, bets = [];
+    let nLong = 0;
+    for (const allowLong of [false, true]) {
+        for (const c of cands) {
+            if (bets.length >= LIMIT) break;
+            if (seen.has(c._event) || (perTopic[c.topic] || 0) >= 2) continue;
+            const isLong = c.odds < 0.30;
+            if (isLong && !allowLong && nLong >= MAX_LONG) continue;
+            seen.add(c._event); perTopic[c.topic] = (perTopic[c.topic] || 0) + 1; if (isLong) nLong++;
+            const { _event, ...bet } = c; bets.push(bet);
+        }
+        if (bets.length >= LIMIT) break;
+    }
     if (!bets.length) throw new Error('Gamma API returned no usable markets');
-    return { bets: bets.slice(0, 10), source: 'Polymarket Gamma API (fallback)' };
+    return { bets, source: 'Polymarket Gamma API (fallback)' };
 }
 
 export async function GET(request) {

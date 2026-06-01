@@ -95,8 +95,8 @@ export default function PolymarketTable() {
     <section aria-label="Polymarket Trending Bets">
       <div className="card" style={{ animationDelay: '0.8s' }}>
         <div className="card-header">
-          <h2>📊 Polymarket Trending Bets</h2>
-          <span className="badge badge-blue">Real-time · Top 10 Markets</span>
+          <h2>📊 Market Sentiment</h2>
+          <span className="badge badge-blue">What the crowd&apos;s betting on</span>
         </div>
 
         {/* Compact mobile-friendly list - matches ExtraMarketsGrid density */}
@@ -137,7 +137,7 @@ export default function PolymarketTable() {
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap'
                 }}>
-                  {bet.name.length > 45 ? bet.name.substring(0, 42) + '...' : bet.name}
+                  {bet.topicEmoji ? bet.topicEmoji + ' ' : ''}{bet.name.length > 43 ? bet.name.substring(0, 40) + '…' : bet.name}
                 </div>
 
                 {/* Odds Bar */}
@@ -172,6 +172,17 @@ export default function PolymarketTable() {
                   }}>
                     {(bet.odds * 100).toFixed(0)}%
                   </span>
+                  {bet.change != null && Math.abs(bet.change) >= 0.02 && (
+                    <span style={{
+                      fontFamily: "'JetBrains Mono', monospace",
+                      fontSize: '0.6rem',
+                      fontWeight: 700,
+                      color: bet.change >= 0 ? 'var(--green)' : 'var(--red)',
+                      whiteSpace: 'nowrap'
+                    }} title="30-day change in the odds">
+                      {bet.change >= 0 ? '▲' : '▼'}{Math.abs(Math.round(bet.change * 100))}
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -185,7 +196,7 @@ export default function PolymarketTable() {
                 whiteSpace: 'nowrap',
                 minWidth: '55px'
               }}>
-                {bet.volume > 1000 ? (bet.volume / 1000).toFixed(0) + 'k' : bet.volume.toFixed(0)}
+                {bet.volume >= 1e6 ? '$' + (bet.volume / 1e6).toFixed(1) + 'M' : bet.volume >= 1e3 ? '$' + (bet.volume / 1e3).toFixed(0) + 'k' : '$' + Math.round(bet.volume)}
               </div>
             </div>
           ))}
