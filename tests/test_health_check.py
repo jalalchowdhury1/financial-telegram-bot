@@ -1,5 +1,8 @@
 import importlib.util
+import json
 import os
+import subprocess
+import sys
 
 _spec = importlib.util.spec_from_file_location(
     "health_check",
@@ -7,6 +10,22 @@ _spec = importlib.util.spec_from_file_location(
 )
 hc = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(hc)
+
+
+def test_notify_runs_as_script_without_bot_import_error(tmp_path):
+    """Regression: running `python scripts/health_check.py --notify <warn report>` must
+    resolve `from bot.utils import ...` (repo root on sys.path). With no TELEGRAM env it
+    no-ops the send and exits 0 — but it MUST reach that import without ModuleNotFoundError."""
+    report = {"overall": "warn", "findings": [
+        {"id": "x", "severity": "warn", "title": "t", "detail": "", "remediation": "manual", "evidence": {}}]}
+    f = tmp_path / "r.json"
+    f.write_text(json.dumps(report))
+    script = os.path.join(os.path.dirname(__file__), "..", "scripts", "health_check.py")
+    env = {k: v for k, v in os.environ.items() if not k.startswith("TELEGRAM")}
+    proc = subprocess.run([sys.executable, script, "--notify", str(f)],
+                          capture_output=True, text=True, env=env)
+    assert "No module named 'bot'" not in proc.stderr, proc.stderr
+    assert proc.returncode == 0, proc.stderr
 
 
 def test_check_endpoint_ok():

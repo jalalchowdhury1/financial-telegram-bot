@@ -17,6 +17,10 @@ import os
 import re
 import sys
 
+# Make the repo root importable so `from bot.* import ...` works when this is run as
+# `python scripts/health_check.py` (Python puts scripts/ on sys.path, not the repo root).
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 # --- Config ----------------------------------------------------------------
 VERCEL_BASE = os.environ.get("DASHBOARD_BASE_URL", "https://financial-telegram-bot-beryl.vercel.app")
 # GET-able dashboard data endpoints. NOTE: /api/assessment is POST-only (needs a request
