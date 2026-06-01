@@ -14,7 +14,7 @@ jobs:
   health-check:
     runs-on: ubuntu-latest
     permissions:
-      contents: write        # commit health/history
+      contents: read         # checkout only — history is kept as run artifacts, not committed
       actions: write         # re-dispatch daily_report.yml on a confirmed miss
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -99,20 +99,13 @@ jobs:
             echo "No auto-remediable miss; leaving for the weekly agent / owner."
           fi
 
-      - name: Append to health history
-        run: |
-          set -uo pipefail
-          mkdir -p health/history
-          cp health-report.json "health/history/$(date -u +%Y-%m-%d).json"
-          git config user.name "health-check-bot"
-          git config user.email "actions@github.com"
-          git add health/history
-          git commit -m "chore(health): $(date -u +%Y-%m-%d) report [skip ci]" || echo "no change to commit"
-          git push || echo "push skipped"
-
+      # Durable health history = these per-run artifacts (the weekly self-improve agent
+      # pulls the recent ones). We deliberately do NOT commit to main: branch protection
+      # blocks bot pushes, and keeping automation out of the repo is cleaner.
       - name: Upload report artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: health-report
           path: health-report.json
+          retention-days: 90
