@@ -88,10 +88,6 @@ describe('FRED_FRESHNESS vs real reporting lag', () => {
         expect(isStale('2026-01-01', FRED_FRESHNESS.A053RC1Q027SBEA, NOW)).toBe(false);
     });
 
-    test('discontinued LEI (USSLIND, frozen 2020) IS stale', () => {
-        expect(isStale('2020-02-01', FRED_FRESHNESS.USSLIND, NOW)).toBe(true);
-    });
-
     test('daily series 2 days old is NOT stale', () => {
         expect(isStale('2026-05-28', FRED_FRESHNESS.DFII10, NOW)).toBe(false);
     });

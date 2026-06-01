@@ -3,6 +3,7 @@ import { fetchJson, proxyFetch } from '../../../lib/fetcher';
 import { withFreshness } from '../../../lib/freshness';
 import { serve } from '../../../lib/store';
 import { faultsFrom } from '../../../lib/faults';
+import { copperGoldRatio } from '../../../lib/finance';
 
 // In Next 13.5 the route's default fetchCache is 'only-no-store', which ERRORS
 // on cached fetches. 'default-cache' permits caching (and never errors), so the
@@ -70,6 +71,61 @@ function findByMonthOffset(arr, nMonths) {
 const dateOf = (arr) => arr?.[0]?.date ?? null;
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Copper/Gold ratio — replaces the discontinued LEI. A leading growth/rates gauge,
+// fetched from MULTIPLE price sources (Yahoo primary, Stooq fallback) per leg, so it
+// has the redundancy the dead FRED LEI never did. Never throws; a miss → unavailable.
+// ─────────────────────────────────────────────────────────────────────────────
+const COMMODITY_FRESHNESS_DAYS = 7;  // markets trade daily; tolerate weekends/holidays.
+
+async function fetchCommodityLeg(yahooTicker, stooqSymbol, stooqScale) {
+    // Returns { price, prev, asOf, source } or null.
+    try {
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooTicker}?range=5d&interval=1d`;
+        const data = await fetchJson(url, { revalidate: REVALIDATE_SECONDS });
+        const r = data?.chart?.result?.[0];
+        const ts = r?.timestamp || [];
+        const closes = r?.indicators?.quote?.[0]?.close || [];
+        const valid = [];
+        for (let i = 0; i < closes.length; i++) if (closes[i] != null) valid.push({ t: ts[i], c: closes[i] });
+        if (valid.length) {
+            const last = valid[valid.length - 1];
+            const prev = valid.length > 1 ? valid[valid.length - 2].c : last.c;
+            return { price: last.c, prev, asOf: new Date(last.t * 1000).toISOString().split('T')[0], source: 'Yahoo' };
+        }
+    } catch (e) { /* fall through to Stooq */ }
+    try {
+        const res = await proxyFetch(`https://stooq.com/q/l/?s=${stooqSymbol}&f=sd2t2ohlcv&h&e=csv`,
+            { revalidate: REVALIDATE_SECONDS, timeout: 8000 });
+        const rows = (await res.text()).trim().split('\n');
+        if (rows.length >= 2) {
+            const close = parseFloat(rows[1].split(',')[6]);
+            if (Number.isFinite(close)) {
+                return { price: close * stooqScale, prev: close * stooqScale, asOf: rows[1].split(',')[1] || null, source: 'Stooq' };
+            }
+        }
+    } catch (e) { /* give up — leg unavailable */ }
+    return null;
+}
+
+async function fetchCopperGold(now) {
+    const [copper, gold] = await Promise.all([
+        fetchCommodityLeg('HG=F', 'hg.f', 0.01),  // Stooq copper is cents/lb → ×0.01 = $/lb
+        fetchCommodityLeg('GC=F', 'gc.f', 1),     // gold already $/oz
+    ]);
+    const ratio = copper && gold ? copperGoldRatio(copper.price, gold.price) : null;
+    const prevRatio = copper && gold ? copperGoldRatio(copper.prev, gold.prev) : null;
+    const asOf = copper?.asOf || gold?.asOf || null;
+    return {
+        ...withFreshness(ratio, asOf, COMMODITY_FRESHNESS_DAYS, now),
+        change: ratio != null && prevRatio != null ? ratio - prevRatio : null,
+        status: ratio == null ? 'unknown' : (prevRatio != null && ratio < prevRatio ? 'falling' : 'rising'),
+        copper: copper?.price ?? null,
+        gold: gold?.price ?? null,
+        source: copper && gold ? `${copper.source}/${gold.source}` : null,
+    };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Build the dashboard payload, stamping each metric with asOf + staleness.
 // A value older than its series' freshness deadline (or missing) becomes null,
 // so the UI shows N/A — never a misleadingly old number.
@@ -78,7 +134,7 @@ const dateOf = (arr) => arr?.[0]?.date ?? null;
 function buildResponse(series, peRatio, now) {
     const {
         T10Y2Y: t10y2y, UNRATE: unrate, UMCSENT: umcsent, ICSA: icsa, BAMLC0A4CBBB: bbb,
-        DFII10: dfii10, USSLIND: usslind, NFCI: nfci, M2SL: m2sl, RSXFS: rsxfs,
+        DFII10: dfii10, NFCI: nfci, M2SL: m2sl, RSXFS: rsxfs,
         HOUST: houst, INDPRO: indpro, JTSJOL: jtsjol, DGORDER: dgorder, PSAVERT: psavert,
         A053RC1Q027SBEA: corpProfits, GDP: gdpData, USREC: usrec,
     } = series;
@@ -126,9 +182,8 @@ function buildResponse(series, peRatio, now) {
     const bbbCurrent = bbb[0]?.value;
     const tipsCurrent = dfii10[0]?.value;
     const tipsPrev = dfii10[1]?.value;
-    const leiCurrent = usslind[0]?.value;
-    const leiPrev = usslind[1]?.value;
-    const leiChange = leiPrev ? ((leiCurrent - leiPrev) / leiPrev) * 100 : leiCurrent;
+    // (LEI/USSLIND removed — discontinued since 2020. Replaced by the Copper/Gold ratio,
+    //  fetched from multiple price sources and merged into `indicators` in GET().)
 
     // ── Bull checklist ──
     const nfciCurrent = nfci[0]?.value;
@@ -161,7 +216,9 @@ function buildResponse(series, peRatio, now) {
             claims: F(claims4wk !== undefined ? claims4wk / 1000 : undefined, 'ICSA', dateOf(icsa), { status: claims4wk < 250000 ? 'healthy' : claims4wk < 350000 ? 'elevated' : 'weak' }),
             creditSpread: F(bbbCurrent, 'BAMLC0A4CBBB', dateOf(bbb), { status: bbbCurrent < 1.5 ? 'tight' : bbbCurrent < 2.5 ? 'normal' : 'stressed' }),
             realYields: F(tipsCurrent, 'DFII10', dateOf(dfii10), { change: tipsCurrent - tipsPrev, status: tipsCurrent > 2.0 ? 'restrictive' : tipsCurrent > 0 ? 'neutral' : 'easy' }),
-            lei: F(leiChange, 'USSLIND', dateOf(usslind), { status: leiCurrent > 0 ? 'rising' : 'falling' }),
+            // copperGold is added in GET() after buildResponse (it's fetched from price
+            // sources, not FRED). Placeholder keeps the key order stable; GET overwrites it.
+            copperGold: { value: null, asOf: null, stale: false, unavailable: true, status: 'unknown' },
         },
         checklist: {
             nfci: F(nfciCurrent, 'NFCI', dateOf(nfci), { bullish: nfciCurrent < 0, status: nfciCurrent < -0.5 ? 'strong' : nfciCurrent < 0 ? 'good' : 'weak', label: 'Financial Conditions' }),
@@ -185,7 +242,6 @@ const FRED_REQUESTS = [
     [FRED_SERIES.CLAIMS, 10],
     [FRED_SERIES.CREDIT_SPREAD, 252],
     [FRED_SERIES.REAL_YIELDS, 5],
-    [FRED_SERIES.LEI, 5],
     [FRED_SERIES.NFCI, 5],
     [FRED_SERIES.M2_MONEY, 15],
     [FRED_SERIES.RETAIL_SALES, 5],
@@ -266,6 +322,16 @@ export async function GET(request) {
         }
 
         const responseData = buildResponse(series, peRatio, now);
+
+        // Copper/Gold ratio comes from price sources (not FRED). Guarded so it can never
+        // break the FRED data: a failure just leaves it unavailable (which the daily
+        // health-check then flags as an unexpected N/A — exactly the desired signal).
+        try {
+            responseData.indicators.copperGold = await fetchCopperGold(now);
+        } catch (e) {
+            messages.push(`Copper/Gold failed: ${maskKey(e.message)}`);
+        }
+
         return {
             ...responseData,
             _meta: {

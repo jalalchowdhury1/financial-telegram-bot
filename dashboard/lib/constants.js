@@ -10,7 +10,6 @@ export const FRED_SERIES = {
     CLAIMS: 'ICSA',
     CREDIT_SPREAD: 'BAMLC0A4CBBB',
     REAL_YIELDS: 'DFII10',
-    LEI: 'USSLIND',
     NFCI: 'NFCI',
     M2_MONEY: 'M2SL',
     RETAIL_SALES: 'RSXFS',
@@ -52,7 +51,6 @@ export const FRED_FRESHNESS = {
     // Monthly (dated 1st of month + multi-week reporting lag)
     UNRATE: 80,
     UMCSENT: 80,
-    USSLIND: 80,   // discontinued since 2020 -> correctly flagged N/A
     M2SL: 80,
     RSXFS: 80,
     HOUST: 80,
