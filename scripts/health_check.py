@@ -210,11 +210,23 @@ def warm_up(base):
         pass
 
 
+def _body_is_degraded(text):
+    """True if a 200 body reports itself degraded (_meta.hasErrors/unavailable). These are
+    usually transient source hiccups (a feed momentarily rate-limited) that clear on a
+    re-fetch, so we retry them rather than alarm on the first blip."""
+    try:
+        meta = (json.loads(text) or {}).get("_meta") or {}
+        return bool(meta.get("hasErrors") or meta.get("unavailable"))
+    except Exception:
+        return False
+
+
 def fetch_endpoint(base, name, attempts=None, sleeper=None):
-    """Return (status_code, body_text), retrying transient failures so a cold start or a
-    slow first load is NOT mistaken for an outage. Returns immediately on the first HTTP
-    200; otherwise retries with backoff and returns the last result so a genuinely-down
-    endpoint is still flagged."""
+    """Return (status_code, body_text), retrying transient problems so neither a cold
+    start, a slow first load, NOR a momentary degraded response is mistaken for a real
+    fault. Returns immediately on the first HTTP 200 that is NOT self-reported-degraded;
+    otherwise retries with backoff and returns the last result, so a genuinely-down or
+    persistently-degraded endpoint is still flagged."""
     import requests
     import time
     attempts = attempts or PROBE_ATTEMPTS
@@ -224,7 +236,7 @@ def fetch_endpoint(base, name, attempts=None, sleeper=None):
         try:
             r = requests.get(f"{base}/api/{name}", timeout=PROBE_TIMEOUT)
             last = (r.status_code, r.text)
-            if r.status_code == 200:
+            if r.status_code == 200 and not _body_is_degraded(r.text):
                 return last
         except Exception as e:
             last = (0, f"request failed: {e}")
