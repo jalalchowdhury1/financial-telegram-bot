@@ -168,21 +168,26 @@ watch mode; `--testPathPattern <Name>` filters.
 
 ---
 
-## 4. Known issues / open items (as of 2026-05-31)
+## 4. Known issues / open items (updated 2026-06-01)
 
-- **`bot/config.py` is missing `URLS` keys** `SPY_DAILY_MOVE`, `SPY_INDICATORS`,
-  `STOOQ_SPY` → those Lambda data tiers `KeyError` and are dead (e.g. `/api/spy-daily-move`
-  from the Lambda always returns null; the dashboard masks it with a Finnhub fallback).
-  Fixing needs the owner's Google-Sheet IDs/gids; `STOOQ_SPY` = `https://stooq.com/q/d/l/?s=spy.us&i=d`.
-- **Daily report can fail silently:** `bot/main.py`'s `__main__` doesn't `sys.exit(1)` on
-  failure, so a broken run (or a Markdown-400 from Telegram) goes green and the retry
-  harness in `daily_report.yml` never fires. Make it exit non-zero on failure.
-- **Telegram delivery** sends the whole report as one `parse_mode='Markdown'` message over
-  un-escaped sheet content — an unbalanced `_ * [ ]` ` causes a 400 and drops the report.
-  Retry as plain text on 400; chunk >4096 chars.
-- **Secrets:** a RapidAPI key was committed and removed from code — it must still be
-  rotated (it's in git history). AWS CI moved off root keys to the `github-deploy-bot` IAM
-  user; the old root access keys should be deactivated/deleted.
+**✅ Resolved 2026-06-01** (kept here so the history is legible):
+- `bot/config.py` `URLS` now has `SPY_DAILY_MOVE`, `SPY_INDICATORS`, `STOOQ_SPY` (mirrored
+  from `dashboard/lib/constants.js`) — the Lambda SPY fallback tiers no longer `KeyError`.
+  *Note:* Stooq's `q/d/l` download endpoint now gates behind an apikey, so `STOOQ_SPY` is a
+  graceful **dead fallback** (the yfinance/Polygon/Finnhub tiers cover SPY).
+- Silent daily-report failure fixed: `bot/main.py` `run_report()` returns `False` on empty
+  content / failed send and `__main__` `sys.exit(1)` → green == sent, retry harness fires.
+- Telegram delivery hardened: `send_to_telegram` retries as plain text on a Markdown 400 and
+  chunks >4096 chars.
+- The discontinued LEI tile was replaced by the multi-sourced **Copper/Gold ratio** (§3).
+
+**Still open (needs the owner):**
+- **Secrets:** the leaked RapidAPI key (in git history) must still be **rotated**; the old
+  root AWS access keys should be deactivated/deleted (CI uses the scoped `github-deploy-bot`).
+- **Delivery monitoring:** grant `github-deploy-bot` `logs:FilterLogEvents` on
+  `/aws/lambda/financial-telegram-report` so the health-check can confirm delivery from
+  CloudWatch. Until then `report_delivered_today` safely degrades to a `warn` ("could not
+  confirm") — never a false `critical`.
 
 ## 5. Never-break checklist (before you commit)
 1. Did you sanitize pandas/math floats (no bare `NaN`) before any API response?
@@ -207,6 +212,45 @@ watch mode; `--testPathPattern <Name>` filters.
 - `dashboard/lib/{store,sources,fetcher,faults,freshness,finance,constants}.js` — the
   never-throw store, direct sources, retry, fault injection, FRED freshness, math.
 - `dashboard/app/page.js` — dashboard page + the `.system-status-bar` footer.
+- `scripts/health_check.py` — the daily self-check prober (see §7).
+- `scripts/collect_health_context.py` — distills recent health reports into the weekly
+  agent's digest.
 - `aws/template.yaml` — SAM template (reference only; **not** applied by CI — see §2).
-- `.github/workflows/` — `deploy-lambda.yml` (auto-deploys the Lambda) and
-  `daily_report.yml` (runner-based daily report with a self-retry harness).
+- `.github/workflows/` — `deploy-lambda.yml` (auto-deploys the Lambda), `daily_report.yml`
+  (runner-based daily report + self-retry harness), `ci.yml` (pytest + jest + build on every
+  PR — the merge gate), `health-check.yml` (daily self-check + Telegram alert), and
+  `self-improve.yml` (weekly Wed agent that opens PRs — see §7).
+
+---
+
+## 7. The self-healing health-check — and how to read its alerts
+
+The repo monitors itself. **Daily** (`health-check.yml`, 14:00 UTC) a pure-code prober
+(`scripts/health_check.py`) checks the LIVE system and, on any warn/critical, sends the owner
+a Telegram alert **written to be pasted straight into a Claude session**. **Weekly**
+(`self-improve.yml`, Wed 13:00 UTC) a headless Claude agent reads the recent reports + this
+file and opens PRs the owner approves (it never self-merges; branch protection enforces it).
+
+### When the owner pastes you a health alert, act on it like this
+Each finding has an `id`. Map id → meaning → fix:
+
+| Finding `id` | What it means | How to act |
+|---|---|---|
+| `report_delivered_today` | Couldn't confirm today's Telegram report went out | `cloudwatch_readable:false` → the `logs:FilterLogEvents` IAM grant is missing (owner action), **not a real outage**. A `REPORT_FAILED` marker → a real send failure: read the Lambda's CloudWatch logs; the daily run may already have re-dispatched `daily_report.yml`. |
+| `endpoint_<name>` | `/api/<name>` returned non-200, invalid JSON, a bare `NaN`, or `_meta.hasErrors` | Hit the live URL, read `_meta.messages`; fix per §3 (never-throw, sanitize NaN). Slow first loads are already retried, so a flagged endpoint is genuinely failing. |
+| `indicators_na` | A dashboard indicator is N/A **unexpectedly** | `detail` names the metric; repair/extend its fallback. Known-discontinued metrics are allowlisted (`KNOWN_DISCONTINUED` in the prober) and never alarmed. |
+| `known_issue_config_urls` | `bot/config.py` `URLS` missing a required key | Add the key — the URLs live in `dashboard/lib/constants.js`. |
+| `secret_leak` | gitleaks found a credential in the repo | **Rotate it immediately**, then remove the literal (env vars only). |
+| `ci_health` | An **active** workflow's **latest** run failed | Open that run, read the failure, fix + PR. Historical/fixed failures and deleted workflows are already excluded. |
+
+### Conventions
+- Severity `ok` < `warn` < `critical`; the alert lists **only non-ok** findings. A
+  `remediation: auto:redispatch_daily_report` tag means the daily workflow already retried.
+- **History = artifacts, not commits.** Each daily run uploads `health-report.json` (90-day
+  retention); the weekly agent downloads the recent ones. Nothing is pushed to `main`
+  (branch protection blocks bot pushes).
+- Delivery uses a **24h rolling CloudWatch window** for the Lambda's
+  `REPORT_DELIVERED`/`REPORT_FAILED` markers (`bot/utils.report_marker`), cross-checked with
+  the `daily_report.yml` run status.
+- **To fix anything here:** branch → fix + test → PR (CI gates it) → owner merges. Never push
+  to `main`. Roll back via a PR's **Revert** button or the `known-good-*` git tag.
