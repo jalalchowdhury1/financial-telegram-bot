@@ -35,10 +35,12 @@ jobs:
       - name: Install deps
         run: pip install -r requirements-dev.txt
 
-      - name: Gather delivery evidence (CloudWatch + daily_report.yml today)
+      - name: Gather delivery evidence (CloudWatch + daily_report.yml in last 24h)
         run: |
           set -uo pipefail
-          START_MS=$(python -c "import time;print(int((time.time()//86400)*86400*1000))")
+          # Rolling 24h window (not "since midnight UTC"): a report sent ~9:15 UTC daily is
+          # always within 24h, so this never false-flags "no report" when run off-schedule.
+          START_MS=$(python -c "import time;print(int((time.time()-86400)*1000))")
           READABLE=true
           MARKERS=$(aws logs filter-log-events \
             --log-group-name /aws/lambda/financial-telegram-report \
