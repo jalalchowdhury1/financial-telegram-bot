@@ -33,6 +33,15 @@ URLS = {
     'AAII': "https://docs.google.com/spreadsheets/d/1zQQ2am1yhzTwY7nx8xPak4Q0WoNMwxWj7Ekr-fDEIF4/export?format=csv&gid=0",
     'VIX': "https://docs.google.com/spreadsheets/d/1vdlPNlT6gRpzMHuQUT7olqUNb455CQM3ab4wPuCE5R0/export?format=csv&gid=790638481",
     'FEAR_GREED': "https://production.dataviz.cnn.io/index/fearandgreed/graphdata",
+    # SPY data-tier sources used by bot/fetchers.py (fetch_spy_with_fallback /
+    # fetch_spy_daily_move). Previously missing → those tiers KeyError'd and were dead
+    # (AGENTS.md §4). URLs mirror dashboard/lib/constants.js so bot + dashboard agree.
+    # These are FALLBACK tiers (after yfinance/Polygon/Finnhub) and are individually
+    # try/except-wrapped, so a degraded source (e.g. Stooq's now-gated download) just
+    # falls through.
+    'SPY_INDICATORS': "https://docs.google.com/spreadsheets/d/1FPxydetBtxFIm-qxrF5BR-sMZAUnbdA09LPbSu5lUCs/export?format=csv&gid=941079229",
+    'SPY_DAILY_MOVE': "https://docs.google.com/spreadsheets/d/1T99550TEo19JB6I3aKnRRGXAblB8mWNBsM-48jrDGe4/export?format=csv&gid=0",
+    'STOOQ_SPY': "https://stooq.com/q/d/l/?s=spy.us&i=d",
 }
 
 # Technical Indicators Parameters

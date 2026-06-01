@@ -147,6 +147,33 @@ def test_check_ci_runs_ok_on_success():
     assert hc.check_ci_runs(runs)["severity"] == "ok"
 
 
+def test_check_ci_runs_ignores_fixed_history():
+    # An older failure + a newer success for the SAME workflow → healthy.
+    runs = [
+        {"name": "CI", "conclusion": "success", "createdAt": "2026-06-01T02:00:00Z"},
+        {"name": "CI", "conclusion": "failure", "createdAt": "2026-05-31T18:00:00Z"},
+    ]
+    assert hc.check_ci_runs(runs)["severity"] == "ok"
+
+
+def test_check_ci_runs_flags_latest_failure_only():
+    runs = [
+        {"name": "Deploy", "conclusion": "failure", "createdAt": "2026-06-01T02:00:00Z"},
+        {"name": "Deploy", "conclusion": "success", "createdAt": "2026-05-31T18:00:00Z"},
+    ]
+    f = hc.check_ci_runs(runs)
+    assert f["severity"] == "warn"
+    assert f["evidence"]["failing"] == ["Deploy"]
+
+
+def test_check_ci_runs_ignores_in_progress():
+    runs = [
+        {"name": "X", "conclusion": None, "createdAt": "2026-06-01T03:00:00Z"},
+        {"name": "X", "conclusion": "success", "createdAt": "2026-06-01T02:00:00Z"},
+    ]
+    assert hc.check_ci_runs(runs)["severity"] == "ok"
+
+
 def test_assemble_report_overall_is_worst_severity():
     findings = [{"severity": "ok"}, {"severity": "warn"}, {"severity": "critical"}]
     assert hc.assemble_report(findings)["overall"] == "critical"

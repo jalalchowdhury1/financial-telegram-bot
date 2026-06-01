@@ -143,12 +143,24 @@ def check_secret_scan(gitleaks_hit_count):
 
 
 def check_ci_runs(runs):
-    failed = [r for r in runs if r.get("conclusion") == "failure"]
-    if failed:
-        return _finding("ci_health", "warn", "Recent CI run failing",
-                        detail="; ".join(sorted({r.get("name", "?") for r in failed})),
-                        remediation="manual", evidence={"failed": failed})
-    return _finding("ci_health", "ok", "Recent CI runs passing")
+    """Healthy = each workflow's LATEST run passed. A workflow that failed earlier but
+    whose newest run succeeded is healthy (don't nag about already-fixed history). `runs`
+    should already be limited to ACTIVE workflows (the gather step drops deleted one-offs);
+    each item has name + conclusion + (optional) createdAt. In-progress runs are ignored."""
+    latest = {}
+    for r in runs:
+        name = r.get("name", "?")
+        if not r.get("conclusion"):       # skip in-progress / queued (no conclusion yet)
+            continue
+        cur = latest.get(name)
+        if cur is None or (r.get("createdAt", "") >= cur.get("createdAt", "")):
+            latest[name] = r
+    failing = sorted(n for n, r in latest.items() if r.get("conclusion") == "failure")
+    if failing:
+        return _finding("ci_health", "warn", "A workflow's latest run is failing",
+                        detail="; ".join(failing),
+                        remediation="manual", evidence={"failing": failing})
+    return _finding("ci_health", "ok", "Active workflows' latest runs passing")
 
 
 def assemble_report(findings, generated_at="unknown"):

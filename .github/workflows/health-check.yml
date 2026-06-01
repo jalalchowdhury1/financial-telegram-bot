@@ -53,12 +53,23 @@ jobs:
           echo "{\"cloudwatch_readable\": $READABLE, \"markers\": $MARKERS, \"gha_success_today\": $GHA_BOOL}" > delivery_evidence.json
           cat delivery_evidence.json
 
-      - name: Gather recent CI run conclusions
+      - name: Gather recent CI run conclusions (active workflows only, with timestamps)
         run: |
           set -uo pipefail
-          gh run list --json conclusion,workflowName --limit 20 \
-            --jq '[.[] | {name: .workflowName, conclusion}]' > ci_runs.json 2>/dev/null || echo '[]' > ci_runs.json
-          cat ci_runs.json
+          # Restrict to ACTIVE workflows so a deleted one-off (e.g. an old "Fix Function
+          # URL Auth") whose last run failed forever ago can't nag. The prober then takes
+          # the LATEST run per workflow, so already-fixed historical failures don't alarm.
+          gh workflow list --json name,state --jq '[.[] | select(.state=="active") | .name]' > /tmp/active.json 2>/dev/null || echo '[]' > /tmp/active.json
+          gh run list --limit 60 --json workflowName,conclusion,createdAt > /tmp/runs.json 2>/dev/null || echo '[]' > /tmp/runs.json
+          python3 -c "
+          import json
+          active = set(json.load(open('/tmp/active.json')))
+          runs = json.load(open('/tmp/runs.json'))
+          out = [{'name': r['workflowName'], 'conclusion': r.get('conclusion'), 'createdAt': r.get('createdAt')}
+                 for r in runs if r['workflowName'] in active]
+          json.dump(out, open('ci_runs.json', 'w'))
+          " || echo '[]' > ci_runs.json
+          cat ci_runs.json | head -c 600
 
       - name: Secret scan (gitleaks)
         run: |
