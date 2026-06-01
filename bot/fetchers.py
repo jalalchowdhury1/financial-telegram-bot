@@ -1020,81 +1020,124 @@ def fetch_polymarket_trending(limit: int = 8) -> List[Dict[str, Any]]:
             markets.extend(page)
 
         from datetime import datetime, timezone, timedelta
+        from collections import defaultdict
         import ast
         now = datetime.now(timezone.utc)
         min_horizon = now + timedelta(days=1)   # drop intraday churn (e.g. "BTC up/down 5m")
 
+        _MONTHS = ("january", "february", "march", "april", "may", "june", "july",
+                   "august", "september", "october", "november", "december")
+
+        def clean_title(t):
+            for a, b in (("Democratic", "Dem"), ("Republican", "GOP"),
+                         ("Presidential Election Winner", "US President"),
+                         ("Presidential Nominee", "Nominee"),
+                         ("Presidential Election", "Election")):
+                t = t.replace(a, b)
+            return " ".join(t.split()).strip()
+
+        def is_candidate_name(git):
+            # A real entity (person/company) — not a date/price/level tranche.
+            g = (git or "").strip().lower()
+            if not g or g[0] in "<>↑↓$0123456789":
+                return False
+            return not any(g.startswith(mo) for mo in _MONTHS)
+
+        # Group the pool by event so multi-candidate races (elections, etc.) collapse to a
+        # single "Event: favorite" row instead of N separate candidate rows.
+        by_event = defaultdict(list)
+        for m in markets:
+            ev = (m.get("events") or [{}])[0]
+            if not isinstance(ev, dict):
+                ev = {}
+            key = ev.get("ticker") or ev.get("slug") or m.get("slug") or m.get("question") or id(m)
+            by_event[key].append((m, ev))
+
         candidates = []
-        for market in markets:
+        for key, members in by_event.items():
             try:
-                # Resolution date: drop expired AND ultra-short-term (<~1 day) markets.
-                end_iso = market.get("endDate")
-                if end_iso:
+                first_ev = members[0][1]
+                ev_title = (first_ev.get("title") or "").strip()
+
+                parsed = []
+                for m, _ev in members:
+                    end_iso = m.get("endDate")
+                    if end_iso:
+                        try:
+                            if datetime.fromisoformat(end_iso.replace("Z", "+00:00")) < min_horizon:
+                                continue
+                        except Exception:
+                            end_iso = None
                     try:
-                        ed = datetime.fromisoformat(end_iso.replace("Z", "+00:00"))
-                        if ed < min_horizon:
-                            continue
+                        outs = [str(o).lower() for o in ast.literal_eval(m.get("outcomes", "[]"))]
                     except Exception:
-                        end_iso = None
-
-                # Binary Yes/No only (clean single-probability sentiment).
-                try:
-                    outcomes = [str(o).lower() for o in ast.literal_eval(market.get("outcomes", "[]"))]
-                except Exception:
-                    outcomes = []
-                if outcomes != ["yes", "no"]:
+                        outs = []
+                    if outs != ["yes", "no"]:
+                        continue
+                    try:
+                        odds = float(ast.literal_eval(m.get("outcomePrices", "[]"))[0])
+                    except Exception:
+                        continue
+                    try:
+                        chg = float(m["oneMonthPriceChange"]) if m.get("oneMonthPriceChange") is not None else None
+                    except Exception:
+                        chg = None
+                    parsed.append({
+                        "odds": odds, "vol": float(m.get("volumeNum") or m.get("volume") or 0),
+                        "change": chg, "end": end_iso,
+                        "git": (m.get("groupItemTitle") or "").strip(),
+                        "q": m.get("question") or "",
+                    })
+                if not parsed:
                     continue
 
-                name = market.get("question") or market.get("groupItemTitle") or "Unknown"
-                slug = (market.get("slug") or "").lower()
-                events = market.get("events") or []
-                event_titles = " ".join((e.get("title") or "").lower()
-                                        for e in events if isinstance(e, dict))
-                search_text = f"{name.lower()} {slug} {event_titles}"
-
-                # Sports filter: authoritative "Sports" tag, then keyword sweep.
+                # Sports filter (event title + member questions + tags from any member).
+                text = (ev_title + " " + " ".join(p["q"] for p in parsed) + " "
+                        + (first_ev.get("slug") or "")).lower()
                 tag_labels = {(t.get("label") or "").lower()
-                              for t in (market.get("tags") or []) if isinstance(t, dict)}
-                if any("sport" in lbl for lbl in tag_labels):
-                    continue
-                if any(kw in search_text for kw in SPORTS_KEYWORDS):
+                              for m, _ev in members for t in (m.get("tags") or []) if isinstance(t, dict)}
+                if any("sport" in lbl for lbl in tag_labels) or any(kw in text for kw in SPORTS_KEYWORDS):
                     continue
 
-                # Probability (first outcome = "Yes"). Keep only genuine uncertainty.
-                try:
-                    prices = ast.literal_eval(market.get("outcomePrices", "[]"))
-                    odds = float(prices[0]) if prices else None
-                except Exception:
-                    odds = None
-                if odds is None or not (0.08 <= odds <= 0.92):
-                    continue
+                topic, emoji = topic_of(text)
+                is_multi = len(members) >= 2 and any(p["git"] for p in parsed)
 
-                volume = float(market.get("volumeNum") or market.get("volume") or 0)
-                if volume < 25000:
-                    continue
-
-                try:
-                    change = float(market["oneMonthPriceChange"]) if market.get("oneMonthPriceChange") is not None else None
-                except Exception:
-                    change = None
-
-                ev = events[0] if events and isinstance(events[0], dict) else {}
-                event_key = ev.get("ticker") or ev.get("slug") or slug or name
-                topic, emoji = topic_of(search_text)
+                if is_multi:
+                    # Event favorite = highest-odds candidate (the current field leader).
+                    fav = max(parsed, key=lambda p: p["odds"])
+                    if not (0.05 <= fav["odds"] <= 0.85):
+                        continue
+                    ev_vol = sum(p["vol"] for p in parsed)
+                    if ev_vol < 25000:
+                        continue
+                    if ev_title and is_candidate_name(fav["git"]):
+                        name = f"{clean_title(ev_title)}: {fav['git']}"   # candidate race
+                    else:
+                        name = fav["q"] or ev_title or "Unknown"          # date/price tranche → self-descriptive
+                    if "__" in name:                                      # malformed placeholder question
+                        continue
+                    chosen, vol, is_event = fav, ev_vol, True
+                else:
+                    # Standalone binary market: genuine-uncertainty band.
+                    p = parsed[0]
+                    if not (0.08 <= p["odds"] <= 0.92) or p["vol"] < 25000:
+                        continue
+                    name, chosen, vol, is_event = (p["q"] or "Unknown"), p, p["vol"], False
 
                 candidates.append({
                     "name": name,
-                    "odds": round(odds, 2),
-                    "volume": volume,
-                    "change": round(change, 4) if change is not None else None,
+                    "odds": round(chosen["odds"], 2),
+                    "volume": vol,
+                    "change": round(chosen["change"], 4) if chosen["change"] is not None else None,
                     "topic": topic,
                     "topicEmoji": emoji,
-                    "endDate": end_iso,
-                    "eventSlug": ev.get("slug"),
-                    "_event": event_key,
+                    "endDate": chosen["end"],
+                    "eventSlug": first_ev.get("slug"),
+                    "_event": key,
+                    "_is_event": is_event,
                 })
             except Exception as e:
-                logging.warning(f"Polymarket parse error on {market.get('id')}: {e}")
+                logging.warning(f"Polymarket event parse error on {key}: {e}")
                 continue
 
         # Select: rank by volume, de-dupe by event (highest-volume wins), cap 2 per topic,
@@ -1110,13 +1153,15 @@ def fetch_polymarket_trending(limit: int = 8) -> List[Dict[str, Any]]:
                     break
                 if c["_event"] in seen_events or per_topic.get(c["topic"], 0) >= 2:
                     continue
-                is_longshot = c["odds"] < LONGSHOT
+                # Event favorites are exempt from the longshot cap — a field leader is
+                # interesting at any %; the cap only tames standalone unlikely-but-traded bets.
+                is_longshot = c["odds"] < LONGSHOT and not c["_is_event"]
                 if is_longshot and not allow_longshot and n_longshots >= max_longshots:
                     continue
                 seen_events.add(c["_event"])
                 per_topic[c["topic"]] = per_topic.get(c["topic"], 0) + 1
                 n_longshots += 1 if is_longshot else 0
-                bets.append({k: v for k, v in c.items() if k != "_event"})
+                bets.append({k: v for k, v in c.items() if not k.startswith("_")})
             if len(bets) >= limit:
                 break
 
