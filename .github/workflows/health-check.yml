@@ -95,9 +95,16 @@ jobs:
         id: sev
         run: echo "overall=$(python -c "import json;print(json.load(open('health-report.json'))['overall'])")" >> "$GITHUB_OUTPUT"
 
-      - name: Alert on warn/critical (Telegram, Claude-actionable)
-        if: steps.sev.outputs.overall != 'ok'
-        run: python scripts/health_check.py --notify health-report.json
+      # Manual run → always post a clean check (✅ green, or the alert). Scheduled run →
+      # silent when green, alert only on a real problem (no daily spam).
+      - name: Telegram summary / alert
+        if: github.event_name == 'workflow_dispatch' || steps.sev.outputs.overall != 'ok'
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            python scripts/health_check.py --summary health-report.json
+          else
+            python scripts/health_check.py --notify health-report.json
+          fi
 
       - name: Auto-remediate a confirmed missed report
         if: steps.sev.outputs.overall == 'critical'

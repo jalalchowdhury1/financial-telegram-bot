@@ -191,6 +191,18 @@ def format_alert(report):
     return "\n".join(lines)
 
 
+def format_summary(report):
+    """A positive 'all green' confirmation when healthy, otherwise the actionable alert.
+    Used by the --summary mode so a manual run always shows the owner a clean check."""
+    findings = report.get("findings", [])
+    total = len(findings)
+    ok = sum(1 for f in findings if f.get("severity") == "ok")
+    if report.get("overall") == "ok":
+        return (f"✅ financial-telegram-bot health: ALL GREEN — {ok}/{total} checks ok "
+                f"({report.get('generated_at', '')})")
+    return format_alert(report)
+
+
 # --- I/O layer (never-throw) -----------------------------------------------
 # Cold-start tolerance: a cold Vercel/Lambda stack can be slow or 5xx on the FIRST hit.
 # We warm it up once, then retry each probe with backoff, so a slow first load is never
@@ -293,9 +305,11 @@ def _now_iso():
 
 
 def main(argv):
-    if len(argv) >= 3 and argv[1] == "--notify":
+    # --notify FILE  → send ONLY if not all-ok (scheduled runs: silence == healthy)
+    # --summary FILE → ALWAYS send (manual runs: a clean ✅ green check, or the alert)
+    if len(argv) >= 3 and argv[1] in ("--notify", "--summary"):
         report = _load_json_file(argv[2], {"overall": "ok", "findings": []})
-        if report.get("overall", "ok") == "ok":
+        if argv[1] == "--notify" and report.get("overall", "ok") == "ok":
             print("All healthy — no alert sent.")
             return 0
         from bot.utils import send_to_telegram
@@ -304,7 +318,7 @@ def main(argv):
         if not token or not chat_id:
             print("TELEGRAM_TOKEN/CHAT_ID not set; cannot notify.")
             return 0
-        send_to_telegram(token, chat_id, caption=format_alert(report))
+        send_to_telegram(token, chat_id, caption=format_summary(report))
         return 0
 
     report = run_all_checks(_now_iso())

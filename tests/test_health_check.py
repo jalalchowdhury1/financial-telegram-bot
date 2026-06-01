@@ -241,6 +241,23 @@ def test_fetch_endpoint_still_flags_persistent_degradation(monkeypatch):
     assert hc.check_endpoint("market-extra", status, body)["severity"] == "warn"
 
 
+def test_format_summary_green_is_a_clean_check():
+    report = {"overall": "ok", "generated_at": "2026-06-01T03:00:00Z",
+              "findings": [{"id": "a", "severity": "ok"}, {"id": "b", "severity": "ok"}]}
+    msg = hc.format_summary(report)
+    assert "ALL GREEN" in msg
+    assert "2/2" in msg
+
+
+def test_format_summary_falls_back_to_alert_on_problems():
+    report = {"overall": "warn", "generated_at": "2026-06-01T03:00:00Z",
+              "findings": [{"id": "x", "severity": "warn", "title": "t", "detail": "d",
+                            "remediation": "manual", "evidence": {}}]}
+    msg = hc.format_summary(report)
+    assert "ALL GREEN" not in msg
+    assert "id=x" in msg
+
+
 def test_format_alert_is_claude_actionable_and_omits_ok():
     report = {
         "overall": "critical",
