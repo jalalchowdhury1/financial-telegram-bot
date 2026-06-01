@@ -38,6 +38,19 @@ function topicOf(t) {
 
 /** Curated "market sentiment" board (mirrors bot/fetchers.fetch_polymarket_trending):
  *  paginate -> binary, non-sports, 8-92%, de-duped by event, topic-diverse, spread. */
+const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+function cleanTitle(t) {
+    return t.replace('Democratic', 'Dem').replace('Republican', 'GOP')
+        .replace('Presidential Election Winner', 'US President')
+        .replace('Presidential Nominee', 'Nominee')
+        .replace('Presidential Election', 'Election').replace(/\s+/g, ' ').trim();
+}
+function isCandidateName(git) {
+    const g = (git || '').trim().toLowerCase();
+    if (!g || '<>↑↓$0123456789'.includes(g[0])) return false;
+    return !MONTHS.some((mo) => g.startsWith(mo));
+}
+
 async function fallbackPoly(messages) {
     const base = 'https://gamma-api.polymarket.com/markets?active=true&closed=false&order=volume1wk&ascending=false&limit=100';
     let raw = [];
@@ -47,31 +60,58 @@ async function fallbackPoly(messages) {
         if (!arr.length) break;
         raw = raw.concat(arr);
     }
-    const now = Date.now(), horizon = now + 86400000;
-    const cands = [];
+    const horizon = Date.now() + 86400000;
+    // Group by event so multi-candidate races collapse to "Event: favorite".
+    const byEvent = new Map();
     for (const m of raw) {
+        const ev = (m.events && m.events[0]) || {};
+        const key = ev.ticker || ev.slug || m.slug || m.question || `_${byEvent.size}`;
+        if (!byEvent.has(key)) byEvent.set(key, []);
+        byEvent.get(key).push([m, ev]);
+    }
+    const cands = [];
+    for (const [key, members] of byEvent) {
         try {
-            if (m.endDate) { const ed = Date.parse(m.endDate); if (!Number.isNaN(ed) && ed < horizon) continue; }
-            let outs = []; try { outs = JSON.parse(m.outcomes || '[]').map((o) => String(o).toLowerCase()); } catch {}
-            if (outs.join(',') !== 'yes,no') continue;
-            const name = m.question || m.groupItemTitle || '';
-            const ev = (m.events && m.events[0]) || {};
-            const text = `${name} ${m.slug || ''} ${ev.title || ''}`.toLowerCase();
-            const tags = (m.tags || []).map((t) => (t.label || '').toLowerCase());
-            if (tags.some((l) => l.includes('sport')) || SPORTS_KW.some((k) => text.includes(k))) continue;
-            let odds = null; try { const p = JSON.parse(m.outcomePrices || '[]'); odds = p.length ? parseFloat(p[0]) : null; } catch {}
-            if (odds == null || odds < 0.08 || odds > 0.92) continue;
-            const volume = parseFloat(m.volumeNum ?? m.volume ?? 0);
-            if (volume < 25000) continue;
-            const change = m.oneMonthPriceChange != null ? parseFloat(m.oneMonthPriceChange) : null;
+            const firstEv = members[0][1];
+            const evTitle = (firstEv.title || '').trim();
+            const parsed = [];
+            for (const [m] of members) {
+                const endIso = m.endDate || null;
+                if (endIso) { const ed = Date.parse(endIso); if (!Number.isNaN(ed) && ed < horizon) continue; }
+                let outs = []; try { outs = JSON.parse(m.outcomes || '[]').map((o) => String(o).toLowerCase()); } catch {}
+                if (outs.join(',') !== 'yes,no') continue;
+                let odds = null; try { const p = JSON.parse(m.outcomePrices || '[]'); odds = p.length ? parseFloat(p[0]) : null; } catch {}
+                if (odds == null) continue;
+                const change = m.oneMonthPriceChange != null ? parseFloat(m.oneMonthPriceChange) : null;
+                parsed.push({ odds, vol: parseFloat(m.volumeNum ?? m.volume ?? 0), change, end: endIso, git: (m.groupItemTitle || '').trim(), q: m.question || '' });
+            }
+            if (!parsed.length) continue;
+            const text = `${evTitle} ${parsed.map((p) => p.q).join(' ')} ${firstEv.slug || ''}`.toLowerCase();
+            const sportTag = members.some(([m]) => (m.tags || []).some((t) => (t.label || '').toLowerCase().includes('sport')));
+            if (sportTag || SPORTS_KW.some((k) => text.includes(k))) continue;
             const [topic, topicEmoji] = topicOf(text);
+            const isMulti = members.length >= 2 && parsed.some((p) => p.git);
+            let name, chosen, vol, isEvent;
+            if (isMulti) {
+                const fav = parsed.reduce((a, b) => (b.odds > a.odds ? b : a));
+                if (fav.odds < 0.05 || fav.odds > 0.85) continue;
+                vol = parsed.reduce((s, p) => s + p.vol, 0);
+                if (vol < 25000) continue;
+                name = (evTitle && isCandidateName(fav.git)) ? `${cleanTitle(evTitle)}: ${fav.git}` : (fav.q || evTitle || 'Unknown');
+                if (name.includes('__')) continue;
+                chosen = fav; isEvent = true;
+            } else {
+                const p = parsed[0];
+                if (p.odds < 0.08 || p.odds > 0.92 || p.vol < 25000) continue;
+                name = p.q || 'Unknown'; chosen = p; vol = p.vol; isEvent = false;
+            }
             cands.push({
-                name, odds: Math.round(odds * 100) / 100, volume,
-                change: change != null ? Math.round(change * 1e4) / 1e4 : null,
-                topic, topicEmoji, endDate: m.endDate || null, eventSlug: ev.slug || null,
-                _event: ev.ticker || ev.slug || m.slug || name,
+                name, odds: Math.round(chosen.odds * 100) / 100, volume: vol,
+                change: chosen.change != null ? Math.round(chosen.change * 1e4) / 1e4 : null,
+                topic, topicEmoji, endDate: chosen.end || null, eventSlug: firstEv.slug || null,
+                _event: key, _isEvent: isEvent,
             });
-        } catch { /* skip bad market */ }
+        } catch { /* skip event */ }
     }
     cands.sort((a, b) => b.volume - a.volume);
     const LIMIT = 8, MAX_LONG = 4, seen = new Set(), perTopic = {}, bets = [];
@@ -80,10 +120,10 @@ async function fallbackPoly(messages) {
         for (const c of cands) {
             if (bets.length >= LIMIT) break;
             if (seen.has(c._event) || (perTopic[c.topic] || 0) >= 2) continue;
-            const isLong = c.odds < 0.30;
+            const isLong = c.odds < 0.30 && !c._isEvent;
             if (isLong && !allowLong && nLong >= MAX_LONG) continue;
             seen.add(c._event); perTopic[c.topic] = (perTopic[c.topic] || 0) + 1; if (isLong) nLong++;
-            const { _event, ...bet } = c; bets.push(bet);
+            const { _event, _isEvent, ...bet } = c; bets.push(bet);
         }
         if (bets.length >= LIMIT) break;
     }

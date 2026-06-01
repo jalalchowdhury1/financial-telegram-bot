@@ -101,3 +101,34 @@ def test_filters_extremes(mock_get):
 def test_handles_api_failure_gracefully(mock_get):
     mock_get.side_effect = Exception("API timeout")
     assert fetch_polymarket_trending() == []
+
+
+def _candidate(event_title, ticker, candidate, yes, vol):
+    return {
+        "question": f"Will {candidate} win {event_title}?",
+        "outcomes": '["Yes","No"]',
+        "outcomePrices": f'["{yes}", "{1 - yes:.4f}"]',
+        "volume": str(vol),
+        "groupItemTitle": candidate,
+        "events": [{"ticker": ticker, "slug": ticker, "title": event_title}],
+        "tags": [],
+    }
+
+
+@patch('bot.fetchers.requests.get')
+def test_multi_candidate_event_collapses_to_favorite(mock_get):
+    nominee = [
+        _candidate("the 2028 Democratic Presidential Nominee", "dem-nom", "Gavin Newsom", 0.22, 2_000_000),
+        _candidate("the 2028 Democratic Presidential Nominee", "dem-nom", "Kamala Harris", 0.15, 1_500_000),
+        _candidate("the 2028 Democratic Presidential Nominee", "dem-nom", "AOC", 0.10, 1_000_000),
+    ]
+    mock_get.side_effect = _paged(nominee)
+    bets = fetch_polymarket_trending()
+    # Three candidate markets → ONE event row naming the favorite (highest odds), even
+    # though 22% is below the 8% standalone floor (event favorites get their own band).
+    assert len(bets) == 1
+    b = bets[0]
+    assert "Newsom" in b["name"]
+    assert b["odds"] == 0.22
+    assert b["volume"] == 4_500_000   # event total volume
+    assert b["topic"] == "Politics"
