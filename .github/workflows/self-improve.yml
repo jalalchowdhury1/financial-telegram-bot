@@ -1,0 +1,64 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow
+name: Weekly Self-Improve
+
+on:
+  schedule:
+    - cron: '0 13 * * 3'   # Wednesday 13:00 UTC (~9 ET) — a PR waiting Wednesday morning
+  workflow_dispatch:        # the owner's one-click on-demand override
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: self-improve
+  cancel-in-progress: false
+
+jobs:
+  self-improve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30     # hard wall-clock backstop
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install deps
+        run: pip install -r requirements-dev.txt
+
+      - name: Build the health digest
+        run: python scripts/collect_health_context.py
+
+      - name: Run the self-improve agent (opens a PR)
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: "@.github/self-improve-prompt.md"
+          base_branch: main
+          branch_prefix: "self-improve/"
+          claude_args: |
+            --max-turns 20
+            --model claude-opus-4-8
+            --allowedTools "Read,Write,Edit,Bash(git:*),Bash(gh:*),Bash(python:*),Bash(pytest:*)"
+
+      - name: Telegram summary
+        if: always()
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          PRS=$(gh pr list --search "head:self-improve/" --state open --json number,title,url \
+                --jq '.[] | "PR #\(.number): \(.title) \(.url)"' 2>/dev/null || echo "")
+          export MSG="🛠️ Weekly self-improve: ${PRS:-nothing to fix this week.}"
+          python - <<'PY'
+          import os
+          from bot.utils import send_to_telegram
+          send_to_telegram(os.environ['TELEGRAM_TOKEN'], os.environ['TELEGRAM_CHAT_ID'], caption=os.environ['MSG'])
+          PY
