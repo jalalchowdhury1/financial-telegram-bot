@@ -221,6 +221,26 @@ def test_fetch_endpoint_returns_failure_after_exhausting_attempts(monkeypatch):
     assert status == 0            # a truly dead endpoint is still flagged
 
 
+def test_fetch_endpoint_retries_transient_degraded_then_healthy(monkeypatch):
+    import requests
+    seq = [_Resp(200, '{"_meta":{"hasErrors":true}}'),
+           _Resp(200, '{"_meta":{"hasErrors":false},"x":1}')]
+    monkeypatch.setattr(requests, "get", lambda url, timeout=0: seq.pop(0))
+    status, body = hc.fetch_endpoint("http://x", "market-extra", attempts=3, sleeper=lambda s: None)
+    assert status == 200
+    # A momentary degraded blip is NOT alarmed — the healthy retry wins.
+    assert hc.check_endpoint("market-extra", status, body)["severity"] == "ok"
+
+
+def test_fetch_endpoint_still_flags_persistent_degradation(monkeypatch):
+    import requests
+    monkeypatch.setattr(requests, "get", lambda url, timeout=0: _Resp(200, '{"_meta":{"hasErrors":true}}'))
+    status, body = hc.fetch_endpoint("http://x", "market-extra", attempts=2, sleeper=lambda s: None)
+    assert status == 200
+    # Degraded on every attempt → genuinely degraded → still a warn.
+    assert hc.check_endpoint("market-extra", status, body)["severity"] == "warn"
+
+
 def test_format_alert_is_claude_actionable_and_omits_ok():
     report = {
         "overall": "critical",
