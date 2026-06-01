@@ -10,6 +10,7 @@ permissions:
   contents: write
   pull-requests: write
   actions: read           # download recent health-check run artifacts (the health history)
+  id-token: write         # REQUIRED by claude-code-action@v1 (fetches an OIDC token)
 
 concurrency:
   group: self-improve
@@ -48,6 +49,7 @@ jobs:
         run: python scripts/collect_health_context.py
 
       - name: Run the self-improve agent (opens a PR)
+        id: agent
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -67,9 +69,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -uo pipefail
-          PRS=$(gh pr list --search "head:self-improve/" --state open --json number,title,url \
-                --jq '.[] | "PR #\(.number): \(.title) \(.url)"' 2>/dev/null || echo "")
-          export MSG="🛠️ Weekly self-improve: ${PRS:-nothing to fix this week.}"
+          if [ "${{ steps.agent.outcome }}" = "failure" ]; then
+            export MSG="🔴 Weekly self-improve FAILED to run — check the Actions log (the agent step errored, so no PR was opened)."
+          else
+            PRS=$(gh pr list --search "head:self-improve/" --state open --json number,title,url \
+                  --jq '.[] | "PR #\(.number): \(.title) \(.url)"' 2>/dev/null || echo "")
+            export MSG="🛠️ Weekly self-improve: ${PRS:-nothing to fix this week.}"
+          fi
           python - <<'PY'
           import os
           from bot.utils import send_to_telegram
