@@ -30,7 +30,7 @@ Analyze the following comprehensive economic indicators to provide a nuanced, in
 
 **CONSUMER HEALTH & FORWARD PATH:**
 - Consumer Sentiment Index: ${data.sentiment?.toFixed(1)}/100
-- Leading Economic Index: ${data.leiChange?.toFixed(2)}% change
+- Copper/Gold Ratio (leading growth/rates gauge): ${data.copperGold?.toFixed?.(2) ?? data.copperGold ?? 'N/A'}
 
 **CREDIT & MONETARY TIGHTNESS:**
 - BBB Credit Spread: ${data.creditSpread?.toFixed(2)}%

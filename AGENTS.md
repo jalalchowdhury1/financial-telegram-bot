@@ -156,8 +156,13 @@ watch mode; `--testPathPattern <Name>` filters.
 - FRED dates observations at the *start* of the period and publishes weeks late, so fresh
   series legitimately look old. Per-metric freshness deadlines (`FRED_FRESHNESS`, days):
   daily=7, weekly=14, monthly=80, JOLTS/quarterly larger. Too-old/NaN → value forced to
-  `null` so the UI shows N/A; `stale:true` (had data, too old) ≠ `unavailable:true`. `LEI`
-  (`USSLIND`) is **discontinued since 2020** — showing N/A is correct, not a bug.
+  `null` so the UI shows N/A; `stale:true` (had data, too old) ≠ `unavailable:true`.
+- **Copper/Gold ratio** (the `indicators.copperGold` tile) replaced the old `LEI`/`USSLIND`
+  series, which FRED **discontinued/froze in 2020** (it could only ever show N/A). Unlike a
+  single FRED series, copper+gold are each fetched from **multiple price sources** (Yahoo
+  primary → Stooq fallback per leg; see `fetchCopperGold` in the FRED route + the pure
+  `copperGoldRatio` in `lib/finance.js`), so the tile is robust and a genuine N/A there is a
+  real signal the daily health-check will flag.
 - The `?_fail=` fault-injection harness (`lib/faults.js`) is intentionally **kept in
   production** — it only degrades the caller's own response and never writes caches.
 

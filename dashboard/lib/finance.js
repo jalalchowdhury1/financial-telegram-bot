@@ -4,6 +4,19 @@
  */
 
 /**
+ * Copper/Gold ratio — a leading macro gauge (cyclical industrial demand vs. safe haven).
+ * Copper in $/lb, gold in $/oz; scaled ×1000 so it reads as a friendly number (~1.4).
+ * Rising = growth/risk-on, falling = risk-off. Returns null if either leg is missing.
+ * @param {number} copperUsdPerLb
+ * @param {number} goldUsdPerOz
+ * @returns {number|null}
+ */
+export function copperGoldRatio(copperUsdPerLb, goldUsdPerOz) {
+    if (!copperUsdPerLb || !goldUsdPerOz) return null;
+    return (copperUsdPerLb / goldUsdPerOz) * 1000;
+}
+
+/**
  * Calculate Relative Strength Index (RSI) using Wilder's Smoothing
  * @param {Array} prices - Array of price objects or numbers
  * @param {Number} period - RSI period (default 9)
