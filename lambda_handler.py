@@ -38,7 +38,7 @@ from bot.fetchers import (
     fetch_market_extra,
     fetch_polymarket_trending,
 )
-from bot.utils import load_environment_variables, send_to_telegram
+from bot.utils import load_environment_variables, send_to_telegram, report_marker
 from bot.config import TIMEZONE
 
 logger = logging.getLogger()
@@ -184,6 +184,7 @@ def handle_eventbridge(env_vars: Dict[str, str], run_time: str) -> Dict[str, Any
     if not report_sections:
         msg = 'No data could be fetched — all sources failed.'
         logger.error(msg)
+        logger.error(report_marker(False, reason="empty_content"))
         return {'statusCode': 500, 'body': json.dumps(msg)}
 
     separator = '\n\n' + '─' * 30 + '\n\n'
@@ -195,10 +196,12 @@ def handle_eventbridge(env_vars: Dict[str, str], run_time: str) -> Dict[str, Any
     if success:
         summary = f'Report sent at {run_time}. Sections: {len(report_sections)}. Errors: {len(errors)}.'
         logger.info(f'✓ {summary}')
+        logger.info(report_marker(True, sections=len(report_sections), errors=len(errors)))
         return {'statusCode': 200, 'body': json.dumps(summary)}
     else:
         msg = 'Report assembled but Telegram delivery failed.'
         logger.error(msg)
+        logger.error(report_marker(False, sections=len(report_sections), reason="telegram_delivery"))
         return {'statusCode': 500, 'body': json.dumps(msg)}
 
 

@@ -1,0 +1,193 @@
+import importlib.util
+import os
+
+_spec = importlib.util.spec_from_file_location(
+    "health_check",
+    os.path.join(os.path.dirname(__file__), "..", "scripts", "health_check.py"),
+)
+hc = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(hc)
+
+
+def test_check_endpoint_ok():
+    f = hc.check_endpoint("spy", 200, '{"price": 1.0, "_meta": {"hasErrors": false}}')
+    assert f["severity"] == "ok"
+
+
+def test_check_endpoint_non_200_is_critical():
+    f = hc.check_endpoint("spy", 500, "Internal Server Error")
+    assert f["severity"] == "critical"
+
+
+def test_check_endpoint_bare_nan_is_critical():
+    f = hc.check_endpoint("spy", 200, '{"price": NaN}')
+    assert f["severity"] == "critical"
+    assert "NaN" in f["title"] or "NaN" in f["detail"]
+
+
+def test_check_endpoint_invalid_json_is_critical():
+    f = hc.check_endpoint("spy", 200, "<html>not json</html>")
+    assert f["severity"] == "critical"
+
+
+def test_check_endpoint_has_errors_is_warn():
+    f = hc.check_endpoint("fred", 200, '{"_meta": {"hasErrors": true, "messages": ["429"]}}')
+    assert f["severity"] == "warn"
+
+
+def test_check_indicators_na_lei_is_expected_not_alarmed():
+    indicators = {
+        "lei": {"value": None, "asOf": "2020-02-01", "stale": True, "unavailable": False},
+        "sentiment": {"value": 49.8, "stale": False, "unavailable": False},
+    }
+    f = hc.check_indicators_na(indicators)
+    assert f["severity"] == "ok"
+    assert "lei" in f["evidence"]["expected_na"]
+
+
+def test_check_indicators_na_unexpected_null_is_warn():
+    indicators = {
+        "sentiment": {"value": None, "asOf": "2026-04-01", "stale": True, "unavailable": False},
+        "lei": {"value": None, "stale": True, "unavailable": False},
+    }
+    f = hc.check_indicators_na(indicators)
+    assert f["severity"] == "warn"
+    assert "sentiment" in f["detail"]      # the unexpected one is named
+    assert "lei" not in f["detail"]        # the discontinued one is NOT alarmed
+
+
+def test_check_indicators_na_unavailable_is_warn():
+    indicators = {"claims": {"value": None, "unavailable": True}}
+    f = hc.check_indicators_na(indicators)
+    assert f["severity"] == "warn"
+    assert "claims" in f["detail"]
+
+
+def test_check_indicators_na_all_present_is_ok():
+    indicators = {"claims": {"value": 209, "stale": False, "unavailable": False}}
+    assert hc.check_indicators_na(indicators)["severity"] == "ok"
+
+
+def test_check_indicators_na_missing_object_is_warn():
+    assert hc.check_indicators_na(None)["severity"] == "warn"
+
+
+def test_check_report_delivered_ok_from_cloudwatch():
+    ev = {"cloudwatch_readable": True, "markers": ["REPORT_DELIVERED ok=true sections=2 errors=0"], "gha_success_today": False}
+    assert hc.check_report_delivered(ev)["severity"] == "ok"
+
+
+def test_check_report_delivered_failed_marker_is_critical():
+    ev = {"cloudwatch_readable": True, "markers": ["REPORT_FAILED ok=false reason=empty_content sections=0"], "gha_success_today": False}
+    f = hc.check_report_delivered(ev)
+    assert f["severity"] == "critical"
+    assert f["remediation"] == "auto:redispatch_daily_report"
+
+
+def test_check_report_delivered_no_marker_is_critical():
+    ev = {"cloudwatch_readable": True, "markers": [], "gha_success_today": False}
+    assert hc.check_report_delivered(ev)["severity"] == "critical"
+
+
+def test_check_report_delivered_unreadable_no_corroboration_is_warn():
+    ev = {"cloudwatch_readable": False, "markers": [], "gha_success_today": False}
+    assert hc.check_report_delivered(ev)["severity"] == "warn"
+
+
+def test_check_report_delivered_gha_corroborates():
+    ev = {"cloudwatch_readable": False, "markers": [], "gha_success_today": True}
+    assert hc.check_report_delivered(ev)["severity"] == "ok"
+
+
+def test_check_config_urls_flags_missing_known_keys():
+    f = hc.check_config_urls({"NOT_SO_BORING": "x"})
+    assert f["severity"] == "warn"
+    assert "SPY_DAILY_MOVE" in f["detail"]
+
+
+def test_check_config_urls_ok_when_all_present():
+    urls = {k: "x" for k in ("SPY_DAILY_MOVE", "SPY_INDICATORS", "STOOQ_SPY")}
+    assert hc.check_config_urls(urls)["severity"] == "ok"
+
+
+def test_check_secret_scan_critical_on_hit():
+    assert hc.check_secret_scan(1)["severity"] == "critical"
+
+
+def test_check_secret_scan_ok_on_clean():
+    assert hc.check_secret_scan(0)["severity"] == "ok"
+
+
+def test_check_ci_runs_warn_on_failure():
+    runs = [{"name": "Deploy to AWS Lambda", "conclusion": "failure"}]
+    assert hc.check_ci_runs(runs)["severity"] == "warn"
+
+
+def test_check_ci_runs_ok_on_success():
+    runs = [{"name": "Deploy to AWS Lambda", "conclusion": "success"}]
+    assert hc.check_ci_runs(runs)["severity"] == "ok"
+
+
+def test_assemble_report_overall_is_worst_severity():
+    findings = [{"severity": "ok"}, {"severity": "warn"}, {"severity": "critical"}]
+    assert hc.assemble_report(findings)["overall"] == "critical"
+
+
+class _Resp:
+    def __init__(self, status, text=""):
+        self.status_code = status
+        self.text = text
+
+
+def test_fetch_endpoint_retries_a_cold_start_then_succeeds(monkeypatch):
+    import requests
+    calls = {"n": 0}
+
+    def fake_get(url, timeout=0):
+        calls["n"] += 1
+        if calls["n"] < 2:
+            raise Exception("cold start / connection timed out")
+        return _Resp(200, '{"ok": true}')
+
+    monkeypatch.setattr(requests, "get", fake_get)
+    status, _ = hc.fetch_endpoint("http://x", "spy", attempts=3, sleeper=lambda s: None)
+    assert status == 200          # a slow first load is NOT flagged as down
+    assert calls["n"] == 2        # it retried once, then succeeded
+
+
+def test_fetch_endpoint_recovers_from_a_cold_5xx(monkeypatch):
+    import requests
+    seq = [_Resp(503, "cold"), _Resp(200, '{"ok": true}')]
+
+    monkeypatch.setattr(requests, "get", lambda url, timeout=0: seq.pop(0))
+    status, _ = hc.fetch_endpoint("http://x", "spy", attempts=3, sleeper=lambda s: None)
+    assert status == 200
+
+
+def test_fetch_endpoint_returns_failure_after_exhausting_attempts(monkeypatch):
+    import requests
+
+    def always_down(url, timeout=0):
+        raise Exception("genuinely down")
+
+    monkeypatch.setattr(requests, "get", always_down)
+    status, _ = hc.fetch_endpoint("http://x", "spy", attempts=2, sleeper=lambda s: None)
+    assert status == 0            # a truly dead endpoint is still flagged
+
+
+def test_format_alert_is_claude_actionable_and_omits_ok():
+    report = {
+        "overall": "critical",
+        "generated_at": "2026-05-31T14:00:00Z",
+        "findings": [
+            {"id": "report_delivered_today", "severity": "critical", "title": "Report not delivered",
+             "detail": "No REPORT_DELIVERED marker today.", "remediation": "auto:redispatch_daily_report",
+             "evidence": {"markers": []}},
+            {"id": "endpoint_spy", "severity": "ok", "title": "ok", "detail": "", "remediation": "none", "evidence": {}},
+        ],
+    }
+    msg = hc.format_alert(report)
+    assert "report_delivered_today" in msg          # finding id, so Claude can locate it
+    assert "redispatch_daily_report" in msg          # suggested remediation
+    assert "endpoint_spy" not in msg                 # ok findings are omitted
+    assert "Paste" in msg or "paste" in msg or "Claude" in msg  # actionable framing

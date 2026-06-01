@@ -1,0 +1,116 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow
+name: Daily Health Check
+
+on:
+  schedule:
+    - cron: '0 14 * * *'   # 14:00 UTC ≈ 10:00 ET — well after the 4:15 ET / 9:15 UTC report
+  workflow_dispatch:
+
+concurrency:
+  group: health-check
+  cancel-in-progress: false
+
+jobs:
+  health-check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write        # commit health/history
+      actions: write         # re-dispatch daily_report.yml on a confirmed miss
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: us-east-1
+      TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install deps
+        run: pip install -r requirements-dev.txt
+
+      - name: Gather delivery evidence (CloudWatch + daily_report.yml today)
+        run: |
+          set -uo pipefail
+          START_MS=$(python -c "import time;print(int((time.time()//86400)*86400*1000))")
+          READABLE=true
+          MARKERS=$(aws logs filter-log-events \
+            --log-group-name /aws/lambda/financial-telegram-report \
+            --start-time "$START_MS" \
+            --filter-pattern '?REPORT_DELIVERED ?REPORT_FAILED' \
+            --query 'events[].message' --output json 2>/dev/null) || { READABLE=false; MARKERS='[]'; }
+          [ -z "$MARKERS" ] && MARKERS='[]'
+          GHA_TODAY=$(gh run list --workflow daily_report.yml --status success --created "$(date -u +%Y-%m-%d)" --json databaseId --jq 'length' 2>/dev/null || echo 0)
+          GHA_BOOL=$([ "${GHA_TODAY:-0}" -gt 0 ] && echo true || echo false)
+          echo "{\"cloudwatch_readable\": $READABLE, \"markers\": $MARKERS, \"gha_success_today\": $GHA_BOOL}" > delivery_evidence.json
+          cat delivery_evidence.json
+
+      - name: Gather recent CI run conclusions
+        run: |
+          set -uo pipefail
+          gh run list --json conclusion,workflowName --limit 20 \
+            --jq '[.[] | {name: .workflowName, conclusion}]' > ci_runs.json 2>/dev/null || echo '[]' > ci_runs.json
+          cat ci_runs.json
+
+      - name: Secret scan (gitleaks)
+        run: |
+          set -uo pipefail
+          curl -sSL https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz | tar -xz gitleaks || true
+          if [ -x ./gitleaks ]; then
+            ./gitleaks detect --no-banner --report-format json --report-path gitleaks_report.json --redact || true
+          fi
+          [ -f gitleaks_report.json ] || echo '[]' > gitleaks_report.json
+
+      - name: Run test suites (regression signal)
+        run: |
+          set -uo pipefail
+          python -m pytest tests/ -q || echo "::warning::backend tests failed"
+          if [ -f dashboard/package.json ]; then
+            (cd dashboard && npm ci && npm test -- --watchAll=false) || echo "::warning::dashboard tests failed"
+          fi
+
+      - name: Run the prober
+        run: python scripts/health_check.py
+
+      - name: Read overall severity
+        id: sev
+        run: echo "overall=$(python -c "import json;print(json.load(open('health-report.json'))['overall'])")" >> "$GITHUB_OUTPUT"
+
+      - name: Alert on warn/critical (Telegram, Claude-actionable)
+        if: steps.sev.outputs.overall != 'ok'
+        run: python scripts/health_check.py --notify health-report.json
+
+      - name: Auto-remediate a confirmed missed report
+        if: steps.sev.outputs.overall == 'critical'
+        run: |
+          set -uo pipefail
+          if python -c "import json,sys; r=json.load(open('health-report.json')); sys.exit(0 if any(f['id']=='report_delivered_today' and f['remediation']=='auto:redispatch_daily_report' for f in r['findings']) else 1)"; then
+            echo "Confirmed missed report — re-dispatching daily_report.yml once."
+            gh workflow run daily_report.yml --ref main || true
+          else
+            echo "No auto-remediable miss; leaving for the weekly agent / owner."
+          fi
+
+      - name: Append to health history
+        run: |
+          set -uo pipefail
+          mkdir -p health/history
+          cp health-report.json "health/history/$(date -u +%Y-%m-%d).json"
+          git config user.name "health-check-bot"
+          git config user.email "actions@github.com"
+          git add health/history
+          git commit -m "chore(health): $(date -u +%Y-%m-%d) report [skip ci]" || echo "no change to commit"
+          git push || echo "push skipped"
+
+      - name: Upload report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: health-report
+          path: health-report.json
