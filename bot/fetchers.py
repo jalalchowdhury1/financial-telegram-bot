@@ -932,20 +932,14 @@ def fetch_market_extra(fred_api_key: str,
     }
 
 
-def fetch_polymarket_trending(limit: int = 10) -> List[Dict[str, Any]]:
+def fetch_polymarket_trending(limit: int = 8) -> List[Dict[str, Any]]:
     """
-    Fetch top trending Polymarket predictions (non-resolved, non-sports, highest volume).
-    Uses Polymarket Gamma REST API directly — no API key required.
+    Curated "market sentiment" board: meaningful-probability (8-92%), non-sports, binary
+    Yes/No Polymarket markets, de-duped by event and topic-diverse, ranked by volume.
+    Uses the public Gamma REST API directly — no API key required.
 
-    Args:
-        limit (int): Maximum number of bets to return (default 10)
-
-    Returns:
-        list: [{name, odds, volume}, ...] sorted by volume descending (highest volumes first)
-              Returns [] on API failure (graceful degradation)
-
-    Raises:
-        None (all errors logged and gracefully handled)
+    Returns: [{name, odds, volume, change, topic, topicEmoji, endDate, eventSlug}, ...]
+             ([] on any failure — graceful degradation, never raises).
     """
     # Sports keywords to filter out (checked against question, slug, and event titles)
     SPORTS_KEYWORDS = {
@@ -986,93 +980,145 @@ def fetch_polymarket_trending(limit: int = 10) -> List[Dict[str, Any]]:
         'eternal premium', 'bushido', 'immortals', 'fnatic', 'heroic', 'astralis'
     }
 
+    # Topic tagging (first keyword match wins; order matters — specific before generic).
+    TOPIC_KEYWORDS = (
+        ("Crypto", "🪙", ("bitcoin", "btc", "ethereum", " eth ", "crypto", "microstrategy",
+                          "solana", "coinbase", "stablecoin", "dogecoin", "xrp", "binance")),
+        ("Geopolitics", "🌍", ("iran", "israel", "gaza", "ukraine", "russia", "china", "taiwan",
+                              "ceasefire", "nuclear", "nato", "hormuz", "north korea", "hostage",
+                              "peace deal", " war ", "missile", "sanction", "venezuela", "houthi")),
+        ("Politics", "🏛️", ("trump", "biden", "election", "president", "senate", "congress",
+                            "governor", "democrat", "republican", "nominee", "primary",
+                            "supreme court", "impeach", "cabinet", "vance", "mayor", "parliament")),
+        ("Tech", "🤖", ("openai", "anthropic", "gpt", "nvidia", "spacex", "tesla", "apple",
+                       "google", "microsoft", "ipo", "chatgpt", "claude", "llm", "agi",
+                       "artificial intelligence", "starship", "robotaxi", "quantum")),
+        ("Economy", "📉", ("recession", "fed ", "rate cut", "inflation", "gdp", "unemployment",
+                          "s&p", "interest rate", "market cap", "valuation", "jobs report")),
+    )
+
+    def topic_of(text):
+        for tname, emoji, kws in TOPIC_KEYWORDS:
+            if any(kw in text for kw in kws):
+                return tname, emoji
+        return "World", "🌐"
+
     try:
         url = "https://gamma-api.polymarket.com/markets"
-        params = {
-            "active": "true",
-            "closed": "false",
-            "order": "volume24hr",  # Sort by 24-hour volume (recent activity = trending)
-            "ascending": "false",  # Highest 24h volume first
-            "limit": 100  # Get top 100, filter down to trending non-sports
-        }
-        response = requests.get(url, params=params, timeout=10)
-        response.raise_for_status()
-        markets = response.json()
+        # Broad pool by WEEKLY volume (recent interest, less churny than 24h). The Gamma API
+        # caps `limit` at 100, so paginate to widen the pool, then filter hard below.
+        markets = []
+        for offset in range(0, 500, 100):
+            resp = requests.get(url, params={
+                "active": "true", "closed": "false", "order": "volume1wk",
+                "ascending": "false", "limit": 100, "offset": offset,
+            }, timeout=15)
+            resp.raise_for_status()
+            page = resp.json()
+            if not isinstance(page, list) or not page:
+                break
+            markets.extend(page)
 
-        bets = []
-        from datetime import datetime, timezone
+        from datetime import datetime, timezone, timedelta
+        import ast
         now = datetime.now(timezone.utc)
+        min_horizon = now + timedelta(days=1)   # drop intraday churn (e.g. "BTC up/down 5m")
 
+        candidates = []
         for market in markets:
             try:
-                # Skip expired markets (endDate has passed)
-                end_date_str = market.get("endDate")
-                if end_date_str:
+                # Resolution date: drop expired AND ultra-short-term (<~1 day) markets.
+                end_iso = market.get("endDate")
+                if end_iso:
                     try:
-                        end_date = datetime.fromisoformat(end_date_str.replace("Z", "+00:00"))
-                        if end_date < now:
-                            continue  # Skip this market, it's expired
+                        ed = datetime.fromisoformat(end_iso.replace("Z", "+00:00"))
+                        if ed < min_horizon:
+                            continue
                     except Exception:
-                        pass  # If parsing fails, continue with the market
+                        end_iso = None
 
-                # Get question/name
+                # Binary Yes/No only (clean single-probability sentiment).
+                try:
+                    outcomes = [str(o).lower() for o in ast.literal_eval(market.get("outcomes", "[]"))]
+                except Exception:
+                    outcomes = []
+                if outcomes != ["yes", "no"]:
+                    continue
+
                 name = market.get("question") or market.get("groupItemTitle") or "Unknown"
-                name_lower = name.lower()
-
-                # Build searchable text from all relevant fields
-                search_text = name_lower
-
-                # Add slug to searchable text
-                slug = market.get("slug", "").lower()
-                search_text += " " + slug
-
-                # Add event titles to searchable text (events is a list of dicts)
+                slug = (market.get("slug") or "").lower()
                 events = market.get("events") or []
-                if events and isinstance(events, list):
-                    for event in events:
-                        if isinstance(event, dict):
-                            event_title = event.get("title", "").lower()
-                            search_text += " " + event_title
+                event_titles = " ".join((e.get("title") or "").lower()
+                                        for e in events if isinstance(e, dict))
+                search_text = f"{name.lower()} {slug} {event_titles}"
 
-                # Skip sports by CATEGORY first — more robust than keyword whack-a-mole.
-                # Polymarket tags each market; a "Sports" tag is authoritative and catches
-                # markets (e.g. "Will the Lakers win the Championship?") whose text has no
-                # keyword in SPORTS_KEYWORDS.
-                tags = market.get("tags") or []
-                tag_labels = {(t.get("label") or "").lower() for t in tags if isinstance(t, dict)}
+                # Sports filter: authoritative "Sports" tag, then keyword sweep.
+                tag_labels = {(t.get("label") or "").lower()
+                              for t in (market.get("tags") or []) if isinstance(t, dict)}
                 if any("sport" in lbl for lbl in tag_labels):
                     continue
-
-                # Skip sports category (keyword matching across all fields)
-                if any(keyword in search_text for keyword in SPORTS_KEYWORDS):
+                if any(kw in search_text for kw in SPORTS_KEYWORDS):
                     continue
 
-                # Get odds from outcomePrices (first outcome = "Yes" probability)
-                outcome_prices_raw = market.get("outcomePrices", "[]")
+                # Probability (first outcome = "Yes"). Keep only genuine uncertainty.
                 try:
-                    import ast
-                    prices = ast.literal_eval(outcome_prices_raw)
-                    if prices:
-                        odds = float(f"{float(prices[0]):.2f}")
-                    else:
-                        odds = 0.5
+                    prices = ast.literal_eval(market.get("outcomePrices", "[]"))
+                    odds = float(prices[0]) if prices else None
                 except Exception:
-                    odds = 0.5  # Default: 50% probability when no orderbook data
+                    odds = None
+                if odds is None or not (0.08 <= odds <= 0.92):
+                    continue
 
-                volume = float(market.get("volume") or 0)
+                volume = float(market.get("volumeNum") or market.get("volume") or 0)
+                if volume < 25000:
+                    continue
 
-                bets.append({
+                try:
+                    change = float(market["oneMonthPriceChange"]) if market.get("oneMonthPriceChange") is not None else None
+                except Exception:
+                    change = None
+
+                ev = events[0] if events and isinstance(events[0], dict) else {}
+                event_key = ev.get("ticker") or ev.get("slug") or slug or name
+                topic, emoji = topic_of(search_text)
+
+                candidates.append({
                     "name": name,
-                    "odds": odds,
-                    "volume": volume
+                    "odds": round(odds, 2),
+                    "volume": volume,
+                    "change": round(change, 4) if change is not None else None,
+                    "topic": topic,
+                    "topicEmoji": emoji,
+                    "endDate": end_iso,
+                    "eventSlug": ev.get("slug"),
+                    "_event": event_key,
                 })
+            except Exception as e:
+                logging.warning(f"Polymarket parse error on {market.get('id')}: {e}")
+                continue
 
+        # Select: rank by volume, de-dupe by event (highest-volume wins), cap 2 per topic,
+        # AND cap "longshots" (<30%) so the board is a real SPREAD of sentiment, not a wall
+        # of unlikely-but-heavily-traded bets. Pass 1 enforces the longshot cap; pass 2 fills
+        # any leftover slots without it (so we still reach `limit` on a quiet day).
+        candidates.sort(key=lambda b: b["volume"], reverse=True)
+        LONGSHOT, max_longshots = 0.30, max(1, limit // 2)
+        seen_events, per_topic, bets, n_longshots = set(), {}, [], 0
+        for allow_longshot in (False, True):
+            for c in candidates:
                 if len(bets) >= limit:
                     break
-
-            except Exception as e:
-                logging.warning(f"Error parsing market {market.get('id')}: {e}")
-                continue
+                if c["_event"] in seen_events or per_topic.get(c["topic"], 0) >= 2:
+                    continue
+                is_longshot = c["odds"] < LONGSHOT
+                if is_longshot and not allow_longshot and n_longshots >= max_longshots:
+                    continue
+                seen_events.add(c["_event"])
+                per_topic[c["topic"]] = per_topic.get(c["topic"], 0) + 1
+                n_longshots += 1 if is_longshot else 0
+                bets.append({k: v for k, v in c.items() if k != "_event"})
+            if len(bets) >= limit:
+                break
 
         return bets
 
