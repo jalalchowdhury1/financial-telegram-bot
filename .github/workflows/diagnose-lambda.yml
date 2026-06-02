@@ -1,0 +1,65 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow
+# One-shot, on-demand diagnostic for "why didn't the scheduled report send?".
+# Dumps the Lambda's recent invocation pattern + outcomes from CloudWatch (and, best-effort,
+# the EventBridge rule state) so we can see whether EventBridge is invoking the Lambda and,
+# if so, whether the report is failing. Read the run logs; nothing is changed.
+name: Diagnose Lambda Report
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: us-east-1
+      FUNC: financial-telegram-report
+      LOG_GROUP: /aws/lambda/financial-telegram-report
+    steps:
+      - name: EventBridge schedule rules (best-effort — may lack IAM perms)
+        run: |
+          set +e
+          echo "=== All rules (name / state / schedule) ==="
+          aws events list-rules --query 'Rules[].{Name:Name,State:State,Schedule:ScheduleExpression}' --output table 2>&1 | head -50
+          echo "=== Rules whose target is our Lambda ==="
+          for r in $(aws events list-rules --query 'Rules[].Name' --output text 2>/dev/null); do
+            tgts=$(aws events list-targets-by-rule --rule "$r" --query 'Targets[].Arn' --output text 2>/dev/null)
+            if echo "$tgts" | grep -qi "$FUNC"; then
+              st=$(aws events describe-rule --name "$r" --query 'State' --output text 2>/dev/null)
+              sc=$(aws events describe-rule --name "$r" --query 'ScheduleExpression' --output text 2>/dev/null)
+              echo "  RULE $r  state=$st  schedule=$sc"
+            fi
+          done
+          echo "(If the above is empty/AccessDenied, the deploy IAM user lacks events:* — that's fine, the CloudWatch section below is the key evidence.)"
+
+      - name: Lambda config (best-effort)
+        run: |
+          set +e
+          aws lambda get-function-configuration --function-name "$FUNC" \
+            --query '{LastModified:LastModified,State:State,LastUpdateStatus:LastUpdateStatus,Timeout:Timeout,Runtime:Runtime}' \
+            --output table 2>&1 | head -20
+
+      - name: CloudWatch — invocations over last 7 days (who triggered the Lambda?)
+        run: |
+          set +e
+          START=$(python3 -c "import time;print(int((time.time()-7*86400)*1000))")
+          echo "Each 'Lambda triggered at ...' + its 'Trigger:' line shows an invocation and its source."
+          echo "If there are NO 'Trigger: EventBridge' lines on a given morning, EventBridge didn't fire."
+          echo "=================================================================="
+          aws logs filter-log-events --log-group-name "$LOG_GROUP" \
+            --start-time "$START" \
+            --filter-pattern '?"Lambda triggered at" ?"Trigger:"' \
+            --query 'events[].message' --output text 2>&1 | tr '\t' '\n' | sed '/^$/d' | tail -120
+
+      - name: CloudWatch — report outcomes + errors over last 7 days
+        run: |
+          set +e
+          START=$(python3 -c "import time;print(int((time.time()-7*86400)*1000))")
+          echo "REPORT_DELIVERED = sent OK · REPORT_FAILED = ran but failed · Traceback/Task timed out = crash."
+          echo "=================================================================="
+          aws logs filter-log-events --log-group-name "$LOG_GROUP" \
+            --start-time "$START" \
+            --filter-pattern '?REPORT_DELIVERED ?REPORT_FAILED ?Traceback ?"Task timed out" ?"errorType" ?"Runtime.ImportModuleError"' \
+            --query 'events[].message' --output text 2>&1 | tr '\t' '\n' | sed '/^$/d' | tail -120
