@@ -274,3 +274,22 @@ def test_format_alert_is_claude_actionable_and_omits_ok():
     assert "redispatch_daily_report" in msg          # suggested remediation
     assert "endpoint_spy" not in msg                 # ok findings are omitted
     assert "Paste" in msg or "paste" in msg or "Claude" in msg  # actionable framing
+
+
+def test_format_alert_eli10_reassures_when_auto_remediated():
+    report = {"overall": "critical", "generated_at": "2026-06-02T18:05:00Z", "findings": [
+        {"id": "report_delivered_today", "severity": "critical", "title": "No report delivered today",
+         "detail": "no marker", "remediation": "auto:redispatch_daily_report", "evidence": {}}]}
+    msg = hc.format_alert(report)
+    assert "💬" in msg                          # per-finding plain-English line
+    assert "auto-re-sending" in msg             # plain explanation for this finding
+    assert "BOTTOM LINE" in msg
+    assert "don't need to do anything" in msg   # all-auto → reassuring, not alarming
+
+
+def test_format_alert_eli10_flags_a_real_secret_leak():
+    report = {"overall": "critical", "generated_at": "x", "findings": [
+        {"id": "secret_leak", "severity": "critical", "title": "leak", "detail": "",
+         "remediation": "manual", "evidence": {}}]}
+    msg = hc.format_alert(report)
+    assert "needs your attention" in msg        # a genuine issue is NOT reassured away
