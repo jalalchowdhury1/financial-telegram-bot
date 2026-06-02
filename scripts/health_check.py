@@ -171,9 +171,35 @@ def assemble_report(findings, generated_at="unknown"):
     return {"generated_at": generated_at, "overall": overall, "findings": findings}
 
 
+def _plain_english(f):
+    """A non-technical, reassuring one-liner per finding, so a scary 'CRITICAL' doesn't read
+    as 'the world is on fire' when it's usually something the system handles itself."""
+    fid = f.get("id", "")
+    auto = (f.get("remediation") or "").startswith("auto:")
+    if fid == "report_delivered_today":
+        return ("Today's market report didn't send on its own — but the system is auto-re-sending "
+                "it, so you'll still get it. Only worry if your report never shows up."
+                if auto else
+                "Today's market report may not have gone out — check whether it arrived.")
+    if fid.startswith("endpoint_"):
+        return (f"A dashboard data feed ({fid[len('endpoint_'):]}) hiccuped. The dashboard falls "
+                "back to backups and keeps working — this is just a heads-up; it usually self-clears.")
+    if fid == "indicators_na":
+        return "A dashboard number is blank that normally has data. Worth a peek, not an emergency."
+    if fid == "known_issue_config_urls":
+        return "A small, already-known config gap. Not new and not urgent."
+    if fid == "secret_leak":
+        return "⚠️ A password / API key may be exposed in the code. THIS one matters — rotate it soon."
+    if fid == "ci_health":
+        return "An automated workflow's last run failed. Worth a look, usually a quick fix."
+    return "Something to glance at — paste this to Claude and it'll handle it."
+
+
 def format_alert(report):
-    """A Claude-actionable alert: only non-ok findings, each with id, detail, evidence,
-    and suggested remediation, so pasting it into Claude Code is enough to act on."""
+    """A Claude-actionable alert: only non-ok findings, each with id, detail, evidence, and
+    suggested remediation, so pasting it into Claude Code is enough to act on. Each finding
+    also gets a plain-English '💬' line, and the alert ends with an ELI10 BOTTOM LINE saying
+    whether the system is self-healing this or it genuinely needs you."""
     problems = [f for f in report["findings"] if f["severity"] != "ok"]
     icon = {"warn": "⚠️", "critical": "🔴"}
     lines = [f"{icon.get(report['overall'], '⚠️')} financial-telegram-bot health: {report['overall'].upper()}",
@@ -188,6 +214,20 @@ def format_alert(report):
             lines.append(f"    remediation: {f['remediation']}")
         if f.get("evidence"):
             lines.append(f"    evidence: {json.dumps(f['evidence'])[:400]}")
+        lines.append(f"    💬 {_plain_english(f)}")
+
+    # ELI10 bottom line — is this "the system's got it" or "this actually needs you"?
+    secret = any(f["id"] == "secret_leak" for f in problems)
+    all_auto = bool(problems) and all((f.get("remediation") or "").startswith("auto:") for f in problems)
+    if secret:
+        bottom = "⚠️ BOTTOM LINE: mostly routine, but a possible leaked key needs your attention soon."
+    elif all_auto:
+        bottom = ("🟢 BOTTOM LINE: the system is already auto-fixing this — you almost certainly don't "
+                  "need to do anything (just confirm your report arrived). Not a major issue.")
+    else:
+        bottom = ("🟡 BOTTOM LINE: likely minor and often self-healing — not an emergency. If you want "
+                  "it handled, paste this whole message to Claude.")
+    lines += ["", "─" * 28, bottom]
     return "\n".join(lines)
 
 
