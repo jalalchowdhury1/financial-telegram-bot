@@ -2,6 +2,12 @@
 name: Daily Financial Report
 
 on:
+  schedule:
+    # 09:45 UTC — 30 min after the EventBridge/Lambda send (~09:15), so the guard step
+    # below can see the Lambda's CloudWatch marker and SKIP if it already delivered (no
+    # double-report). If the Lambda missed (as on 2026-06-02), the runner sends here — a
+    # reliable morning backstop that no longer depends on the flaky EventBridge schedule.
+    - cron: '45 9 * * *'
   workflow_dispatch:
     inputs:
       retry_count:
@@ -25,6 +31,9 @@ jobs:
       TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: us-east-1
 
     steps:
       - name: Checkout repository
@@ -62,8 +71,32 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      # On the morning cron only, skip if the Lambda already delivered today (prevents a
+      # double-report). Manual / repository_dispatch / auto-remediation runs always send.
+      # Fail-safe: if the CloudWatch check errors, we default to sending (a rare double is
+      # better than a silent miss).
+      - name: Skip if the Lambda already delivered today (scheduled runs only)
+        id: guard
+        if: github.event_name == 'schedule'
+        run: |
+          set -uo pipefail
+          START_MS=$(python -c "import time;print(int((time.time()-86400)*1000))")
+          MARKERS=$(aws logs filter-log-events \
+            --log-group-name /aws/lambda/financial-telegram-report \
+            --start-time "$START_MS" \
+            --filter-pattern 'REPORT_DELIVERED' \
+            --query 'events[].message' --output text 2>/dev/null || echo "")
+          if [ -n "$MARKERS" ]; then
+            echo "Lambda already delivered today — skipping runner send (no double-report)."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No Lambda delivery in the last 24h — runner will send the report."
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Generate and send financial report
         id: report
+        if: steps.guard.outputs.skip != 'true'
         run: python -m bot.main report
         continue-on-error: true
 
