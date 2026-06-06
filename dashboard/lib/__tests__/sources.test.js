@@ -1,4 +1,4 @@
-import { yahooChart, stooqDaily, coingeckoPrice, dbnomicsFred, dailyChange, dxyFromUsdRates, polygonDaily, fredObservations, krakenSpot, fawazRates } from '../sources';
+import { yahooChart, stooqDaily, coingeckoPrice, dbnomicsFred, dailyChange, dxyFromUsdRates, polygonDaily, fredObservations, krakenSpot, fawazRates, cnbcQuotes, cnbcHistory, goldApiSpot } from '../sources';
 
 // Mock the network: proxyFetch -> global.fetch. Return ok + json()/text().
 function mockFetch(payload, { text = false } = {}) {
@@ -137,5 +137,58 @@ describe('fredObservations', () => {
         const out = await fredObservations('DGS10', 'KEY');
         expect(out[0]).toEqual({ date: '2026-05-28', value: 4.45 });
         expect(out).toHaveLength(2);
+    });
+});
+
+describe('cnbcQuotes', () => {
+    test('parses string last/change/change_pct + slices date from last_time (array form)', async () => {
+        mockFetch({ QuickQuoteResult: { QuickQuote: [
+            { symbol: '@HG.1', last: '6.2755', change: '-0.2595', change_pct: '-3.97', last_time: '2026-06-06T18:23:33.000-0400', currencyCode: 'USD' },
+            { symbol: '@GC.1', last: '4353.90', change: '-151.10', change_pct: '-3.35', last_time: '2026-06-06T18:23:04.000-0400' },
+        ] } });
+        const out = await cnbcQuotes(['@HG.1', '@GC.1']);
+        expect(out['@HG.1'].price).toBeCloseTo(6.2755, 4);
+        expect(out['@HG.1'].changePct).toBeCloseTo(-3.97, 2);
+        expect(out['@HG.1'].asOf).toBe('2026-06-06');
+        expect(out['@GC.1'].price).toBeCloseTo(4353.9, 1);
+    });
+    test('handles a single (non-array) QuickQuote object', async () => {
+        mockFetch({ QuickQuoteResult: { QuickQuote: { symbol: '@HG.1', last: '6.10', change: '0.05', change_pct: '0.8', last_time: '2026-06-05T20:00:00.000-0400' } } });
+        const out = await cnbcQuotes(['@HG.1']);
+        expect(out['@HG.1'].price).toBe(6.10);
+    });
+    test('throws when no parseable quotes', async () => {
+        mockFetch({ QuickQuoteResult: { QuickQuote: [{ symbol: '@HG.1', last: 'N/A' }] } });
+        await expect(cnbcQuotes(['@HG.1'])).rejects.toThrow();
+    });
+});
+
+describe('cnbcHistory', () => {
+    test('parses tradeTime+close into ascending {date,price}', async () => {
+        mockFetch({ barData: { priceBars: [
+            { tradeTime: '20260605000000', close: '6.28' },
+            { tradeTime: '20260601000000', close: '6.10' }, // out of order on purpose
+        ] } });
+        const out = await cnbcHistory('@HG.1');
+        expect(out).toHaveLength(2);
+        expect(out[0]).toEqual({ date: '2026-06-01', price: 6.10 }); // sorted oldest-first
+        expect(out[1]).toEqual({ date: '2026-06-05', price: 6.28 });
+    });
+    test('throws on empty bars', async () => {
+        mockFetch({ barData: { priceBars: [] } });
+        await expect(cnbcHistory('@HG.1')).rejects.toThrow();
+    });
+});
+
+describe('goldApiSpot', () => {
+    test('returns current + asOf date', async () => {
+        mockFetch({ symbol: 'XAU', price: 4330.0, updatedAt: '2026-06-06T13:55:25Z' });
+        const out = await goldApiSpot('XAU');
+        expect(out.current).toBe(4330.0);
+        expect(out.asOf).toBe('2026-06-06');
+    });
+    test('throws when price missing', async () => {
+        mockFetch({ symbol: 'XAU' });
+        await expect(goldApiSpot('XAU')).rejects.toThrow();
     });
 });

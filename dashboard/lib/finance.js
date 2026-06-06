@@ -12,8 +12,61 @@
  * @returns {number|null}
  */
 export function copperGoldRatio(copperUsdPerLb, goldUsdPerOz) {
-    if (!copperUsdPerLb || !goldUsdPerOz) return null;
+    // Reject non-finite (NaN/Infinity) and non-positive prices so a bad leg can
+    // never produce Infinity/0 garbage (a leg's `current` is already finite-checked
+    // upstream, but be defensive — this is the one place the division happens).
+    if (!Number.isFinite(copperUsdPerLb) || !Number.isFinite(goldUsdPerOz) || copperUsdPerLb <= 0 || goldUsdPerOz <= 0) return null;
     return (copperUsdPerLb / goldUsdPerOz) * 1000;
+}
+
+const MS_DAY = 86400000;
+
+/**
+ * Pick the price ~windowDays before the latest observation, for computing a
+ * trailing change. `historyAsc` is oldest→newest [{date:'YYYY-MM-DD', price}].
+ * Returns the price of the observation whose date is CLOSEST to (latestDate −
+ * windowDays), but only if that closest point is within `tolDays` of the target
+ * (so a too-short history yields null rather than a bogus "change"). This makes
+ * the delta robust across mixed frequencies: a monthly copper series snaps the
+ * 30-day target to the prior month; a daily gold series snaps to the exact day.
+ *
+ * @param {Array<{date:string, price:number}>} historyAsc
+ * @param {string|Date} latestDate  date of the newest point
+ * @param {number} windowDays       e.g. 30 (≈1mo) or 90 (≈3mo)
+ * @param {number} [tolDays]        max allowed gap from the target date
+ * @returns {number|null}
+ */
+// tolDays default: 60% of the window, floored at 18 days. The 18-day floor lets a
+// 30-day window snap to a MONTHLY copper series (1 obs/~30d) without rejecting the
+// prior month. Callers here only use 30/90-day windows.
+export function priceAtAgo(historyAsc, latestDate, windowDays, tolDays = Math.max(windowDays * 0.6, 18)) {
+    if (!Array.isArray(historyAsc) || historyAsc.length < 2) return null;
+    const latest = new Date(latestDate);
+    if (Number.isNaN(latest.getTime())) return null;
+    const target = latest.getTime() - windowDays * MS_DAY;
+    let best = null, bestGap = Infinity;
+    for (const h of historyAsc) {
+        if (h == null || h.price == null || Number.isNaN(Number(h.price))) continue;
+        const t = new Date(h.date).getTime();
+        if (Number.isNaN(t)) continue;
+        // Only look backwards from the latest point (ignore points newer than ~latest).
+        if (t > latest.getTime() + MS_DAY) continue;
+        const gap = Math.abs(t - target);
+        if (gap < bestGap) { bestGap = gap; best = Number(h.price); }
+    }
+    if (best == null) return null;
+    return bestGap <= tolDays * MS_DAY ? best : null;
+}
+
+/**
+ * Change of the ratio between two points: {value, pct} or null if either side
+ * is missing/zero. `value` is in ratio points; `pct` is percent.
+ * @returns {{value:number, pct:number}|null}
+ */
+export function ratioChange(ratioNow, ratioAgo) {
+    if (ratioNow == null || ratioAgo == null || ratioAgo === 0) return null;
+    const value = ratioNow - ratioAgo;
+    return { value, pct: (value / ratioAgo) * 100 };
 }
 
 /**

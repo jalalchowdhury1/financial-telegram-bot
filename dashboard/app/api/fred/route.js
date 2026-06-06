@@ -3,7 +3,8 @@ import { fetchJson, proxyFetch } from '../../../lib/fetcher';
 import { withFreshness } from '../../../lib/freshness';
 import { serve } from '../../../lib/store';
 import { faultsFrom } from '../../../lib/faults';
-import { copperGoldRatio } from '../../../lib/finance';
+import { resolveLeg, buildCopperGold } from '../../../lib/copperGold';
+import { cnbcQuotes, cnbcHistory, goldApiSpot, polygonDaily, fredObservations, yahooChart } from '../../../lib/sources';
 
 // In Next 13.5 the route's default fetchCache is 'only-no-store', which ERRORS
 // on cached fetches. 'default-cache' permits caching (and never errors), so the
@@ -71,58 +72,103 @@ function findByMonthOffset(arr, nMonths) {
 const dateOf = (arr) => arr?.[0]?.date ?? null;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Copper/Gold ratio — replaces the discontinued LEI. A leading growth/rates gauge,
-// fetched from MULTIPLE price sources (Yahoo primary, Stooq fallback) per leg, so it
-// has the redundancy the dead FRED LEI never did. Never throws; a miss → unavailable.
+// Copper/Gold ratio — replaces the discontinued LEI. A leading growth/rates gauge.
+//
+// This route runs on Vercel's serverless functions (datacenter IPs), where Yahoo
+// and Stooq are blocked/JS-walled — which is why the old 2-source (Yahoo→Stooq)
+// version went permanently N/A. Each leg now cascades through SEVERAL independent,
+// datacenter-reachable sources, all normalized to the same unit (copper $/lb, gold
+// $/oz) so the ratio (~1.4) is consistent regardless of which source answered:
+//
+//   COPPER $/lb : CNBC @HG.1 (keyless, daily history) → FRED PCOPPUSDM (key)
+//                 → gold-api.com HG (keyless spot) → Yahoo HG=F (self-heal)
+//   GOLD   $/oz : CNBC @GC.1 (keyless, daily history) → Polygon C:XAUUSD (key)
+//                 → FRED GOLDPMGBD228NLBM (key) → gold-api.com XAU → Yahoo GC=F
+//
+// Each source can be fault-injected for testing the cascade end-to-end, e.g.
+// `?_fail=cg_cnbc` forces both legs past CNBC; `?_fail=cg_cnbc,cg_fred,cg_polygon`
+// forces them all the way down to the keyless gold-api spot tier.
+//
+// Sources that expose history give a real 1-month AND 3-month change (the "trend"
+// the owner cares about, not just the level). Spot-only sources still give the
+// current ratio. Never throws; a miss → unavailable (the daily health-check flags
+// an unexpected N/A here).
 // ─────────────────────────────────────────────────────────────────────────────
-const COMMODITY_FRESHNESS_DAYS = 7;  // markets trade daily; tolerate weekends/holidays.
+const LB_PER_TONNE = 2204.6226;     // FRED PCOPPUSDM is USD per metric ton → ÷ this = $/lb
 
-async function fetchCommodityLeg(yahooTicker, stooqSymbol, stooqScale) {
-    // Returns { price, prev, asOf, source } or null.
-    try {
-        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooTicker}?range=5d&interval=1d`;
-        const data = await fetchJson(url, { revalidate: REVALIDATE_SECONDS });
-        const r = data?.chart?.result?.[0];
-        const ts = r?.timestamp || [];
-        const closes = r?.indicators?.quote?.[0]?.close || [];
-        const valid = [];
-        for (let i = 0; i < closes.length; i++) if (closes[i] != null) valid.push({ t: ts[i], c: closes[i] });
-        if (valid.length) {
-            const last = valid[valid.length - 1];
-            const prev = valid.length > 1 ? valid[valid.length - 2].c : last.c;
-            return { price: last.c, prev, asOf: new Date(last.t * 1000).toISOString().split('T')[0], source: 'Yahoo' };
-        }
-    } catch (e) { /* fall through to Stooq */ }
-    try {
-        const res = await proxyFetch(`https://stooq.com/q/l/?s=${stooqSymbol}&f=sd2t2ohlcv&h&e=csv`,
-            { revalidate: REVALIDATE_SECONDS, timeout: 8000 });
-        const rows = (await res.text()).trim().split('\n');
-        if (rows.length >= 2) {
-            const close = parseFloat(rows[1].split(',')[6]);
-            if (Number.isFinite(close)) {
-                return { price: close * stooqScale, prev: close * stooqScale, asOf: rows[1].split(',')[1] || null, source: 'Stooq' };
-            }
-        }
-    } catch (e) { /* give up — leg unavailable */ }
-    return null;
+// A "source" knows its fault name, how stale its newest point may be, and how to
+// fetch { current, currentDate, historyAsc:[{date,price}] } in the canonical unit.
+function copperSources(fredKey) {
+    return [
+        { name: 'cnbc', freshnessDays: 7, fetch: async () => {
+            // Quote is required (gives the current price); history is best-effort (gives the delta).
+            const [q, hist] = await Promise.all([cnbcQuotes(['@HG.1']), cnbcHistory('@HG.1').catch((e) => { console.warn(`[CNBC history @HG.1] ${e.message}`); return []; })]);
+            const cur = q['@HG.1'];
+            const last = hist[hist.length - 1];
+            return { current: cur?.price ?? last?.price, currentDate: cur?.asOf ?? last?.date, historyAsc: hist };
+        } },
+        { name: 'fred', freshnessDays: 80, fetch: async () => {  // monthly series, reported weeks late
+            if (!fredKey) throw new Error('no FRED key');
+            const obs = await fredObservations('PCOPPUSDM', fredKey, { limit: 60 }); // newest-first $/tonne
+            const historyAsc = [...obs].reverse().map((o) => ({ date: o.date, price: o.value / LB_PER_TONNE }));
+            const last = historyAsc[historyAsc.length - 1];
+            if (!last) throw new Error('FRED PCOPPUSDM: no observations');
+            return { current: last.price, currentDate: last.date, historyAsc };
+        } },
+        { name: 'goldapi', freshnessDays: 7, fetch: async () => {
+            const s = await goldApiSpot('HG');               // copper, $/lb (spot, no history)
+            return { current: s.current, currentDate: s.asOf, historyAsc: [] };
+        } },
+        { name: 'yahoo', freshnessDays: 7, fetch: async () => {
+            const y = await yahooChart('HG=F', { range: '3mo', revalidate: REVALIDATE_SECONDS });
+            return { current: y.current, currentDate: y.history[y.history.length - 1]?.date, historyAsc: y.history };
+        } },
+    ];
 }
 
-async function fetchCopperGold(now) {
+function goldSources(fredKey, polyKey) {
+    return [
+        { name: 'cnbc', freshnessDays: 7, fetch: async () => {
+            const [q, hist] = await Promise.all([cnbcQuotes(['@GC.1']), cnbcHistory('@GC.1').catch((e) => { console.warn(`[CNBC history @GC.1] ${e.message}`); return []; })]);
+            const cur = q['@GC.1'];
+            const last = hist[hist.length - 1];
+            return { current: cur?.price ?? last?.price, currentDate: cur?.asOf ?? last?.date, historyAsc: hist };
+        } },
+        { name: 'polygon', freshnessDays: 12, fetch: async () => {
+            if (!polyKey) throw new Error('no Polygon key');
+            const p = await polygonDaily('C:XAUUSD', polyKey, { years: 1, revalidate: REVALIDATE_SECONDS });
+            const last = p.history[p.history.length - 1];
+            if (!last) throw new Error('Polygon C:XAUUSD: no history');
+            return { current: p.current, currentDate: last.date, historyAsc: p.history };
+        } },
+        { name: 'fred', freshnessDays: 12, fetch: async () => {  // daily LBMA fix
+            if (!fredKey) throw new Error('no FRED key');
+            const obs = await fredObservations('GOLDPMGBD228NLBM', fredKey, { limit: 200 });
+            const historyAsc = [...obs].reverse().map((o) => ({ date: o.date, price: o.value }));
+            const last = historyAsc[historyAsc.length - 1];
+            if (!last) throw new Error('FRED GOLDPMGBD228NLBM: no observations');
+            return { current: last.price, currentDate: last.date, historyAsc };
+        } },
+        { name: 'goldapi', freshnessDays: 7, fetch: async () => {
+            const s = await goldApiSpot('XAU');              // gold, $/oz (spot, no history)
+            return { current: s.current, currentDate: s.asOf, historyAsc: [] };
+        } },
+        { name: 'yahoo', freshnessDays: 7, fetch: async () => {
+            const y = await yahooChart('GC=F', { range: '3mo', revalidate: REVALIDATE_SECONDS });
+            return { current: y.current, currentDate: y.history[y.history.length - 1]?.date, historyAsc: y.history };
+        } },
+    ];
+}
+
+// Resolve both legs (each cascades through its sources via resolveLeg) and build
+// the ratio + 1mo/3mo trend. resolveLeg + buildCopperGold live in lib/copperGold
+// (pure, unit-tested); here we only wire the network-bound sources + keys.
+async function fetchCopperGold(now, { fredKey, polyKey, faults }) {
     const [copper, gold] = await Promise.all([
-        fetchCommodityLeg('HG=F', 'hg.f', 0.01),  // Stooq copper is cents/lb → ×0.01 = $/lb
-        fetchCommodityLeg('GC=F', 'gc.f', 1),     // gold already $/oz
+        resolveLeg(copperSources(fredKey), faults, now),
+        resolveLeg(goldSources(fredKey, polyKey), faults, now),
     ]);
-    const ratio = copper && gold ? copperGoldRatio(copper.price, gold.price) : null;
-    const prevRatio = copper && gold ? copperGoldRatio(copper.prev, gold.prev) : null;
-    const asOf = copper?.asOf || gold?.asOf || null;
-    return {
-        ...withFreshness(ratio, asOf, COMMODITY_FRESHNESS_DAYS, now),
-        change: ratio != null && prevRatio != null ? ratio - prevRatio : null,
-        status: ratio == null ? 'unknown' : (prevRatio != null && ratio < prevRatio ? 'falling' : 'rising'),
-        copper: copper?.price ?? null,
-        gold: gold?.price ?? null,
-        source: copper && gold ? `${copper.source}/${gold.source}` : null,
-    };
+    return buildCopperGold(copper, gold);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -218,7 +264,7 @@ function buildResponse(series, peRatio, now) {
             realYields: F(tipsCurrent, 'DFII10', dateOf(dfii10), { change: tipsCurrent - tipsPrev, status: tipsCurrent > 2.0 ? 'restrictive' : tipsCurrent > 0 ? 'neutral' : 'easy' }),
             // copperGold is added in GET() after buildResponse (it's fetched from price
             // sources, not FRED). Placeholder keeps the key order stable; GET overwrites it.
-            copperGold: { value: null, asOf: null, stale: false, unavailable: true, status: 'unknown' },
+            copperGold: { value: null, asOf: null, stale: false, unavailable: true, status: 'unknown', change: null, changePct: null, change3mo: null, changePct3mo: null, copper: null, gold: null, source: null },
         },
         checklist: {
             nfci: F(nfciCurrent, 'NFCI', dateOf(nfci), { bullish: nfciCurrent < 0, status: nfciCurrent < -0.5 ? 'strong' : nfciCurrent < 0 ? 'good' : 'weak', label: 'Financial Conditions' }),
@@ -323,11 +369,15 @@ export async function GET(request) {
 
         const responseData = buildResponse(series, peRatio, now);
 
-        // Copper/Gold ratio comes from price sources (not FRED). Guarded so it can never
-        // break the FRED data: a failure just leaves it unavailable (which the daily
-        // health-check then flags as an unexpected N/A — exactly the desired signal).
+        // Copper/Gold ratio comes from price sources (not FRED series). Guarded so it
+        // can never break the FRED data: a failure just leaves it unavailable (which
+        // the daily health-check then flags as an unexpected N/A). The leg cascade gates
+        // Polygon on `cg_polygon` internally, so pass the real key here.
+        const polyKey = process.env.POLYGON_KEY || '';
         try {
-            responseData.indicators.copperGold = await fetchCopperGold(now);
+            const cg = await fetchCopperGold(now, { fredKey: apiKey, polyKey, faults });
+            responseData.indicators.copperGold = cg;
+            messages.push(`Copper/Gold: ${cg.source || 'unavailable'}`);
         } catch (e) {
             messages.push(`Copper/Gold failed: ${maskKey(e.message)}`);
         }
