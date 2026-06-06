@@ -158,13 +158,31 @@ watch mode; `--testPathPattern <Name>` filters.
   daily=7, weekly=14, monthly=80, JOLTS/quarterly larger. Too-old/NaN → value forced to
   `null` so the UI shows N/A; `stale:true` (had data, too old) ≠ `unavailable:true`.
 - **Copper/Gold ratio** (the `indicators.copperGold` tile) replaced the old `LEI`/`USSLIND`
-  series, which FRED **discontinued/froze in 2020** (it could only ever show N/A). Unlike a
-  single FRED series, copper+gold are each fetched from **multiple price sources** (Yahoo
-  primary → Stooq fallback per leg; see `fetchCopperGold` in the FRED route + the pure
-  `copperGoldRatio` in `lib/finance.js`), so the tile is robust and a genuine N/A there is a
-  real signal the daily health-check will flag.
+  series, which FRED **discontinued/froze in 2020**. It is a leading growth/rates gauge
+  (~1.4 = copper $/lb ÷ gold $/oz ×1000). The tile shows the **level + its ~1-month and
+  ~3-month change** (the trend is what matters, not the level). Because this route runs on
+  **Vercel datacenter IPs where Yahoo + Stooq are blocked/JS-walled** (the old 2-source
+  version went permanently N/A), each leg now cascades through several independent,
+  datacenter-reachable sources, all normalized to the same unit so the ratio stays
+  consistent regardless of which answered (see `fetchCopperGold` + `copperSources`/
+  `goldSources` in the FRED route, the pure cascade in `lib/copperGold.js`, and the
+  parsers `cnbcQuotes`/`cnbcHistory`/`goldApiSpot` in `lib/sources.js`):
+  - **Copper $/lb**: CNBC `@HG.1` (keyless, daily history) → FRED `PCOPPUSDM` (key; ÷2204.6226
+    from $/tonne; monthly) → gold-api.com `HG` (keyless spot) → Yahoo `HG=F` (self-heal).
+  - **Gold $/oz**: CNBC `@GC.1` (keyless, daily history) → Polygon `C:XAUUSD` (key) → FRED
+    `GOLDPMGBD228NLBM` (key; daily) → gold-api.com `XAU` (keyless spot) → Yahoo `GC=F`.
+  CNBC + FRED give history → the 1mo/3mo delta; spot-only sources still give the level. A
+  genuine N/A here (all sources down) is a real signal the daily health-check flags.
 - The `?_fail=` fault-injection harness (`lib/faults.js`) is intentionally **kept in
   production** — it only degrades the caller's own response and never writes caches.
+  **Fault names:** `fred` (forces an invalid FRED key → all FRED *series* fail, exercising
+  last-known-good; note this does **not** disable the copper/gold FRED leg — that's
+  `cg_fred`), `lastgood` (also skip reading last-known-good, to reach the safe default), and
+  the per-source copper/gold gates **`cg_cnbc` / `cg_fred` / `cg_polygon` / `cg_goldapi` /
+  `cg_yahoo`** (each disables that source in **both** legs). E.g. `?_fail=cg_cnbc` forces both
+  legs past CNBC; `?_fail=cg_cnbc,cg_fred,cg_polygon` forces them down to the keyless gold-api
+  spot tier. The served object's `tried` field shows the per-leg cascade trail (e.g.
+  `cnbc:off → polygon:off → fred:ok`).
 
 ---
 

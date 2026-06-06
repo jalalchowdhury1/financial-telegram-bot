@@ -70,3 +70,4 @@ output.json
 # Build artifacts / virtualenvs that must never be committed (root-level)
 .next/
 .venv/
+.vercel

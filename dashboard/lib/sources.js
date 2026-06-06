@@ -166,6 +166,63 @@ export async function polygonDaily(ticker, key, { years = 2, revalidate = 1800 }
     return { current: history[history.length - 1].price, prevClose: history[history.length - 2]?.price ?? history[history.length - 1].price, history };
 }
 
+/**
+ * CNBC quote service (KEYLESS, datacenter-friendly JSON) -> map symbol -> {price,
+ * change, changePct, asOf}. Pass continuous front-month future symbols, e.g.
+ * '@HG.1' (Copper, USD/lb) and '@GC.1' (Gold, USD/oz). Multiple symbols MUST be
+ * pipe-delimited in ONE request (repeated symbols= params error). last/change/
+ * change_pct come back as STRINGS.
+ */
+export async function cnbcQuotes(symbols, { revalidate = 1800, timeout = 6000, tries = 2 } = {}) {
+    const q = symbols.map((s) => encodeURIComponent(s)).join('%7C'); // %7C = '|'
+    const url = `https://quote.cnbc.com/quote-html-webservice/quote.htm?symbols=${q}&output=json`;
+    const data = await withRetry(() => fetchJson(url, { revalidate, timeout }), { tries });
+    const raw = data?.QuickQuoteResult?.QuickQuote;
+    const list = Array.isArray(raw) ? raw : raw ? [raw] : [];
+    const out = {};
+    for (const it of list) {
+        const price = parseFloat(it.last);
+        if (!Number.isFinite(price)) continue;
+        out[it.symbol] = {
+            price,
+            change: parseFloat(it.change),
+            changePct: parseFloat(it.change_pct),
+            asOf: typeof it.last_time === 'string' ? it.last_time.slice(0, 10) : null,
+        };
+    }
+    if (!Object.keys(out).length) throw new Error(`CNBC: no quotes for ${symbols.join(',')}`);
+    return out;
+}
+
+/**
+ * CNBC daily price history (KEYLESS) -> ascending [{date,price}]. The '3M.json'
+ * range actually returns ~500 DAILY bars (~2yr) — plenty for 1mo/3mo deltas.
+ * tradeTime is 'YYYYMMDDhhmmss'; close is a string.
+ */
+export async function cnbcHistory(symbol, { range = '3M', revalidate = 1800, timeout = 6000, tries = 2 } = {}) {
+    const url = `https://ts-api.cnbc.com/harmony/app/charts/${range}.json?symbol=${encodeURIComponent(symbol)}`;
+    const data = await withRetry(() => fetchJson(url, { revalidate, timeout }), { tries });
+    const bars = data?.barData?.priceBars || [];
+    const history = [];
+    for (const b of bars) {
+        const price = parseFloat(b.close);
+        const tt = String(b.tradeTime || '');
+        if (!Number.isFinite(price) || tt.length < 8) continue;
+        history.push({ date: `${tt.slice(0, 4)}-${tt.slice(4, 6)}-${tt.slice(6, 8)}`, price });
+    }
+    if (!history.length) throw new Error(`CNBC: empty history ${symbol}`);
+    history.sort((a, b) => (a.date < b.date ? -1 : 1)); // ISO 'YYYY-MM-DD' sorts chronologically as strings → oldest -> newest
+    return history;
+}
+
+/** gold-api.com spot (KEYLESS) -> { current, asOf }. symbol 'XAU' (gold $/oz) or 'HG' (copper $/lb). */
+export async function goldApiSpot(symbol, { revalidate = 600, timeout = 6000, tries = 2 } = {}) {
+    const data = await withRetry(() => fetchJson(`https://api.gold-api.com/price/${encodeURIComponent(symbol)}`, { revalidate, timeout }), { tries });
+    const px = Number(data?.price);
+    if (!Number.isFinite(px)) throw new Error(`gold-api: no price ${symbol}`);
+    return { current: px, asOf: typeof data.updatedAt === 'string' ? data.updatedAt.slice(0, 10) : null };
+}
+
 /** Finnhub real-time quote (stocks) -> { current, prevClose }. Requires a key. */
 export async function finnhubQuote(symbol, key, { revalidate = 120 } = {}) {
     if (!key) throw new Error('Finnhub: no API key');
