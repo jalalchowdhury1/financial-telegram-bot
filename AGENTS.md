@@ -173,6 +173,12 @@ watch mode; `--testPathPattern <Name>` filters.
     `GOLDPMGBD228NLBM` (key; daily) → gold-api.com `XAU` (keyless spot) → Yahoo `GC=F`.
   CNBC + FRED give history → the 1mo/3mo delta; spot-only sources still give the level. A
   genuine N/A here (all sources down) is a real signal the daily health-check flags.
+  **Verified live on production 2026-06-06** (curling the public dashboard): the default
+  path resolves `copper:cnbc · gold:cnbc` → ratio ~1.44, ▲+9.9%/1mo, ▲+25.8%/3mo — so **CNBC
+  is reachable from Vercel's datacenter** (no reorder needed). Fault-injection on prod also
+  confirmed the fallbacks from the datacenter: `?_fail=cg_cnbc` → `copper:fred · gold:polygon`
+  (full delta still computed), and `?_fail=cg_cnbc,cg_fred,cg_polygon` → `copper:goldapi ·
+  gold:goldapi` (keyless spot, ratio shown without a delta).
 - The `?_fail=` fault-injection harness (`lib/faults.js`) is intentionally **kept in
   production** — it only degrades the caller's own response and never writes caches.
   **Fault names:** `fred` (forces an invalid FRED key → all FRED *series* fail, exercising
