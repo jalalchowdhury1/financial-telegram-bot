@@ -79,6 +79,16 @@ describe('FRED_FRESHNESS vs real reporting lag', () => {
         }
     });
 
+    // UMCSENT's free FRED series is delayed ONE MONTH at the source's request: the
+    // month-M reading lands on FRED ~the 26th of month M+2. So the latest point can
+    // legitimately age to ~86 days right before the next print (e.g. the Apr 1 point
+    // is newest until the May reading publishes ~Jun 26). Its deadline must cover
+    // that worst case, or it false-alarms N/A for ~a week every month.
+    test('UMCSENT dated Apr 1 is NOT stale the day before the next print (~85 days)', () => {
+        const dayBeforeNextPrint = new Date('2026-06-25T12:00:00Z'); // May reading prints ~Jun 26
+        expect(isStale('2026-04-01', FRED_FRESHNESS.UMCSENT, dayBeforeNextPrint)).toBe(false);
+    });
+
     test('JOLTS dated Mar 1 (90 days) is NOT stale', () => {
         expect(isStale('2026-03-01', FRED_FRESHNESS.JTSJOL, NOW)).toBe(false);
     });
