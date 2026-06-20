@@ -241,6 +241,9 @@ multi-candidate "favorites" lists; a fresher momentum window via the CLOB price-
 - FRED dates observations at the *start* of the period and publishes weeks late, so fresh
   series legitimately look old. Per-metric freshness deadlines (`FRED_FRESHNESS` in
   `lib/constants.js`, days): daily≈7, weekly≈14, monthly≈80, JOLTS≈110, quarterly≈200.
+  **Exception: `UMCSENT`=95** — its free FRED series is delayed ONE MONTH at the source's
+  request, so its newest point legitimately ages to ~86 days right before the next print;
+  80 false-alarmed it N/A for ~a week every month. Don't drop it back to 80.
   Too-old/NaN → value forced to `null` so the UI shows N/A (`lib/freshness.js:withFreshness`);
   `stale:true` (had data, too old) ≠ `unavailable:true` (fetch failed). `isGood` keeps the
   payload as long as **≥1 series loaded** (`loadedCount > 0`); a total 0/17 outage falls

@@ -50,7 +50,11 @@ export const FRED_FRESHNESS = {
     NFCI: 14,
     // Monthly (dated 1st of month + multi-week reporting lag)
     UNRATE: 80,
-    UMCSENT: 80,
+    // UMCSENT's free FRED series is delayed ONE MONTH at the source's request, so
+    // its newest point legitimately ages to ~86 days right before the next print
+    // (month M reading lands on FRED ~the 26th of month M+2). 95 covers that worst
+    // case + slack for a late release, while still catching a truly dead feed.
+    UMCSENT: 95,
     M2SL: 80,
     RSXFS: 80,
     HOUST: 80,
