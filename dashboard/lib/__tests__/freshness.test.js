@@ -31,15 +31,20 @@ describe('isStale', () => {
 describe('withFreshness', () => {
     test('keeps a fresh value', () => {
         expect(withFreshness(1.23, '2026-05-29', 5, NOW)).toEqual({
-            value: 1.23, asOf: '2026-05-29', stale: false, unavailable: false,
+            value: 1.23, asOf: '2026-05-29', stale: false, unavailable: false, staleDays: 0,
         });
     });
 
-    test('nulls a stale value and flags stale', () => {
-        const r = withFreshness(1.23, '2026-05-01', 5, NOW);
-        expect(r.value).toBeNull();
+    test('KEEPS a stale value (no longer nulled) and flags stale + staleDays', () => {
+        const r = withFreshness(1.23, '2026-05-01', 5, NOW); // 29 days old, deadline 5
+        expect(r.value).toBe(1.23);          // value is kept, not nulled
         expect(r.stale).toBe(true);
         expect(r.unavailable).toBe(false);
+        expect(r.staleDays).toBe(24);        // floor(29 - 5)
+    });
+
+    test('fresh value has staleDays 0', () => {
+        expect(withFreshness(1.23, '2026-05-29', 5, NOW).staleDays).toBe(0);
     });
 
     test('missing value is unavailable, not stale', () => {
@@ -57,10 +62,18 @@ describe('freshnessNote', () => {
         expect(note.suffix).toContain('As of');
     });
 
-    test('stale value is amber with a "couldn\'t refresh" note', () => {
-        const note = freshnessNote({ value: null, asOf: '2026-05-01', stale: true });
-        expect(note.amber).toBe(true);
-        expect(note.suffix).toContain("couldn't refresh");
+    test('stale value is orange-toned with a clock note and keeps showing', () => {
+        const note = freshnessNote({ value: 1.23, asOf: '2026-05-01', stale: true });
+        expect(note.tone).toBe('stale');
+        expect(note.amber).toBe(true);          // back-compat getter
+        expect(note.suffix).toContain('🕐');
+        expect(note.suffix).toContain('stale');
+    });
+
+    test('truly unavailable value is unavailable-toned', () => {
+        const note = freshnessNote({ value: null, asOf: null, stale: false, unavailable: true });
+        expect(note.tone).toBe('unavailable');
+        expect(note.suffix).toContain('Unavailable');
     });
 
     test('unavailable value is amber', () => {
