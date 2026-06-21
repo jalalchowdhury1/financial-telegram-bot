@@ -50,12 +50,18 @@ const json = (body, status = 200) => Response.json(body, { status, headers: { 'c
  * @param {number} [opts.maxStaleMs]     max age of a last-good copy to serve (default 7 days)
  */
 export async function serve(key, produce, opts = {}) {
-    const { isGood = (x) => !!x, fallback = null, maxStaleMs = 7 * 864e5, faults = null } = opts;
+    const { isGood = (x) => !!x, fallback = null, maxStaleMs = 7 * 864e5, faults = null, lastResort = null } = opts;
     // In fault-injection test mode we never write last-good (don't pollute real
     // data) and `?_fail=lastgood` also disables READING it (to reach the default).
     const testMode = faults && faults.size > 0;
     const readLG = (testMode && faults.has('lastgood')) ? () => null : (k, m) => loadLastGood(k, m);
     const writeLG = testMode ? () => {} : saveLastGood;
+    // Last-resort durable fallback (e.g. the Google-Sheet helper tab), tried ONLY
+    // after both live + /tmp last-good are unavailable. Never-throws; `?_fail=sheetlkg`
+    // disables it so a fault test can reach the bare default.
+    const runLastResort = (lastResort && !(testMode && faults.has('sheetlkg')))
+        ? async () => { try { return await lastResort(); } catch { return null; } }
+        : async () => null;
     try {
         const payload = await produce();
         if (isGood(payload)) {
@@ -64,12 +70,26 @@ export async function serve(key, produce, opts = {}) {
         }
         const lg = readLG(key, maxStaleMs);
         if (lg) return json(withStale(lg, 'produced empty; serving last-known-good'));
+        const lr = await runLastResort();
+        if (lr) return json(asStale(lr, 'live produced empty + no cache; serving last-resort fallback'));
         return json(payload ?? fallback);
     } catch (e) {
         const lg = readLG(key, maxStaleMs);
         if (lg) return json(withStale(lg, `live sources failed (${String(e?.message).slice(0, 120)}); serving last-known-good`));
+        const lr = await runLastResort();
+        if (lr) return json(asStale(lr, `live sources failed (${String(e?.message).slice(0, 120)}); serving last-resort fallback`));
         return json(addMeta(fallback, { source: 'Unavailable', hasErrors: true, messages: [String(e?.message).slice(0, 160)] }));
     }
+}
+
+// Stamp a last-resort payload as stale (keeping its own _meta.source) so the UI and
+// health check both treat it as degraded data, not fresh.
+function asStale(payload, message) {
+    const meta = (payload && payload._meta) || {};
+    return {
+        ...payload,
+        _meta: { ...meta, stale: true, hasErrors: true, messages: [...(meta.messages || []), message] },
+    };
 }
 
 function withStale(lg, message) {

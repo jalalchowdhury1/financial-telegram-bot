@@ -83,7 +83,13 @@ export const EXTERNAL_URLS = {
     YAHOO_PE: 'https://finance.yahoo.com/quote/SPY/key-statistics',
     CNN_FEAR_GREED: 'https://production.dataviz.cnn.io/index/fearandgreed/graphdata',
     RAPIDAPI_FEAR_GREED: 'https://fear-and-greed-index.p.rapidapi.com/v1/fgi',
-    YAHOO_VIX: 'https://query1.finance.yahoo.com/v8/finance/chart/^VIX?range=1mo&interval=1d'
+    YAHOO_VIX: 'https://query1.finance.yahoo.com/v8/finance/chart/^VIX?range=1mo&interval=1d',
+    // Last-resort FRED fallback: the financial-dashboard-history sheet's self-describing
+    // `dashboard_lkg` helper tab (public CSV export, no auth). Read only when live FRED AND
+    // the /tmp last-known-good are both unavailable. See lib/sheetLkg.js. Uses the raw
+    // `export?format=csv` endpoint (NOT gviz) — gviz merges the header row into the first
+    // data row, which loses `updated_at`. gid is stable (scraper clears+rewrites, never recreates).
+    SHEET_LKG: 'https://docs.google.com/spreadsheets/d/1lA-_yjLMc3qDTt9sogSPQrCohNULIk5wwJYfb5wIHfc/export?format=csv&gid=1996469730'
 };
 
 export const GOOGLE_SHEETS = {

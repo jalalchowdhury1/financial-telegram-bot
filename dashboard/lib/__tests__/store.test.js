@@ -1,4 +1,7 @@
-import { saveLastGood, loadLastGood } from '../store';
+/**
+ * @jest-environment node
+ */
+import { saveLastGood, loadLastGood, serve } from '../store';
 
 describe('last-known-good store (/tmp)', () => {
     const key = `test-${Math.floor(Date.now() / 1000)}`;
@@ -26,5 +29,53 @@ describe('last-known-good store (/tmp)', () => {
     test('saveLastGood never throws on bad input', () => {
         const circular = {}; circular.self = circular;
         expect(() => saveLastGood(key, circular)).not.toThrow();
+    });
+});
+
+describe('serve() lastResort (Google-Sheet fallback)', () => {
+    const isGood = (p) => p && p._meta && p._meta.loadedCount > 0;
+    const fallback = { error: 'FRED temporarily unavailable' };
+
+    test('live throws + cold cache + lastResort returns payload -> serves it (stale, not error)', async () => {
+        const coldKey = `cold-${Math.floor(Date.now() / 1000)}-a`;
+        const lr = jest.fn(async () => ({
+            indicators: { m2: { value: 4.72 } },
+            _meta: { source: 'Google Sheet', loadedCount: 0 },
+        }));
+        const res = await serve(coldKey, async () => { throw new Error('total FRED outage'); },
+            { isGood, fallback, lastResort: lr });
+        const body = await res.json();
+        expect(res.status).toBe(200);
+        expect(body.indicators.m2.value).toBe(4.72); // served sheet data, not the error
+        expect(body.error).toBeUndefined();
+        expect(body._meta.stale).toBe(true);
+        expect(lr).toHaveBeenCalledTimes(1);
+    });
+
+    test('live throws + cold cache + lastResort returns null -> fallback error', async () => {
+        const coldKey = `cold-${Math.floor(Date.now() / 1000)}-b`;
+        const res = await serve(coldKey, async () => { throw new Error('outage'); },
+            { isGood, fallback, lastResort: async () => null });
+        const body = await res.json();
+        expect(body.error).toBe('FRED temporarily unavailable');
+    });
+
+    test('warm /tmp last-good takes precedence: lastResort is NOT called', async () => {
+        const warmKey = `warm-${Math.floor(Date.now() / 1000)}-c`;
+        saveLastGood(warmKey, { indicators: { m2: { value: 9.9 } }, _meta: { source: 'St. Louis Fed', loadedCount: 17 } });
+        const lr = jest.fn(async () => ({ indicators: {}, _meta: { loadedCount: 0 } }));
+        const res = await serve(warmKey, async () => { throw new Error('outage'); },
+            { isGood, fallback, lastResort: lr });
+        const body = await res.json();
+        expect(body.indicators.m2.value).toBe(9.9); // from /tmp, not the sheet
+        expect(lr).not.toHaveBeenCalled();
+    });
+
+    test('a throwing lastResort never breaks serve() -> falls back to error', async () => {
+        const coldKey = `cold-${Math.floor(Date.now() / 1000)}-d`;
+        const res = await serve(coldKey, async () => { throw new Error('outage'); },
+            { isGood, fallback, lastResort: async () => { throw new Error('sheet down too'); } });
+        const body = await res.json();
+        expect(body.error).toBe('FRED temporarily unavailable');
     });
 });
