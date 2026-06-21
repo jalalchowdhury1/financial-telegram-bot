@@ -274,9 +274,14 @@ export default function Dashboard() {
                         ) : (
                             <>
                                 <div className="hero-price-section">
-                                    <div className="hero-price" style={{ fontSize: '2.2rem', color: fred.yieldCurve.current >= 0 ? 'var(--green)' : 'var(--red)' }}>
-                                        {fred.yieldCurve.current >= 0 ? '+' : ''}{fred.yieldCurve.current.toFixed(3)}%
+                                    <div className="hero-price" style={{ fontSize: '2.2rem', color: fred.yieldCurve.stale ? 'var(--orange)' : fred.yieldCurve.current >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                                        {fred.yieldCurve.stale ? '🕐 ' : ''}{fred.yieldCurve.current >= 0 ? '+' : ''}{fred.yieldCurve.current.toFixed(3)}%
                                     </div>
+                                    {fred.yieldCurve.stale && (
+                                        <div className="hero-change" style={{ color: 'var(--text-muted)', fontSize: '0.72rem', marginTop: '4px' }}>
+                                            Last data {formatAsOf(fred.yieldCurve.asOf)} (stale)
+                                        </div>
+                                    )}
                                 </div>
                                 <MiniChart history={fred.yieldCurve.history} color="#818cf8" gradientId="yieldGrad" showZero={true} recessions={fred.recessions || []} />
                             </>
@@ -301,9 +306,14 @@ export default function Dashboard() {
                         ) : (
                             <>
                                 <div className="hero-price-section">
-                                    <div className="hero-price" style={{ fontSize: '2.2rem', color: 'var(--green)' }}>
-                                        {fred.profitMargin.current.toFixed(2)}%
+                                    <div className="hero-price" style={{ fontSize: '2.2rem', color: fred.profitMargin.stale ? 'var(--orange)' : 'var(--green)' }}>
+                                        {fred.profitMargin.stale ? '🕐 ' : ''}{fred.profitMargin.current.toFixed(2)}%
                                     </div>
+                                    {fred.profitMargin.stale && (
+                                        <div className="hero-change" style={{ color: 'var(--text-muted)', fontSize: '0.72rem', marginTop: '4px' }}>
+                                            Last data {formatAsOf(fred.profitMargin.asOf)} (stale)
+                                        </div>
+                                    )}
                                 </div>
                                 <MiniChart history={fred.profitMargin.history} color="#22c55e" gradientId="profitGrad" recessions={fred.recessions || []} />
                             </>
