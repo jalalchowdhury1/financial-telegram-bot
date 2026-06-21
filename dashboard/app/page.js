@@ -268,7 +268,7 @@ export default function Dashboard() {
                             <div className="hero-price-section">
                                 <div className="hero-price" style={{ fontSize: '2.2rem', color: 'var(--yellow)' }}>N/A</div>
                                 <div className="hero-change" style={{ color: 'var(--text-muted)', fontSize: '0.72rem', marginTop: '4px' }}>
-                                    {fred.yieldCurve?.stale ? `Last data ${formatAsOf(fred.yieldCurve.asOf)} — couldn't refresh` : 'Unavailable — source busy, try again shortly'}
+                                    Unavailable — source busy, try again shortly
                                 </div>
                             </div>
                         ) : (
@@ -300,7 +300,7 @@ export default function Dashboard() {
                             <div className="hero-price-section">
                                 <div className="hero-price" style={{ fontSize: '2.2rem', color: 'var(--yellow)' }}>N/A</div>
                                 <div className="hero-change" style={{ color: 'var(--text-muted)', fontSize: '0.72rem', marginTop: '4px' }}>
-                                    {fred.profitMargin?.stale ? `Last data ${formatAsOf(fred.profitMargin.asOf)} — couldn't refresh` : 'Unavailable — source busy, try again shortly'}
+                                    Unavailable — source busy, try again shortly
                                 </div>
                             </div>
                         ) : (

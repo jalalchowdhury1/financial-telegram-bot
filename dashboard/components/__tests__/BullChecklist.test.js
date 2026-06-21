@@ -13,7 +13,8 @@ test('stale item shows a clock icon + value (not N/A) and still counts in the sc
     }};
     render(<BullChecklist fred={fred} loading={false} />);
     expect(screen.getByText('+3.0%')).toBeInTheDocument(); // stale value shown, not N/A
-    expect(screen.getByText('🕐')).toBeInTheDocument();      // clock signals stale
+    expect(screen.getByText('🕐')).toBeInTheDocument();      // clock on the stale row
+    expect(screen.getByText('✅')).toBeInTheDocument();      // fresh bullish row keeps its check
     // score counts the stale-bullish item (appears in both the header badge and score line)
     expect(screen.getAllByText(/2\/2/).length).toBeGreaterThanOrEqual(1);
 });
