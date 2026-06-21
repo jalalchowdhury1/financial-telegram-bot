@@ -70,35 +70,36 @@ KNOWN_DISCONTINUED = {
 }
 
 
-def check_indicators_na(indicators):
-    """Flag dashboard indicators that are N/A *unexpectedly*.
-
-    Each metric encodes intent: a value forced null because the data is too old has
-    stale=true; one whose fetch failed has unavailable=true. A null metric on the
-    KNOWN_DISCONTINUED allowlist (LEI) is expected — reported ok with a note, never
-    alarmed. Anything else null/unavailable is a real, alert-worthy problem."""
-    if not isinstance(indicators, dict):
+def check_indicators_na(metrics):
+    """Flag dashboard metrics that are N/A (fetch failed) or genuinely overdue
+    (stale > 3 days past their deadline). Normal reporting lag (a value that is present
+    and stale <= 3 days, or not stale at all) is fine and never alarmed. A metric on the
+    KNOWN_DISCONTINUED allowlist is expected — reported ok with a note."""
+    if not isinstance(metrics, dict):
         return _finding("indicators_na", "warn", "Could not read dashboard indicators",
-                        detail="/api/fred returned no 'indicators' object to inspect.",
+                        detail="/api/fred returned no metrics object to inspect.",
                         remediation="manual")
     unexpected, expected_na = [], []
-    for key, ind in indicators.items():
+    for key, ind in metrics.items():
         if not isinstance(ind, dict):
             continue
-        if ind.get("unavailable"):
-            unexpected.append((key, "fetch unavailable"))
-        elif ind.get("value") is None:
-            if key in KNOWN_DISCONTINUED:
-                expected_na.append((key, KNOWN_DISCONTINUED[key]))
-            else:
-                unexpected.append((key, f"N/A (stale={ind.get('stale')}, asOf={ind.get('asOf')})"))
+        overdue = (ind.get("staleDays") or 0) > 3
+        missing = ind.get("unavailable") is True or ind.get("value") is None
+        if not (overdue or missing):
+            continue
+        if key in KNOWN_DISCONTINUED:
+            expected_na.append((key, KNOWN_DISCONTINUED[key]))
+        elif missing:
+            unexpected.append((key, "N/A (fetch failed)"))
+        else:
+            unexpected.append((key, f"overdue {ind.get('staleDays')}d past deadline (asOf={ind.get('asOf')})"))
     if unexpected:
-        return _finding("indicators_na", "warn", "Dashboard indicator(s) unexpectedly N/A",
+        return _finding("indicators_na", "warn", "Dashboard indicator(s) N/A or overdue",
                         detail="; ".join(f"{k}: {why}" for k, why in unexpected),
                         remediation="manual",
                         evidence={"unexpected": dict(unexpected), "expected_na": dict(expected_na)})
-    note = "; ".join(f"{k} ({why})" for k, why in expected_na) or "all indicators have data"
-    return _finding("indicators_na", "ok", "Dashboard indicators present (or expected-N/A)",
+    note = "; ".join(f"{k} ({why})" for k, why in expected_na) or "all indicators fresh or within lag"
+    return _finding("indicators_na", "ok", "Dashboard indicators present (fresh or within lag)",
                     detail=f"Expected-N/A: {note}", evidence={"expected_na": dict(expected_na)})
 
 
@@ -315,10 +316,13 @@ def run_all_checks(generated_at):
         # unexpected N/A (a real break) vs an expected one (discontinued series).
         if name == "fred" and status == 200:
             try:
-                indicators = (json.loads(body) or {}).get("indicators")
+                fred = json.loads(body) or {}
+                # Sweep BOTH the indicator tiles and the bull-checklist metrics; the
+                # checklist (m2/durable/savings/...) was previously not inspected.
+                metrics = {**(fred.get("indicators") or {}), **(fred.get("checklist") or {})}
             except Exception:
-                indicators = None
-            findings.append(check_indicators_na(indicators))
+                metrics = None
+            findings.append(check_indicators_na(metrics))
 
     delivery = _load_json_file(os.environ.get("DELIVERY_EVIDENCE", "delivery_evidence.json"),
                                {"cloudwatch_readable": False, "markers": [], "gha_success_today": False})
