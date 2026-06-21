@@ -54,7 +54,9 @@ export default function BullChecklist({ fred, loading }) {
                         <div className="checklist-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
                             {Object.entries(fred.checklist).map(([key, item]) => {
                                 const note = freshnessNote(item);
-                                const icon = note.amber ? '⚪' : item.bullish ? '✅' : '🔴';
+                                const icon = note.tone === 'unavailable' ? '⚪'
+                                    : note.tone === 'stale' ? '🕐'
+                                    : item.bullish ? '✅' : '🔴';
                                 return (
                                 <div className="checklist-item" key={key} style={{ padding: '12px 14px', alignItems: 'center' }}>
                                     <span className="checklist-icon">{icon}</span>
@@ -71,7 +73,7 @@ export default function BullChecklist({ fred, loading }) {
                                         </span>
                                     </div>
                                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '3px' }}>
-                                        <span className={`checklist-value ${item.bullish ? 'stat-positive' : 'stat-negative'}`} style={{ fontSize: '0.95rem', ...(note.amber ? { color: 'var(--yellow)' } : {}) }}>
+                                        <span className={`checklist-value ${item.bullish ? 'stat-positive' : 'stat-negative'}`} style={{ fontSize: '0.95rem', ...(note.tone === 'stale' ? { color: 'var(--orange)' } : note.tone === 'unavailable' ? { color: 'var(--yellow)' } : {}) }}>
                                             {typeof item.value === 'number' ? (
                                                 key === 'housing' || key === 'jolts' ? `${item.value.toFixed(0)}K` :
                                                     key === 'nfci' ? `${item.value.toFixed(2)}` :

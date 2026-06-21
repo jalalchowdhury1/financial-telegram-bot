@@ -91,6 +91,29 @@ def test_check_indicators_na_missing_object_is_warn():
     assert hc.check_indicators_na(None)["severity"] == "warn"
 
 
+def test_check_indicators_na_overdue_more_than_3_days_is_warn():
+    indicators = {"m2": {"value": 2.1, "asOf": "2026-04-01", "stale": True,
+                         "unavailable": False, "staleDays": 5}}
+    f = hc.check_indicators_na(indicators)
+    assert f["severity"] == "warn"
+    assert "m2" in f["detail"]
+
+
+def test_check_indicators_na_stale_within_3_days_is_ok():
+    indicators = {"m2": {"value": 2.1, "asOf": "2026-04-01", "stale": True,
+                         "unavailable": False, "staleDays": 2}}
+    assert hc.check_indicators_na(indicators)["severity"] == "ok"
+
+
+def test_check_indicators_na_sweeps_checklist_keys():
+    # checklist-style metric (durable) overdue -> warn
+    metrics = {"durable": {"value": 1.0, "asOf": "2026-03-01", "stale": True,
+                           "unavailable": False, "staleDays": 10}}
+    f = hc.check_indicators_na(metrics)
+    assert f["severity"] == "warn"
+    assert "durable" in f["detail"]
+
+
 def test_check_report_delivered_ok_from_cloudwatch():
     ev = {"cloudwatch_readable": True, "markers": ["REPORT_DELIVERED ok=true sections=2 errors=0"], "gha_success_today": False}
     assert hc.check_report_delivered(ev)["severity"] == "ok"

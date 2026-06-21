@@ -43,13 +43,17 @@ export default function EconomicIndicatorGrid({ fred, loading, statusColor }) {
                             { icon: '💎', label: 'Market Valuation', tooltip: "Current S&P 500 P/E Ratio. A measure of how expensive the market is historically.", value: fred.peRatio ? `P/E ~${fred.peRatio.toFixed(1)}` : 'P/E N/A', status: fred.peRatio > 25 ? 'restrictive' : 'neutral', benchmark: 'Fair at ~20', metric: { value: fred.peRatio ?? null, asOf: fred.peRatioAsOf, stale: false } },
                         ].map(ind => {
                             const note = freshnessNote(ind.metric);
+                            const staleStyle = note.tone === 'stale' ? { color: 'var(--orange)' }
+                                : note.tone === 'unavailable' ? { color: 'var(--yellow)' }
+                                : undefined;
+                            const shownValue = note.tone === 'stale' ? `🕐 ${ind.value}` : ind.value;
                             return (
                                 <div className="stat-row" key={ind.label}>
                                     <span className="stat-label">
                                         {ind.icon} <span className="tooltip-trigger" data-tooltip={`${ind.tooltip}${note.suffix}`}>{ind.label}</span>
                                     </span>
                                     <span className="stat-right">
-                                        <span className={`stat-value ${statusColor(ind.status)}`} style={note.amber ? { color: 'var(--yellow)' } : undefined}>{ind.value}</span>
+                                        <span className={`stat-value ${statusColor(ind.status)}`} style={staleStyle}>{shownValue}</span>
                                         <span className="stat-benchmark">{ind.benchmark}</span>
                                     </span>
                                 </div>

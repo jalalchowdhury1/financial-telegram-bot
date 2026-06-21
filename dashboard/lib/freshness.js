@@ -34,12 +34,21 @@ export function isStale(asOfDate, deadlineDays, now = new Date()) {
  */
 export function withFreshness(value, asOfDate, deadlineDays, now = new Date()) {
     const unavailable = value === undefined || value === null || Number.isNaN(value);
-    const stale = isStale(asOfDate, deadlineDays, now);
+    const stale = isStale(asOfDate, deadlineDays, now) && !unavailable;
+    let staleDays = 0;
+    if (stale && asOfDate) {
+        const then = new Date(asOfDate);
+        if (!Number.isNaN(then.getTime())) {
+            const ageDays = (now.getTime() - then.getTime()) / MS_PER_DAY;
+            staleDays = Math.max(0, Math.floor(ageDays - deadlineDays));
+        }
+    }
     return {
-        value: unavailable || stale ? null : value,
+        value: unavailable ? null : value, // keep stale values; null ONLY when truly missing
         asOf: asOfDate ?? null,
-        stale: stale && !unavailable, // "stale" = we had data but it's too old
+        stale,
         unavailable,
+        staleDays,
     };
 }
 
@@ -56,17 +65,22 @@ export function formatAsOf(asOf) {
 }
 
 /**
- * Given a metric ({ value, asOf, stale, unavailable }), return the tooltip
- * suffix to append and whether the number should render amber.
+ * Given a metric ({ value, asOf, stale, unavailable }), return the tooltip suffix and a
+ * display `tone`: 'fresh' | 'stale' | 'unavailable'. `amber` is kept for back-compat.
  */
 export function freshnessNote(metric) {
-    if (!metric) return { suffix: '', amber: false };
+    if (!metric) return { suffix: '', tone: 'fresh', amber: false };
     const dateStr = formatAsOf(metric.asOf);
-    if (metric.stale) {
-        return { suffix: dateStr ? ` • ⚠ Last data ${dateStr} — couldn't refresh` : ' • ⚠ Stale — couldn\'t refresh', amber: true };
+    const isUnavailable = metric.unavailable === true || metric.value === null || metric.value === undefined;
+    if (metric.stale && !isUnavailable) {
+        return {
+            suffix: dateStr ? ` • 🕐 As of ${dateStr} (stale)` : ' • 🕐 Stale',
+            tone: 'stale',
+            amber: true,
+        };
     }
-    if (metric.value === null || metric.value === undefined) {
-        return { suffix: ' • ⚠ Unavailable — source busy, try again shortly', amber: true };
+    if (isUnavailable) {
+        return { suffix: ' • ⚠ Unavailable — source busy, try again shortly', tone: 'unavailable', amber: true };
     }
-    return { suffix: dateStr ? ` • As of ${dateStr}` : '', amber: false };
+    return { suffix: dateStr ? ` • As of ${dateStr}` : '', tone: 'fresh', amber: false };
 }

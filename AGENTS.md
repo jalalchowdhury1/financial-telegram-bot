@@ -241,13 +241,20 @@ multi-candidate "favorites" lists; a fresher momentum window via the CLOB price-
 - FRED dates observations at the *start* of the period and publishes weeks late, so fresh
   series legitimately look old. Per-metric freshness deadlines (`FRED_FRESHNESS` in
   `lib/constants.js`, days): daily≈7, weekly≈14, monthly≈80, JOLTS≈110, quarterly≈200.
-  **Exception: `UMCSENT`=95** — its free FRED series is delayed ONE MONTH at the source's
-  request, so its newest point legitimately ages to ~86 days right before the next print;
-  80 false-alarmed it N/A for ~a week every month. Don't drop it back to 80.
-  Too-old/NaN → value forced to `null` so the UI shows N/A (`lib/freshness.js:withFreshness`);
-  `stale:true` (had data, too old) ≠ `unavailable:true` (fetch failed). `isGood` keeps the
-  payload as long as **≥1 series loaded** (`loadedCount > 0`); a total 0/17 outage falls
-  through to last-known-good.
+  **Late-month monthlies are 95** (`UMCSENT`, `M2SL`, `DGORDER`, `PSAVERT`) — their free FRED
+  series only print ~the 26th of the following month, so the newest point ages to ~85d before
+  the next print; 80 false-alarmed them N/A for ~a week each month. Don't drop these to 80.
+- **Stale ≠ N/A (graceful staleness).** A value past its deadline is NO LONGER nulled: it keeps
+  showing as the **last-known value in orange with a 🕐 clock** ("As of <date> (stale)").
+  `value` goes `null` (→ true N/A, yellow) ONLY when the fetch returns nothing
+  (`unavailable:true`); `stale:true` means "had data, too old". `withFreshness` also returns
+  `staleDays` (whole days past deadline) and `freshnessNote` returns `tone`
+  (`fresh|stale|unavailable`). The health check (`scripts/health_check.py:check_indicators_na`)
+  warns only when a metric is `unavailable` OR `staleDays > 3` (genuinely overdue) — normal
+  reporting lag never alarms — and it sweeps BOTH `indicators` and `checklist`. A genuinely
+  discontinued series keeps showing old orange data and warns daily until replaced or added to
+  `KNOWN_DISCONTINUED`. `isGood` still keeps the payload as long as **≥1 series loaded**
+  (`loadedCount > 0`); a total 0/17 outage falls through to last-known-good.
 - **Copper/Gold ratio** (the `indicators.copperGold` tile) replaced the old `LEI`/`USSLIND`
   series, which FRED **discontinued/froze in 2020**. It is a leading growth/rates gauge
   (~1.4 = copper $/lb ÷ gold $/oz ×1000). The tile shows the **level + its ~1-month and

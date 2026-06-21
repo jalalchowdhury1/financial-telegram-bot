@@ -55,12 +55,16 @@ export const FRED_FRESHNESS = {
     // (month M reading lands on FRED ~the 26th of month M+2). 95 covers that worst
     // case + slack for a late release, while still catching a truly dead feed.
     UMCSENT: 95,
-    M2SL: 80,
+    // Late-month monthly releases (like UMCSENT) — newest point legitimately ages ~85d
+    // before the next print: M2 H.6 ~4th Tue, Durable Goods ~25th, Personal Income/Savings
+    // ~last business day. 95 covers that worst case + slack; graceful staleness shows
+    // orange/🕐 if exceeded. Mid-month monthlies (RSXFS/HOUST/INDPRO ~15th) stay at 80.
+    M2SL: 95,
     RSXFS: 80,
     HOUST: 80,
     INDPRO: 80,
-    DGORDER: 80,
-    PSAVERT: 80,
+    DGORDER: 95,
+    PSAVERT: 95,
     USREC: 80,
     PE10: 80,
     // Monthly but heavily lagged
