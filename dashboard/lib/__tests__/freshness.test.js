@@ -53,6 +53,35 @@ describe('withFreshness', () => {
         expect(r.unavailable).toBe(true);
         expect(r.stale).toBe(false);
     });
+
+    test('value exactly at the deadline is fresh, one day past is stale (staleDays 1)', () => {
+        const atEdge = withFreshness(1, '2026-05-25T12:00:00Z', 5, NOW); // exactly 5 days
+        expect(atEdge.stale).toBe(false);
+        expect(atEdge.staleDays).toBe(0);
+        const justOver = withFreshness(1, '2026-05-24T12:00:00Z', 5, NOW); // 6 days
+        expect(justOver.stale).toBe(true);
+        expect(justOver.value).toBe(1);
+        expect(justOver.staleDays).toBe(1);
+    });
+
+    test('a legitimate 0 reading is kept, not treated as unavailable', () => {
+        const r = withFreshness(0, '2026-05-29', 5, NOW);
+        expect(r.value).toBe(0);
+        expect(r.unavailable).toBe(false);
+    });
+
+    test('NaN value is unavailable', () => {
+        const r = withFreshness(NaN, '2026-05-29', 5, NOW);
+        expect(r.value).toBeNull();
+        expect(r.unavailable).toBe(true);
+    });
+
+    test('stale with missing asOf stays unavailable (no value) and staleDays 0', () => {
+        const r = withFreshness(null, undefined, 5, NOW);
+        expect(r.unavailable).toBe(true);
+        expect(r.stale).toBe(false);
+        expect(r.staleDays).toBe(0);
+    });
 });
 
 describe('freshnessNote', () => {
