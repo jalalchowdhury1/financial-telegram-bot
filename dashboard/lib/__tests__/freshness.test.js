@@ -102,6 +102,13 @@ describe('FRED_FRESHNESS vs real reporting lag', () => {
         expect(isStale('2026-04-01', FRED_FRESHNESS.UMCSENT, dayBeforeNextPrint)).toBe(false);
     });
 
+    test('M2/Durable/Savings are NOT stale at their worst-case age (~85d, day before next print)', () => {
+        const dayBeforeNextPrint = new Date('2026-06-25T12:00:00Z'); // May prints ~Jun 26-27
+        for (const id of ['M2SL', 'DGORDER', 'PSAVERT']) {
+            expect(isStale('2026-04-01', FRED_FRESHNESS[id], dayBeforeNextPrint)).toBe(false);
+        }
+    });
+
     test('JOLTS dated Mar 1 (90 days) is NOT stale', () => {
         expect(isStale('2026-03-01', FRED_FRESHNESS.JTSJOL, NOW)).toBe(false);
     });
