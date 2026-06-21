@@ -44,7 +44,7 @@ export default function BullChecklist({ fred, loading }) {
                 {fred?.checklist && (() => {
                     const items = Object.values(fred.checklist);
                     const bullish = items.filter(i => i.bullish).length;
-                    const pct = (bullish / items.length) * 100;
+                    const pct = items.length ? (bullish / items.length) * 100 : 0;
                     return <span className={`badge ${pct >= 75 ? 'badge-green' : pct >= 50 ? 'badge-yellow' : 'badge-red'}`}>{bullish}/{items.length} ({pct.toFixed(0)}%)</span>;
                 })()}
             </div>
@@ -91,7 +91,7 @@ export default function BullChecklist({ fred, loading }) {
                         {(() => {
                             const items = Object.values(fred.checklist);
                             const bullish = items.filter(i => i.bullish).length;
-                            const pct = (bullish / items.length) * 100;
+                            const pct = items.length ? (bullish / items.length) * 100 : 0;
                             const regime = pct >= 75 ? '🟢 CONFIRMED BULL MARKET' : pct >= 50 ? '🟡 CAUTIOUS / MIXED' : '🔴 BEAR MARKET WARNING';
                             const bg = pct >= 75 ? 'var(--green-bg)' : pct >= 50 ? 'var(--yellow-bg)' : 'var(--red-bg)';
                             const color = pct >= 75 ? 'var(--green)' : pct >= 50 ? 'var(--yellow)' : 'var(--red)';

@@ -2,6 +2,7 @@ import { FRED_SERIES, FRED_FRESHNESS, EXTERNAL_URLS } from '../../../lib/constan
 import { fetchJson, proxyFetch } from '../../../lib/fetcher';
 import { withFreshness } from '../../../lib/freshness';
 import { serve } from '../../../lib/store';
+import { fetchSheetLkg } from '../../../lib/sheetLkg';
 import { faultsFrom } from '../../../lib/faults';
 import { resolveLeg, buildCopperGold } from '../../../lib/copperGold';
 import { cnbcQuotes, cnbcHistory, goldApiSpot, polygonDaily, fredObservations, yahooChart } from '../../../lib/sources';
@@ -397,6 +398,9 @@ export async function GET(request) {
         // through to last-known-good instead of N/A everywhere.
         isGood: (p) => p && p._meta && p._meta.loadedCount > 0,
         fallback: { error: 'FRED temporarily unavailable' },
+        // Last resort (only if live FRED AND the /tmp last-good are both gone): the
+        // financial-dashboard-history sheet's `dashboard_lkg` helper tab. See lib/sheetLkg.js.
+        lastResort: () => fetchSheetLkg(new Date()),
         faults,
     });
 }

@@ -255,6 +255,17 @@ multi-candidate "favorites" lists; a fresher momentum window via the CLOB price-
   discontinued series keeps showing old orange data and warns daily until replaced or added to
   `KNOWN_DISCONTINUED`. `isGood` still keeps the payload as long as **≥1 series loaded**
   (`loadedCount > 0`); a total 0/17 outage falls through to last-known-good.
+- **Three-tier FRED fallback (never N/A):** live FRED → `/tmp` last-known-good (`serve()`, 7d) →
+  **Google-Sheet last-resort** (`lib/sheetLkg.js`, via `serve()`'s `lastResort` opt) → error. The
+  last tier reads the `dashboard_lkg` helper tab of the financial-dashboard-history sheet
+  (`EXTERNAL_URLS.SHEET_LKG`, public `export?format=csv&gid=` — NOT gviz, which merges the header
+  row) only when the first two are BOTH gone (total outage on a cold instance). It's a
+  self-describing `key,value` tab the **scraper** writes each run (values + asOf only, no chart
+  history, N/A metrics omitted); the reader reconstructs an `/api/fred`-shaped payload with empty
+  history, every metric `stale:true staleDays:4`, and `_meta.stale/hasErrors:true` so the health
+  check still alerts. `fetchSheetLkg` never throws (returns null → falls to the error default).
+  `?_fail=sheetlkg` disables it in fault tests. The helper tab is written by
+  [[project-financial-dashboard-history]]'s `scraper.py` (`build_lkg_pairs`/`write_helper_tab`).
 - **Copper/Gold ratio** (the `indicators.copperGold` tile) replaced the old `LEI`/`USSLIND`
   series, which FRED **discontinued/froze in 2020**. It is a leading growth/rates gauge
   (~1.4 = copper $/lb ÷ gold $/oz ×1000). The tile shows the **level + its ~1-month and
