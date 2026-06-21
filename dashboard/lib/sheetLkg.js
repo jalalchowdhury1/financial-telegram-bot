@@ -39,7 +39,11 @@ function parseCsvLine(line) {
     return out;
 }
 
-/** Parse the helper-tab CSV (two columns: key,value) into a flat string map. */
+/**
+ * Parse the helper-tab CSV (two columns: key,value) into a flat string map.
+ * Assumes one record per physical line (the writer never emits values with embedded
+ * newlines) — `parseCsvLine` handles in-line quotes/escaping but not multi-line cells.
+ */
 export function parseLkgCsv(text) {
     const map = {};
     if (!text || typeof text !== 'string') return map;
@@ -118,7 +122,7 @@ export function reconstructFred(map, now = new Date()) {
             ? { current: pmCurrent, asOf: orNull(map['profitMargin.asOf']), stale: true, history: [] }
             : { current: null, asOf: null, stale: false, history: [] },
         peRatio,
-        peRatioAsOf: now.toISOString(),
+        peRatioAsOf: updatedAt || now.toISOString(),
         recessions: [],
         indicators,
         checklist,

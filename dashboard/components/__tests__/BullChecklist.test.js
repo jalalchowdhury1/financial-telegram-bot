@@ -19,6 +19,13 @@ test('stale item shows a clock icon + value (not N/A) and still counts in the sc
     expect(screen.getAllByText(/2\/2/).length).toBeGreaterThanOrEqual(1);
 });
 
+test('an empty checklist (all metrics dropped) renders 0/0 without NaN', () => {
+    render(<BullChecklist fred={{ checklist: {} }} loading={false} />);
+    // Guard against the 0/0 -> NaN% regression in the degraded sheet-fallback path
+    expect(screen.queryByText(/NaN/)).toBeNull();
+    expect(screen.getAllByText(/0\/0/).length).toBeGreaterThanOrEqual(1);
+});
+
 test('unavailable item shows N/A with the ⚪ icon', () => {
     const fred = { checklist: {
         a: mk({ label: 'Gone', value: null, unavailable: true, stale: false, bullish: false }),
