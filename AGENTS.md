@@ -304,9 +304,11 @@ multi-candidate "favorites" lists; a fresher momentum window via the CLOB price-
   - **datahub** GitHub-raw mirror of Shiller's dataset (`Real Earnings` column, same units
     as multpl; its earnings run years behind → in practice the graceful-staleness fallback
     that keeps the CHART alive when multpl is down).
-  History is downsampled to quarter-end months from 1947 (`toQuarterlyHistory`) so
-  MiniChart stays in its quarterly mode with correct 10Y/20Y/30Y tabs — same cadence/span
-  as Profit Margin. The block is guarded like copper/gold: a failure appends a `_meta`
+  History is the full MONTHLY series from 1947 (`toMonthlyHistory`, ~945 points), rendered
+  with `<MiniChart cadence="monthly">` — an explicit mode (added for this card) whose tab
+  row is 1Y/3Y/5Y/10Y/20Y/30Y/ALL with 12 points/yr math. Other MiniChart users keep the
+  auto-detect (quarterly <500 points, else daily) — don't feed monthly data through
+  auto-detect, it would misread it as daily/quarterly. The block is guarded like copper/gold: a failure appends a `_meta`
   message but never sets `hasErrors` and can't break the FRED payload. Note the deliberate
   contrast with `resolveLeg`: copper/gold REJECTS stale sources; EPS SERVES them marked
   stale, because an old real earnings number beats an N/A. (`spEps` is not in the

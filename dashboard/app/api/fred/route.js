@@ -5,7 +5,7 @@ import { serve } from '../../../lib/store';
 import { fetchSheetLkg } from '../../../lib/sheetLkg';
 import { faultsFrom } from '../../../lib/faults';
 import { resolveLeg, buildCopperGold } from '../../../lib/copperGold';
-import { resolveSpEps, parseMultplEps, parseShillerCsv, toQuarterlyHistory } from '../../../lib/spEps';
+import { resolveSpEps, parseMultplEps, parseShillerCsv, toMonthlyHistory } from '../../../lib/spEps';
 import { cnbcQuotes, cnbcHistory, goldApiSpot, polygonDaily, fredObservations, yahooChart } from '../../../lib/sources';
 
 // In Next 13.5 the route's default fetchCache is 'only-no-store', which ERRORS
@@ -435,7 +435,7 @@ export async function GET(request) {
         responseData.spEps = { current: null, asOf: null, stale: false, unavailable: true, source: null, historySource: null, history: [], tried: [] };
         try {
             const eps = await resolveSpEps(spEpsSources({ fredKey: apiKey, pe: peRatio, peSource }), faults, now);
-            responseData.spEps = { ...eps, history: toQuarterlyHistory(eps.history) };
+            responseData.spEps = { ...eps, history: toMonthlyHistory(eps.history) };
             messages.push(`S&P EPS: ${eps.source || 'unavailable'}`);
         } catch (e) {
             messages.push(`S&P EPS failed: ${maskKey(e.message)}`);

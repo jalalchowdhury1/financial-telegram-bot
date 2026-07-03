@@ -69,16 +69,14 @@ export function parseShillerCsv(text) {
 }
 
 /**
- * Downsample a monthly EPS history to quarter-end months (Mar/Jun/Sep/Dec) from
- * 1947 on — the same cadence and span as the Profit Margin card, which keeps
- * MiniChart in its quarterly mode (10Y/20Y/30Y/ALL tabs) with correct math.
+ * Trim a monthly EPS history to 1947 on — the same span as the Profit Margin
+ * card. The full monthly cadence is kept (~945 points) so MiniChart's explicit
+ * monthly mode (cadence="monthly") can offer 1Y/3Y/5Y tabs with real detail;
+ * a 1Y window is 12 points instead of 4.
  */
-export function toQuarterlyHistory(historyAsc, start = SP_EPS_START) {
+export function toMonthlyHistory(historyAsc, start = SP_EPS_START) {
     if (!Array.isArray(historyAsc)) return [];
-    return historyAsc.filter((h) => {
-        const month = h.date?.slice(5, 7);
-        return h.date >= start && (month === '03' || month === '06' || month === '09' || month === '12');
-    });
+    return historyAsc.filter((h) => h.date >= start);
 }
 
 /**

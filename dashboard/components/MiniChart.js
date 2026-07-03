@@ -1,17 +1,27 @@
 'use client';
 import { useState } from 'react';
 
-export default function MiniChart({ history, color = '#818cf8', gradientId = 'chartGrad', showZero = false, recessions = [], label = '' }) {
+export default function MiniChart({ history, color = '#818cf8', gradientId = 'chartGrad', showZero = false, recessions = [], label = '', cadence = 'auto' }) {
     const [timeframe, setTimeframe] = useState('5Y');
     if (!history || history.length < 2) return null;
 
-    // Detect if data is quarterly (~4 points/yr) or daily (~252 points/yr)
-    const isQuarterly = history.length < 500;
-    const tfMap = isQuarterly
-        ? { '10Y': 40, '20Y': 80, '30Y': 120, 'ALL': history.length }
-        : { '1Y': 252, '5Y': 1260, '10Y': 2520, 'ALL': history.length };
-    const tfKeys = isQuarterly ? ['10Y', '20Y', '30Y', 'ALL'] : ['1Y', '5Y', '10Y', 'ALL'];
-    const defaultTf = isQuarterly ? 'ALL' : '5Y';
+    // Explicit cadence='monthly' (12 points/yr) unlocks the full 1Y-30Y tab row;
+    // otherwise auto-detect quarterly (~4 points/yr) vs daily (~252 points/yr)
+    // from the point count, as before.
+    let tfMap, tfKeys, defaultTf;
+    if (cadence === 'monthly') {
+        tfMap = { '1Y': 12, '3Y': 36, '5Y': 60, '10Y': 120, '20Y': 240, '30Y': 360, 'ALL': history.length };
+        tfKeys = ['1Y', '3Y', '5Y', '10Y', '20Y', '30Y', 'ALL'];
+        defaultTf = 'ALL';
+    } else if (history.length < 500) {
+        tfMap = { '10Y': 40, '20Y': 80, '30Y': 120, 'ALL': history.length };
+        tfKeys = ['10Y', '20Y', '30Y', 'ALL'];
+        defaultTf = 'ALL';
+    } else {
+        tfMap = { '1Y': 252, '5Y': 1260, '10Y': 2520, 'ALL': history.length };
+        tfKeys = ['1Y', '5Y', '10Y', 'ALL'];
+        defaultTf = '5Y';
+    }
 
     // Use default if current timeframe isn't valid for this chart
     const activeTf = tfKeys.includes(timeframe) ? timeframe : defaultTf;

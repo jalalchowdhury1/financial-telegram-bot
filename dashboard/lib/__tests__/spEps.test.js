@@ -1,4 +1,4 @@
-import { parseMultplEps, parseShillerCsv, toQuarterlyHistory, resolveSpEps } from '../spEps';
+import { parseMultplEps, parseShillerCsv, toMonthlyHistory, resolveSpEps } from '../spEps';
 
 const NOW = new Date('2026-07-03T12:00:00Z');
 const iso = (daysAgo) => new Date(NOW.getTime() - daysAgo * 86400000).toISOString().slice(0, 10);
@@ -58,23 +58,24 @@ describe('parseShillerCsv', () => {
     });
 });
 
-describe('toQuarterlyHistory', () => {
-    test('keeps quarter-end months from 1947 on', () => {
+describe('toMonthlyHistory', () => {
+    test('keeps every month from 1947 on', () => {
         const hist = [
             { date: '1946-12-31', value: 1.06 },  // pre-1947 → dropped
-            { date: '2025-06-30', value: 231.2 }, // Jun → kept
-            { date: '2025-08-31', value: 238.14 },// Aug → dropped
-            { date: '2025-09-30', value: 241.5 }, // Sep → kept
-        ];
-        expect(toQuarterlyHistory(hist)).toEqual([
             { date: '2025-06-30', value: 231.2 },
+            { date: '2025-08-31', value: 238.14 },
+            { date: '2025-09-30', value: 241.5 },
+        ];
+        expect(toMonthlyHistory(hist)).toEqual([
+            { date: '2025-06-30', value: 231.2 },
+            { date: '2025-08-31', value: 238.14 },
             { date: '2025-09-30', value: 241.5 },
         ]);
     });
 
     test('handles empty/missing input', () => {
-        expect(toQuarterlyHistory([])).toEqual([]);
-        expect(toQuarterlyHistory(undefined)).toEqual([]);
+        expect(toMonthlyHistory([])).toEqual([]);
+        expect(toMonthlyHistory(undefined)).toEqual([]);
     });
 });
 
