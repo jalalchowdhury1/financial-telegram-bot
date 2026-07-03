@@ -347,7 +347,7 @@ export default function Dashboard() {
                                         </div>
                                     )}
                                 </div>
-                                <MiniChart history={fred.spEps.history} color="#38bdf8" gradientId="epsGrad" recessions={fred.recessions || []} />
+                                <MiniChart history={fred.spEps.history} color="#38bdf8" gradientId="epsGrad" recessions={fred.recessions || []} cadence="monthly" />
                             </>
                         )}
                     </ErrorBoundary>
