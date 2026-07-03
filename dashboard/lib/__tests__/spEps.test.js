@@ -42,6 +42,11 @@ describe('parseMultplEps', () => {
         expect(parseMultplEps('<html>nope</html>')).toEqual([]);
         expect(parseMultplEps('')).toEqual([]);
     });
+
+    test('a body truncated mid-number does not yield a phantom value', () => {
+        const truncated = '<tr><td>Sep 30, 2025</td> <td> &#x2002; 241.50 </td></tr><tr><td>Oct 31, 2025</td> <td> &#x2002; 2';
+        expect(parseMultplEps(truncated)).toEqual([{ date: '2025-09-30', value: 241.5 }]);
+    });
 });
 
 describe('parseShillerCsv', () => {
@@ -136,6 +141,27 @@ describe('resolveSpEps cascade', () => {
         ], new Set(), NOW);
         expect(r.source).toBe('datahub');
         expect(r.tried).toEqual(['multpl:err', 'derived:empty', expect.stringMatching(/^datahub:stale/)]);
+    });
+
+    test('a source reporting a future date is rejected, not "fresh forever"', async () => {
+        const future = src('multpl', 400, { current: 999, currentDate: '2099-01-01', historyAsc: [{ date: '2099-01-01', value: 999 }] });
+        const r = await resolveSpEps([future, derived()], new Set(), NOW);
+        expect(r.source).toBe('derived');
+        expect(r.current).toBe(243.1);
+        expect(r.tried[0]).toMatch(/^multpl:future/);
+        expect(r.history).toEqual([]); // the date-mangled source's history is not trusted either
+    });
+
+    test('a broken spot value does not discard that source\'s good history', async () => {
+        const badLevelGoodHistory = src('multpl', 400, {
+            current: Infinity, currentDate: iso(276),
+            historyAsc: [{ date: iso(366), value: 238 }, { date: iso(276), value: 241.5 }],
+        });
+        const r = await resolveSpEps([badLevelGoodHistory, derived()], new Set(), NOW);
+        expect(r.source).toBe('derived');       // level comes from the next source
+        expect(r.historySource).toBe('multpl'); // but the chart survives
+        expect(r.history).toHaveLength(2);
+        expect(r.tried).toEqual(['multpl:empty', 'derived:ok']);
     });
 
     test('everything down → unavailable, never throws', async () => {
