@@ -5,6 +5,7 @@ import { serve } from '../../../lib/store';
 import { fetchSheetLkg } from '../../../lib/sheetLkg';
 import { faultsFrom } from '../../../lib/faults';
 import { resolveLeg, buildCopperGold } from '../../../lib/copperGold';
+import { resolveSpEps, parseMultplEps, parseShillerCsv, toQuarterlyHistory } from '../../../lib/spEps';
 import { cnbcQuotes, cnbcHistory, goldApiSpot, polygonDaily, fredObservations, yahooChart } from '../../../lib/sources';
 
 // In Next 13.5 the route's default fetchCache is 'only-no-store', which ERRORS
@@ -157,6 +158,49 @@ function goldSources(fredKey, polyKey) {
         { name: 'yahoo', freshnessDays: 7, fetch: async () => {
             const y = await yahooChart('GC=F', { range: '3mo', revalidate: REVALIDATE_SECONDS });
             return { current: y.current, currentDate: y.history[y.history.length - 1]?.date, historyAsc: y.history };
+        } },
+    ];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// S&P 500 EPS (TTM, as-reported — the E in P/E). Three independent sources so
+// the card always has a backup (same philosophy as copper/gold above):
+//
+//   1. multpl  — the by-month earnings table (level + monthly history to 1871,
+//                inflation-adjusted to current dollars; lags ~2-3 quarters like
+//                all as-reported TTM series, so its freshness window is 400d)
+//   2. derived — FRED SP500 index level ÷ the live TTM P/E scraped above.
+//                Spot-only but updates daily; skipped when the P/E fell back to
+//                CAPE (10-yr smoothed earnings → dividing by it isn't TTM EPS)
+//   3. datahub — GitHub-raw mirror of Shiller's dataset ('Real Earnings' column,
+//                matching multpl's units). Ultra-reliable CDN, but its earnings
+//                run years behind → in practice the graceful-staleness fallback
+//                that keeps the CHART rendering when multpl is down.
+//
+// Fault gates for testing: ?_fail=eps_multpl / eps_derived / eps_datahub.
+// resolveSpEps is pure (lib/spEps.js) and never throws.
+// ─────────────────────────────────────────────────────────────────────────────
+function spEpsSources({ fredKey, pe, peSource }) {
+    return [
+        { name: 'multpl', freshnessDays: 400, fetch: async () => {
+            const html = await cachedText('multpl-eps', EXTERNAL_URLS.MULTPL_EPS, 8000);
+            const hist = parseMultplEps(html);
+            const last = hist[hist.length - 1];
+            if (!last) throw new Error('multpl EPS: no rows parsed');
+            return { current: last.value, currentDate: last.date, historyAsc: hist };
+        } },
+        { name: 'derived', freshnessDays: 7, fetch: async () => {
+            if (!pe || peSource === 'cape') throw new Error('derived EPS: no TTM P/E to divide by');
+            if (!fredKey) throw new Error('derived EPS: no FRED key');
+            const spx = await fredObservations('SP500', fredKey, { limit: 5 }); // newest-first daily closes
+            return { current: spx[0].value / pe, currentDate: spx[0].date, historyAsc: [] };
+        } },
+        { name: 'datahub', freshnessDays: 400, fetch: async () => {
+            const csv = await cachedText('datahub-eps', EXTERNAL_URLS.DATAHUB_SHILLER, 8000);
+            const hist = parseShillerCsv(csv);
+            const last = hist[hist.length - 1];
+            if (!last) throw new Error('datahub EPS: no rows parsed');
+            return { current: last.value, currentDate: last.date, historyAsc: hist };
         } },
     ];
 }
@@ -347,24 +391,26 @@ export async function GET(request) {
         }
         if (failed.length) console.warn(`[FRED] ${failed.length} series unavailable this load:`, failed.join(', '));
 
-        // P/E ratio — layered, cached scrapes.
+        // P/E ratio — layered, cached scrapes. peSource records which layer won so
+        // the derived-EPS leg below can refuse CAPE (a 10-yr smoothed P/E).
         let peRatio = null;
+        let peSource = null;
         try {
             const peHtml = await cachedText('multpl', EXTERNAL_URLS.MULTPL_PE, 8000);
             const m = peHtml.match(/Current S&P 500 PE Ratio[^\d]*(\d+\.\d+)/);
-            if (m) peRatio = parseFloat(m[1]);
+            if (m) { peRatio = parseFloat(m[1]); peSource = 'multpl'; }
         } catch (e) { messages.push(`P/E multpl failed: ${maskKey(e.message)}`); }
         if (!peRatio) {
             try {
                 const yHtml = await cachedText('yahoo-pe', EXTERNAL_URLS.YAHOO_PE, 8000);
                 const m = yHtml.match(/PE Ratio \(TTM\)[\s\S]*?(\d+\.\d+)/i);
-                if (m) peRatio = parseFloat(m[1]) * 1.07;
+                if (m) { peRatio = parseFloat(m[1]) * 1.07; peSource = 'yahoo'; }
             } catch (e) { messages.push(`P/E Yahoo failed: ${maskKey(e.message)}`); }
         }
         if (!peRatio) {
             try {
                 const cape = await fetchSeries('PE10', liveKey, 3);
-                if (cape.length > 0) peRatio = cape[0].value;
+                if (cape.length > 0) { peRatio = cape[0].value; peSource = 'cape'; }
             } catch (e) { messages.push(`P/E CAPE failed: ${maskKey(e.message)}`); }
         }
 
@@ -381,6 +427,18 @@ export async function GET(request) {
             messages.push(`Copper/Gold: ${cg.source || 'unavailable'}`);
         } catch (e) {
             messages.push(`Copper/Gold failed: ${maskKey(e.message)}`);
+        }
+
+        // S&P 500 EPS (TTM) — guarded the same way: a failure leaves the card N/A
+        // but can never break the FRED data. resolveSpEps itself never throws; the
+        // try/catch is belt-and-braces around the source construction.
+        responseData.spEps = { current: null, asOf: null, stale: false, unavailable: true, source: null, historySource: null, history: [], tried: [] };
+        try {
+            const eps = await resolveSpEps(spEpsSources({ fredKey: apiKey, pe: peRatio, peSource }), faults, now);
+            responseData.spEps = { ...eps, history: toQuarterlyHistory(eps.history) };
+            messages.push(`S&P EPS: ${eps.source || 'unavailable'}`);
+        } catch (e) {
+            messages.push(`S&P EPS failed: ${maskKey(e.message)}`);
         }
 
         return {

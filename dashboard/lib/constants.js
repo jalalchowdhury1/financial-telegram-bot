@@ -80,6 +80,11 @@ export const EXTERNAL_URLS = {
     YAHOO_SPY: 'https://query1.finance.yahoo.com/v8/finance/chart/SPY?range=5y&interval=1d',
     NASDAQ_SPY: 'https://api.nasdaq.com/api/quote/SPY/historical',
     MULTPL_PE: 'https://www.multpl.com/s-p-500-pe-ratio',
+    // S&P 500 EPS (TTM) sources — see lib/spEps.js + the fred route's spEpsSources.
+    // multpl's by-month table is REAL (inflation-adjusted, constant current dollars);
+    // the datahub mirror of Shiller's data ships a matching 'Real Earnings' column.
+    MULTPL_EPS: 'https://www.multpl.com/s-p-500-earnings/table/by-month',
+    DATAHUB_SHILLER: 'https://raw.githubusercontent.com/datasets/s-and-p-500/main/data/data.csv',
     YAHOO_PE: 'https://finance.yahoo.com/quote/SPY/key-statistics',
     CNN_FEAR_GREED: 'https://production.dataviz.cnn.io/index/fearandgreed/graphdata',
     RAPIDAPI_FEAR_GREED: 'https://fear-and-greed-index.p.rapidapi.com/v1/fgi',

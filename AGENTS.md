@@ -290,6 +290,27 @@ multi-candidate "favorites" lists; a fresher momentum window via the CLOB price-
   confirmed the fallbacks from the datacenter: `?_fail=cg_cnbc` → `copper:fred · gold:polygon`
   (full delta still computed), and `?_fail=cg_cnbc,cg_fred,cg_polygon` → `copper:goldapi ·
   gold:goldapi` (keyless spot, ratio shown without a delta).
+- **S&P 500 EPS** (the `spEps` top-level key + the "🧾 S&P 500 EPS" card next to Profit
+  Margin) shows trailing-12-month as-reported index EPS — the E in P/E. Three independent
+  sources (owner's rule: 3+ so there is always a backup), resolved by the pure cascade in
+  `lib/spEps.js` (`resolveSpEps`, fetched lazily in order, fresh level preferred, stale
+  level served with `stale:true` → orange 🕐 rather than N/A, first history wins):
+  - **multpl** `/s-p-500-earnings/table/by-month` (level + monthly history to 1871;
+    **inflation-adjusted to current dollars**; as-reported TTM lags ~2-3 quarters, so its
+    freshness window is 400d) →
+  - **derived** = FRED `SP500` close ÷ the route's live TTM P/E (spot-only, daily-fresh;
+    **refuses CAPE** — dividing by a 10-yr smoothed P/E wouldn't give TTM EPS; that's why
+    the P/E block tracks `peSource`) →
+  - **datahub** GitHub-raw mirror of Shiller's dataset (`Real Earnings` column, same units
+    as multpl; its earnings run years behind → in practice the graceful-staleness fallback
+    that keeps the CHART alive when multpl is down).
+  History is downsampled to quarter-end months from 1947 (`toQuarterlyHistory`) so
+  MiniChart stays in its quarterly mode with correct 10Y/20Y/30Y tabs — same cadence/span
+  as Profit Margin. The block is guarded like copper/gold: a failure appends a `_meta`
+  message but never sets `hasErrors` and can't break the FRED payload. Note the deliberate
+  contrast with `resolveLeg`: copper/gold REJECTS stale sources; EPS SERVES them marked
+  stale, because an old real earnings number beats an N/A. (`spEps` is not in the
+  `dashboard_lkg` sheet tab — in total-outage last-resort mode the card shows N/A.)
 - The `?_fail=` fault-injection harness (`lib/faults.js`) is intentionally **kept in
   production** — it only degrades the caller's own response and never writes caches.
   **Fault names:** `lambda`, `polygon`, `finnhub`, `yahoo`, `gamma`, `coinbase`, `coingecko`,
@@ -301,7 +322,9 @@ multi-candidate "favorites" lists; a fresher momentum window via the CLOB price-
   `cg_yahoo`** (each disables that source in **both** legs). E.g. `?_fail=cg_cnbc` forces both
   legs past CNBC; `?_fail=cg_cnbc,cg_fred,cg_polygon` forces them down to the keyless gold-api
   spot tier. The served object's `tried` field shows the per-leg cascade trail (e.g.
-  `cnbc:off → polygon:off → fred:ok`).
+  `cnbc:off → polygon:off → fred:ok`). The S&P EPS cascade has the same per-source gates:
+  **`eps_multpl` / `eps_derived` / `eps_datahub`** (e.g. `?_fail=eps_multpl` → derived serves
+  the fresh level and datahub the chart; `spEps.tried` shows the trail).
 
 ---
 
@@ -382,10 +405,10 @@ multi-candidate "favorites" lists; a fresher momentum window via the CLOB price-
     `sheets` (Google-Sheet brief, layered cache), `fear-greed` (CNN→RapidAPI→Yahoo VIX→FRED
     VIXCLS→cache), `last-run` (GitHub Actions status of `daily_report.yml`),
     `assessment` (**POST-only** LLM macro summary).
-- `dashboard/lib/{store,sources,fetcher,faults,freshness,finance,copperGold,constants}.js` —
+- `dashboard/lib/{store,sources,fetcher,faults,freshness,finance,copperGold,spEps,constants}.js` —
   the never-throw store + last-known-good, direct data sources, fetch/proxy helpers, fault
   injection, FRED freshness, math (RSI/dailyChange/copperGoldRatio), copper/gold cascade,
-  and shared constants (FRED IDs, freshness deadlines, URLs).
+  S&P 500 EPS parsers + cascade, and shared constants (FRED IDs, freshness deadlines, URLs).
 - `dashboard/app/page.js` — dashboard page + the `.system-status-bar` footer.
 - `dashboard/components/*.js` — UI (MarketModal, PolymarketTable, SpyChart, Gauge,
   EconomicIndicatorGrid, BullChecklist, ExtraMarketsGrid, MarketPulse, MiniChart,
