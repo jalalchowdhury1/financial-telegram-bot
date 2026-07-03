@@ -321,6 +321,38 @@ export default function Dashboard() {
                     </ErrorBoundary>
                 </div>
 
+                {/* S&P 500 EPS */}
+                <div className="card" style={{ animationDelay: '0.5s' }}>
+                    <div className="card-header">
+                        <h2><span className="tooltip-trigger" data-tooltip={`S&P 500 earnings per share, trailing 12 months (as-reported) — the E in P/E. Rising EPS means corporate America is earning more. History is inflation-adjusted (today's dollars).${freshnessNote({ value: fred?.spEps?.current, asOf: fred?.spEps?.asOf, stale: fred?.spEps?.stale }).suffix}`}>🧾 S&P 500 EPS</span></h2>
+                        {fred?.spEps?.current != null && <span className="badge badge-blue">Trailing 12M</span>}
+                    </div>
+                    <ErrorBoundary>
+                        {loading || !fred ? <Skeleton count={2} /> : (fred.error || fred.spEps?.current == null) ? (
+                            <div className="hero-price-section">
+                                <div className="hero-price" style={{ fontSize: '2.2rem', color: 'var(--yellow)' }}>N/A</div>
+                                <div className="hero-change" style={{ color: 'var(--text-muted)', fontSize: '0.72rem', marginTop: '4px' }}>
+                                    Unavailable — source busy, try again shortly
+                                </div>
+                            </div>
+                        ) : (
+                            <>
+                                <div className="hero-price-section">
+                                    <div className="hero-price" style={{ fontSize: '2.2rem', color: fred.spEps.stale ? 'var(--orange)' : 'var(--green)' }}>
+                                        {fred.spEps.stale ? '🕐 ' : ''}${fred.spEps.current.toFixed(2)}
+                                    </div>
+                                    {fred.spEps.stale && (
+                                        <div className="hero-change" style={{ color: 'var(--text-muted)', fontSize: '0.72rem', marginTop: '4px' }}>
+                                            Last data {formatAsOf(fred.spEps.asOf)} (stale)
+                                        </div>
+                                    )}
+                                </div>
+                                <MiniChart history={fred.spEps.history} color="#38bdf8" gradientId="epsGrad" recessions={fred.recessions || []} />
+                            </>
+                        )}
+                    </ErrorBoundary>
+                </div>
+
                 {/* ECONOMIC INDICATORS */}
                 <EconomicIndicatorGrid fred={fred} loading={loading} statusColor={statusColor} />
 
