@@ -30,7 +30,9 @@ const MONTHS = { Jan: '01', Feb: '02', Mar: '03', Apr: '04', May: '05', Jun: '06
 export function parseMultplEps(html) {
     const out = [];
     if (typeof html !== 'string') return out;
-    const re = /<td>\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+(\d{1,2}),\s+(\d{4})\s*<\/td>\s*<td>\s*(?:&#x2002;|&nbsp;)?\s*([\d,]+(?:\.\d+)?)/g;
+    // The value must be followed by a tag boundary (`<`), so a response body
+    // truncated mid-number can't smuggle in a phantom partial value.
+    const re = /<td>\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+(\d{1,2}),\s+(\d{4})\s*<\/td>\s*<td>\s*(?:&#x2002;|&nbsp;)?\s*([\d,]+(?:\.\d+)?)\s*</g;
     let m;
     while ((m = re.exec(html)) !== null) {
         const value = parseFloat(m[4].replace(/,/g, ''));
@@ -88,6 +90,7 @@ export function toMonthlyHistory(historyAsc, start = SP_EPS_START) {
  * as soon as both a fresh level and a history are in hand. Never throws.
  */
 export async function resolveSpEps(sources, faults, now = new Date()) {
+    const FUTURE_TOLERANCE_MS = 2 * 86400000; // >2 days ahead of now = a source-side date bug
     const tried = [];
     let fresh = null;      // first fresh level
     let staleBest = null;  // first stale level (fallback)
@@ -98,15 +101,25 @@ export async function resolveSpEps(sources, faults, now = new Date()) {
         if (faults && faults.has(`eps_${s.name}`)) { tried.push(`${s.name}:off`); continue; }
         let r;
         try { r = await s.fetch(); } catch (e) { tried.push(`${s.name}:err`); continue; }
-        if (!r || !Number.isFinite(r.current) || !r.currentDate) { tried.push(`${s.name}:empty`); continue; }
-        const stale = isStale(r.currentDate, s.freshnessDays, now);
-        tried.push(`${s.name}:${stale ? `stale(${r.currentDate})` : 'ok'}`);
-        if (!fresh && !stale) fresh = { current: r.current, asOf: r.currentDate, source: s.name };
-        else if (!staleBest && stale) staleBest = { current: r.current, asOf: r.currentDate, source: s.name };
+        if (!r) { tried.push(`${s.name}:empty`); continue; }
+        // A date meaningfully in the future means the source mangled its dates —
+        // don't let it pass as "fresh" forever (isStale can only catch OLD dates).
+        const ts = r.currentDate ? new Date(r.currentDate).getTime() : NaN;
+        if (Number.isFinite(ts) && ts - now.getTime() > FUTURE_TOLERANCE_MS) {
+            tried.push(`${s.name}:future(${r.currentDate})`);
+            continue;
+        }
+        // Harvest history even when the level is unusable — a chart from a source
+        // with a broken spot value still beats no chart.
         if (!history.length && Array.isArray(r.historyAsc) && r.historyAsc.length) {
             history = r.historyAsc;
             historySource = s.name;
         }
+        if (!Number.isFinite(r.current) || !r.currentDate) { tried.push(`${s.name}:empty`); continue; }
+        const stale = isStale(r.currentDate, s.freshnessDays, now);
+        tried.push(`${s.name}:${stale ? `stale(${r.currentDate})` : 'ok'}`);
+        if (!fresh && !stale) fresh = { current: r.current, asOf: r.currentDate, source: s.name };
+        else if (!staleBest && stale) staleBest = { current: r.current, asOf: r.currentDate, source: s.name };
     }
     const level = fresh || staleBest;
     return {
