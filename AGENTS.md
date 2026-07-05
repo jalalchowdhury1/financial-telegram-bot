@@ -313,6 +313,27 @@ multi-candidate "favorites" lists; a fresher momentum window via the CLOB price-
   contrast with `resolveLeg`: copper/gold REJECTS stale sources; EPS SERVES them marked
   stale, because an old real earnings number beats an N/A. (`spEps` is not in the
   `dashboard_lkg` sheet tab — in total-outage last-resort mode the card shows N/A.)
+- **Volatility metrics** (`/api/vol` + `VolMetricsTable.js`, added 2026-07-05) — IV, IV
+  rank (1y), IV percentile (1y), 21-day realized vol, and VRP (IV − RV) for **SPY, QQQ,
+  TQQQ, SQQQ, UVXY**, rendered as the "🌡️ Volatility Metrics" card after SPY Historical.
+  Dashboard-only, `serve('vol', …)`-wrapped, 30-min cached. **IV is an index PROXY, not
+  chain-derived** (Yahoo chains are unreachable from Vercel; same method as the owner's
+  hedgelab tool): SPY→VIX, QQQ→VXN, TQQQ/SQQQ→**3×VXN** (leverage scales IV ~linearly),
+  UVXY→VVIX. Rank/percentile are computed on the UNSCALED index series (a constant
+  multiplier changes neither), the displayed IV level is scaled — keep it that way. Pure
+  math + payload builder in `lib/vol.js` (`parseCboeCsv` handles BOTH CBOE schemas:
+  `DATE,OPEN,HIGH,LOW,CLOSE` for VIX/VXN and two-column `DATE,VVIX`). Sources:
+  - **Indices**: CBOE CDN daily-history CSVs
+    (`cdn.cboe.com/api/global/us_indices/daily_prices/<NAME>_History.csv`, keyless, full
+    history, verified reachable) → FRED `VIXCLS`/`VXNCLS` (key). **VVIX has NO FRED
+    series** — a CBOE outage degrades only the UVXY row (iv/rank/pctile null, RV kept).
+  - **ETF closes** (for RV21): CNBC harmony `3M` daily bars (keyless) → Polygon daily aggs
+    (`POLYGON_KEY`; free-tier day delay is immaterial for a 21-day window).
+  Per-leg failures null the affected cells, never the payload. Fault gates: **`vol_cboe` /
+  `vol_fred` / `vol_cnbc` / `vol_polygon`**. `_meta.source` lists the winning source per
+  series (e.g. `VIX:cboe · SPY:cnbc`). The endpoint is in the health-check's GET sweep.
+  UI thresholds (hedgelab convention): percentile/rank ≤10 green (cheap), ≥70 orange,
+  ≥90 red (panic); negative VRP orange (realized above implied = stress).
 - The `?_fail=` fault-injection harness (`lib/faults.js`) is intentionally **kept in
   production** — it only degrades the caller's own response and never writes caches.
   **Fault names:** `lambda`, `polygon`, `finnhub`, `yahoo`, `gamma`, `coinbase`, `coingecko`,
