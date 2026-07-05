@@ -323,14 +323,18 @@ multi-candidate "favorites" lists; a fresher momentum window via the CLOB price-
   multiplier changes neither), the displayed IV level is scaled — keep it that way. Pure
   math + payload builder in `lib/vol.js` (`parseCboeCsv` handles BOTH CBOE schemas:
   `DATE,OPEN,HIGH,LOW,CLOSE` for VIX/VXN and two-column `DATE,VVIX`). Sources:
-  - **Indices**: CBOE CDN daily-history CSVs
+  - **Indices** (3-4 tiers each, hardened 2026-07-05): CBOE CDN daily-history CSVs
     (`cdn.cboe.com/api/global/us_indices/daily_prices/<NAME>_History.csv`, keyless, full
-    history, verified reachable) → FRED `VIXCLS`/`VXNCLS` (key). **VVIX has NO FRED
-    series** — a CBOE outage degrades only the UVXY row (iv/rank/pctile null, RV kept).
-  - **ETF closes** (for RV21): CNBC harmony `3M` daily bars (keyless) → Polygon daily aggs
-    (`POLYGON_KEY`; free-tier day delay is immaterial for a 21-day window).
-  Per-leg failures null the affected cells, never the payload. Fault gates: **`vol_cboe` /
-  `vol_fred` / `vol_cnbc` / `vol_polygon`**. `_meta.source` lists the winning source per
+    history, verified reachable) → **CNBC `.VIX`/`.VXN`/`.VVIX`** daily bars (keyless; the
+    `3M` range actually returns ~2y — enough for the 1y window; verified live, values match
+    CBOE) → FRED `VIXCLS`/`VXNCLS` (key; **VVIX has NO FRED series**) → Yahoo
+    `^VIX`/`^VXN`/`^VVIX` (blocked from Vercel today; self-heal tier like copper/gold).
+  - **ETF closes** (for RV21, 3 tiers): CNBC harmony `3M` daily bars (keyless) → Polygon
+    daily aggs (`POLYGON_KEY`; free-tier day delay is immaterial for a 21-day window) →
+    Yahoo chart (self-heal tier).
+  Per-leg failures null the affected cells, never the payload. Fault gates are **per
+  SOURCE** (tripping one disables it everywhere, like `cg_*`): **`vol_cboe` / `vol_cnbc` /
+  `vol_fred` / `vol_polygon` / `vol_yahoo`**. `_meta.source` lists the winning source per
   series (e.g. `VIX:cboe · SPY:cnbc`). The endpoint is in the health-check's GET sweep.
   UI thresholds (hedgelab convention): percentile/rank ≤10 green (cheap), ≥70 orange,
   ≥90 red (panic); negative VRP orange (realized above implied = stress).

@@ -1,17 +1,23 @@
 /**
  * /api/vol — IV rank / IV percentile / VRP for SPY, QQQ, TQQQ, SQQQ, UVXY.
  *
- * Dashboard-only (no Lambda hop). Never-throw via serve(). Sources, all
- * datacenter-reachable (Yahoo/Stooq are blocked from Vercel):
+ * Dashboard-only (no Lambda hop). Never-throw via serve(). Per-series cascades
+ * (owner's rule: 3+ sources so there is always a backup); every tier except the
+ * last Yahoo one is datacenter-reachable:
  *   Vol indices: CBOE CDN daily-history CSVs (keyless, full history)
- *                → FRED VIXCLS/VXNCLS (key) — VVIX has NO FRED series, so a
- *                  CBOE outage degrades only the UVXY row (rank/pctile null).
+ *                → CNBC '.VIX'/'.VXN'/'.VVIX' daily bars (keyless, ~2y — plenty
+ *                  for the 1y window; verified live 2026-07-05)
+ *                → FRED VIXCLS/VXNCLS (key; VVIX has NO FRED series)
+ *                → Yahoo ^VIX/^VXN/^VVIX (blocked from Vercel today — kept as a
+ *                  self-heal tier, same design as copper/gold).
  *   ETF closes (21d realized vol): CNBC harmony daily bars (keyless)
  *                → Polygon daily aggs (POLYGON_KEY; free tier is a day behind,
- *                  which is fine for a 21-day realized-vol window).
- * Fault gates: vol_cboe, vol_fred, vol_cnbc, vol_polygon.
+ *                  which is fine for a 21-day realized-vol window)
+ *                → Yahoo chart (self-heal tier).
+ * Fault gates (one per SOURCE, tripping it everywhere it's used, like cg_*):
+ * vol_cboe, vol_cnbc, vol_fred, vol_polygon, vol_yahoo.
  */
-import { cnbcHistory, polygonDaily, fredObservations } from '../../../lib/sources';
+import { cnbcHistory, polygonDaily, fredObservations, yahooChart } from '../../../lib/sources';
 import { serve } from '../../../lib/store';
 import { faultsFrom, gate } from '../../../lib/faults';
 import { parseCboeCsv, buildVolMetrics, VOL_PROXIES } from '../../../lib/vol';
@@ -31,39 +37,42 @@ async function fetchCboe(name) {
     return series;
 }
 
+const toSeries = (hist) => hist.map((h) => ({ date: h.date, value: h.price })).filter((p) => Number.isFinite(p.value));
+
 async function fetchIndex(name, fredKey, faults, notes) {
-    try {
-        const series = await gate('vol_cboe', faults, () => fetchCboe(name));
-        return { series, source: 'cboe' };
-    } catch (e) {
-        notes.push(`${name} cboe: ${String(e?.message).slice(0, 80)}`);
-    }
     const fredId = FRED_FALLBACK[name];
-    if (fredId && fredKey) {
+    const chain = [
+        ['cboe', 'vol_cboe', () => fetchCboe(name)],
+        ['cnbc', 'vol_cnbc', async () => toSeries(await cnbcHistory(`.${name}`, { range: '3M' }))], // '3M' actually returns ~2y of daily bars
+        ...(fredId && fredKey ? [['fred', 'vol_fred', async () => {
+            const obs = await fredObservations(fredId, fredKey, { limit: 400, revalidate: 1800 });
+            return [...obs].reverse().map((o) => ({ date: o.date, value: o.value })).filter((p) => Number.isFinite(p.value));
+        }]] : []),
+        ['yahoo', 'vol_yahoo', async () => toSeries((await yahooChart(`^${name}`, { range: '2y', interval: '1d', revalidate: 1800 })).history)],
+    ];
+    for (const [label, gateName, fn] of chain) {
         try {
-            const obs = await gate('vol_fred', faults, () => fredObservations(fredId, fredKey, { limit: 400, revalidate: 1800 }));
-            const series = [...obs].reverse().map((o) => ({ date: o.date, value: o.value })).filter((p) => Number.isFinite(p.value));
-            if (series.length) return { series, source: 'fred' };
+            const series = await gate(gateName, faults, fn);
+            if (series && series.length) return { series, source: label };
         } catch (e) {
-            notes.push(`${name} fred: ${String(e?.message).slice(0, 80)}`);
+            notes.push(`${name} ${label}: ${String(e?.message).slice(0, 80)}`);
         }
     }
     return { series: null, source: null };
 }
 
 async function fetchEtfCloses(ticker, polygonKey, faults, notes) {
-    try {
-        const hist = await gate('vol_cnbc', faults, () => cnbcHistory(ticker, { range: '3M' }));
-        return { closes: hist.map((h) => h.price), source: 'cnbc' };
-    } catch (e) {
-        notes.push(`${ticker} cnbc: ${String(e?.message).slice(0, 80)}`);
-    }
-    if (polygonKey) {
+    const chain = [
+        ['cnbc', 'vol_cnbc', async () => (await cnbcHistory(ticker, { range: '3M' })).map((h) => h.price)],
+        ...(polygonKey ? [['polygon', 'vol_polygon', async () => (await polygonDaily(ticker, polygonKey, { years: 1, revalidate: 1800 })).history.map((h) => h.price)]] : []),
+        ['yahoo', 'vol_yahoo', async () => (await yahooChart(ticker, { range: '3mo', interval: '1d', revalidate: 1800 })).history.map((h) => h.price)],
+    ];
+    for (const [label, gateName, fn] of chain) {
         try {
-            const p = await gate('vol_polygon', faults, () => polygonDaily(ticker, polygonKey, { years: 1, revalidate: 1800 }));
-            return { closes: p.history.map((h) => h.price), source: 'polygon' };
+            const closes = await gate(gateName, faults, fn);
+            if (closes && closes.length) return { closes, source: label };
         } catch (e) {
-            notes.push(`${ticker} polygon: ${String(e?.message).slice(0, 80)}`);
+            notes.push(`${ticker} ${label}: ${String(e?.message).slice(0, 80)}`);
         }
     }
     return { closes: null, source: null };
