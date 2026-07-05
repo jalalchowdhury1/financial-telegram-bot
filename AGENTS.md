@@ -170,6 +170,13 @@ The repo is **public** — keys NEVER go in code; they live in **Vercel env vars
 
 ### Conventions (enforce on every change)
 - **Never hardcode secrets** — see the env list above; the repo is public.
+- **Every new GET route handler must "touch the request" first** —
+  `request.headers.get('user-agent');` as the opening line (see fred/market-extra/vol).
+  Without it Next statically prerenders the handler at BUILD time: the payload freezes
+  and query params (incl. `?_fail=`) are silently ignored on production. `faultsFrom`
+  alone does NOT make a route dynamic (its try/catch swallows Next's DynamicServerError
+  probe — this bit /api/vol on 2026-07-05). Verify in `npm run build` output: the route
+  must be listed as `λ` (server), never `○` (static).
 - **Never-throw routes.** Every cached `/api/*` GET (`spy`, `spy-daily-move`,
   `market-extra`, `polymarket`, `fred`) wraps its *entire* body in
   `lib/store.js: serve(key, produce, opts)`, which cascades **live → fallbacks →

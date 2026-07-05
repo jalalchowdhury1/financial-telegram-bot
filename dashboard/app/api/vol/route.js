@@ -79,6 +79,13 @@ async function fetchEtfCloses(ticker, polygonKey, faults, notes) {
 }
 
 export async function GET(request) {
+    // Touch the request so Next renders this handler dynamically (per request),
+    // while the CBOE/CNBC/FRED fetches still come from the 30-min Data Cache.
+    // Without this the route is STATICALLY PRERENDERED at build time (faultsFrom
+    // can't mark it dynamic — its try/catch swallows Next's DynamicServerError),
+    // which froze the payload and ignored ?_fail= on production (caught 2026-07-05).
+    request.headers.get('user-agent');
+
     const faults = faultsFrom(request);
     const fredKey = process.env.FRED_API_KEY;
     const polygonKey = process.env.POLYGON_KEY;
