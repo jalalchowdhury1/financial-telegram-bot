@@ -13,6 +13,7 @@ import EconomicIndicatorGrid from '../components/EconomicIndicatorGrid';
 import BullChecklist from '../components/BullChecklist';
 import ExtraMarketsGrid from '../components/ExtraMarketsGrid';
 import PolymarketTable from '../components/PolymarketTable';
+import VolMetricsTable from '../components/VolMetricsTable';
 
 // ============ MAIN DASHBOARD ============
 export default function Dashboard() {
@@ -368,6 +369,9 @@ export default function Dashboard() {
                         )}
                     </ErrorBoundary>
                 </div>
+
+                {/* VOLATILITY METRICS (IV rank / percentile / VRP) */}
+                <VolMetricsTable />
 
                 {/* BULL MARKET CHECKLIST */}
                 <BullChecklist fred={fred} loading={loading} />
