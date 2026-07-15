@@ -22,6 +22,8 @@ export const VOL_PROXIES = {
 
 const ONE_YEAR = 252; // trading days
 
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/; // guard: lexicographic date compare is only safe on this shape
+
 /**
  * Parse a CBOE daily-prices CSV. Two live schemas:
  *   VIX/VXN:  DATE,OPEN,HIGH,LOW,CLOSE   (take CLOSE)
@@ -81,7 +83,8 @@ export function ivPercentile(values, current) {
  * `liveQuotes` (optional) carries intraday index levels from CNBC's quote
  * endpoint, keyed by index name: { VIX: { value, date, lastTime }, … }. A live
  * level REPLACES the last EOD close as "current" ONLY when it is finite, > 0,
- * and its date is STRICTLY newer than the last EOD point — evenings, weekends
+ * and its date is a well-formed YYYY-MM-DD STRICTLY newer than the last EOD
+ * point — evenings, weekends
  * and a lagging quote all fall back to plain EOD behavior. The 1y
  * rank/percentile window stays EOD-only, and RV 21d never sees a partial day.
  * `live_at` is the newest applied quote's full timestamp (only ever a full
@@ -102,7 +105,7 @@ export function buildVolMetrics(indexSeries = {}, etfCloses = {}, liveQuotes = {
         const window = series ? series.slice(-ONE_YEAR).map((p) => p.value) : [];
         const quote = liveQuotes ? liveQuotes[index] : null;
         const live = !!(last && quote && Number.isFinite(quote.value) && quote.value > 0
-            && typeof quote.date === 'string' && quote.date > last.date);
+            && ISO_DATE.test(quote.date) && quote.date > last.date);
         const current = live ? quote.value : (last ? last.value : null);
         const asOf = live ? quote.date : (last ? last.date : null);
         const iv = current != null ? mult * current : null;

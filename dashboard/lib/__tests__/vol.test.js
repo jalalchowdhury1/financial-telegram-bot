@@ -134,6 +134,7 @@ describe('buildVolMetrics — live intraday overrides', () => {
         expect(spy.live).toBe(true);
         expect(spy.asOf).toBe('2026-07-15');
         expect(spy.ivRank1y).toBeCloseTo(50);   // (18−16)/(20−16) against the EOD window
+        expect(spy.ivPctile1y).toBeCloseTo((251 / 252) * 100, 1); // 251 of 252 window days ≤ 18
         expect(spy.rv21).toBeCloseTo(0, 6);     // RV stays EOD-only (flat closes)
         expect(spy.vrp).toBeCloseTo(18);        // live IV − EOD RV
         expect(out.updated_at).toBe('2026-07-15');
@@ -171,6 +172,8 @@ describe('buildVolMetrics — live intraday overrides', () => {
             { value: 0, date: '2026-07-15' },
             { value: 18, date: null },
             { value: 18 }, // no date at all
+            { value: 18, date: 'not-a-date' },
+            { value: 18, date: '2026-7-15' }, // non-padded month — not a safe string compare
         ];
         for (const quote of cases) {
             const out = buildVolMetrics({ VIX: vixWithLast() }, {}, { VIX: quote });
