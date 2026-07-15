@@ -47,3 +47,24 @@ it('shows the unavailable message on an empty payload', async () => {
     render(<VolMetricsTable />);
     await waitFor(() => expect(screen.getByText(/Volatility data unavailable/)).toBeInTheDocument());
 });
+
+it('shows the intraday footnote with an ET timestamp when rows are live', async () => {
+    const livePayload = {
+        ...payload,
+        updated_at: '2026-07-15',
+        live_at: '2026-07-15T13:42:31.000-0400',
+        tickers: payload.tickers.map((t) => ({ ...t, live: t.ticker !== 'UVXY', asOf: '2026-07-15' })),
+    };
+    global.fetch = jest.fn().mockResolvedValue({ json: async () => livePayload });
+    render(<VolMetricsTable />);
+    await waitFor(() => expect(screen.getByText('SPY')).toBeInTheDocument());
+    expect(screen.getByText(/As of 2026-07-15, 1:42 PM ET · intraday/)).toBeInTheDocument();
+});
+
+it('falls back to the plain date when live rows have no usable timestamp', async () => {
+    const p = { ...payload, updated_at: '2026-07-15', live_at: null, tickers: payload.tickers.map((t) => ({ ...t, live: true })) };
+    global.fetch = jest.fn().mockResolvedValue({ json: async () => p });
+    render(<VolMetricsTable />);
+    await waitFor(() => expect(screen.getByText('SPY')).toBeInTheDocument());
+    expect(screen.getByText(/As of 2026-07-15 · intraday/)).toBeInTheDocument();
+});
