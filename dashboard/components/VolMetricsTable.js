@@ -34,7 +34,7 @@ const formatLiveAt = (iso) => {
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return null;
     const date = d.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-    const time = d.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' }).replace(/[  ]/g, ' ');
+    const time = d.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' }).replace(/[\u202f\u00a0]/g, ' ');
     return `${date}, ${time} ET`;
 };
 
