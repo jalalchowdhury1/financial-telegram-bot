@@ -22,6 +22,8 @@ export const VOL_PROXIES = {
 
 const ONE_YEAR = 252; // trading days
 
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/; // guard: lexicographic date compare is only safe on this shape
+
 /**
  * Parse a CBOE daily-prices CSV. Two live schemas:
  *   VIX/VXN:  DATE,OPEN,HIGH,LOW,CLOSE   (take CLOSE)
@@ -77,23 +79,44 @@ export function ivPercentile(values, current) {
 
 /**
  * Assemble the payload for /api/vol.
+ *
+ * `liveQuotes` (optional) carries intraday index levels from CNBC's quote
+ * endpoint, keyed by index name: { VIX: { value, date, lastTime }, … }. A live
+ * level REPLACES the last EOD close as "current" ONLY when it is finite, > 0,
+ * and its date is a well-formed YYYY-MM-DD STRICTLY newer than the last EOD
+ * point — evenings, weekends
+ * and a lagging quote all fall back to plain EOD behavior. The 1y
+ * rank/percentile window stays EOD-only, and RV 21d never sees a partial day.
+ * `live_at` is the newest applied quote's full timestamp (only ever a full
+ * ISO string with a 'T'; a date-only lastTime is withheld so the UI can't
+ * misparse it as UTC midnight).
+ *
  * @param {object} indexSeries  {VIX|VXN|VVIX: ascending [{date, value}] | null}
  * @param {object} etfCloses    {SPY|…: ascending array of closes | null}
- * @returns {{updated_at: string|null, tickers: Array}}
+ * @param {object} [liveQuotes] {VIX|VXN|VVIX: {value, date, lastTime}} (optional)
+ * @returns {{updated_at: string|null, live_at: string|null, tickers: Array}}
  */
-export function buildVolMetrics(indexSeries = {}, etfCloses = {}) {
+export function buildVolMetrics(indexSeries = {}, etfCloses = {}, liveQuotes = {}) {
     let updated = null;
+    let liveAt = null;
     const tickers = Object.entries(VOL_PROXIES).map(([ticker, { index, mult }]) => {
         const series = indexSeries[index] || null;
         const last = series && series.length ? series[series.length - 1] : null;
         const window = series ? series.slice(-ONE_YEAR).map((p) => p.value) : [];
-        const iv = last ? mult * last.value : null;
-        const rank = last ? ivRank(window, last.value) : null;
-        const pctile = last ? ivPercentile(window, last.value) : null;
+        const quote = liveQuotes ? liveQuotes[index] : null;
+        const live = !!(last && quote && Number.isFinite(quote.value) && quote.value > 0
+            && ISO_DATE.test(quote.date) && quote.date > last.date);
+        const current = live ? quote.value : (last ? last.value : null);
+        const asOf = live ? quote.date : (last ? last.date : null);
+        const iv = current != null ? mult * current : null;
+        const rank = current != null ? ivRank(window, current) : null;
+        const pctile = current != null ? ivPercentile(window, current) : null;
         const rv21 = realizedVol(etfCloses[ticker] || []);
         const vrp = iv != null && rv21 != null ? iv - rv21 : null;
-        if (last && (!updated || last.date > updated)) updated = last.date;
-        return { ticker, proxy: mult === 1 ? index : `${mult}×${index}`, iv, ivRank1y: rank, ivPctile1y: pctile, rv21, vrp, asOf: last ? last.date : null };
+        if (asOf && (!updated || asOf > updated)) updated = asOf;
+        if (live && typeof quote.lastTime === 'string' && quote.lastTime.includes('T')
+            && (!liveAt || quote.lastTime > liveAt)) liveAt = quote.lastTime;
+        return { ticker, proxy: mult === 1 ? index : `${mult}×${index}`, iv, ivRank1y: rank, ivPctile1y: pctile, rv21, vrp, live, asOf };
     });
-    return { updated_at: updated, tickers };
+    return { updated_at: updated, live_at: liveAt, tickers };
 }

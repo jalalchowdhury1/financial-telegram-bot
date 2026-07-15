@@ -25,6 +25,29 @@ const vrpColor = (v) => {
     return 'var(--green)';
 };
 
+/**
+ * '2026-07-15T13:42:31.000-0400' → '2026-07-15, 1:42 PM ET'. Normalizes the
+ * narrow no-break space newer ICU builds put before AM/PM. Returns null on
+ * anything unparseable so the caller falls back to the plain date.
+ */
+const formatLiveAt = (iso) => {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return null;
+    const date = d.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+    const time = d.toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' }).replace(/[\u202f\u00a0]/g, ' ');
+    return `${date}, ${time} ET`;
+};
+
+/** Footnote timestamp: live rows get a green dot + ET time + 'intraday'. */
+const asOfNote = (data) => {
+    const anyLive = Array.isArray(data.tickers) && data.tickers.some((t) => t.live);
+    if (anyLive) {
+        const when = (data.live_at && formatLiveAt(data.live_at)) || data.updated_at;
+        if (when) return <> <span style={{ color: 'var(--green)' }}>●</span> As of {when} · intraday.</>;
+    }
+    return data.updated_at ? ` As of ${data.updated_at}.` : '';
+};
+
 const COLS = '1.3fr 1.2fr 1fr 1fr 1fr 1fr';
 const cellRight = { textAlign: 'right', fontVariantNumeric: 'tabular-nums' };
 
@@ -78,7 +101,7 @@ export default function VolMetricsTable() {
                         </div>
                         <div style={{ color: 'var(--text-muted)', fontSize: '0.65rem', marginTop: '8px', opacity: 0.7 }}>
                             IV via index proxies (SPY→VIX · QQQ→VXN · TQQQ/SQQQ→3×VXN · UVXY→VVIX) — approximation, not chain-derived.
-                            {data.updated_at ? ` As of ${data.updated_at}.` : ''}
+                            {asOfNote(data)}
                         </div>
                     </>
                 )}

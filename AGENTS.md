@@ -339,6 +339,18 @@ multi-candidate "favorites" lists; a fresher momentum window via the CLOB price-
   - **ETF closes** (for RV21, 3 tiers): CNBC harmony `3M` daily bars (keyless) → Polygon
     daily aggs (`POLYGON_KEY`; free-tier day delay is immaterial for a 21-day window) →
     Yahoo chart (self-heal tier).
+  - **Live intraday overrides (added 2026-07-15)**: one keyless CNBC quote call
+    (`.VIX`/`.VXN`/`.VVIX`, 5-min revalidate, gated by `vol_cnbc`) feeds
+    `buildVolMetrics` a live "current" level that replaces the last EOD close ONLY
+    when finite, > 0, and its date is a well-formed `YYYY-MM-DD` strictly newer than
+    the last EOD point — rank/%ile still use the EOD 1y window (UNSCALED), the live
+    quote never enters the RV 21d closes (CNBC daily bars verified EOD-only at the
+    2026-07-15 open — no partial today-bar), VRP = live IV − EOD RV. Rows gain `live`, payload
+    gains `live_at` (full ISO or null — a date-only quote timestamp is withheld so
+    the UI can't misparse it as UTC midnight), sources show `VIX:cboe+live`, and the
+    card footnote shows a green dot + ET time ("As of 2026-07-15, 1:42 PM ET ·
+    intraday"). Off-hours / quote failure ⇒ identical to pre-2026-07-15 EOD behavior
+    (never-throw kept). Values verified against CBOE's own delayed quotes 2026-07-15.
   Per-leg failures null the affected cells, never the payload. Fault gates are **per
   SOURCE** (tripping one disables it everywhere, like `cg_*`): **`vol_cboe` / `vol_cnbc` /
   `vol_fred` / `vol_polygon` / `vol_yahoo`**. `_meta.source` lists the winning source per
