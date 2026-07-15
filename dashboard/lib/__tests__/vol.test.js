@@ -116,3 +116,90 @@ describe('buildVolMetrics', () => {
         expect(out.tickers.map((t) => t.ticker)).toEqual(Object.keys(VOL_PROXIES));
     });
 });
+
+describe('buildVolMetrics — live intraday overrides', () => {
+    const mkSeries = (values) => values.map((v, i) => ({ date: `2026-01-${String((i % 28) + 1).padStart(2, '0')}`, value: v }));
+    // 1y window: 251 EOD days at 16, last EOD close 20 on 2026-07-14 → window min 16, max 20.
+    const vixWithLast = () => {
+        const s = mkSeries(Array(252).fill(16));
+        s[s.length - 1] = { date: '2026-07-14', value: 20 };
+        return s;
+    };
+    const liveVix = { value: 18, date: '2026-07-15', lastTime: '2026-07-15T13:42:31.000-0400' };
+
+    it('replaces the last EOD close when the quote date is strictly newer', () => {
+        const out = buildVolMetrics({ VIX: vixWithLast() }, { SPY: Array(40).fill(100) }, { VIX: liveVix });
+        const spy = out.tickers.find((t) => t.ticker === 'SPY');
+        expect(spy.iv).toBeCloseTo(18);
+        expect(spy.live).toBe(true);
+        expect(spy.asOf).toBe('2026-07-15');
+        expect(spy.ivRank1y).toBeCloseTo(50);   // (18−16)/(20−16) against the EOD window
+        expect(spy.rv21).toBeCloseTo(0, 6);     // RV stays EOD-only (flat closes)
+        expect(spy.vrp).toBeCloseTo(18);        // live IV − EOD RV
+        expect(out.updated_at).toBe('2026-07-15');
+        expect(out.live_at).toBe('2026-07-15T13:42:31.000-0400');
+    });
+
+    it('scales the live level by the proxy multiplier but ranks on the raw index', () => {
+        const vxn = mkSeries(Array(252).fill(20));
+        vxn[vxn.length - 1] = { date: '2026-07-14', value: 30 };
+        const out = buildVolMetrics({ VXN: vxn }, {}, { VXN: { value: 25, date: '2026-07-15', lastTime: '2026-07-15T10:00:00.000-0400' } });
+        const qqq = out.tickers.find((t) => t.ticker === 'QQQ');
+        const tqqq = out.tickers.find((t) => t.ticker === 'TQQQ');
+        expect(qqq.iv).toBeCloseTo(25);
+        expect(tqqq.iv).toBeCloseTo(75); // 3×25
+        expect(tqqq.ivRank1y).toBeCloseTo(qqq.ivRank1y); // multiplier cancels
+        expect(tqqq.live).toBe(true);
+    });
+
+    it('skips the override when the quote is not strictly newer (evenings/weekends)', () => {
+        const sameDay = buildVolMetrics({ VIX: vixWithLast() }, {}, { VIX: { ...liveVix, date: '2026-07-14' } });
+        const older = buildVolMetrics({ VIX: vixWithLast() }, {}, { VIX: { ...liveVix, date: '2026-07-11' } });
+        for (const out of [sameDay, older]) {
+            const spy = out.tickers.find((t) => t.ticker === 'SPY');
+            expect(spy.iv).toBeCloseTo(20);
+            expect(spy.live).toBe(false);
+            expect(spy.asOf).toBe('2026-07-14');
+            expect(out.live_at).toBeNull();
+        }
+    });
+
+    it('never lets a garbage quote replace good EOD math', () => {
+        const cases = [
+            { value: NaN, date: '2026-07-15' },
+            { value: -3, date: '2026-07-15' },
+            { value: 0, date: '2026-07-15' },
+            { value: 18, date: null },
+            { value: 18 }, // no date at all
+        ];
+        for (const quote of cases) {
+            const out = buildVolMetrics({ VIX: vixWithLast() }, {}, { VIX: quote });
+            const spy = out.tickers.find((t) => t.ticker === 'SPY');
+            expect(spy.iv).toBeCloseTo(20);
+            expect(spy.live).toBe(false);
+        }
+    });
+
+    it('a live quote alone (no EOD series) produces nothing — no window, no metrics', () => {
+        const out = buildVolMetrics({}, {}, { VIX: liveVix });
+        const spy = out.tickers.find((t) => t.ticker === 'SPY');
+        expect(spy.iv).toBeNull();
+        expect(spy.live).toBe(false);
+    });
+
+    it('a date-only lastTime never becomes live_at (avoids UTC-midnight misformatting)', () => {
+        const out = buildVolMetrics({ VIX: vixWithLast() }, {}, { VIX: { value: 18, date: '2026-07-15', lastTime: '2026-07-15' } });
+        const spy = out.tickers.find((t) => t.ticker === 'SPY');
+        expect(spy.live).toBe(true);        // the override still applies
+        expect(out.live_at).toBeNull();     // but the footnote falls back to updated_at
+        expect(out.updated_at).toBe('2026-07-15');
+    });
+
+    it('is fully backward-compatible when liveQuotes is omitted', () => {
+        const out = buildVolMetrics({ VIX: vixWithLast() }, { SPY: Array(40).fill(100) });
+        const spy = out.tickers.find((t) => t.ticker === 'SPY');
+        expect(spy.iv).toBeCloseTo(20);
+        expect(spy.live).toBe(false);
+        expect(out.live_at).toBeNull();
+    });
+});
