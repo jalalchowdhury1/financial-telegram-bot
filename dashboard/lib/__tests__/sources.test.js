@@ -157,6 +157,17 @@ describe('cnbcQuotes', () => {
         const out = await cnbcQuotes(['@HG.1']);
         expect(out['@HG.1'].price).toBe(6.10);
     });
+    test('returns the full last_time as lastTime alongside the sliced asOf', async () => {
+        mockFetch({ QuickQuoteResult: { QuickQuote: [
+            { symbol: '.VIX', last: '16.39', change: '-0.11', change_pct: '-0.67', last_time: '2026-07-15T13:42:31.000-0400' },
+            { symbol: '.VXN', last: '26.28', change: '0.00', change_pct: '0.00', last_time: '2026-07-14' },
+        ] } });
+        const out = await cnbcQuotes(['.VIX', '.VXN']);
+        expect(out['.VIX'].lastTime).toBe('2026-07-15T13:42:31.000-0400');
+        expect(out['.VIX'].asOf).toBe('2026-07-15');
+        expect(out['.VXN'].lastTime).toBe('2026-07-14'); // CNBC sends date-only off-hours
+        expect(out['.VXN'].asOf).toBe('2026-07-14');
+    });
     test('throws when no parseable quotes', async () => {
         mockFetch({ QuickQuoteResult: { QuickQuote: [{ symbol: '@HG.1', last: 'N/A' }] } });
         await expect(cnbcQuotes(['@HG.1'])).rejects.toThrow();
