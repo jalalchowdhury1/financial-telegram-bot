@@ -343,8 +343,9 @@ multi-candidate "favorites" lists; a fresher momentum window via the CLOB price-
     (`.VIX`/`.VXN`/`.VVIX`, 5-min revalidate, gated by `vol_cnbc`) feeds
     `buildVolMetrics` a live "current" level that replaces the last EOD close ONLY
     when finite, > 0, and its date is a well-formed `YYYY-MM-DD` strictly newer than
-    the last EOD point — rank/%ile still use the EOD 1y window (UNSCALED), RV 21d
-    never includes a partial day, VRP = live IV − EOD RV. Rows gain `live`, payload
+    the last EOD point — rank/%ile still use the EOD 1y window (UNSCALED), the live
+    quote never enters the RV 21d closes (CNBC daily bars verified EOD-only at the
+    2026-07-15 open — no partial today-bar), VRP = live IV − EOD RV. Rows gain `live`, payload
     gains `live_at` (full ISO or null — a date-only quote timestamp is withheld so
     the UI can't misparse it as UTC midnight), sources show `VIX:cboe+live`, and the
     card footnote shows a green dot + ET time ("As of 2026-07-15, 1:42 PM ET ·
