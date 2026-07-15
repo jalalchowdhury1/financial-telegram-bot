@@ -168,7 +168,7 @@ export async function polygonDaily(ticker, key, { years = 2, revalidate = 1800 }
 
 /**
  * CNBC quote service (KEYLESS, datacenter-friendly JSON) -> map symbol -> {price,
- * change, changePct, asOf}. Pass continuous front-month future symbols, e.g.
+ * change, changePct, asOf, lastTime}. Pass continuous front-month future symbols, e.g.
  * '@HG.1' (Copper, USD/lb) and '@GC.1' (Gold, USD/oz). Multiple symbols MUST be
  * pipe-delimited in ONE request (repeated symbols= params error). last/change/
  * change_pct come back as STRINGS.
