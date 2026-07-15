@@ -98,6 +98,7 @@ describe('buildVolMetrics — live intraday overrides', () => {
         expect(spy.live).toBe(true);
         expect(spy.asOf).toBe('2026-07-15');
         expect(spy.ivRank1y).toBeCloseTo(50);   // (18−16)/(20−16) against the EOD window
+        expect(spy.ivPctile1y).toBeCloseTo((251 / 252) * 100, 1); // 251 of 252 window days ≤ 18
         expect(spy.rv21).toBeCloseTo(0, 6);     // RV stays EOD-only (flat closes)
         expect(spy.vrp).toBeCloseTo(18);        // live IV − EOD RV
         expect(out.updated_at).toBe('2026-07-15');
@@ -135,6 +136,8 @@ describe('buildVolMetrics — live intraday overrides', () => {
             { value: 0, date: '2026-07-15' },
             { value: 18, date: null },
             { value: 18 }, // no date at all
+            { value: 18, date: 'not-a-date' },   // would sort ABOVE ISO dates lexicographically
+            { value: 18, date: '2026-7-15' },    // non-padded month — not a safe string compare
         ];
         for (const quote of cases) {
             const out = buildVolMetrics({ VIX: vixWithLast() }, {}, { VIX: quote });
@@ -185,8 +188,9 @@ Replace `buildVolMetrics` (and its JSDoc) in `dashboard/lib/vol.js` with:
  * `liveQuotes` (optional) carries intraday index levels from CNBC's quote
  * endpoint, keyed by index name: { VIX: { value, date, lastTime }, … }. A live
  * level REPLACES the last EOD close as "current" ONLY when it is finite, > 0,
- * and its date is STRICTLY newer than the last EOD point — evenings, weekends
- * and a lagging quote all fall back to plain EOD behavior. The 1y
+ * and its date is a well-formed YYYY-MM-DD STRICTLY newer than the last EOD
+ * point — evenings, weekends and a lagging quote all fall back to plain EOD
+ * behavior. The 1y
  * rank/percentile window stays EOD-only, and RV 21d never sees a partial day.
  * `live_at` is the newest applied quote's full timestamp (only ever a full
  * ISO string with a 'T'; a date-only lastTime is withheld so the UI can't
@@ -206,7 +210,7 @@ export function buildVolMetrics(indexSeries = {}, etfCloses = {}, liveQuotes = {
         const window = series ? series.slice(-ONE_YEAR).map((p) => p.value) : [];
         const quote = liveQuotes ? liveQuotes[index] : null;
         const live = !!(last && quote && Number.isFinite(quote.value) && quote.value > 0
-            && typeof quote.date === 'string' && quote.date > last.date);
+            && ISO_DATE.test(quote.date) && quote.date > last.date);
         const current = live ? quote.value : (last ? last.value : null);
         const asOf = live ? quote.date : (last ? last.date : null);
         const iv = current != null ? mult * current : null;
@@ -223,8 +227,16 @@ export function buildVolMetrics(indexSeries = {}, etfCloses = {}, liveQuotes = {
 }
 ```
 
-(Behavioral note: when no override applies, `current === last.value`, so every existing
-code path is unchanged; the row just gains `live: false`.)
+Also add near the top of the file (after the `ONE_YEAR` constant):
+
+```js
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/; // guard: lexicographic date compare is only safe on this shape
+```
+
+(Rationale: lexicographic comparison is only valid between two `YYYY-MM-DD` strings — a
+garbage date like `'not-a-date'` sorts ABOVE every ISO date and would defeat the
+staleness guard. Behavioral note: when no override applies, `current === last.value`, so
+every existing code path is unchanged; the row just gains `live: false`.)
 
 - [ ] **Step 4: Run the full vol suite — new AND pre-existing tests must pass**
 
