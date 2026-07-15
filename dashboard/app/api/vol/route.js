@@ -14,10 +14,14 @@
  *                → Polygon daily aggs (POLYGON_KEY; free tier is a day behind,
  *                  which is fine for a 21-day realized-vol window)
  *                → Yahoo chart (self-heal tier).
+ *   Live intraday overrides: CNBC quote endpoint '.VIX'/'.VXN'/'.VVIX'
+ *                (keyless, 5-min revalidate; gated by vol_cnbc). Applied by
+ *                buildVolMetrics only when strictly newer than the last EOD
+ *                close — see lib/vol.js. Sources show it as e.g. 'VIX:cboe+live'.
  * Fault gates (one per SOURCE, tripping it everywhere it's used, like cg_*):
  * vol_cboe, vol_cnbc, vol_fred, vol_polygon, vol_yahoo.
  */
-import { cnbcHistory, polygonDaily, fredObservations, yahooChart } from '../../../lib/sources';
+import { cnbcHistory, cnbcQuotes, polygonDaily, fredObservations, yahooChart } from '../../../lib/sources';
 import { serve } from '../../../lib/store';
 import { faultsFrom, gate } from '../../../lib/faults';
 import { parseCboeCsv, buildVolMetrics, VOL_PROXIES } from '../../../lib/vol';
@@ -78,6 +82,29 @@ async function fetchEtfCloses(ticker, polygonKey, faults, notes) {
     return { closes: null, source: null };
 }
 
+/**
+ * Live intraday index levels — ONE keyless CNBC quote call for all three
+ * indices, 5-min revalidate (vs 30-min for the daily histories). Gated by
+ * vol_cnbc (per-SOURCE semantics, same gate as the CNBC daily bars). Any
+ * failure returns {} — buildVolMetrics then serves EOD closes exactly as
+ * before this tier existed. Same live-overrides-stale pattern as SPY's
+ * Finnhub spot override.
+ */
+async function fetchLiveQuotes(faults, notes) {
+    try {
+        const quotes = await gate('vol_cnbc', faults, () => cnbcQuotes(INDICES.map((n) => `.${n}`), { revalidate: 300 }));
+        const out = {};
+        for (const n of INDICES) {
+            const q = quotes[`.${n}`];
+            if (q) out[n] = { value: q.price, date: q.asOf, lastTime: q.lastTime };
+        }
+        return out;
+    } catch (e) {
+        notes.push(`live quotes: ${String(e?.message).slice(0, 80)}`);
+        return {};
+    }
+}
+
 export async function GET(request) {
     // Touch the request so Next renders this handler dynamically (per request),
     // while the CBOE/CNBC/FRED fetches still come from the 30-min Data Cache.
@@ -92,15 +119,14 @@ export async function GET(request) {
 
     return serve('vol', async () => {
         const notes = [];
-        const [indexResults, etfResults] = await Promise.all([
+        const [indexResults, etfResults, liveQuotes] = await Promise.all([
             Promise.all(INDICES.map((n) => fetchIndex(n, fredKey, faults, notes))),
             Promise.all(TICKERS.map((t) => fetchEtfCloses(t, polygonKey, faults, notes))),
+            fetchLiveQuotes(faults, notes),
         ]);
         const indexSeries = {};
-        const indexSources = [];
         INDICES.forEach((n, i) => {
             indexSeries[n] = indexResults[i].series;
-            if (indexResults[i].source) indexSources.push(`${n}:${indexResults[i].source}`);
         });
         const etfCloses = {};
         const etfSources = [];
@@ -109,7 +135,15 @@ export async function GET(request) {
             if (etfResults[i].source) etfSources.push(`${t}:${etfResults[i].source}`);
         });
 
-        const payload = buildVolMetrics(indexSeries, etfCloses);
+        const payload = buildVolMetrics(indexSeries, etfCloses, liveQuotes);
+        // Which indices actually got a live override (buildVolMetrics is the
+        // single authority on that decision — derive, don't re-guess).
+        const liveIndices = new Set(payload.tickers.filter((t) => t.live).map((t) => VOL_PROXIES[t.ticker].index));
+        const indexSources = [];
+        INDICES.forEach((n, i) => {
+            if (indexResults[i].source) indexSources.push(`${n}:${indexResults[i].source}${liveIndices.has(n) ? '+live' : ''}`);
+        });
+
         const anyData = payload.tickers.some((t) => t.iv != null || t.rv21 != null);
         return {
             ...payload,
@@ -122,6 +156,6 @@ export async function GET(request) {
     }, {
         faults,
         isGood: (p) => !!p && Array.isArray(p.tickers) && p.tickers.some((t) => t.iv != null),
-        fallback: { updated_at: null, tickers: [], _meta: { source: 'Unavailable', hasErrors: true, messages: [] } },
+        fallback: { updated_at: null, live_at: null, tickers: [], _meta: { source: 'Unavailable', hasErrors: true, messages: [] } },
     });
 }
