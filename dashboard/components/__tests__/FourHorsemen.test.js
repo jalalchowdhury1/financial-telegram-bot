@@ -1,54 +1,69 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
-import FourHorsemen from '../FourHorsemen';
+import FourHorsemen, { trendOf } from '../FourHorsemen';
 
-const weekly = (n, v) => Array.from({ length: n }, (_, i) => ({
-    date: `20${String(20 + Math.floor(i / 52)).padStart(2, '0')}-01-01`, value: v(i),
-}));
+// Ascending history with real spaced dates: n points, stepDays apart, ending 2026-07-20.
+const series = (n, stepDays, fn) => {
+    const end = new Date('2026-07-20T00:00:00Z').getTime();
+    return Array.from({ length: n }, (_, i) => ({
+        date: new Date(end - (n - 1 - i) * stepDays * 86400000).toISOString().slice(0, 10),
+        value: fn(i),
+    }));
+};
 
 const mockFred = {
     recessions: [{ start: '2020-02-01', end: '2020-04-01' }],
     yieldCurve: {
         current: 0.52, asOf: '2026-07-21', stale: false,
-        history: Array.from({ length: 600 }, (_, i) => ({ date: `2024-01-${(i % 28) + 1}`, value: -0.5 + i * 0.002 })),
+        history: series(1200, 1, (i) => -0.5 + i * 0.002),          // daily, rising
     },
     indicators: { sahmRule: { value: 0.13 } },
     horsemen: {
         claims: {
             current: 221000, asOf: '2026-07-11', stale: false, unavailable: false,
-            history: weekly(120, (i) => 200000 + i * 500),
+            history: series(300, 7, (i) => 200000 + i * 1000),       // weekly, rising >10%/yr
         },
         unemployment: {
             current: 4.2, asOf: '2026-06-01', stale: false, unavailable: false,
-            history: Array.from({ length: 40 }, (_, i) => ({ date: `202${Math.floor(i / 12)}-0${(i % 12) < 9 ? (i % 12) + 1 : 9}-01`, value: 3.5 + i * 0.02 })),
+            history: series(60, 30, (i) => 3.5 + i * 0.02),          // monthly, rising
         },
         bankruptcies: {
             current: 25960, total: 591850, asOf: '2026-03-31', stale: false, unavailable: false,
             changePct: 11.4, status: 'rising', source: 'uscourts',
-            history: Array.from({ length: 40 }, (_, i) => ({ date: `20${16 + Math.floor(i / 4)}-03-31`, value: 20000 + i * 150, total: 450000 + i * 3000 })),
+            history: series(40, 91, (i) => 20000 + i * 150),         // quarterly, rising
         },
     },
 };
 
-describe('FourHorsemen', () => {
-    test('renders all four panels with headline values', () => {
+describe('FourHorsemen (overlay)', () => {
+    test('renders the overlay with all four series labeled and headline values', () => {
         render(<FourHorsemen fred={mockFred} loading={false} />);
         expect(screen.getByText(/Four Horsemen/)).toBeInTheDocument();
-        expect(screen.getByText('Initial Jobless Claims')).toBeInTheDocument();
-        expect(screen.getByText('Unemployment Rate')).toBeInTheDocument();
-        expect(screen.getByText('10Y − 2Y Yield Spread')).toBeInTheDocument();
-        expect(screen.getByText('US Bankruptcies')).toBeInTheDocument();
-        expect(screen.getByText('221K')).toBeInTheDocument();   // claims
-        expect(screen.getByText('4.20%')).toBeInTheDocument();  // unemployment
-        expect(screen.getByText('+0.52%')).toBeInTheDocument(); // spread
-        // 25,960 → 26K (also appears as an axis tick, so allow multiple matches)
-        expect(screen.getAllByText('26K').length).toBeGreaterThanOrEqual(1);
+        // Each label appears in the stat chips AND as an inline SVG label on the line.
+        for (const label of ['Initial Jobless Claims', 'Unemployment Rate', '10Y − 2Y Yield Spread', 'US Bankruptcies']) {
+            expect(screen.getAllByText(label).length).toBeGreaterThanOrEqual(2);
+        }
+        expect(screen.getByText('221K')).toBeInTheDocument();
+        expect(screen.getByText('4.20%')).toBeInTheDocument();
+        expect(screen.getByText('+0.52%')).toBeInTheDocument();
+        expect(screen.getByText('26K')).toBeInTheDocument();
+    });
+
+    test('draws direction notes on the lines (all mock series rise)', () => {
+        render(<FourHorsemen fred={mockFred} loading={false} />);
+        expect(screen.getAllByText(/trending up/).length).toBeGreaterThanOrEqual(3);
     });
 
     test('shows the riding count badge (claims + bankruptcies rising here)', () => {
         render(<FourHorsemen fred={mockFred} loading={false} />);
-        // claims YoY > 10% and bankruptcies YoY > 10% → 2 of 4
         expect(screen.getByText('2 of 4 riding')).toBeInTheDocument();
+    });
+
+    test('offers shared timeframe tabs', () => {
+        render(<FourHorsemen fred={mockFred} loading={false} />);
+        for (const tf of ['ALL', '20Y', '10Y', '5Y', '1Y']) {
+            expect(screen.getByRole('button', { name: tf })).toBeInTheDocument();
+        }
     });
 
     test('renders a skeleton while loading', () => {
@@ -57,7 +72,7 @@ describe('FourHorsemen', () => {
         expect(screen.queryByText('Initial Jobless Claims')).not.toBeInTheDocument();
     });
 
-    test('bankruptcies panel goes N/A when unavailable, others still render', () => {
+    test('bankruptcies N/A: chip shows N/A, the other three lines still draw', () => {
         const fred = {
             ...mockFred,
             horsemen: {
@@ -66,12 +81,23 @@ describe('FourHorsemen', () => {
             },
         };
         render(<FourHorsemen fred={fred} loading={false} />);
-        expect(screen.getByText('US Bankruptcies')).toBeInTheDocument();
-        expect(screen.getAllByText(/source busy/).length).toBeGreaterThanOrEqual(1);
-        expect(screen.getByText('221K')).toBeInTheDocument();
+        expect(screen.getByText('N/A')).toBeInTheDocument();                 // bankruptcies chip
+        expect(screen.getByText('221K')).toBeInTheDocument();                // claims chip alive
+        // Claims still labeled on the chart (chip + svg) even with bankruptcies gone
+        expect(screen.getAllByText('Initial Jobless Claims').length).toBeGreaterThanOrEqual(2);
     });
 
-    test('stale bankruptcies value still shows, marked with the clock', () => {
+    test('everything unavailable → single card-level N/A state', () => {
+        const empty = { current: null, asOf: null, stale: false, unavailable: true, history: [] };
+        const fred = {
+            recessions: [], yieldCurve: { current: null, history: [] }, indicators: {},
+            horsemen: { claims: empty, unemployment: empty, bankruptcies: { ...empty, changePct: null } },
+        };
+        render(<FourHorsemen fred={fred} loading={false} />);
+        expect(screen.getByText(/source busy/)).toBeInTheDocument();
+    });
+
+    test('stale bankruptcies value still shows in the chip, marked with the clock', () => {
         const fred = {
             ...mockFred,
             horsemen: {
@@ -82,5 +108,27 @@ describe('FourHorsemen', () => {
         render(<FourHorsemen fred={fred} loading={false} />);
         expect(screen.getByText(/🕐\s*26K/)).toBeInTheDocument();
         expect(screen.getByText(/Last data .*(stale)/)).toBeInTheDocument();
+    });
+});
+
+describe('trendOf', () => {
+    test('rising series → up', () => {
+        expect(trendOf(series(20, 30, (i) => 100 + i * 10))).toBe('up');
+    });
+    test('falling series → down', () => {
+        expect(trendOf(series(20, 30, (i) => 300 - i * 10))).toBe('down');
+    });
+    test('flat big-number series → flat (relative threshold)', () => {
+        expect(trendOf(series(20, 30, () => 200000))).toBe('flat');
+    });
+    test('flat rate-like series → flat (absolute threshold)', () => {
+        expect(trendOf(series(20, 30, () => 4.2))).toBe('flat');
+    });
+    test('quarterly cadence still yields a verdict (window is 120d)', () => {
+        expect(trendOf(series(8, 91, (i) => 20000 + i * 500))).toBe('up');
+    });
+    test('too little history → null', () => {
+        expect(trendOf([{ date: '2026-01-01', value: 1 }])).toBeNull();
+        expect(trendOf(null)).toBeNull();
     });
 });
