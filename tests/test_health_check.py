@@ -316,3 +316,32 @@ def test_format_alert_eli10_flags_a_real_secret_leak():
          "remediation": "manual", "evidence": {}}]}
     msg = hc.format_alert(report)
     assert "needs your attention" in msg        # a genuine issue is NOT reassured away
+
+
+def test_fred_metrics_for_na_check_maps_horsemen_current_to_value():
+    fred = {
+        "indicators": {"sahmRule": {"value": 0.13, "unavailable": False}},
+        "checklist": {"m2": {"value": 4.1, "unavailable": False}},
+        "horsemen": {
+            "claims": {"current": 221000, "unavailable": False, "staleDays": 0, "history": [1, 2]},
+            "bankruptcies": {"current": None, "unavailable": True, "staleDays": 0, "history": []},
+            "not_a_dict": "ignored",
+        },
+    }
+    metrics = hc.fred_metrics_for_na_check(fred)
+    assert metrics["sahmRule"]["value"] == 0.13
+    assert metrics["m2"]["value"] == 4.1
+    assert metrics["horsemen_claims"]["value"] == 221000
+    assert metrics["horsemen_bankruptcies"]["value"] is None
+    assert "horsemen_not_a_dict" not in metrics
+    # An unavailable horseman then warns through the normal N/A sweep.
+    finding = hc.check_indicators_na(metrics)
+    assert finding["severity"] == "warn"
+    assert "horsemen_bankruptcies" in finding["detail"]
+
+
+def test_fred_metrics_for_na_check_flags_overdue_bankruptcies():
+    fred = {"horsemen": {"bankruptcies": {"current": 25960, "unavailable": False, "staleDays": 40}}}
+    finding = hc.check_indicators_na(hc.fred_metrics_for_na_check(fred))
+    assert finding["severity"] == "warn"
+    assert "overdue" in finding["detail"]

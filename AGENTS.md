@@ -258,7 +258,9 @@ multi-candidate "favorites" lists; a fresher momentum window via the CLOB price-
   `staleDays` (whole days past deadline) and `freshnessNote` returns `tone`
   (`fresh|stale|unavailable`). The health check (`scripts/health_check.py:check_indicators_na`)
   warns only when a metric is `unavailable` OR `staleDays > 3` (genuinely overdue) — normal
-  reporting lag never alarms — and it sweeps BOTH `indicators` and `checklist`. A genuinely
+  reporting lag never alarms — and it sweeps `indicators`, `checklist` AND the `horsemen`
+  block (`fred_metrics_for_na_check` maps horsemen `current`→`value`, so e.g. a dead
+  uscourts bankruptcies feed eventually warns as `horsemen_bankruptcies`). A genuinely
   discontinued series keeps showing old orange data and warns daily until replaced or added to
   `KNOWN_DISCONTINUED`. `isGood` still keeps the payload as long as **≥1 series loaded**
   (`loadedCount > 0`); a total 0/17 outage falls through to last-known-good.
@@ -357,6 +359,38 @@ multi-candidate "favorites" lists; a fresher momentum window via the CLOB price-
   series (e.g. `VIX:cboe · SPY:cnbc`). The endpoint is in the health-check's GET sweep.
   UI thresholds (hedgelab convention): percentile/rank ≤10 green (cheap), ≥70 orange,
   ≥90 red (panic); negative VRP orange (realized above implied = stress).
+- **Four Horsemen — Recession Watch** (`FourHorsemen.js`, full-width card after the
+  Economic Indicators grid, added 2026-07-23) — four classic recession tells, each drawn
+  with its full history + NBER recession shading (`fred.recessions`): **Initial Jobless
+  Claims** (ICSA, weekly), **Unemployment Rate** (UNRATE, monthly), **10Y−2Y spread**
+  (reuses `fred.yieldCurve` — NOT duplicated in the payload), and **US Bankruptcies**
+  (quarterly, non-FRED — see below). All data rides on the `/api/fred` payload's
+  `horsemen` block; no new endpoint. Because the card needs full histories, the ICSA and
+  UNRATE `FRED_REQUESTS` limits are `100000` — which is WHY `unrate12moLow` (Sahm rule)
+  must stay `unrate.slice(0, 12)`: a min over the full history would break it. Charts are
+  `MiniChart` with explicit cadences (`weekly` added for ICSA; bankruptcies auto-detects
+  quarterly); per-panel warn badges: claims YoY > +10%, Sahm ≥ 0.5, spread < 0,
+  bankruptcies YoY > +10%; header badge counts "N of 4 riding".
+  - **Bankruptcies source** (`lib/bankruptcies.js` + `lib/data/bankruptciesBaked.json`):
+    the AOUSC publishes Table F-2 (business + nonbusiness filings, 12-month period ending
+    each quarter) as a small XLSX at a predictable URL
+    (`uscourts.gov/sites/default/files/document/bf_f2_<MMDD>.<YYYY>.xlsx`). Layers:
+    **live** — try recent quarter-ends newest-first, falling back to scraping the
+    quarter's F-2 landing page for a renamed link, time-boxed by `deadlineMs` (15 s) so a
+    uscourts outage can't stall the route → **baked** — the full 2001→present quarterly
+    history JSON committed in-repo (regenerate with
+    `uv run scripts/build_bankruptcies_history.py`) → serve()'s /tmp last-known-good.
+    The XLSX parse is a dependency-free mini ZIP reader (Node zlib) and is
+    **column-anchored** (finds the Business/Nonbusiness header columns; cells can be
+    formulas and zero cells are absent from the XML, so positional rules are unreliable)
+    with a hard sanity check (business + nonbusiness ≈ total) so a reshuffled table can
+    never ship a wrong number. The card shows BUSINESS filings (the classic recession
+    line); freshness deadline 150d (quarterly print + ~4-6 wk publish lag), graceful
+    staleness like S&P EPS (old real number in orange beats N/A). `spEps`-style guard in
+    GET(); `_meta.messages` gets a `Bankruptcies: uscourts|baked|unavailable` line.
+    (Not in the `dashboard_lkg` sheet tab — in total-outage last-resort mode the panel
+    shows N/A.) Verified live 2026-07-23: resolver lands on `2026-03-31` (591,850 total /
+    25,960 business — matches the AOUSC news release, YoY +11.4%).
 - The `?_fail=` fault-injection harness (`lib/faults.js`) is intentionally **kept in
   production** — it only degrades the caller's own response and never writes caches.
   **Fault names:** `lambda`, `polygon`, `finnhub`, `yahoo`, `gamma`, `coinbase`, `coingecko`,
@@ -370,7 +404,10 @@ multi-candidate "favorites" lists; a fresher momentum window via the CLOB price-
   spot tier. The served object's `tried` field shows the per-leg cascade trail (e.g.
   `cnbc:off → polygon:off → fred:ok`). The S&P EPS cascade has the same per-source gates:
   **`eps_multpl` / `eps_derived` / `eps_datahub`** (e.g. `?_fail=eps_multpl` → derived serves
-  the fresh level and datahub the chart; `spEps.tried` shows the trail).
+  the fresh level and datahub the chart; `spEps.tried` shows the trail). The bankruptcies
+  cascade adds **`bk_uscourts`** (kill the live uscourts tier → baked serves, possibly
+  stale-marked) and **`bk_baked`** (kill the baked history; both together → the
+  unavailable/N-A path); `horsemen.bankruptcies.tried` shows the trail.
 
 ---
 
@@ -451,14 +488,16 @@ multi-candidate "favorites" lists; a fresher momentum window via the CLOB price-
     `sheets` (Google-Sheet brief, layered cache), `fear-greed` (CNN→RapidAPI→Yahoo VIX→FRED
     VIXCLS→cache), `last-run` (GitHub Actions status of `daily_report.yml`),
     `assessment` (**POST-only** LLM macro summary).
-- `dashboard/lib/{store,sources,fetcher,faults,freshness,finance,copperGold,spEps,constants}.js` —
+- `dashboard/lib/{store,sources,fetcher,faults,freshness,finance,copperGold,spEps,bankruptcies,constants}.js` —
   the never-throw store + last-known-good, direct data sources, fetch/proxy helpers, fault
   injection, FRED freshness, math (RSI/dailyChange/copperGoldRatio), copper/gold cascade,
-  S&P 500 EPS parsers + cascade, and shared constants (FRED IDs, freshness deadlines, URLs).
+  S&P 500 EPS parsers + cascade, the AOUSC bankruptcies resolver (mini ZIP/XLSX reader +
+  live→baked cascade; baked history in `dashboard/lib/data/bankruptciesBaked.json`),
+  and shared constants (FRED IDs, freshness deadlines, URLs).
 - `dashboard/app/page.js` — dashboard page + the `.system-status-bar` footer.
 - `dashboard/components/*.js` — UI (MarketModal, PolymarketTable, SpyChart, Gauge,
   EconomicIndicatorGrid, BullChecklist, ExtraMarketsGrid, MarketPulse, MiniChart,
-  CustomIndicatorBar, Skeleton, ErrorBoundary, MarketModal.example).
+  FourHorsemen, CustomIndicatorBar, Skeleton, ErrorBoundary, MarketModal.example).
 - `dashboard/{jest.config.js,jest.setup.js,next.config.js,package.json}` — build/test config.
 
 **Self-healing / ops (scripts + workflows)**
@@ -466,6 +505,9 @@ multi-candidate "favorites" lists; a fresher momentum window via the CLOB price-
   HTTP probes + `--notify`/`--summary`.
 - `scripts/collect_health_context.py` — distills recent health reports into the weekly
   agent's digest (`health-digest.md`).
+- `scripts/build_bankruptcies_history.py` — regenerates the Four Horsemen card's baked
+  bankruptcies history from uscourts.gov F-2 tables (run with `uv run`; rarely needed —
+  the dashboard's live tier keeps the newest quarter fresh on its own).
 - `tests/` — pytest: `test_polymarket_fetcher`, `test_run_report`, `test_utils`,
   `test_health_check`, `test_collect_health_context`. Dashboard Jest tests live under
   `dashboard/**/__tests__/`.
@@ -505,7 +547,8 @@ severity. It is **never-throw** — a broken probe becomes a finding, not a cras
   (`PROBE_ATTEMPTS=3`, `PROBE_BACKOFF=(3,10,20)`, `PROBE_TIMEOUT=45`), and **retries a
   self-reported-degraded 200** too — so a cold start / slow first load / momentary blip is
   never mistaken for an outage.
-- **`indicators_na`** — inspects `/api/fred`'s `indicators`; an unexpected `null`/`unavailable`
+- **`indicators_na`** — inspects `/api/fred`'s `indicators` + `checklist` + `horsemen`
+  (via `fred_metrics_for_na_check`); an unexpected `null`/`unavailable`/overdue metric
   is `warn`; a metric on the `KNOWN_DISCONTINUED` allowlist (currently `lei`) is expected and
   never alarmed.
 - **`report_delivered_today`** — from delivery evidence gathered by the workflow (CloudWatch

@@ -10,6 +10,7 @@ import MiniChart from '../components/MiniChart';
 import MarketPulse from '../components/MarketPulse';
 import CustomIndicatorBar from '../components/CustomIndicatorBar';
 import EconomicIndicatorGrid from '../components/EconomicIndicatorGrid';
+import FourHorsemen from '../components/FourHorsemen';
 import BullChecklist from '../components/BullChecklist';
 import ExtraMarketsGrid from '../components/ExtraMarketsGrid';
 import PolymarketTable from '../components/PolymarketTable';
@@ -356,6 +357,9 @@ export default function Dashboard() {
 
                 {/* ECONOMIC INDICATORS */}
                 <EconomicIndicatorGrid fred={fred} loading={loading} statusColor={statusColor} />
+
+                {/* FOUR HORSEMEN — RECESSION WATCH (full width) */}
+                <FourHorsemen fred={fred} loading={loading} />
 
                 {/* SPY HISTORICAL CHART */}
                 <div className="card" style={{ animationDelay: '0.55s' }}>

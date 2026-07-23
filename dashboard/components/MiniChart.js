@@ -1,17 +1,21 @@
 'use client';
 import { useState } from 'react';
 
-export default function MiniChart({ history, color = '#818cf8', gradientId = 'chartGrad', showZero = false, recessions = [], label = '', cadence = 'auto' }) {
-    const [timeframe, setTimeframe] = useState('5Y');
+export default function MiniChart({ history, color = '#818cf8', gradientId = 'chartGrad', showZero = false, recessions = [], label = '', cadence = 'auto', defaultTimeframe = null, fmt = null }) {
+    const [timeframe, setTimeframe] = useState(defaultTimeframe || '5Y');
     if (!history || history.length < 2) return null;
 
-    // Explicit cadence='monthly' (12 points/yr) unlocks the full 1Y-30Y tab row;
-    // otherwise auto-detect quarterly (~4 points/yr) vs daily (~252 points/yr)
-    // from the point count, as before.
+    // Explicit cadence='monthly' (12 points/yr) or 'weekly' (52 points/yr)
+    // unlocks the right tab row; otherwise auto-detect quarterly (~4 points/yr)
+    // vs daily (~252 points/yr) from the point count, as before.
     let tfMap, tfKeys, defaultTf;
     if (cadence === 'monthly') {
         tfMap = { '1Y': 12, '3Y': 36, '5Y': 60, '10Y': 120, '20Y': 240, '30Y': 360, 'ALL': history.length };
         tfKeys = ['1Y', '3Y', '5Y', '10Y', '20Y', '30Y', 'ALL'];
+        defaultTf = 'ALL';
+    } else if (cadence === 'weekly') {
+        tfMap = { '1Y': 52, '3Y': 156, '5Y': 260, '10Y': 520, '20Y': 1040, 'ALL': history.length };
+        tfKeys = ['1Y', '3Y', '5Y', '10Y', '20Y', 'ALL'];
         defaultTf = 'ALL';
     } else if (history.length < 500) {
         tfMap = { '10Y': 40, '20Y': 80, '30Y': 120, 'ALL': history.length };
@@ -58,11 +62,12 @@ export default function MiniChart({ history, color = '#818cf8', gradientId = 'ch
         if (yr !== lastYear) { yearLabels.push({ x: toX(i), label: yr }); lastYear = yr; }
     }
 
-    // Y-axis ticks
+    // Y-axis ticks (fmt lets big-number series render compact labels like 350K)
+    const fmtTick = fmt || ((v) => (v >= 10 ? v.toFixed(1) : v.toFixed(2)));
     const yTicks = [];
     for (let i = 0; i <= 4; i++) {
         const val = min + (range * i) / 4;
-        yTicks.push({ y: toY(val), label: val >= 10 ? val.toFixed(1) : val.toFixed(2) });
+        yTicks.push({ y: toY(val), label: fmtTick(val) });
     }
 
     // Change over period
@@ -89,7 +94,7 @@ export default function MiniChart({ history, color = '#818cf8', gradientId = 'ch
                     fontSize: '0.6rem', fontFamily: "'JetBrains Mono', monospace",
                     color: change >= 0 ? 'var(--green)' : 'var(--red)', fontWeight: 700
                 }}>
-                    {change >= 0 ? '▲' : '▼'} {Math.abs(change).toFixed(2)}
+                    {change >= 0 ? '▲' : '▼'} {fmt ? fmt(Math.abs(change)) : Math.abs(change).toFixed(2)}
                 </span>
             </div>
             <div className="mini-chart" style={{ height: '180px' }}>

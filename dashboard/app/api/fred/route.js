@@ -6,6 +6,8 @@ import { fetchSheetLkg } from '../../../lib/sheetLkg';
 import { faultsFrom } from '../../../lib/faults';
 import { resolveLeg, buildCopperGold } from '../../../lib/copperGold';
 import { resolveSpEps, parseMultplEps, parseShillerCsv, toMonthlyHistory } from '../../../lib/spEps';
+import { resolveBankruptcies } from '../../../lib/bankruptcies';
+import bakedBankruptcies from '../../../lib/data/bankruptciesBaked.json';
 import { cnbcQuotes, cnbcHistory, goldApiSpot, polygonDaily, fredObservations, yahooChart } from '../../../lib/sources';
 
 // In Next 13.5 the route's default fetchCache is 'only-no-store', which ERRORS
@@ -264,7 +266,9 @@ function buildResponse(series, peRatio, now) {
 
     // ── Economic indicators ──
     const unrate3mo = unrate.length >= 3 ? unrate.slice(0, 3).reduce((s, v) => s + v.value, 0) / 3 : null;
-    const unrate12moLow = unrate.length > 0 ? Math.min(...unrate.map(u => u.value)) : null;
+    // 12-month low MUST slice: unrate now carries FULL history for the Horsemen
+    // chart, and a min over all of it would break the Sahm rule.
+    const unrate12moLow = unrate.length > 0 ? Math.min(...unrate.slice(0, 12).map(u => u.value)) : null;
     const sahmRule = unrate3mo !== null && unrate12moLow !== null ? unrate3mo - unrate12moLow : undefined;
 
     const sentimentCurrent = umcsent[0]?.value;
@@ -295,9 +299,23 @@ function buildResponse(series, peRatio, now) {
     const durableChange = durable3mo ? ((durableCurrent - durable3mo) / durable3mo) * 100 : undefined;
     const savingsCurrent = psavert[0]?.value;
 
+    // ── Four Horsemen (recession watch card) ──
+    // Claims + unemployment ride along from the already-fetched FRED series with
+    // full ascending histories; the yield-curve panel reuses `yieldCurve` above;
+    // bankruptcies (non-FRED) is resolved in GET() and overwrites its placeholder,
+    // exactly like copperGold.
+    const claimsFresh = withFreshness(icsa[0]?.value, dateOf(icsa), FRED_FRESHNESS.ICSA, now);
+    const unrateFresh = withFreshness(unrate[0]?.value, dateOf(unrate), FRED_FRESHNESS.UNRATE, now);
+    const horsemen = {
+        claims: { current: claimsFresh.value, asOf: claimsFresh.asOf, stale: claimsFresh.stale, staleDays: claimsFresh.staleDays, unavailable: claimsFresh.unavailable, history: [...icsa].reverse() },
+        unemployment: { current: unrateFresh.value, asOf: unrateFresh.asOf, stale: unrateFresh.stale, staleDays: unrateFresh.staleDays, unavailable: unrateFresh.unavailable, history: [...unrate].reverse() },
+        bankruptcies: { current: null, total: null, asOf: null, stale: false, staleDays: 0, unavailable: true, changePct: null, status: 'unknown', source: null, history: [], tried: [] },
+    };
+
     return {
         yieldCurve,
         profitMargin,
+        horsemen,
         peRatio,
         peRatioAsOf: now.toISOString(), // scraped live each cache cycle
         recessions: recessionPeriods,
@@ -328,9 +346,11 @@ function buildResponse(series, peRatio, now) {
 
 const FRED_REQUESTS = [
     [FRED_SERIES.YIELD_CURVE, 100000],
-    [FRED_SERIES.UNEMPLOYMENT, 15],
+    // UNRATE + ICSA fetch FULL history (not just the newest points) because the
+    // Four Horsemen card charts them; the Sahm/4-wk math below slices what it needs.
+    [FRED_SERIES.UNEMPLOYMENT, 100000],
     [FRED_SERIES.SENTIMENT, 5],
-    [FRED_SERIES.CLAIMS, 10],
+    [FRED_SERIES.CLAIMS, 100000],
     [FRED_SERIES.CREDIT_SPREAD, 252],
     [FRED_SERIES.REAL_YIELDS, 5],
     [FRED_SERIES.NFCI, 5],
@@ -439,6 +459,24 @@ export async function GET(request) {
             messages.push(`S&P EPS: ${eps.source || 'unavailable'}`);
         } catch (e) {
             messages.push(`S&P EPS failed: ${maskKey(e.message)}`);
+        }
+
+        // US Bankruptcies (Four Horsemen card) — AOUSC F-2, not a FRED series.
+        // Guarded like copperGold/spEps: live uscourts XLSX → baked history JSON
+        // (lib/data/bankruptciesBaked.json); a total failure leaves the placeholder
+        // (N/A panel) and can never break the FRED payload. Gates: bk_uscourts, bk_baked.
+        try {
+            const bk = await resolveBankruptcies({
+                now,
+                faults,
+                fetchBuffer: async (url) => Buffer.from(await (await proxyFetch(url, { revalidate: REVALIDATE_SECONDS, timeout: 7000 })).arrayBuffer()),
+                fetchText: (url) => cachedText(`uscourts-${url.slice(-24)}`, url, 7000),
+                baked: bakedBankruptcies,
+            });
+            responseData.horsemen.bankruptcies = bk;
+            messages.push(`Bankruptcies: ${bk.source || 'unavailable'}`);
+        } catch (e) {
+            messages.push(`Bankruptcies failed: ${maskKey(e.message)}`);
         }
 
         return {
