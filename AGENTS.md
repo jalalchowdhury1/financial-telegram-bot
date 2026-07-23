@@ -385,6 +385,25 @@ multi-candidate "favorites" lists; a fresher momentum window via the CLOB price-
   the full history would break it. (MiniChart kept its `weekly` cadence /
   `defaultTimeframe` / `fmt` props from the first iteration — unused by this card now
   but tested and harmless.)
+  - **Mobile (below 640px, via `matchMedia`; SSR/jsdom default to the wide variant):**
+    the overlay switches to `OVERLAY_DIMS.compact` — a narrower/TALLER SVG canvas
+    (720×800 vs 1200×430) with proportionally larger type, thicker strokes, `shortLabel`
+    series names, `LABEL_AT_COMPACT` staggering (pulls labels left, away from the
+    right-edge direction notes), fewer year ticks, and ≤700 points. Without this the
+    wide viewBox scales down to an unreadable ~135px-tall sliver on phones. The stat
+    chips are an EXPLICIT `minmax(0, 1fr)` grid (2×2 phone / 4-across desktop) — do not
+    "simplify" it back to `repeat(auto-fit, minmax(150px, 1fr))`: auto-fit's intrinsic
+    sizing let long chip content widen the whole card past the viewport.
+  - **Visual QA recipe (works for any dashboard component):** bundle the component
+    standalone with esbuild — `NODE_PATH=dashboard/node_modules npx esbuild harness.jsx
+    --bundle --jsx=automatic --loader:.js=jsx --define:process.env.NODE_ENV='"production"'`
+    (`--jsx=automatic` is required; Next injects the JSX runtime, so component files
+    never import React) — into an HTML shell that inlines `app/globals.css`, feed it a
+    downloaded production `/api/fred` JSON as the prop, and screenshot with headless
+    Chrome. Iterating label/annotation placement this way beats deploying to look.
+    GOTCHA: desktop headless Chrome clamps `--window-size` width to a ~500px minimum —
+    a 390-wide screenshot silently CROPS a 500px viewport and looks exactly like an
+    overflow bug; simulate phones by constraining a wrapper div to 390px instead.
   - **Bankruptcies source** (`lib/bankruptcies.js` + `lib/data/bankruptciesBaked.json`):
     the AOUSC publishes Table F-2 (business + nonbusiness filings, 12-month period ending
     each quarter) as a small XLSX at a predictable URL
