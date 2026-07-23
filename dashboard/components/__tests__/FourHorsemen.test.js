@@ -111,7 +111,7 @@ describe('FourHorsemen (overlay)', () => {
     });
 });
 
-describe('trendOf', () => {
+describe('trendOf (12-month fitted trend on raw history)', () => {
     test('rising series → up', () => {
         expect(trendOf(series(20, 30, (i) => 100 + i * 10))).toBe('up');
     });
@@ -124,8 +124,23 @@ describe('trendOf', () => {
     test('flat rate-like series → flat (absolute threshold)', () => {
         expect(trendOf(series(20, 30, () => 4.2))).toBe('flat');
     });
-    test('quarterly cadence still yields a verdict (window is 120d)', () => {
+    test('quarterly cadence still yields a verdict (fit uses ~5 points/yr)', () => {
         expect(trendOf(series(8, 91, (i) => 20000 + i * 500))).toBe('up');
+    });
+    test('a fit beats endpoint noise: rising year with one final down-tick is still up', () => {
+        const pts = series(52, 7, (i) => 200000 + i * 1000);
+        pts[pts.length - 1].value = pts[pts.length - 2].value - 3000; // noisy last print
+        expect(trendOf(pts)).toBe('up');
+    });
+    test('verdict is identical on thinned data (sampling cannot flip it)', () => {
+        const full = series(365, 1, (i) => 1 + i * 0.005);
+        const thinned = full.filter((_, i) => i % 7 === 0).concat([full[full.length - 1]]);
+        expect(trendOf(full)).toBe(trendOf(thinned));
+    });
+    test('only the last 12 months count: an old collapse cannot mask a fresh rise', () => {
+        // 2 years: first year high plateau, then a year of steady climbing off a low.
+        const pts = series(104, 7, (i) => (i < 52 ? 500000 : 200000 + (i - 52) * 2000));
+        expect(trendOf(pts)).toBe('up');
     });
     test('too little history → null', () => {
         expect(trendOf([{ date: '2026-01-01', value: 1 }])).toBeNull();
