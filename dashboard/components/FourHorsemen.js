@@ -1,18 +1,33 @@
 'use client';
+import { useState } from 'react';
 import ErrorBoundary from './ErrorBoundary';
-import MiniChart from './MiniChart';
 import Skeleton from './Skeleton';
 import { freshnessNote, formatAsOf } from '../lib/freshness';
 
 /**
- * 🐎 Four Horsemen — Recession Watch. Four classic recession tells on one
- * full-width card, each with its full history + NBER recession shading:
- *   1. Initial Jobless Claims (FRED ICSA, weekly)
- *   2. Unemployment Rate      (FRED UNRATE, monthly)
- *   3. 10Y−2Y Yield Spread    (FRED T10Y2Y, daily — reuses fred.yieldCurve)
- *   4. US Bankruptcies        (AOUSC F-2, quarterly 12-mo business filings)
- * Data all rides in on the /api/fred payload (`horsemen` block + yieldCurve).
+ * 🐎 Four Horsemen — Recession Watch. ONE overlay chart (like the classic
+ * "Four Horsemen of the Apocalypse" chart) with all four recession tells:
+ *   1. Initial Jobless Claims (FRED ICSA, weekly)      — red, top band
+ *   2. Unemployment Rate      (FRED UNRATE, monthly)   — green, upper-middle
+ *   3. 10Y−2Y Yield Spread    (FRED T10Y2Y, daily)     — blue, lower-middle
+ *   4. US Bankruptcies        (AOUSC F-2, quarterly)   — light gray, bottom
+ * The units are incomparable, so each series is min-max normalized into its
+ * own (slightly overlapping) vertical band — exactly how the original chart
+ * juxtaposes them — with NBER recession shading behind and an inline label
+ * pinned to each line. Data all rides on /api/fred (`horsemen` + `yieldCurve`).
  */
+
+// log scale for the strictly-positive count/rate series (the classic chart is
+// log — otherwise the 2020 claims spike flattens 40 years of structure);
+// linear for the spread, which crosses zero.
+const SERIES_STYLE = {
+    claims: { label: 'Initial Jobless Claims', color: '#ef4444', band: [0.02, 0.34], scale: 'log' },
+    unemployment: { label: 'Unemployment Rate', color: '#22c55e', band: [0.24, 0.58], scale: 'log' },
+    spread: { label: '10Y − 2Y Yield Spread', color: '#3b82f6', band: [0.46, 0.80], scale: 'linear' },
+    bankruptcies: { label: 'US Bankruptcies', color: '#e2e8f0', band: [0.68, 0.99], scale: 'log' },
+};
+// Stagger the inline labels horizontally so they don't stack (fraction of plot width).
+const LABEL_AT = { claims: 0.58, unemployment: 0.68, spread: 0.78, bankruptcies: 0.48 };
 
 const kFmt = (v) => {
     if (v == null || !Number.isFinite(v)) return 'N/A';
@@ -23,7 +38,7 @@ const kFmt = (v) => {
 };
 const pctFmt = (v) => (v == null || !Number.isFinite(v) ? 'N/A' : `${v.toFixed(2)}%`);
 
-// Latest-vs-≈1-year-ago percent change from an ascending history array.
+// Latest-vs-≈1-year-ago change from an ascending history array.
 function yoyPct(history, pointsPerYear) {
     if (!history || history.length <= pointsPerYear) return null;
     const now = history[history.length - 1]?.value;
@@ -32,49 +47,204 @@ function yoyPct(history, pointsPerYear) {
     return ((now - ago) / Math.abs(ago)) * 100;
 }
 
-function Panel({ title, tooltip, metric, color, gradientId, chart, headline, chip, warn }) {
-    const note = freshnessNote(metric);
-    const unavailable = metric?.value == null && metric?.current == null;
+const ms = (dateStr) => new Date(`${dateStr}T00:00:00Z`).getTime();
+
+/**
+ * Direction of a series over its most recent stretch: mean of the last ~90 days
+ * vs the 90 days before that. Count-like series (claims, bankruptcies) compare
+ * in percent; rate-like series (unemployment, spread — small % values) compare
+ * in absolute points. Returns 'up' | 'down' | 'flat' | null.
+ */
+export function trendOf(pts) {
+    if (!pts || pts.length < 2) return null;
+    const lastT = ms(pts[pts.length - 1].date);
+    const D = 120 * 86400000; // wide enough that quarterly series get a point per window
+    const recent = pts.filter((p) => ms(p.date) >= lastT - D);
+    const prior = pts.filter((p) => { const t = ms(p.date); return t >= lastT - 2 * D && t < lastT - D; });
+    if (!recent.length || !prior.length) return null;
+    const mean = (a) => a.reduce((s, p) => s + p.value, 0) / a.length;
+    const m1 = mean(prior), m2 = mean(recent);
+    const flat = Math.abs(m1) > 10 ? Math.abs(m2 - m1) / Math.abs(m1) < 0.02 : Math.abs(m2 - m1) < 0.08;
+    if (flat) return 'flat';
+    return m2 > m1 ? 'up' : 'down';
+}
+
+/** Slice to the window, then thin to ≤ maxPoints for a light polyline. */
+function windowed(history, cutoffMs, maxPoints = 1500) {
+    if (!history?.length) return [];
+    const inWin = history.filter((p) => ms(p.date) >= cutoffMs && p.value != null);
+    if (inWin.length <= maxPoints) return inWin;
+    const step = Math.ceil(inWin.length / maxPoints);
+    const out = inWin.filter((_, i) => i % step === 0);
+    if (out[out.length - 1] !== inWin[inWin.length - 1]) out.push(inWin[inWin.length - 1]);
+    return out;
+}
+
+function HorsemenOverlay({ series, recessions, timeframe }) {
+    const W = 1200, H = 430, padL = 14, padR = 14, padT = 12, padB = 26;
+    const plotW = W - padL - padR, plotH = H - padT - padB;
+
+    const nowMs = Date.now();
+    const CUTOFFS = {
+        ALL: ms('1979-01-01'), '20Y': nowMs - 20 * 365.25 * 86400000,
+        '10Y': nowMs - 10 * 365.25 * 86400000, '5Y': nowMs - 5 * 365.25 * 86400000,
+        '1Y': nowMs - 365.25 * 86400000,
+    };
+    const cutoff = CUTOFFS[timeframe] ?? CUTOFFS.ALL;
+
+    // Window + normalize each series into its own band.
+    const prepared = {};
+    let minX = Infinity, maxX = -Infinity;
+    for (const [key, s] of Object.entries(series)) {
+        const pts = windowed(s.history, cutoff);
+        if (pts.length >= 2) {
+            prepared[key] = pts;
+            minX = Math.min(minX, ms(pts[0].date));
+            maxX = Math.max(maxX, ms(pts[pts.length - 1].date));
+        }
+    }
+    if (!Number.isFinite(minX) || maxX <= minX) return null;
+
+    const toX = (t) => padL + ((t - minX) / (maxX - minX)) * plotW;
+    const lines = {};
+    const bandScale = {};
+    for (const [key, pts] of Object.entries(prepared)) {
+        const log = SERIES_STYLE[key].scale === 'log';
+        const tf = log ? (v) => Math.log10(Math.max(v, 1e-9)) : (v) => v;
+        const values = pts.map((p) => tf(p.value));
+        const lo = Math.min(...values), hi = Math.max(...values);
+        const range = hi - lo || 1;
+        const [bTop, bBot] = SERIES_STYLE[key].band;
+        const yTop = padT + bTop * plotH, yBot = padT + bBot * plotH;
+        const toY = (v) => yBot - ((tf(v) - lo) / range) * (yBot - yTop);
+        bandScale[key] = { toY, lo: pts.reduce((m, p) => Math.min(m, p.value), Infinity), hi: pts.reduce((m, p) => Math.max(m, p.value), -Infinity) };
+        lines[key] = pts.map((p) => `${toX(ms(p.date)).toFixed(1)},${toY(p.value).toFixed(1)}`).join(' ');
+    }
+
+    // Inline label anchored to its line at a staggered x position.
+    const labels = Object.entries(prepared).map(([key, pts]) => {
+        const targetT = minX + (maxX - minX) * LABEL_AT[key];
+        let nearest = pts[0];
+        for (const p of pts) { if (Math.abs(ms(p.date) - targetT) < Math.abs(ms(nearest.date) - targetT)) nearest = p; }
+        const x = toX(ms(nearest.date));
+        const y = bandScale[key].toY(nearest.value);
+        const text = SERIES_STYLE[key].label;
+        const w = text.length * 7.4 + 16;
+        // Keep the box inside the plot; nudge above or below the line.
+        const bx = Math.min(Math.max(x - w / 2, padL + 4), W - padR - w - 4);
+        const by = Math.max(padT + 4, Math.min(y - 30, H - padB - 22));
+        return { key, bx, by, w, text, color: SERIES_STYLE[key].color, lineX: x, lineY: y };
+    });
+
+    // Year gridlines/labels (at most ~10).
+    const years = [];
+    const y0 = new Date(minX).getUTCFullYear() + 1, y1 = new Date(maxX).getUTCFullYear();
+    const stepYears = Math.max(1, Math.ceil((y1 - y0) / 10));
+    for (let y = y0 + ((stepYears - (y0 % stepYears)) % stepYears); y <= y1; y += stepYears) {
+        years.push({ x: toX(Date.UTC(y, 0, 1)), label: String(y) });
+    }
+
+    const visibleRecessions = (recessions || []).filter((r) => ms(r.end) >= minX && ms(r.start) <= maxX);
+    const spreadZeroY = bandScale.spread && bandScale.spread.lo < 0 && bandScale.spread.hi > 0
+        ? bandScale.spread.toY(0) : null;
+
+    // Hand-annotated direction notes at each line's right end, like the original
+    // chart ("trending up" / "watch this line"). Claims is the earliest warning
+    // of the four, so a flat claims line still gets the "watch this line" nudge.
+    const trendNotes = Object.entries(prepared).map(([key, pts]) => {
+        const t = trendOf(pts);
+        if (!t) return null;
+        const text = t === 'up' ? '↗ trending up' : t === 'down' ? '↘ trending down'
+            : key === 'claims' ? '→ watch this line' : '→ flat';
+        const last = pts[pts.length - 1];
+        const x = toX(ms(last.date)) - 8;
+        // A rising line leaves free space ABOVE its endpoint; a falling one, BELOW.
+        // The spread oscillates tightly at its right end, so its note drops further.
+        const downOff = key === 'spread' ? 42 : 26;
+        const yRaw = bandScale[key].toY(last.value) + (t === 'up' ? -12 : t === 'down' ? downOff : -10);
+        const y = Math.max(padT + 12, Math.min(yRaw, H - padB - 6));
+        return { key, x, y, text, color: SERIES_STYLE[key].color };
+    }).filter(Boolean);
+
     return (
-        <div style={{ minWidth: 0 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '8px', marginBottom: '2px' }}>
-                <span className="tooltip-trigger" data-tooltip={`${tooltip}${note.suffix}`}
-                    style={{ fontSize: '0.72rem', fontWeight: 700, color, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                    {title}
+        <div style={{ width: '100%' }}>
+            <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
+                {/* Year gridlines */}
+                {years.map((yr, i) => (
+                    <g key={`yr-${i}`}>
+                        <line x1={yr.x} x2={yr.x} y1={padT} y2={H - padB} stroke="rgba(255,255,255,0.05)" strokeWidth="1" />
+                        <text x={yr.x} y={H - 8} fill="rgba(255,255,255,0.28)" fontSize="12" fontFamily="JetBrains Mono, monospace" textAnchor="middle">{yr.label}</text>
+                    </g>
+                ))}
+                {/* NBER recession bands */}
+                {visibleRecessions.map((rec, i) => {
+                    const x1 = Math.max(toX(ms(rec.start)), padL);
+                    const x2 = Math.min(toX(ms(rec.end)), W - padR);
+                    if (x2 <= x1) return null;
+                    return <rect key={`rec-${i}`} x={x1} y={padT} width={x2 - x1} height={plotH} fill="rgba(148,163,184,0.13)" rx="2" />;
+                })}
+                {/* Yield-spread zero (inversion) reference */}
+                {spreadZeroY != null && (
+                    <g>
+                        <line x1={padL} x2={W - padR} y1={spreadZeroY} y2={spreadZeroY} stroke="rgba(59,130,246,0.35)" strokeDasharray="5,4" strokeWidth="1" />
+                        <text x={padL + 4} y={spreadZeroY - 4} fill="rgba(59,130,246,0.55)" fontSize="10" fontFamily="JetBrains Mono, monospace" textAnchor="start">10Y−2Y = 0 (inversion)</text>
+                    </g>
+                )}
+                {/* The four lines */}
+                {Object.entries(lines).map(([key, pts]) => (
+                    <polyline key={key} points={pts} fill="none" stroke={SERIES_STYLE[key].color}
+                        strokeWidth={key === 'bankruptcies' ? 2.2 : 1.6} strokeLinejoin="round" strokeLinecap="round"
+                        opacity={key === 'spread' ? 0.9 : 0.95} />
+                ))}
+                {/* Direction notes at each line's right end */}
+                {trendNotes.map((n) => (
+                    <text key={`tn-${n.key}`} x={n.x} y={n.y} fill={n.color} fontSize="12" fontStyle="italic" fontWeight="600"
+                        fontFamily="Inter, sans-serif" textAnchor="end" opacity="0.9"
+                        transform={`rotate(-6 ${n.x} ${n.y})`}>{n.text}</text>
+                ))}
+                {/* Inline labels pinned to their lines */}
+                {labels.map((l) => (
+                    <g key={`lbl-${l.key}`}>
+                        <line x1={l.bx + l.w / 2} y1={l.by + 22} x2={l.lineX} y2={l.lineY} stroke={l.color} strokeWidth="1" opacity="0.5" />
+                        <rect x={l.bx} y={l.by} width={l.w} height={22} rx="4" fill="rgba(10,14,23,0.92)" stroke={l.color} strokeWidth="1.2" />
+                        <text x={l.bx + l.w / 2} y={l.by + 15} fill={l.color} fontSize="12.5" fontWeight="700" fontFamily="Inter, sans-serif" textAnchor="middle">{l.text}</text>
+                    </g>
+                ))}
+            </svg>
+        </div>
+    );
+}
+
+function StatChip({ color, label, value, chip, warn, metric }) {
+    const note = freshnessNote(metric);
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: '150px' }}>
+            <span className="tooltip-trigger" data-tooltip={`${label}${note.suffix}`}
+                style={{ fontSize: '0.64rem', fontWeight: 700, color, textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>
+                {label}
+            </span>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                <span style={{ fontSize: '1.05rem', fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: metric?.stale ? 'var(--orange)' : 'var(--text)' }}>
+                    {metric?.stale ? '🕐 ' : ''}{value}
                 </span>
-                {warn != null && (
-                    <span className={`badge ${warn.bad ? 'badge-red' : 'badge-green'}`} style={{ fontSize: '0.58rem', whiteSpace: 'nowrap' }}>{warn.label}</span>
+                {chip && (
+                    <span style={{ fontSize: '0.62rem', fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: chip.bad ? 'var(--red)' : 'var(--green)', whiteSpace: 'nowrap' }}>
+                        {chip.text}
+                    </span>
+                )}
+                {warn && (
+                    <span className={`badge ${warn.bad ? 'badge-red' : 'badge-green'}`} style={{ fontSize: '0.56rem', whiteSpace: 'nowrap' }}>{warn.label}</span>
                 )}
             </div>
-            {unavailable ? (
-                <div style={{ padding: '24px 0', color: 'var(--yellow)', fontFamily: "'JetBrains Mono', monospace", fontSize: '0.9rem' }}>
-                    N/A <span style={{ color: 'var(--text-muted)', fontSize: '0.68rem' }}>— source busy, try again shortly</span>
-                </div>
-            ) : (
-                <>
-                    <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px', marginBottom: '4px' }}>
-                        <span style={{ fontSize: '1.35rem', fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: metric?.stale ? 'var(--orange)' : 'var(--text)' }}>
-                            {metric?.stale ? '🕐 ' : ''}{headline}
-                        </span>
-                        {chip && (
-                            <span style={{ fontSize: '0.66rem', fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: chip.bad ? 'var(--red)' : 'var(--green)' }}>
-                                {chip.text}
-                            </span>
-                        )}
-                    </div>
-                    {metric?.stale && (
-                        <div style={{ color: 'var(--text-muted)', fontSize: '0.66rem', marginBottom: '4px' }}>
-                            Last data {formatAsOf(metric.asOf)} (stale)
-                        </div>
-                    )}
-                    {chart}
-                </>
+            {metric?.stale && (
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.6rem' }}>Last data {formatAsOf(metric.asOf)} (stale)</span>
             )}
         </div>
     );
 }
 
 export default function FourHorsemen({ fred, loading }) {
+    const [timeframe, setTimeframe] = useState('ALL');
     const recessions = fred?.recessions || [];
     const claims = fred?.horsemen?.claims;
     const unemployment = fred?.horsemen?.unemployment;
@@ -87,59 +257,59 @@ export default function FourHorsemen({ fred, loading }) {
         ? unemployment.history[unemployment.history.length - 1].value - unemployment.history[unemployment.history.length - 13].value
         : null;
 
-    const panels = !loading && fred && !fred.error ? [
+    const stats = !loading && fred && !fred.error ? [
         {
-            key: 'claims', title: 'Initial Jobless Claims', color: '#ef4444', gradientId: 'horseClaims',
-            tooltip: 'Weekly first-time unemployment filings. A sustained climb is the earliest of the four warnings.',
+            key: 'claims', color: SERIES_STYLE.claims.color, label: SERIES_STYLE.claims.label,
+            value: kFmt(claims?.current),
             metric: claims,
-            headline: kFmt(claims?.current),
             chip: claimsYoy != null ? { text: `${claimsYoy >= 0 ? '▲' : '▼'} ${Math.abs(claimsYoy).toFixed(1)}% vs 1y`, bad: claimsYoy > 0 } : null,
             warn: claimsYoy != null ? (claimsYoy > 10 ? { bad: true, label: 'Rising' } : { bad: false, label: 'Contained' }) : null,
-            chart: <MiniChart history={claims?.history} color="#ef4444" gradientId="horseClaims" recessions={recessions} cadence="weekly" defaultTimeframe="ALL" fmt={kFmt} />,
         },
         {
-            key: 'unemployment', title: 'Unemployment Rate', color: '#22c55e', gradientId: 'horseUnemp',
-            tooltip: 'U-3 unemployment rate. The Sahm rule triggers when its 3-month average rises 0.5pp off the 12-month low.',
+            key: 'unemployment', color: SERIES_STYLE.unemployment.color, label: SERIES_STYLE.unemployment.label,
+            value: pctFmt(unemployment?.current),
             metric: unemployment,
-            headline: pctFmt(unemployment?.current),
             chip: unempYoy != null ? { text: `${unempYoy >= 0 ? '▲' : '▼'} ${Math.abs(unempYoy).toFixed(1)}pp vs 1y`, bad: unempYoy > 0 } : null,
             warn: sahm != null ? (sahm >= 0.5 ? { bad: true, label: `Sahm ${sahm.toFixed(2)}` } : { bad: false, label: `Sahm ${sahm.toFixed(2)}` }) : null,
-            chart: <MiniChart history={unemployment?.history} color="#22c55e" gradientId="horseUnemp" recessions={recessions} cadence="monthly" defaultTimeframe="ALL" />,
         },
         {
-            key: 'spread', title: '10Y − 2Y Yield Spread', color: '#3b82f6', gradientId: 'horseSpread',
-            tooltip: 'The yield curve. Inversion (below zero) precedes recessions; the re-steepening back through zero is often the late-cycle tell.',
-            metric: { value: spread?.current, asOf: spread?.asOf, stale: spread?.stale, unavailable: spread?.current == null, current: spread?.current },
-            headline: spread?.current != null ? `${spread.current >= 0 ? '+' : ''}${spread.current.toFixed(2)}%` : 'N/A',
-            chip: spread?.current != null ? { text: spread.current >= 0 ? 'Positive' : 'Inverted', bad: spread.current < 0 } : null,
+            key: 'spread', color: SERIES_STYLE.spread.color, label: SERIES_STYLE.spread.label,
+            value: spread?.current != null ? `${spread.current >= 0 ? '+' : ''}${spread.current.toFixed(2)}%` : 'N/A',
+            metric: { value: spread?.current, asOf: spread?.asOf, stale: spread?.stale, unavailable: spread?.current == null },
+            chip: null,
             warn: spread?.current != null ? (spread.current < 0 ? { bad: true, label: 'Inverted' } : { bad: false, label: 'Normal' }) : null,
-            chart: <MiniChart history={spread?.history} color="#3b82f6" gradientId="horseSpread" showZero={true} recessions={recessions} defaultTimeframe="ALL" />,
         },
         {
-            key: 'bankruptcies', title: 'US Bankruptcies', color: '#e2e8f0', gradientId: 'horseBk',
-            tooltip: 'Business bankruptcy filings, 12-month total ending each quarter (Administrative Office of the U.S. Courts, Table F-2).',
-            metric: { value: bk?.current, asOf: bk?.asOf, stale: bk?.stale, unavailable: bk?.unavailable, current: bk?.current },
-            headline: kFmt(bk?.current),
+            key: 'bankruptcies', color: SERIES_STYLE.bankruptcies.color, label: SERIES_STYLE.bankruptcies.label,
+            value: kFmt(bk?.current),
+            metric: { value: bk?.current, asOf: bk?.asOf, stale: bk?.stale, unavailable: bk?.unavailable },
             chip: bk?.changePct != null ? { text: `${bk.changePct >= 0 ? '▲' : '▼'} ${Math.abs(bk.changePct).toFixed(1)}% YoY`, bad: bk.changePct > 0 } : null,
             warn: bk?.changePct != null ? (bk.changePct > 10 ? { bad: true, label: 'Rising' } : { bad: false, label: 'Contained' }) : null,
-            chart: <MiniChart history={bk?.history} color="#e2e8f0" gradientId="horseBk" recessions={recessions} fmt={kFmt} />,
         },
     ] : [];
 
-    const riding = panels.filter((p) => p.warn?.bad).length;
+    const riding = stats.filter((s) => s.warn?.bad).length;
+    const overlaySeries = {
+        claims: { history: claims?.history },
+        unemployment: { history: unemployment?.history },
+        spread: { history: spread?.history },
+        bankruptcies: { history: bk?.history },
+    };
+    const hasAnySeries = Object.values(overlaySeries).some((s) => s.history?.length >= 2);
+    const TFS = ['ALL', '20Y', '10Y', '5Y', '1Y'];
 
     return (
         <div className="card" style={{ gridColumn: '1 / -1', animationDelay: '0.5s' }}>
             <div className="card-header">
-                <h2><span className="tooltip-trigger" data-tooltip="Four classic recession tells on one chart wall: jobless claims, unemployment, the yield curve, and bankruptcies. Shaded bands are NBER recessions — note how all four turn together going into them.">🐎 Four Horsemen — Recession Watch</span></h2>
-                {!loading && panels.length > 0 && (
+                <h2><span className="tooltip-trigger" data-tooltip="Four classic recession tells overlaid on one chart, each on its own scale: jobless claims, unemployment, the yield curve, and bankruptcies. Shaded bands are NBER recessions — note how all four turn together going into them.">🐎 Four Horsemen — Recession Watch</span></h2>
+                {!loading && stats.length > 0 && (
                     <span className={`badge ${riding >= 3 ? 'badge-red' : riding >= 1 ? 'badge-yellow' : 'badge-green'}`}>
                         {riding} of 4 riding
                     </span>
                 )}
             </div>
             <ErrorBoundary>
-                {loading || !fred ? <Skeleton count={4} /> : panels.length === 0 ? (
+                {loading || !fred ? <Skeleton count={4} /> : stats.length === 0 || !hasAnySeries ? (
                     <div className="hero-price-section">
                         <div className="hero-price" style={{ fontSize: '2.2rem', color: 'var(--yellow)' }}>N/A</div>
                         <div className="hero-change" style={{ color: 'var(--text-muted)', fontSize: '0.72rem', marginTop: '4px' }}>
@@ -147,9 +317,29 @@ export default function FourHorsemen({ fred, loading }) {
                         </div>
                     </div>
                 ) : (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '18px 28px' }}>
-                        {panels.map((p) => <Panel key={p.key} {...p} />)}
-                    </div>
+                    <>
+                        {/* Current values + status, doubling as the chart legend */}
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px 28px', marginBottom: '10px', justifyContent: 'space-between' }}>
+                            {stats.map((s) => <StatChip key={s.key} {...s} />)}
+                        </div>
+                        {/* Shared timeframe tabs */}
+                        <div style={{ display: 'flex', gap: '3px', marginBottom: '4px' }}>
+                            {TFS.map((tf) => (
+                                <button key={tf} onClick={() => setTimeframe(tf)}
+                                    style={{
+                                        padding: '2px 9px', borderRadius: '5px', border: 'none', cursor: 'pointer',
+                                        fontSize: '0.62rem', fontWeight: 700, fontFamily: "'JetBrains Mono', monospace",
+                                        background: tf === timeframe ? 'rgba(148,163,184,0.25)' : 'rgba(255,255,255,0.05)',
+                                        color: tf === timeframe ? 'var(--text)' : 'var(--text-muted)',
+                                        transition: 'all 0.2s ease',
+                                    }}>{tf}</button>
+                            ))}
+                        </div>
+                        <HorsemenOverlay series={overlaySeries} recessions={recessions} timeframe={timeframe} />
+                        <div style={{ color: 'var(--text-muted)', fontSize: '0.62rem', marginTop: '6px' }}>
+                            Each line on its own scale (normalized) — read the shape, not the height. Shaded bands = NBER recessions. Bankruptcies = 12-month business filings (AOUSC), data from 2001.
+                        </div>
+                    </>
                 )}
             </ErrorBoundary>
         </div>

@@ -360,17 +360,28 @@ multi-candidate "favorites" lists; a fresher momentum window via the CLOB price-
   UI thresholds (hedgelab convention): percentile/rank ≤10 green (cheap), ≥70 orange,
   ≥90 red (panic); negative VRP orange (realized above implied = stress).
 - **Four Horsemen — Recession Watch** (`FourHorsemen.js`, full-width card after the
-  Economic Indicators grid, added 2026-07-23) — four classic recession tells, each drawn
-  with its full history + NBER recession shading (`fred.recessions`): **Initial Jobless
-  Claims** (ICSA, weekly), **Unemployment Rate** (UNRATE, monthly), **10Y−2Y spread**
-  (reuses `fred.yieldCurve` — NOT duplicated in the payload), and **US Bankruptcies**
-  (quarterly, non-FRED — see below). All data rides on the `/api/fred` payload's
-  `horsemen` block; no new endpoint. Because the card needs full histories, the ICSA and
-  UNRATE `FRED_REQUESTS` limits are `100000` — which is WHY `unrate12moLow` (Sahm rule)
-  must stay `unrate.slice(0, 12)`: a min over the full history would break it. Charts are
-  `MiniChart` with explicit cadences (`weekly` added for ICSA; bankruptcies auto-detects
-  quarterly); per-panel warn badges: claims YoY > +10%, Sahm ≥ 0.5, spread < 0,
-  bankruptcies YoY > +10%; header badge counts "N of 4 riding".
+  Economic Indicators grid, added 2026-07-23) — the classic "Four Horsemen of the
+  Apocalypse" chart as ONE overlay (owner explicitly wanted the overlay, not small
+  multiples): **Initial Jobless Claims** (ICSA, weekly, red), **Unemployment Rate**
+  (UNRATE, monthly, green), **10Y−2Y spread** (reuses `fred.yieldCurve` — NOT duplicated
+  in the payload, blue), and **US Bankruptcies** (quarterly, non-FRED — see below, light
+  gray), with NBER recession shading (`fred.recessions`) behind all four. The units are
+  incomparable, so each series is min-max normalized into its own (slightly overlapping)
+  vertical band — **log-scaled for the three positive series** (linear flattens 40 years
+  under the 2020 claims spike), linear for the spread (crosses zero; dashed
+  inversion line at 0). Custom SVG in the component (not MiniChart): shared timeframe
+  tabs (ALL=1979→ / 20Y / 10Y / 5Y / 1Y), series thinned to ≤1500 points, inline boxed
+  labels pinned to each line, and hand-annotation-style direction notes at each line's
+  right end (`trendOf`: mean of last 120d vs prior 120d — 120 so quarterly data still
+  resolves; flat claims reads "watch this line"). Stat chips above the chart double as
+  the legend and carry the numbers/YoY/status; warn badges: claims YoY > +10%,
+  Sahm ≥ 0.5, spread < 0, bankruptcies YoY > +10%; header badge counts "N of 4 riding".
+  All data rides on the `/api/fred` payload's `horsemen` block; no new endpoint. Because
+  the card needs full histories, the ICSA and UNRATE `FRED_REQUESTS` limits are `100000`
+  — which is WHY `unrate12moLow` (Sahm rule) must stay `unrate.slice(0, 12)`: a min over
+  the full history would break it. (MiniChart kept its `weekly` cadence /
+  `defaultTimeframe` / `fmt` props from the first iteration — unused by this card now
+  but tested and harmless.)
   - **Bankruptcies source** (`lib/bankruptcies.js` + `lib/data/bankruptciesBaked.json`):
     the AOUSC publishes Table F-2 (business + nonbusiness filings, 12-month period ending
     each quarter) as a small XLSX at a predictable URL
