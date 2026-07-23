@@ -52,23 +52,39 @@ function yoyPct(history, pointsPerYear) {
 const ms = (dateStr) => new Date(`${dateStr}T00:00:00Z`).getTime();
 
 /**
- * Direction of a series over its most recent stretch: mean of the last ~90 days
- * vs the 90 days before that. Count-like series (claims, bankruptcies) compare
- * in percent; rate-like series (unemployment, spread — small % values) compare
- * in absolute points. Returns 'up' | 'down' | 'flat' | null.
+ * Direction of a series: the sign of a least-squares trendline fitted to the
+ * LAST 12 MONTHS of the RAW history (anchored to the series' own newest point,
+ * so a stale series is judged on its own data). A fitted slope uses every
+ * point in the year — robust to endpoint noise, works identically for daily,
+ * weekly, monthly and quarterly cadences, and (unlike the old
+ * two-window-means version, which read the THINNED chart data) never changes
+ * with the zoom tab or screen size. "Flat" when the fitted change over a year
+ * is small: < 2% of the series mean for count-like series (claims,
+ * bankruptcies), < 0.08 points for rate-like ones (unemployment, spread).
+ * Returns 'up' | 'down' | 'flat' | null.
  */
 export function trendOf(pts) {
     if (!pts || pts.length < 2) return null;
     const lastT = ms(pts[pts.length - 1].date);
-    const D = 120 * 86400000; // wide enough that quarterly series get a point per window
-    const recent = pts.filter((p) => ms(p.date) >= lastT - D);
-    const prior = pts.filter((p) => { const t = ms(p.date); return t >= lastT - 2 * D && t < lastT - D; });
-    if (!recent.length || !prior.length) return null;
-    const mean = (a) => a.reduce((s, p) => s + p.value, 0) / a.length;
-    const m1 = mean(prior), m2 = mean(recent);
-    const flat = Math.abs(m1) > 10 ? Math.abs(m2 - m1) / Math.abs(m1) < 0.02 : Math.abs(m2 - m1) < 0.08;
+    const YEAR_MS = 365.25 * 86400000;
+    const w = pts.filter((p) => ms(p.date) >= lastT - YEAR_MS && p.value != null);
+    if (w.length < 2) return null;
+
+    // OLS slope, x in years so the slope reads as change-per-year.
+    const xs = w.map((p) => (ms(p.date) - lastT) / YEAR_MS);
+    const ys = w.map((p) => p.value);
+    const mx = xs.reduce((a, b) => a + b, 0) / xs.length;
+    const my = ys.reduce((a, b) => a + b, 0) / ys.length;
+    let num = 0, den = 0;
+    for (let i = 0; i < xs.length; i++) { num += (xs[i] - mx) * (ys[i] - my); den += (xs[i] - mx) ** 2; }
+    if (den === 0) return null;
+    const slopePerYear = num / den;
+
+    const flat = Math.abs(my) > 10
+        ? Math.abs(slopePerYear) / Math.abs(my) < 0.02
+        : Math.abs(slopePerYear) < 0.08;
     if (flat) return 'flat';
-    return m2 > m1 ? 'up' : 'down';
+    return slopePerYear > 0 ? 'up' : 'down';
 }
 
 /** Slice to the window, then thin to ≤ maxPoints for a light polyline. */
@@ -90,7 +106,7 @@ const OVERLAY_DIMS = {
     compact: { W: 720, H: 800, padL: 10, padR: 10, padT: 16, padB: 42, fYear: 20, fLabel: 20, labelH: 32, fNote: 19, fZero: 15, stroke: 2.6, strokeBk: 3.4, maxPoints: 700, maxYears: 5, noteUp: -20, noteDown: 40, noteDownSpread: 64 },
 };
 
-function HorsemenOverlay({ series, recessions, timeframe, compact = false }) {
+function HorsemenOverlay({ series, recessions, timeframe, trends, compact = false }) {
     const D = compact ? OVERLAY_DIMS.compact : OVERLAY_DIMS.wide;
     const { W, H, padL, padR, padT, padB } = D;
     const plotW = W - padL - padR, plotH = H - padT - padB;
@@ -161,13 +177,16 @@ function HorsemenOverlay({ series, recessions, timeframe, compact = false }) {
         ? bandScale.spread.toY(0) : null;
 
     // Hand-annotated direction notes at each line's right end, like the original
-    // chart ("trending up" / "watch this line"). Claims is the earliest warning
-    // of the four, so a flat claims line still gets the "watch this line" nudge.
+    // chart ("trending up" / "watch this line"). Verdicts arrive via the
+    // `trends` prop — computed ONCE from the raw histories, so they can't drift
+    // with the zoom tab or the thinned chart data; only the text position is
+    // derived from the drawn line. Claims is the earliest warning of the four,
+    // so a flat claims line still gets the "watch this line" nudge.
     const trendNotes = Object.entries(prepared).map(([key, pts]) => {
-        const t = trendOf(pts);
+        const t = trends?.[key];
         if (!t) return null;
-        const text = t === 'up' ? '↗ trending up' : t === 'down' ? '↘ trending down'
-            : key === 'claims' ? '→ watch this line' : '→ flat';
+        const text = t === 'up' ? '↗ trending up · 1y' : t === 'down' ? '↘ trending down · 1y'
+            : key === 'claims' ? '→ watch this line' : '→ flat · 1y';
         const last = pts[pts.length - 1];
         const x = toX(ms(last.date)) - 8;
         // A rising line leaves free space ABOVE its endpoint; a falling one, BELOW.
@@ -322,6 +341,14 @@ export default function FourHorsemen({ fred, loading }) {
         spread: { history: spread?.history },
         bankruptcies: { history: bk?.history },
     };
+    // Direction verdicts from the RAW histories (12-month fitted trend), never
+    // from the thinned/zoomed chart data — see trendOf.
+    const trends = {
+        claims: trendOf(claims?.history),
+        unemployment: trendOf(unemployment?.history),
+        spread: trendOf(spread?.history),
+        bankruptcies: trendOf(bk?.history),
+    };
     const hasAnySeries = Object.values(overlaySeries).some((s) => s.history?.length >= 2);
     const TFS = ['ALL', '20Y', '10Y', '5Y', '1Y'];
 
@@ -364,9 +391,9 @@ export default function FourHorsemen({ fred, loading }) {
                                     }}>{tf}</button>
                             ))}
                         </div>
-                        <HorsemenOverlay series={overlaySeries} recessions={recessions} timeframe={timeframe} compact={isNarrow} />
+                        <HorsemenOverlay series={overlaySeries} recessions={recessions} timeframe={timeframe} trends={trends} compact={isNarrow} />
                         <div style={{ color: 'var(--text-muted)', fontSize: '0.62rem', marginTop: '6px' }}>
-                            Each line on its own scale (normalized) — read the shape, not the height. Shaded bands = NBER recessions. Bankruptcies = 12-month business filings (AOUSC), data from 2001.
+                            Each line on its own scale (normalized) — read the shape, not the height. Shaded bands = NBER recessions. Direction notes = 12-month fitted trend. Bankruptcies = 12-month business filings (AOUSC), data from 2001.
                         </div>
                     </>
                 )}

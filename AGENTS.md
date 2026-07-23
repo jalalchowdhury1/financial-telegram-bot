@@ -372,8 +372,11 @@ multi-candidate "favorites" lists; a fresher momentum window via the CLOB price-
   inversion line at 0). Custom SVG in the component (not MiniChart): shared timeframe
   tabs (ALL=1979→ / 20Y / 10Y / 5Y / 1Y), series thinned to ≤1500 points, inline boxed
   labels pinned to each line, and hand-annotation-style direction notes at each line's
-  right end (`trendOf`: mean of last 120d vs prior 120d — 120 so quarterly data still
-  resolves; flat claims reads "watch this line"). Stat chips above the chart double as
+  right end (`trendOf`: sign of a least-squares trendline over the last 12 months of the
+  RAW history, computed once in the parent and passed into the overlay — NEVER from the
+  thinned/zoomed chart data, which once made the verdict flip between zoom tabs and
+  devices; "flat" = fitted yearly change < 2% of the mean (count series) or < 0.08 pts
+  (rate series); labels state the window ("· 1y"); flat claims reads "watch this line"). Stat chips above the chart double as
   the legend and carry the numbers/YoY/status; warn badges: claims YoY > +10%,
   Sahm ≥ 0.5, spread < 0, bankruptcies YoY > +10%; header badge counts "N of 4 riding".
   All data rides on the `/api/fred` payload's `horsemen` block; no new endpoint. Because
