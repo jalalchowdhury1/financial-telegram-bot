@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import ErrorBoundary from './ErrorBoundary';
 import Skeleton from './Skeleton';
 import { freshnessNote, formatAsOf } from '../lib/freshness';
@@ -21,13 +21,15 @@ import { freshnessNote, formatAsOf } from '../lib/freshness';
 // log — otherwise the 2020 claims spike flattens 40 years of structure);
 // linear for the spread, which crosses zero.
 const SERIES_STYLE = {
-    claims: { label: 'Initial Jobless Claims', color: '#ef4444', band: [0.02, 0.34], scale: 'log' },
-    unemployment: { label: 'Unemployment Rate', color: '#22c55e', band: [0.24, 0.58], scale: 'log' },
-    spread: { label: '10Y − 2Y Yield Spread', color: '#3b82f6', band: [0.46, 0.80], scale: 'linear' },
-    bankruptcies: { label: 'US Bankruptcies', color: '#e2e8f0', band: [0.68, 0.99], scale: 'log' },
+    claims: { label: 'Initial Jobless Claims', shortLabel: 'Jobless Claims', color: '#ef4444', band: [0.02, 0.34], scale: 'log' },
+    unemployment: { label: 'Unemployment Rate', shortLabel: 'Unemployment', color: '#22c55e', band: [0.24, 0.58], scale: 'log' },
+    spread: { label: '10Y − 2Y Yield Spread', shortLabel: '10Y−2Y Spread', color: '#3b82f6', band: [0.46, 0.80], scale: 'linear' },
+    bankruptcies: { label: 'US Bankruptcies', shortLabel: 'Bankruptcies', color: '#e2e8f0', band: [0.68, 0.99], scale: 'log' },
 };
-// Stagger the inline labels horizontally so they don't stack (fraction of plot width).
+// Stagger the inline labels horizontally so they don't stack (fraction of plot
+// width). Compact pulls them left, away from the right-edge direction notes.
 const LABEL_AT = { claims: 0.58, unemployment: 0.68, spread: 0.78, bankruptcies: 0.48 };
+const LABEL_AT_COMPACT = { claims: 0.42, unemployment: 0.55, spread: 0.6, bankruptcies: 0.32 };
 
 const kFmt = (v) => {
     if (v == null || !Number.isFinite(v)) return 'N/A';
@@ -80,8 +82,17 @@ function windowed(history, cutoffMs, maxPoints = 1500) {
     return out;
 }
 
-function HorsemenOverlay({ series, recessions, timeframe }) {
-    const W = 1200, H = 430, padL = 14, padR = 14, padT = 12, padB = 26;
+// Phones scale the SVG down ~3×, so the compact variant uses a narrower/taller
+// canvas with proportionally larger type and thicker strokes — otherwise the
+// chart renders as an unreadable 135px-tall sliver.
+const OVERLAY_DIMS = {
+    wide: { W: 1200, H: 430, padL: 14, padR: 14, padT: 12, padB: 26, fYear: 12, fLabel: 12.5, labelH: 22, fNote: 12, fZero: 10, stroke: 1.6, strokeBk: 2.2, maxPoints: 1500, maxYears: 10, noteUp: -12, noteDown: 26, noteDownSpread: 42 },
+    compact: { W: 720, H: 800, padL: 10, padR: 10, padT: 16, padB: 42, fYear: 20, fLabel: 20, labelH: 32, fNote: 19, fZero: 15, stroke: 2.6, strokeBk: 3.4, maxPoints: 700, maxYears: 5, noteUp: -20, noteDown: 40, noteDownSpread: 64 },
+};
+
+function HorsemenOverlay({ series, recessions, timeframe, compact = false }) {
+    const D = compact ? OVERLAY_DIMS.compact : OVERLAY_DIMS.wide;
+    const { W, H, padL, padR, padT, padB } = D;
     const plotW = W - padL - padR, plotH = H - padT - padB;
 
     const nowMs = Date.now();
@@ -96,7 +107,7 @@ function HorsemenOverlay({ series, recessions, timeframe }) {
     const prepared = {};
     let minX = Infinity, maxX = -Infinity;
     for (const [key, s] of Object.entries(series)) {
-        const pts = windowed(s.history, cutoff);
+        const pts = windowed(s.history, cutoff, D.maxPoints);
         if (pts.length >= 2) {
             prepared[key] = pts;
             minX = Math.min(minX, ms(pts[0].date));
@@ -122,24 +133,25 @@ function HorsemenOverlay({ series, recessions, timeframe }) {
     }
 
     // Inline label anchored to its line at a staggered x position.
+    const labelAt = compact ? LABEL_AT_COMPACT : LABEL_AT;
     const labels = Object.entries(prepared).map(([key, pts]) => {
-        const targetT = minX + (maxX - minX) * LABEL_AT[key];
+        const targetT = minX + (maxX - minX) * labelAt[key];
         let nearest = pts[0];
         for (const p of pts) { if (Math.abs(ms(p.date) - targetT) < Math.abs(ms(nearest.date) - targetT)) nearest = p; }
         const x = toX(ms(nearest.date));
         const y = bandScale[key].toY(nearest.value);
-        const text = SERIES_STYLE[key].label;
-        const w = text.length * 7.4 + 16;
+        const text = compact ? SERIES_STYLE[key].shortLabel : SERIES_STYLE[key].label;
+        const w = text.length * D.fLabel * 0.6 + 16;
         // Keep the box inside the plot; nudge above or below the line.
         const bx = Math.min(Math.max(x - w / 2, padL + 4), W - padR - w - 4);
-        const by = Math.max(padT + 4, Math.min(y - 30, H - padB - 22));
+        const by = Math.max(padT + 4, Math.min(y - D.labelH - 8, H - padB - D.labelH));
         return { key, bx, by, w, text, color: SERIES_STYLE[key].color, lineX: x, lineY: y };
     });
 
     // Year gridlines/labels (at most ~10).
     const years = [];
     const y0 = new Date(minX).getUTCFullYear() + 1, y1 = new Date(maxX).getUTCFullYear();
-    const stepYears = Math.max(1, Math.ceil((y1 - y0) / 10));
+    const stepYears = Math.max(1, Math.ceil((y1 - y0) / D.maxYears));
     for (let y = y0 + ((stepYears - (y0 % stepYears)) % stepYears); y <= y1; y += stepYears) {
         years.push({ x: toX(Date.UTC(y, 0, 1)), label: String(y) });
     }
@@ -160,9 +172,9 @@ function HorsemenOverlay({ series, recessions, timeframe }) {
         const x = toX(ms(last.date)) - 8;
         // A rising line leaves free space ABOVE its endpoint; a falling one, BELOW.
         // The spread oscillates tightly at its right end, so its note drops further.
-        const downOff = key === 'spread' ? 42 : 26;
-        const yRaw = bandScale[key].toY(last.value) + (t === 'up' ? -12 : t === 'down' ? downOff : -10);
-        const y = Math.max(padT + 12, Math.min(yRaw, H - padB - 6));
+        const downOff = key === 'spread' ? D.noteDownSpread : D.noteDown;
+        const yRaw = bandScale[key].toY(last.value) + (t === 'up' ? D.noteUp : t === 'down' ? downOff : D.noteUp + 2);
+        const y = Math.max(padT + D.fNote, Math.min(yRaw, H - padB - 6));
         return { key, x, y, text, color: SERIES_STYLE[key].color };
     }).filter(Boolean);
 
@@ -173,7 +185,7 @@ function HorsemenOverlay({ series, recessions, timeframe }) {
                 {years.map((yr, i) => (
                     <g key={`yr-${i}`}>
                         <line x1={yr.x} x2={yr.x} y1={padT} y2={H - padB} stroke="rgba(255,255,255,0.05)" strokeWidth="1" />
-                        <text x={yr.x} y={H - 8} fill="rgba(255,255,255,0.28)" fontSize="12" fontFamily="JetBrains Mono, monospace" textAnchor="middle">{yr.label}</text>
+                        <text x={yr.x} y={H - 10} fill="rgba(255,255,255,0.28)" fontSize={D.fYear} fontFamily="JetBrains Mono, monospace" textAnchor="middle">{yr.label}</text>
                     </g>
                 ))}
                 {/* NBER recession bands */}
@@ -187,27 +199,27 @@ function HorsemenOverlay({ series, recessions, timeframe }) {
                 {spreadZeroY != null && (
                     <g>
                         <line x1={padL} x2={W - padR} y1={spreadZeroY} y2={spreadZeroY} stroke="rgba(59,130,246,0.35)" strokeDasharray="5,4" strokeWidth="1" />
-                        <text x={padL + 4} y={spreadZeroY - 4} fill="rgba(59,130,246,0.55)" fontSize="10" fontFamily="JetBrains Mono, monospace" textAnchor="start">10Y−2Y = 0 (inversion)</text>
+                        <text x={padL + 4} y={spreadZeroY - 4} fill="rgba(59,130,246,0.55)" fontSize={D.fZero} fontFamily="JetBrains Mono, monospace" textAnchor="start">10Y−2Y = 0 (inversion)</text>
                     </g>
                 )}
                 {/* The four lines */}
                 {Object.entries(lines).map(([key, pts]) => (
                     <polyline key={key} points={pts} fill="none" stroke={SERIES_STYLE[key].color}
-                        strokeWidth={key === 'bankruptcies' ? 2.2 : 1.6} strokeLinejoin="round" strokeLinecap="round"
+                        strokeWidth={key === 'bankruptcies' ? D.strokeBk : D.stroke} strokeLinejoin="round" strokeLinecap="round"
                         opacity={key === 'spread' ? 0.9 : 0.95} />
                 ))}
                 {/* Direction notes at each line's right end */}
                 {trendNotes.map((n) => (
-                    <text key={`tn-${n.key}`} x={n.x} y={n.y} fill={n.color} fontSize="12" fontStyle="italic" fontWeight="600"
+                    <text key={`tn-${n.key}`} x={n.x} y={n.y} fill={n.color} fontSize={D.fNote} fontStyle="italic" fontWeight="600"
                         fontFamily="Inter, sans-serif" textAnchor="end" opacity="0.9"
                         transform={`rotate(-6 ${n.x} ${n.y})`}>{n.text}</text>
                 ))}
                 {/* Inline labels pinned to their lines */}
                 {labels.map((l) => (
                     <g key={`lbl-${l.key}`}>
-                        <line x1={l.bx + l.w / 2} y1={l.by + 22} x2={l.lineX} y2={l.lineY} stroke={l.color} strokeWidth="1" opacity="0.5" />
-                        <rect x={l.bx} y={l.by} width={l.w} height={22} rx="4" fill="rgba(10,14,23,0.92)" stroke={l.color} strokeWidth="1.2" />
-                        <text x={l.bx + l.w / 2} y={l.by + 15} fill={l.color} fontSize="12.5" fontWeight="700" fontFamily="Inter, sans-serif" textAnchor="middle">{l.text}</text>
+                        <line x1={l.bx + l.w / 2} y1={l.by + D.labelH} x2={l.lineX} y2={l.lineY} stroke={l.color} strokeWidth="1" opacity="0.5" />
+                        <rect x={l.bx} y={l.by} width={l.w} height={D.labelH} rx="4" fill="rgba(10,14,23,0.92)" stroke={l.color} strokeWidth="1.2" />
+                        <text x={l.bx + l.w / 2} y={l.by + D.labelH * 0.68} fill={l.color} fontSize={D.fLabel} fontWeight="700" fontFamily="Inter, sans-serif" textAnchor="middle">{l.text}</text>
                     </g>
                 ))}
             </svg>
@@ -215,15 +227,29 @@ function HorsemenOverlay({ series, recessions, timeframe }) {
     );
 }
 
+/** True below 640px. Defaults to false (desktop) so SSR/jsdom render wide. */
+function useIsNarrow() {
+    const [narrow, setNarrow] = useState(false);
+    useEffect(() => {
+        if (typeof window === 'undefined' || !window.matchMedia) return undefined;
+        const mq = window.matchMedia('(max-width: 640px)');
+        const update = () => setNarrow(mq.matches);
+        update();
+        if (mq.addEventListener) { mq.addEventListener('change', update); return () => mq.removeEventListener('change', update); }
+        mq.addListener(update); return () => mq.removeListener(update);
+    }, []);
+    return narrow;
+}
+
 function StatChip({ color, label, value, chip, warn, metric }) {
     const note = freshnessNote(metric);
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: '150px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
             <span className="tooltip-trigger" data-tooltip={`${label}${note.suffix}`}
-                style={{ fontSize: '0.64rem', fontWeight: 700, color, textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>
+                style={{ fontSize: '0.64rem', fontWeight: 700, color, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                 {label}
             </span>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' }}>
                 <span style={{ fontSize: '1.05rem', fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: metric?.stale ? 'var(--orange)' : 'var(--text)' }}>
                     {metric?.stale ? '🕐 ' : ''}{value}
                 </span>
@@ -245,6 +271,7 @@ function StatChip({ color, label, value, chip, warn, metric }) {
 
 export default function FourHorsemen({ fred, loading }) {
     const [timeframe, setTimeframe] = useState('ALL');
+    const isNarrow = useIsNarrow();
     const recessions = fred?.recessions || [];
     const claims = fred?.horsemen?.claims;
     const unemployment = fred?.horsemen?.unemployment;
@@ -318,8 +345,10 @@ export default function FourHorsemen({ fred, loading }) {
                     </div>
                 ) : (
                     <>
-                        {/* Current values + status, doubling as the chart legend */}
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px 28px', marginBottom: '10px', justifyContent: 'space-between' }}>
+                        {/* Current values + status, doubling as the chart legend.
+                            Explicit shrinkable tracks (minmax(0,1fr)) — auto-fit's intrinsic
+                            sizing let long chip content widen the whole card on phones. */}
+                        <div style={{ display: 'grid', gridTemplateColumns: isNarrow ? 'repeat(2, minmax(0, 1fr))' : 'repeat(4, minmax(0, 1fr))', gap: '10px 20px', marginBottom: '10px' }}>
                             {stats.map((s) => <StatChip key={s.key} {...s} />)}
                         </div>
                         {/* Shared timeframe tabs */}
@@ -335,7 +364,7 @@ export default function FourHorsemen({ fred, loading }) {
                                     }}>{tf}</button>
                             ))}
                         </div>
-                        <HorsemenOverlay series={overlaySeries} recessions={recessions} timeframe={timeframe} />
+                        <HorsemenOverlay series={overlaySeries} recessions={recessions} timeframe={timeframe} compact={isNarrow} />
                         <div style={{ color: 'var(--text-muted)', fontSize: '0.62rem', marginTop: '6px' }}>
                             Each line on its own scale (normalized) — read the shape, not the height. Shaded bands = NBER recessions. Bankruptcies = 12-month business filings (AOUSC), data from 2001.
                         </div>
