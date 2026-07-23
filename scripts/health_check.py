@@ -70,6 +70,20 @@ KNOWN_DISCONTINUED = {
 }
 
 
+def fred_metrics_for_na_check(fred):
+    """Collect every dashboard metric the N/A sweep should inspect: the indicator
+    tiles, the bull-checklist metrics, and the Four Horsemen series. Horsemen
+    entries use `current` rather than `value` (they carry chart history), so they
+    are mapped into the common {value, unavailable, staleDays, asOf} shape —
+    an unexpectedly N/A or overdue horseman (e.g. the uscourts bankruptcies feed
+    drifting after a file-naming change) then warns like any other indicator."""
+    metrics = {**(fred.get("indicators") or {}), **(fred.get("checklist") or {})}
+    for hk, hv in (fred.get("horsemen") or {}).items():
+        if isinstance(hv, dict):
+            metrics[f"horsemen_{hk}"] = {**hv, "value": hv.get("current")}
+    return metrics
+
+
 def check_indicators_na(metrics):
     """Flag dashboard metrics that are N/A (fetch failed) or genuinely overdue
     (stale > 3 days past their deadline). Normal reporting lag (a value that is present
@@ -317,9 +331,9 @@ def run_all_checks(generated_at):
         if name == "fred" and status == 200:
             try:
                 fred = json.loads(body) or {}
-                # Sweep BOTH the indicator tiles and the bull-checklist metrics; the
-                # checklist (m2/durable/savings/...) was previously not inspected.
-                metrics = {**(fred.get("indicators") or {}), **(fred.get("checklist") or {})}
+                # Sweep the indicator tiles, bull-checklist metrics AND the Four
+                # Horsemen series (see fred_metrics_for_na_check).
+                metrics = fred_metrics_for_na_check(fred)
             except Exception:
                 metrics = None
             findings.append(check_indicators_na(metrics))
