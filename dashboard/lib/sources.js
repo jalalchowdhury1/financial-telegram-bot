@@ -249,6 +249,56 @@ export async function fredObservations(seriesId, apiKey, { limit = 400, revalida
     return obs;
 }
 
+// ── Four Horsemen fallback providers (see lib/horsemen.js for the cascades) ──
+// These are ORIGIN sources for the FRED series they back up: BLS publishes the
+// unemployment rate, Treasury publishes the yield curve. They return RAW text /
+// JSON; parsing lives in lib/horsemen.js so it stays pure and unit-testable.
+
+/**
+ * One calendar year of the US Treasury daily yield curve, as CSV.
+ * Keyless and unthrottled, but strictly one year per request — callers that want
+ * a multi-year history fetch several years and concatenate.
+ */
+export async function treasuryYieldCurveCsv(year, { revalidate = 1800, timeout = 8000 } = {}) {
+    const url = `https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/${year}/all`
+        + `?type=daily_treasury_yield_curve&field_tdr_date_value=${year}&page&_format=csv`;
+    return withRetry(() => fetchText(url, { revalidate, timeout }), { tries: 2 });
+}
+
+/**
+ * BLS Public Data API v2 timeseries.
+ *
+ * GOTCHA: the keyless tier caps a request at 10 years and, when you ask for
+ * more, silently returns the OLDEST 10 years of the span rather than erroring —
+ * so a naive startYear=1948 request yields 1948-1957 and the series looks dead.
+ * Callers must anchor the span to the CURRENT year. A free registered key
+ * (BLS_API_KEY) raises the daily quota from 25 to 500 requests but not the span.
+ */
+// revalidate defaults to 0: Next never caches a non-GET fetch, and passing a
+// revalidate on a POST is a runtime complaint in some Next versions.
+export async function blsSeries(seriesId, { startYear, endYear, key = '', revalidate = 0, timeout = 8000 } = {}) {
+    const body = { seriesid: [seriesId], startyear: String(startYear), endyear: String(endYear) };
+    if (key) body.registrationkey = key;
+    return withRetry(() => fetchJson('https://api.bls.gov/publicAPI/v2/timeseries/data/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        revalidate,
+        timeout,
+    }), { tries: 2 });
+}
+
+/**
+ * FRED's keyless graph CSV for a series (full history, no api key, no quota).
+ * Same servers as the JSON API, so it does NOT survive a FRED outage — but it
+ * DOES survive a revoked/exhausted/misconfigured api key, which is the far more
+ * likely failure. Hence its position as the last tier in every cascade.
+ */
+export async function fredGraphCsv(seriesId, { revalidate = 1800, timeout = 8000 } = {}) {
+    const url = `https://fred.stlouisfed.org/graph/fredgraph.csv?id=${encodeURIComponent(seriesId)}`;
+    return withRetry(() => fetchText(url, { revalidate, timeout }), { tries: 2 });
+}
+
 /** Build a {value,pct} daily-change object from current + previous close. */
 export function dailyChange(current, prevClose) {
     const value = current - prevClose;

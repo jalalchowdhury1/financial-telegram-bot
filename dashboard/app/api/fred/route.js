@@ -1,14 +1,15 @@
 import { FRED_SERIES, FRED_FRESHNESS, EXTERNAL_URLS } from '../../../lib/constants';
 import { fetchJson, proxyFetch } from '../../../lib/fetcher';
 import { withFreshness } from '../../../lib/freshness';
-import { serve } from '../../../lib/store';
+import { serve, loadLastGood } from '../../../lib/store';
 import { fetchSheetLkg } from '../../../lib/sheetLkg';
 import { faultsFrom } from '../../../lib/faults';
 import { resolveLeg, buildCopperGold } from '../../../lib/copperGold';
 import { resolveSpEps, parseMultplEps, parseShillerCsv, toMonthlyHistory } from '../../../lib/spEps';
 import { resolveBankruptcies } from '../../../lib/bankruptcies';
 import bakedBankruptcies from '../../../lib/data/bankruptciesBaked.json';
-import { cnbcQuotes, cnbcHistory, goldApiSpot, polygonDaily, fredObservations, yahooChart } from '../../../lib/sources';
+import { cnbcQuotes, cnbcHistory, goldApiSpot, polygonDaily, fredObservations, yahooChart, treasuryYieldCurveCsv, blsSeries, fredGraphCsv } from '../../../lib/sources';
+import { resolveHorseman, buildHorseman, needsRepair, isUpgrade, mergeHorsemenOverBase, parseTreasuryCsv, parseBlsSeries, parseFredGraphCsv } from '../../../lib/horsemen';
 
 // In Next 13.5 the route's default fetchCache is 'only-no-store', which ERRORS
 // on cached fetches. 'default-cache' permits caching (and never errors), so the
@@ -219,6 +220,112 @@ async function fetchCopperGold(now, { fredKey, polyKey, faults }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Four Horsemen — independent-provider cascades for the three FRED-fed lines.
+//
+// These fire ONLY when the primary FRED series came back empty, so a healthy
+// load makes no extra network calls at all. See lib/horsemen.js for the full
+// rationale; the short version is that claims/unemployment/spread previously had
+// a single provider behind a single api key, on the one card that drives real
+// decisions. BLS and Treasury are the ORIGIN publishers of two of the three, so
+// they survive a total FRED outage, not merely a bad key.
+//
+// Fault gates: hm_treasury, hm_bls, hm_fredcsv (and `fred` kills the primary).
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Treasury serves one calendar year per request. Two years is enough to draw a
+// real line and fit the 12-month trend note; more requests aren't worth it in a
+// path that only runs during an outage.
+const TREASURY_YEARS_BACK = 1;
+const BLS_YEARS = 10; // the keyless span cap — see blsSeries' gotcha note
+
+async function treasurySpreadHistory(now) {
+    const thisYear = now.getUTCFullYear();
+    const years = [];
+    for (let y = thisYear - TREASURY_YEARS_BACK; y <= thisYear; y++) years.push(y);
+    // Early January the current year has almost no rows yet, and a year can 404;
+    // tolerate per-year failures and use whatever came back.
+    const csvs = await Promise.all(
+        years.map((y) => treasuryYieldCurveCsv(y).catch((e) => {
+            console.warn(`[Treasury ${y}] ${e.message}`);
+            return '';
+        })),
+    );
+    const merged = csvs.filter(Boolean).flatMap((csv) => parseTreasuryCsv(csv));
+    if (!merged.length) throw new Error('Treasury: no rows across requested years');
+    return merged.sort((a, b) => (a.date < b.date ? -1 : 1));
+}
+
+function spreadSources(now) {
+    return [
+        { name: 'treasury', freshnessDays: FRED_FRESHNESS.T10Y2Y, fetch: () => treasurySpreadHistory(now) },
+        { name: 'fredcsv', freshnessDays: FRED_FRESHNESS.T10Y2Y, fetch: async () => parseFredGraphCsv(await fredGraphCsv('T10Y2Y')) },
+    ];
+}
+
+function unemploymentSources(now, blsKey) {
+    const endYear = now.getUTCFullYear();
+    return [
+        { name: 'bls', freshnessDays: FRED_FRESHNESS.UNRATE, fetch: async () =>
+            parseBlsSeries(await blsSeries('LNS14000000', { startYear: endYear - (BLS_YEARS - 1), endYear, key: blsKey })) },
+        { name: 'fredcsv', freshnessDays: FRED_FRESHNESS.UNRATE, fetch: async () => parseFredGraphCsv(await fredGraphCsv('UNRATE')) },
+    ];
+}
+
+function claimsSources() {
+    // No non-FRED provider publishes seasonally-adjusted weekly claims in a form
+    // light enough for a serverless route (DOL's ETA r539 extract is a 13MB
+    // state-level NSA file, which would not equal ICSA anyway). The keyless FRED
+    // CSV still buys independence from the api key; below that the /tmp and
+    // Sheet last-known-good tiers carry the line.
+    return [
+        { name: 'fredcsv', freshnessDays: FRED_FRESHNESS.ICSA, fetch: async () => parseFredGraphCsv(await fredGraphCsv('ICSA')) },
+    ];
+}
+
+/**
+ * Repair any horseman the primary FRED fetch left missing, empty or stale.
+ * Mutates `responseData` in place and appends a message per attempt.
+ *
+ * Never throws, and never regresses: a fallback is only adopted when it is
+ * genuinely NEWER than what the primary produced (see isUpgrade), so a lagging
+ * BLS print can't overwrite a fresh FRED one. A failed repair leaves the line
+ * exactly as the primary left it, which the daily health check then flags.
+ */
+async function repairHorsemen(responseData, { now, faults, blsKey, messages }) {
+    const jobs = [];
+    const repaired = {};   // label -> the live payload we produced, for the merge below
+
+    const repair = (label, sources, incumbent, apply) => {
+        if (!needsRepair(incumbent)) return;
+        jobs.push(resolveHorseman(sources, faults, now).then((r) => {
+            const adopted = r.source && isUpgrade(r, incumbent);
+            if (adopted) repaired[label] = apply(r);
+            messages.push(`Horseman ${label}: ${r.source ? (adopted ? r.source : `${r.source} (not newer, kept primary)`) : 'unavailable'} [${r.tried.join(' ')}]`);
+        }));
+    };
+
+    repair('claims', claimsSources(), responseData.horsemen.claims,
+        (r) => (responseData.horsemen.claims = buildHorseman(r, FRED_FRESHNESS.ICSA, now)));
+
+    repair('unemployment', unemploymentSources(now, blsKey), responseData.horsemen.unemployment,
+        (r) => (responseData.horsemen.unemployment = buildHorseman(r, FRED_FRESHNESS.UNRATE, now)));
+
+    // The spread powers BOTH the horsemen overlay and the standalone Yield Curve
+    // card, which read `yieldCurve` — so it is repaired there, not under horsemen.
+    repair('spread', spreadSources(now), responseData.yieldCurve, (r) => {
+        const h = buildHorseman(r, FRED_FRESHNESS.T10Y2Y, now);
+        responseData.yieldCurve = {
+            current: h.current, asOf: h.asOf, stale: h.stale, date: h.asOf,
+            history: h.history, source: h.source,
+        };
+        return responseData.yieldCurve;
+    });
+
+    if (jobs.length) await Promise.all(jobs);
+    return repaired;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Build the dashboard payload, stamping each metric with asOf + staleness.
 // A value older than its series' freshness deadline (or missing) becomes null,
 // so the UI shows N/A — never a misleadingly old number.
@@ -380,15 +487,22 @@ export async function GET(request) {
     // buildResponse error, etc.) is caught -> last-known-good -> safe default.
     // The route can never 500 or return an empty body.
     return serve('fred', async () => {
-        if (!apiKey) throw new Error('FRED_API_KEY not configured');
         const now = new Date();
+        // A missing key used to throw here. It no longer does: "FRED_API_KEY not
+        // configured" (lost env var on a redeploy, revoked key) is precisely the
+        // outage the Four Horsemen fallbacks exist for, and Treasury/BLS need no
+        // key at all. We continue with every series marked failed, let the
+        // horsemen resolve independently, and merge over the cache at the end.
+        const keyMissing = !apiKey;
 
         // Fetch in small batches with a short stagger to be polite to FRED on a
         // cold cache. Cache hits resolve instantly.
         const BATCH_SIZE = 4;
         const STAGGER_MS = 150;
         const settled = [];
-        for (let i = 0; i < FRED_REQUESTS.length; i += BATCH_SIZE) {
+        // No key → don't fire 17 doomed requests; mark them all failed and go
+        // straight to the independent providers.
+        for (let i = 0; !keyMissing && i < FRED_REQUESTS.length; i += BATCH_SIZE) {
             const batch = FRED_REQUESTS.slice(i, i + BATCH_SIZE).map(([id, limit]) =>
                 fetchSeries(id, liveKey, limit)
                     .then(value => ({ id, status: 'fulfilled', value }))
@@ -400,12 +514,15 @@ export async function GET(request) {
 
         const series = {};
         const failed = [];
+        for (const [id] of FRED_REQUESTS) series[id] = [];
         for (const s of settled) {
             series[s.id] = s.status === 'fulfilled' && s.value?.length ? s.value : [];
             if (s.status === 'rejected' || !s.value?.length) failed.push(s.id);
         }
+        if (keyMissing) failed.push(...FRED_REQUESTS.map(([id]) => id));
 
         const messages = [`Loaded ${FRED_REQUESTS.length - failed.length}/${FRED_REQUESTS.length} series`];
+        if (keyMissing) messages.push('FRED_API_KEY not configured — using independent Horsemen sources only');
         for (const s of settled) {
             if (s.status === 'rejected') messages.push(`Series failed: ${maskKey(s.reason?.message || s.id)}`);
         }
@@ -435,6 +552,18 @@ export async function GET(request) {
         }
 
         const responseData = buildResponse(series, peRatio, now);
+
+        // Four Horsemen: back the three FRED-fed lines with independent providers
+        // (Treasury / BLS / keyless FRED CSV) whenever the primary left one empty
+        // or stale. No-ops — and costs nothing — on a healthy load. Guarded so a
+        // fallback provider being down can never break the FRED payload.
+        let repairedHorsemen = {};
+        try {
+            repairedHorsemen = await repairHorsemen(responseData, { now, faults, blsKey: process.env.BLS_API_KEY || '', messages }) || {};
+        } catch (e) {
+            messages.push(`Horsemen repair failed: ${maskKey(e.message)}`);
+        }
+        const horsemenLive = Object.keys(repairedHorsemen).length;
 
         // Copper/Gold ratio comes from price sources (not FRED series). Guarded so it
         // can never break the FRED data: a failure just leaves it unavailable (which
@@ -479,7 +608,7 @@ export async function GET(request) {
             messages.push(`Bankruptcies failed: ${maskKey(e.message)}`);
         }
 
-        return {
+        const live = {
             ...responseData,
             _meta: {
                 source: 'St. Louis Fed',
@@ -487,12 +616,39 @@ export async function GET(request) {
                 fetchedAt: now.toISOString(),
                 messages,
                 loadedCount: FRED_REQUESTS.length - failed.length,
+                horsemenLive,
             },
         };
+
+        // TOTAL FRED OUTAGE, but the Four Horsemen resolved from Treasury/BLS.
+        // Serving `live` as-is would blank every other card; serving the cache
+        // as-is would throw away the live recession data. So overlay the live
+        // lines onto the best cached base we have (/tmp last-good, else the
+        // Google-Sheet tier) and serve the union. Marked stale + never stored.
+        if (failed.length === FRED_REQUESTS.length && horsemenLive > 0) {
+            const base = loadLastGood('fred', 7 * 864e5)?.data ?? await fetchSheetLkg(now).catch(() => null);
+            const merged = mergeHorsemenOverBase(base, {
+                horsemen: Object.fromEntries(Object.entries(repairedHorsemen).filter(([k]) => k !== 'spread')),
+                yieldCurve: repairedHorsemen.spread || null,
+                messages: messages.filter((m) => m.startsWith('Horseman') || m.startsWith('FRED_API_KEY')),
+            });
+            if (merged) {
+                merged._meta = { ...merged._meta, horsemenLive, loadedCount: 0, fetchedAt: now.toISOString() };
+                return merged;
+            }
+        }
+
+        return live;
     }, {
-        // Good only if at least one series loaded; a total outage (0/18) falls
-        // through to last-known-good instead of N/A everywhere.
-        isGood: (p) => p && p._meta && p._meta.loadedCount > 0,
+        // Servable when at least one series loaded, OR when live Horsemen were
+        // merged over the cache above (loadedCount 0 but real recession data).
+        // A total outage with no live Horsemen still falls through to the
+        // last-known-good tiers rather than showing N/A everywhere.
+        isGood: (p) => p && p._meta && (p._meta.loadedCount > 0 || p._meta.horsemenLive > 0),
+        // But only a genuinely live FRED payload becomes the new last-known-good.
+        // A merged payload is mostly cached content; storing it would refresh
+        // `savedAt` and let stale data survive past the 7-day window forever.
+        shouldStore: (p) => p && p._meta && p._meta.loadedCount > 0,
         fallback: { error: 'FRED temporarily unavailable' },
         // Last resort (only if live FRED AND the /tmp last-good are both gone): the
         // financial-dashboard-history sheet's `dashboard_lkg` helper tab. See lib/sheetLkg.js.

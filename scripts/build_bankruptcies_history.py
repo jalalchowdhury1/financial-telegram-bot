@@ -17,6 +17,7 @@ Run it with uv (deps declared inline): `uv run scripts/build_bankruptcies_histor
 Downloads are cached in $TMPDIR/f2cache so re-runs are fast and polite.
 Only needed when extending the baked history; the dashboard's live tier keeps
 the newest quarter fresh on its own."""
+import datetime
 import io
 import json
 import os
@@ -35,7 +36,29 @@ OUT = os.path.join(os.path.dirname(__file__), "..", "dashboard", "lib", "data", 
 CACHE_DIR = os.path.join(tempfile.gettempdir(), "f2cache")
 
 
-def quarters(start_year=2001, end=(2026, 3, 31)):
+def latest_quarter_end(today=None):
+    """The most recent quarter end that is already published.
+
+    AOUSC posts a quarter's F-2 about 4-6 weeks after the quarter closes, so we
+    stop one quarter short of "now" — asking for an unpublished quarter just
+    yields a 404 and a pointless retry loop.
+    """
+    today = today or datetime.date.today()
+    ends = [(3, 31), (6, 30), (9, 30), (12, 31)]
+    candidates = [
+        (y, m, d)
+        for y in range(today.year - 1, today.year + 1)
+        for (m, d) in ends
+        if (datetime.date(y, m, d) + datetime.timedelta(days=45)) <= today
+    ]
+    return max(candidates)
+
+
+def quarters(start_year=2001, end=None):
+    """Every quarter end from `start_year` through `end` (default: the newest
+    published quarter, computed from today — NOT a hardcoded date, which would
+    silently stop extending the baked history as time passed)."""
+    end = end or latest_quarter_end()
     q = [(3, 31), (6, 30), (9, 30), (12, 31)]
     for y in range(start_year, end[0] + 1):
         for m, d in q:
@@ -198,10 +221,38 @@ def main():
             print(f"{date} ERROR {e}", file=sys.stderr)
         time.sleep(2)
     out.sort(key=lambda x: x["date"])
+
+    # NEVER shrink the baked history. This file is the bankruptcies panel's
+    # permanent floor — if uscourts is down or reshuffles its pages, a run can
+    # come back with few or zero quarters, and blindly writing that would
+    # destroy years of good data that no live tier can rebuild. Refuse instead;
+    # a non-zero exit makes the scheduled job fail loudly rather than silently
+    # gutting the chart.
+    existing = []
+    if os.path.exists(OUT):
+        try:
+            with open(OUT) as f:
+                existing = json.load(f)
+        except Exception as e:
+            print(f"WARN: could not read existing bake ({e}); treating as empty", file=sys.stderr)
+
+    if len(out) < len(existing):
+        print(
+            f"REFUSING TO WRITE: new bake has {len(out)} quarters vs {len(existing)} "
+            f"existing. uscourts is probably degraded — keeping the old file.",
+            file=sys.stderr,
+        )
+        return 1
+
+    if out == existing:
+        print(f"no change ({len(out)} quarters)")
+        return 0
+
     with open(OUT, "w") as f:
         json.dump(out, f, indent=1)
-    print(f"wrote {len(out)} quarters -> {OUT}")
+    print(f"wrote {len(out)} quarters -> {OUT} (was {len(existing)})")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

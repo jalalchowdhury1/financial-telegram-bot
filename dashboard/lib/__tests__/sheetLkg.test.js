@@ -1,4 +1,4 @@
-import { parseLkgCsv, reconstructFred } from '../sheetLkg';
+import { parseLkgCsv, reconstructFred, parsePackedHistory } from '../sheetLkg';
 
 const NOW = new Date('2026-06-21T18:00:00Z');
 
@@ -97,5 +97,91 @@ describe('reconstructFred', () => {
     test('returns null when there are no usable metrics', () => {
         expect(reconstructFred({}, NOW)).toBeNull();
         expect(reconstructFred({ updated_at: '2026-06-21T10:00:00Z' }, NOW)).toBeNull();
+    });
+});
+
+// ─── Four Horsemen in the last-resort tier (added 2026-07-25) ───────────────
+// Regression guard: before this, reconstructFred emitted no `horsemen` key and
+// no history, so the deepest fallback restored every card EXCEPT the
+// recession-watch one, which rendered "N/A — Unavailable".
+describe('reconstructFred — Four Horsemen', () => {
+    const csv = [
+        'key,value',
+        'updated_at,2026-07-25T02:00:00Z',
+        'yieldCurve.current,0.36',
+        'yieldCurve.asOf,2026-07-24',
+        'yieldCurve.history,2026-07-17:0.30|2026-07-24:0.36',
+        'horsemen.claims.value,187000',
+        'horsemen.claims.asOf,2026-07-18',
+        'horsemen.claims.history,2026-07-11:190000|2026-07-18:187000',
+        'horsemen.unemployment.value,4.2',
+        'horsemen.unemployment.asOf,2026-06-01',
+        'horsemen.unemployment.history,2026-05-01:4.1|2026-06-01:4.2',
+        'horsemen.bankruptcies.value,25960',
+        'horsemen.bankruptcies.asOf,2026-03-31',
+        'horsemen.bankruptcies.total,591850',
+        'horsemen.bankruptcies.changePct,11.37',
+        'horsemen.bankruptcies.status,rising',
+        'horsemen.bankruptcies.history,2025-03-31:23310|2026-03-31:25960',
+    ].join('\n');
+
+    const out = () => reconstructFred(parseLkgCsv(csv), new Date('2026-07-25T12:00:00Z'));
+
+    test('restores all four lines with enough history to draw the chart', () => {
+        const p = out();
+        expect(p.horsemen.claims.current).toBe(187000);
+        expect(p.horsemen.unemployment.current).toBe(4.2);
+        expect(p.horsemen.bankruptcies.current).toBe(25960);
+        expect(p.yieldCurve.current).toBe(0.36);
+        // >= 2 points each is what the card's hasAnySeries check requires.
+        for (const h of [p.horsemen.claims, p.horsemen.unemployment, p.horsemen.bankruptcies, p.yieldCurve]) {
+            expect(h.history.length).toBeGreaterThanOrEqual(2);
+        }
+    });
+
+    test('history is ascending, matching the live payload contract', () => {
+        const h = out().horsemen.claims.history;
+        expect(h).toEqual([
+            { date: '2026-07-11', value: 190000 },
+            { date: '2026-07-18', value: 187000 },
+        ]);
+    });
+
+    test('carries the bankruptcies extras the stat chip reads', () => {
+        const bk = out().horsemen.bankruptcies;
+        expect(bk).toMatchObject({ total: 591850, changePct: 11.37, status: 'rising' });
+    });
+
+    test('every restored line is flagged stale so the health check still alerts', () => {
+        const p = out();
+        expect(p.horsemen.claims.stale).toBe(true);
+        expect(p.horsemen.claims.staleDays).toBeGreaterThan(3);
+        expect(p._meta.hasErrors).toBe(true);
+    });
+
+    test('a tab written by the OLD scraper (no horsemen keys) still parses', () => {
+        const legacy = parseLkgCsv('key,value\nyieldCurve.current,0.36\npeRatio,28.1');
+        const p = reconstructFred(legacy, new Date('2026-07-25T12:00:00Z'));
+        expect(p).not.toBeNull();
+        expect(p.horsemen).toEqual({});
+        expect(p.yieldCurve.current).toBe(0.36);
+    });
+
+    test('a horseman present as history only still yields a current value', () => {
+        const m = parseLkgCsv('key,value\nhorsemen.claims.history,2026-07-11:190000|2026-07-18:187000');
+        const p = reconstructFred(m, new Date('2026-07-25T12:00:00Z'));
+        expect(p.horsemen.claims.current).toBe(187000);
+        expect(p.horsemen.claims.asOf).toBe('2026-07-18');
+    });
+});
+
+describe('parsePackedHistory', () => {
+    test('skips malformed segments rather than guessing', () => {
+        expect(parsePackedHistory('2026-07-18:187000|garbage|2026-07-11:notanumber|:5'))
+            .toEqual([{ date: '2026-07-18', value: 187000 }]);
+    });
+    test('tolerates empty/undefined input', () => {
+        expect(parsePackedHistory('')).toEqual([]);
+        expect(parsePackedHistory(undefined)).toEqual([]);
     });
 });

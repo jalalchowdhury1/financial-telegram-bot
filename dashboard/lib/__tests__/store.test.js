@@ -79,3 +79,36 @@ describe('serve() lastResort (Google-Sheet fallback)', () => {
         expect(body.error).toBe('FRED temporarily unavailable');
     });
 });
+
+// A payload can be servable without being worth STORING — /api/fred builds one
+// when live FRED is dead but the Four Horsemen resolved from Treasury/BLS. It is
+// mostly cached content, so storing it would refresh `savedAt` on stale data and
+// let it live past the 7-day window indefinitely.
+describe('serve — shouldStore separate from isGood', () => {
+    test('a servable-but-not-storable payload is returned and NOT cached', async () => {
+        const key = `test-nostore-${Date.now()}`;
+        const payload = { v: 1, _meta: { loadedCount: 0, horsemenLive: 3 } };
+        const res = await serve(key, async () => payload, {
+            isGood: (p) => p._meta.loadedCount > 0 || p._meta.horsemenLive > 0,
+            shouldStore: (p) => p._meta.loadedCount > 0,
+        });
+        expect((await res.json()).v).toBe(1);
+        expect(loadLastGood(key)).toBeNull();   // never written
+    });
+
+    test('a fully live payload IS cached', async () => {
+        const key = `test-store-${Date.now()}`;
+        const payload = { v: 2, _meta: { loadedCount: 17, horsemenLive: 0 } };
+        await serve(key, async () => payload, {
+            isGood: (p) => p._meta.loadedCount > 0 || p._meta.horsemenLive > 0,
+            shouldStore: (p) => p._meta.loadedCount > 0,
+        });
+        expect(loadLastGood(key).data.v).toBe(2);
+    });
+
+    test('shouldStore defaults to isGood when not supplied (back-compat)', async () => {
+        const key = `test-default-${Date.now()}`;
+        await serve(key, async () => ({ v: 3 }), { isGood: () => true });
+        expect(loadLastGood(key).data.v).toBe(3);
+    });
+});
