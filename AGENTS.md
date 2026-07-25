@@ -441,12 +441,28 @@ multi-candidate "favorites" lists; a fresher momentum window via the CLOB price-
     - **spread** `T10Y2Y` → **US Treasury** daily yield-curve CSV (keyless; ONE calendar
       year per request, so we fetch the current + prior year) → **FRED keyless graph CSV**
     - **unemployment** `UNRATE` → **BLS API v2** `LNS14000000` (keyless) → FRED graph CSV
-    - **claims** `ICSA` → FRED graph CSV (no other publisher offers seasonally-adjusted
-      weekly claims in a serverless-friendly form; DOL's ETA r539 extract is a 13MB
-      state-level **NSA** file that would not equal ICSA anyway)
-    The `fredgraph.csv` tier shares FRED's servers but NOT its api key, so it survives the
-    likeliest FRED failure (key revoked / quota burned / env var lost on a redeploy).
-    Deliberately last. Live-verified 2026-07-25 that both tier-2s reproduce FRED EXACTLY:
+    - **claims** `ICSA` → FRED graph CSV (but see the phantom-tier note below). **CLAIMS
+      STILL HAS ONLY ONE LIVE PUBLISHER — a known, accepted limit.** Nobody else publishes
+      seasonally-adjusted weekly claims in a serverless-friendly form. DOL's ETA
+      `oui.doleta.gov/unemploy/csv/ar539.csv` is the ORIGIN, but it is a 13MB **state-major**
+      file (it does honor `Range` — 206 — but the newest national week is scattered across
+      53 jurisdiction blocks, so a range fetch can't isolate it) and it is **NSA**. NSA is
+      not a drop-in for SA here: it swings ±30% seasonally, so charting it on the same line
+      would manufacture false recession signals — stale-but-correct SA beats
+      fresh-but-incomparable NSA. DBnomics is out too: its FRED mirror is **404 dead**
+      (re-verified 2026-07-25) with no DOL provider. Claims' real protection is therefore the
+      PERSISTENCE layers, not a second publisher — `/tmp` last-known-good plus the
+      twice-daily `dashboard_lkg` snapshot (which now carries 5y of claims history), served
+      frozen and honestly flagged stale.
+    **`fredgraph.csv` IS A PHANTOM TIER — do not count it as redundancy.** The intent was
+    that it shares FRED's servers but not its api key, so it would survive a revoked key. In
+    a local `next dev` it works (3107 pts). **On Vercel it errors** (`fredcsv:err`,
+    prod-verified 2026-07-25 via `?_fail=fred`), and plain `curl` fails from a residential
+    connection too (`HTTP/2 INTERNAL_ERROR`, then hangs). `fred.stlouisfed.org`'s WEB paths
+    (`/graph/fredgraph.csv`, `/data/<ID>.txt`) gate on something browser-like; only the keyed
+    `api.stlouisfed.org` is reliable from a server. Kept as a harmless best-effort last
+    attempt (one failed request in an already-degraded path), but the real redundancy is
+    Treasury and BLS above it. Live-verified 2026-07-25 that both tier-2s reproduce FRED EXACTLY:
     Treasury 4.69 − 4.33 = **0.36** = `T10Y2Y`; BLS June 2026 = **4.2%** = `UNRATE`.
     - **Costs nothing on the happy path** — `needsRepair()` only fires a cascade when the
       primary series is empty, `unavailable`, or already past its staleness deadline. That
