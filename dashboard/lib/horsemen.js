@@ -19,10 +19,20 @@
  *                     keyless graph CSV
  *   CLAIMS          : FRED ICSA → FRED keyless graph CSV
  *
- * The keyless `fredgraph.csv` tier shares FRED's servers but NOT its api key, so
- * it survives the likeliest FRED failure mode (key revoked, quota burned, key
- * env var lost on a redeploy) even though it won't survive a full FRED outage.
- * It is deliberately last.
+ * PHANTOM TIER WARNING: the keyless `fredgraph.csv` was meant to survive a revoked
+ * api key (it shares FRED's servers but not its key). It works in local `next dev`
+ * but ERRORS on Vercel (prod-verified 2026-07-25 via ?_fail=fred), and plain curl
+ * fails from a residential connection too — `fred.stlouisfed.org`'s WEB paths gate
+ * on something browser-like, unlike the keyed `api.stlouisfed.org`. Kept as a
+ * harmless best-effort last attempt, but do NOT count it as redundancy: the real
+ * backups are Treasury and BLS.
+ *
+ * CLAIMS THEREFORE HAS ONLY ONE LIVE PUBLISHER — a known, accepted limit. No one
+ * else publishes seasonally-adjusted weekly claims in a serverless-friendly form,
+ * and DOL's NSA state-major extract is not a substitute (it swings ±30% seasonally,
+ * so charting it on the same line would manufacture false recession signals). Claims
+ * is protected by the PERSISTENCE layers instead — /tmp last-known-good plus the
+ * twice-daily sheet snapshot with history — served frozen and flagged stale.
  *
  * COST ON THE HAPPY PATH IS ZERO. The route only builds these cascades when its
  * primary FRED series came back empty, so a healthy load makes no extra calls.
@@ -261,10 +271,16 @@ export function mergeHorsemenOverBase(base, live) {
     const names = [...Object.keys(live.horsemen || {}), ...(live.yieldCurve ? ['spread'] : [])];
     merged._meta = {
         ...meta,
+        // The base's own `source` ("St. Louis Fed") and messages ("Loaded 17/17
+        // series") describe the CACHED snapshot, not this response. Left verbatim
+        // they read as fresh FRED data and flatly contradict `loadedCount: 0`
+        // (seen on prod). Relabel the source and prefix the inherited messages so
+        // nothing here can be mistaken for live data.
+        source: `${live.baseLabel || 'cache'} + live Horsemen (${names.join(', ')})`,
         stale: true,
         hasErrors: true,
         messages: [
-            ...(meta.messages || []),
+            ...(meta.messages || []).map((m) => `cached: ${m}`),
             `live FRED unavailable; Four Horsemen served LIVE from independent sources (${names.join(', ')}), rest from cache`,
             // Carry the per-line cascade trail through the merge — it is the only
             // way to see WHICH provider answered when verifying tiers on prod.

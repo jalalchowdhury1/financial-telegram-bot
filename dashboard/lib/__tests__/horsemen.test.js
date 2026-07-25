@@ -230,6 +230,26 @@ describe('mergeHorsemenOverBase', () => {
         expect(m._meta.messages.join(' ')).toMatch(/served LIVE from independent sources/);
     });
 
+    // Found on prod: the merged payload inherited the CACHED snapshot's
+    // source ("St. Louis Fed") and messages ("Loaded 17/17 series") verbatim, so it
+    // read as fresh FRED data and flatly contradicted loadedCount: 0.
+    test('never presents cached provenance as live data', () => {
+        const m = mergeHorsemenOverBase(
+            { ...base, _meta: { source: 'St. Louis Fed', messages: ['Loaded 17/17 series'] } },
+            { ...live, baseLabel: 'cache (last-known-good 2026-07-25T04:00:00Z)' },
+        );
+        expect(m._meta.source).toBe('cache (last-known-good 2026-07-25T04:00:00Z) + live Horsemen (claims, spread)');
+        expect(m._meta.source).not.toBe('St. Louis Fed');
+        // The inherited message must not read as this response's own status.
+        expect(m._meta.messages).toContain('cached: Loaded 17/17 series');
+        expect(m._meta.messages).not.toContain('Loaded 17/17 series');
+    });
+
+    test('labels the base sensibly when there is no cache at all', () => {
+        const m = mergeHorsemenOverBase(null, live);
+        expect(m._meta.source).toMatch(/live Horsemen/);
+    });
+
     test('carries the per-line cascade trail through, for prod tier verification', () => {
         const m = mergeHorsemenOverBase(base, live);
         expect(m._meta.messages).toContain('Horseman claims: fredcsv [fredcsv:ok(3107)]');
