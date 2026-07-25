@@ -431,73 +431,110 @@ multi-candidate "favorites" lists; a fresher momentum window via the CLOB price-
     bake grows. `quarters()` derives its end from `latest_quarter_end()` (was a HARDCODED
     `(2026,3,31)`, which would have quietly stopped extending), and `main()` **refuses to
     write a bake smaller than the existing one** and exits non-zero — a degraded uscourts
-    must never gut years of history that no live tier can rebuild.
+    must never gut years of history that no live tier can rebuild. **SILENCE IS THE HEALTHY
+    STATE**: it Telegrams only when a PR is opened or the run fails, so no news = no new
+    quarter. Test-fired 2026-07-25 (`workflow_dispatch`): walked all 99 quarters, newest
+    `2026-03-31 total=591,850 business=25,960` (matches live), printed `no change (99
+    quarters)`, opened no PR, sent no Telegram — i.e. the silent-when-healthy path works.
   - **INDEPENDENT SOURCES for the three FRED-fed lines** (`lib/horsemen.js`, added
-    2026-07-25). Until then claims/unemployment/spread had exactly ONE live provider (the
-    FRED API) behind ONE api key — while copper/gold got 4-5 providers per leg and the vol
-    table 3-4 per cell. The single most decision-relevant card was the least redundant one.
-    Each line now cascades, and crucially the tier-2s are the **ORIGIN publishers** (FRED
-    merely republishes them), so a total FRED outage is survivable, not just a bad key:
-    - **spread** `T10Y2Y` → **US Treasury** daily yield-curve CSV (keyless; ONE calendar
-      year per request, so we fetch the current + prior year) → **FRED keyless graph CSV**
-    - **unemployment** `UNRATE` → **BLS API v2** `LNS14000000` (keyless) → FRED graph CSV
-    - **claims** `ICSA` → FRED graph CSV (but see the phantom-tier note below). **CLAIMS
-      STILL HAS ONLY ONE LIVE PUBLISHER — a known, accepted limit.** Nobody else publishes
-      seasonally-adjusted weekly claims in a serverless-friendly form. DOL's ETA
-      `oui.doleta.gov/unemploy/csv/ar539.csv` is the ORIGIN, but it is a 13MB **state-major**
-      file (it does honor `Range` — 206 — but the newest national week is scattered across
-      53 jurisdiction blocks, so a range fetch can't isolate it) and it is **NSA**. NSA is
-      not a drop-in for SA here: it swings ±30% seasonally, so charting it on the same line
-      would manufacture false recession signals — stale-but-correct SA beats
-      fresh-but-incomparable NSA. DBnomics is out too: its FRED mirror is **404 dead**
-      (re-verified 2026-07-25) with no DOL provider. Claims' real protection is therefore the
-      PERSISTENCE layers, not a second publisher — `/tmp` last-known-good plus the
-      twice-daily `dashboard_lkg` snapshot (which now carries 5y of claims history), served
-      frozen and honestly flagged stale.
-    **`fredgraph.csv` IS A PHANTOM TIER — do not count it as redundancy.** The intent was
-    that it shares FRED's servers but not its api key, so it would survive a revoked key. In
-    a local `next dev` it works (3107 pts). **On Vercel it errors** (`fredcsv:err`,
-    prod-verified 2026-07-25 via `?_fail=fred`), and plain `curl` fails from a residential
-    connection too (`HTTP/2 INTERNAL_ERROR`, then hangs). `fred.stlouisfed.org`'s WEB paths
-    (`/graph/fredgraph.csv`, `/data/<ID>.txt`) gate on something browser-like; only the keyed
-    `api.stlouisfed.org` is reliable from a server. Kept as a harmless best-effort last
-    attempt (one failed request in an already-degraded path), but the real redundancy is
-    Treasury and BLS above it. Live-verified 2026-07-25 that both tier-2s reproduce FRED EXACTLY:
+    2026-07-25, PRs #35+#36). Before this, claims/unemployment/spread had exactly ONE live
+    provider (the FRED API) behind ONE api key — while copper/gold got 4-5 providers per leg
+    and the vol table 3-4 per cell. The most decision-relevant card was the least redundant
+    one. Each line now cascades, and the tier-2s are deliberately the **ORIGIN publishers**
+    (FRED merely republishes them), so a TOTAL FRED outage is survivable, not just a bad key.
+
+    | line | primary | tier 2 | tier 3 | status |
+    |---|---|---|---|---|
+    | spread | FRED `T10Y2Y` | **US Treasury** yield-curve CSV (keyless) | `fredgraph` | ✅ prod-verified |
+    | unemployment | FRED `UNRATE` | **BLS v2** `LNS14000000` (keyless) | `fredgraph` | ✅ prod-verified |
+    | claims | FRED `ICSA` | — none exists — | `fredgraph` | ⚠️ single publisher |
+
+    Both tier-2s reproduce FRED EXACTLY (verified against live data 2026-07-25):
     Treasury 4.69 − 4.33 = **0.36** = `T10Y2Y`; BLS June 2026 = **4.2%** = `UNRATE`.
+    Treasury serves ONE calendar year per request, so we fetch the current + prior year.
+    - **⚠️ `fredgraph.csv` (tier 3 everywhere) IS A PHANTOM — never count it as redundancy.**
+      The intent was that it shares FRED's servers but not its api key, so it would survive a
+      revoked key. **It works in local `next dev` (3107 pts) and FAILS on Vercel**
+      (`fredcsv:err`, prod-verified via `?_fail=fred`); plain `curl` also fails from a
+      residential connection (`HTTP/2 INTERNAL_ERROR`, then hangs). `fred.stlouisfed.org`'s
+      WEB paths (`/graph/fredgraph.csv`, `/data/<ID>.txt`) gate on something browser-like;
+      only the keyed `api.stlouisfed.org` is reliable from a server. Kept as a harmless
+      best-effort last attempt (one failed request in an already-degraded path). **The local
+      dev success is a trap — it is why this shipped in #35 looking like real redundancy.**
+    - **⚠️ CLAIMS HAS ONLY ONE LIVE PUBLISHER — a known, ACCEPTED limit, not a gap to fix.**
+      Nobody else publishes seasonally-adjusted weekly claims in a serverless-friendly form.
+      DOL's ETA `oui.doleta.gov/unemploy/csv/ar539.csv` is the ORIGIN but is a 13MB
+      **state-major** file (it honors `Range` → 206, but the newest national week is scattered
+      across 53 jurisdiction blocks, so a range fetch cannot isolate it) and it is **NSA**.
+      NSA is NOT a drop-in for SA: it swings ±30% seasonally, so charting it on the same line
+      would MANUFACTURE FALSE RECESSION SIGNALS. Stale-but-correct SA beats
+      fresh-but-incomparable NSA. DBnomics is out too — its FRED mirror is **404 dead**
+      (re-verified 2026-07-25), no DOL provider. Claims is protected by the PERSISTENCE
+      layers instead (/tmp last-known-good + the twice-daily `dashboard_lkg` snapshot with 5y
+      of history), served frozen and honestly flagged stale.
     - **Costs nothing on the happy path** — `needsRepair()` only fires a cascade when the
       primary series is empty, `unavailable`, or already past its staleness deadline. That
       last trigger is what an ORIGIN source uniquely fixes: when FRED quietly stops updating
-      one series, the /tmp last-known-good is equally stale but BLS/Treasury are still publishing.
-    - **Never regresses** — `isUpgrade()` adopts a fallback only when it is genuinely NEWER
-      than the primary, so a lagging BLS print can't overwrite a fresh FRED one.
-    - **Degraded history is expected**: Treasury gives ~2 years, BLS ~10. Stat chips, the
-      "N of 4 riding" badge and the 12-month trend notes all still work; the ALL/20Y tabs
-      just draw a shorter line. A short real chart beats a blank card.
-    - **GOTCHA (BLS):** the keyless tier caps a request at 10 years and, when you ask for
-      more, silently returns the **OLDEST** 10 years rather than erroring — a naive
+      one series the /tmp last-known-good is equally stale, but BLS/Treasury still publish.
+      Prod happy path confirms zero cascade messages in `_meta`.
+    - **Never regresses** — `isUpgrade()` adopts a fallback only when genuinely NEWER than the
+      primary, so a lagging BLS print can't overwrite a fresh FRED one.
+    - **Degraded history is BY DESIGN**: Treasury ~2y, BLS ~10y. Stat chips, the "N of 4
+      riding" badge and the 12-month trend notes all still work; only the ALL/20Y tabs draw a
+      shorter line. A short real chart beats a blank card.
+    - **GOTCHA (BLS):** the keyless tier caps a request at 10 years and, when you ask for more,
+      **silently returns the OLDEST 10 years** rather than erroring — a naive
       `startyear=1948` request yields 1948-1957 and the series looks dead. Always anchor the
-      span to the CURRENT year. A free `BLS_API_KEY` raises the quota 25→500/day, not the span.
+      span to the CURRENT year. A free `BLS_API_KEY` raises the quota 25→500/day, NOT the span.
+    - **GOTCHA (BLS):** period `M13` is the ANNUAL AVERAGE, not a 13th month — dropping it is
+      mandatory or it lands as an extra point and corrupts the trend fit.
     - **GOTCHA (Treasury):** read the `2 Yr`/`10 Yr` columns BY HEADER NAME. Treasury has
       inserted tenors before (`1.5 Month` is recent), and a positional read that grabbed
-      `20 Yr` instead of `2 Yr` would print a **false inversion** (−0.49 vs +0.36) — the most
+      `20 Yr` instead of `2 Yr` would print a **FALSE INVERSION** (−0.49 vs +0.36) — the most
       consequential way this parser could be wrong. Regression-tested.
     - **Total-outage merge:** with 0/17 series loaded, returning the live payload would blank
       every other card, but returning the cache would throw away live recession data. So the
-      route overlays the live lines onto the best cached base (`/tmp` last-good, else the
-      Sheet tier) via `mergeHorsemenOverBase` and serves the union — marked `stale` +
-      `hasErrors`, and **never stored back** (`serve()`'s new `shouldStore` option, separate
-      from `isGood`: storing a mostly-cached payload would refresh its `savedAt` and let stale
-      data outlive the 7-day window forever). A missing `FRED_API_KEY` therefore no longer
-      throws out of `produce()` — that IS the outage these fallbacks exist for.
-    - Verified end-to-end on a local dev server with no FRED key at all: claims `fredcsv`
-      (3107 pts), unemployment `bls` (113 pts), spread `treasury` (390 pts), all matching
-      the live dashboard's values exactly; `?_fail=hm_treasury` → spread falls to `fredcsv`
-      (12533 pts, same 0.36); `?_fail=hm_bls` → unemployment falls to `fredcsv`;
-      `?_fail=hm_treasury,hm_bls,hm_fredcsv` → graceful fall-through to last-known-good.
-  - **Sheet last-resort tier now carries the card** (`lib/sheetLkg.js` + the scraper's
-    `build_horsemen_pairs`, 2026-07-25). `reconstructFred` previously emitted no `horsemen`
-    key and no history at all, so the deepest fallback restored every card EXCEPT this one:
-    the component's `hasAnySeries` check failed and it rendered "N/A — Unavailable". The
+      route overlays the live lines onto the best cached base (/tmp last-good, else the Sheet
+      tier) via `mergeHorsemenOverBase` and serves the union — marked `stale` + `hasErrors`,
+      and **never stored back** (`serve()`'s `shouldStore` option, separate from `isGood`:
+      storing a mostly-cached payload would refresh its `savedAt` and let stale data outlive
+      the 7-day window forever). A missing `FRED_API_KEY` therefore no longer throws out of
+      `produce()` — that IS the outage these fallbacks exist for.
+    - **GOTCHA (#36, both found ONLY by testing on prod):** (a) this merge path reads /tmp
+      **DIRECTLY** via `loadLastGood()`, bypassing `serve()`'s guarded reader — so
+      `?_fail=lastgood` was silently ignored and the Sheet tier was unreachable alongside live
+      horsemen. **Any direct cache read must re-check the fault set itself.** (b) The merged
+      payload inherited the base snapshot's `_meta.source` ("St. Louis Fed") and messages
+      ("Loaded 17/17 series") VERBATIM while carrying `loadedCount: 0` — self-contradictory,
+      and it read as fresh live FRED data. **A merge-over-cache path must relabel BOTH:**
+      `source` → `"<baseLabel incl. LKG timestamp> + live Horsemen (<lines>)"`, and inherited
+      messages get a `cached: ` prefix. The premise of this card is that stale data must never
+      look fresh; this was a place where it did.
+    - **PROD VERIFICATION (2026-07-25, authoritative — local dev is NOT).** Happy path:
+      `Loaded 17/17`, `hasErrors:false`, NO cascade messages, all four lines fresh with full
+      history. Degraded paths, both rendering **4/4 lines** (pre-#35 the card vanished
+      entirely in both):
+
+      | injected fault | result |
+      |---|---|
+      | `?_fail=fred` | spread `treasury:ok(390)`, unemployment `bls:ok(113)`, claims `fredcsv:err` |
+      | `?_fail=fred,lastgood` | live BLS+Treasury merged over the Sheet base; `source` = `Google Sheet (last-known-good …) + live Horsemen (unemployment, spread)` |
+      | `?_fail=fred,lastgood,hm_treasury,hm_bls,hm_fredcsv` | Sheet tier serves all four (claims 260 pts, unemployment 118, spread 251, bankruptcies 99) |
+
+      **Re-verify with `?_fail=` after ANY change here, on PROD not local** — three separate
+      defects in this feature (the phantom tier, the ignored `lastgood` fault, the
+      cached-as-live labelling) passed a green local test suite and were only exposed by
+      hitting the deployed dashboard.
+  - **Sheet last-resort tier now carries the card — LIVE and populated** (`lib/sheetLkg.js`
+    + the scraper's `build_horsemen_pairs`, 2026-07-25). `reconstructFred` previously emitted
+    no `horsemen` key and no history at all, so the deepest fallback restored every card
+    EXCEPT this one: the component's `hasAnySeries` check failed and it rendered
+    "N/A — Unavailable" — the single most decision-relevant card was the FIRST thing to
+    vanish in a deep outage. The `dashboard_lkg` tab now holds 78 keys including all four
+    lines (claims 260 pts / unemployment 118 / spread 251 / bankruptcies 99), confirmed by a
+    manual `workflow_dispatch` of the scraper right after the companion PR merged — **a
+    schema change here is not live until the scraper next runs** (cron `0 14,2 * * *`; dispatch
+    it manually rather than waiting). The
     helper tab now also carries, per line, a thinned **packed history** in one cell
     (`YYYY-MM-DD:value|…`, `parsePackedHistory`) — claims 5y, unemployment 10y, spread 5y,
     bankruptcies 30y, largest ~4.7KB against Sheets' 50k cell limit. Cross-repo contract
@@ -525,9 +562,12 @@ multi-candidate "favorites" lists; a fresher momentum window via the CLOB price-
   unavailable/N-A path); `horsemen.bankruptcies.tried` shows the trail. The Four Horsemen
   fallback cascades add **`hm_treasury` / `hm_bls` / `hm_fredcsv`** (each disables that
   provider for every line that uses it). These only bite when the FRED primary has already
-  failed — pair them with `fred`, e.g. `?_fail=fred` shows all three lines resolving from
-  independent providers, and `?_fail=fred,hm_treasury,hm_bls,hm_fredcsv` degrades to
-  last-known-good. Each line's `source` + `tried` fields show which provider answered.
+  failed — always pair them with `fred`. Each line's `source` + `tried` fields show which
+  provider answered. The canonical ladder to re-verify after any change (run it on PROD):
+  `?_fail=fred` → independent providers; `?_fail=fred,lastgood` → live horsemen merged over
+  the Sheet base; `?_fail=fred,lastgood,hm_treasury,hm_bls,hm_fredcsv` → the Sheet tier
+  alone. Note `lastgood` must be honoured by BOTH `serve()` and any code that calls
+  `loadLastGood()` directly (see the #36 gotcha in §3).
 
 ---
 
