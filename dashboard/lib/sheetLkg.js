@@ -5,8 +5,10 @@
  * Only used when live FRED AND the /tmp last-known-good are both unavailable
  * (a total outage on a cold serverless instance — see store.js `serve()`).
  * The helper tab is written each scraper run as self-describing `key,value`
- * rows (no fragile column-position coupling), values + asOf only (no chart
- * history), with N/A metrics omitted entirely.
+ * rows (no fragile column-position coupling), with N/A metrics omitted entirely.
+ * Most metrics carry value + asOf only; the Four Horsemen lines additionally
+ * carry a thinned, packed HISTORY, because that card is a chart and would
+ * otherwise vanish entirely on the one path that exists to keep it alive.
  *
  * Everything here is defensive: a malformed sheet returns null, never throws.
  */
@@ -16,6 +18,14 @@ import { EXTERNAL_URLS } from './constants';
 const INDICATOR_KEYS = ['sahmRule', 'sentiment', 'claims', 'creditSpread', 'realYields', 'copperGold'];
 const CHECKLIST_KEYS = ['nfci', 'm2', 'retail', 'housing', 'indpro', 'jolts', 'durable', 'savings'];
 const STALE_DAYS = 4; // > 3 so the health check flags the genuine outage
+
+// Four Horsemen lines carried in the helper tab. Unlike every other metric here
+// these ship a compact HISTORY as well as a value, because the recession-watch
+// card is a CHART: without at least two points the component's `hasAnySeries`
+// check fails and the whole card renders "N/A — Unavailable". Before this, the
+// deepest fallback tier silently dropped the single most decision-relevant card
+// on the dashboard while faithfully restoring everything around it.
+const HORSEMEN_KEYS = ['claims', 'unemployment', 'spread', 'bankruptcies'];
 
 /** Parse a single CSV line into fields, honoring gviz's double-quote wrapping. */
 function parseCsvLine(line) {
@@ -71,6 +81,28 @@ function num(v) {
 const orNull = (v) => (v === undefined || v === '' ? null : v);
 
 /**
+ * Unpack a compact history string into ascending [{date, value}].
+ *
+ * Format is `YYYY-MM-DD:value|YYYY-MM-DD:value|…` — one Google Sheets cell holds
+ * a whole thinned series well inside the 50k-character cell limit, and it stays
+ * human-readable in the tab. Malformed segments are skipped, never guessed at.
+ */
+export function parsePackedHistory(str) {
+    if (!str || typeof str !== 'string') return [];
+    const out = [];
+    for (const seg of str.split('|')) {
+        const i = seg.indexOf(':');
+        if (i < 0) continue;
+        const date = seg.slice(0, i).trim();
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+        const value = Number(seg.slice(i + 1).trim());
+        if (!Number.isFinite(value)) continue;
+        out.push({ date, value });
+    }
+    return out.sort((a, b) => (a.date < b.date ? -1 : 1));
+}
+
+/**
  * Rebuild an /api/fred-shaped payload from the parsed helper-tab map. History/
  * recessions are empty (charts blank in this rare path). Every metric is flagged
  * stale; _meta marks the payload stale + hasErrors so the health check still alerts.
@@ -106,18 +138,46 @@ export function reconstructFred(map, now = new Date()) {
         };
     }
 
+    // ── Four Horsemen ──
+    // The spread line lives on `yieldCurve` (shared with the standalone Yield
+    // Curve card), so only its HISTORY is read here; claims/unemployment/
+    // bankruptcies carry their own value + asOf + history.
+    const horsemen = {};
+    for (const k of HORSEMEN_KEYS) {
+        if (k === 'spread') continue; // handled with yieldCurve below
+        const history = parsePackedHistory(map[`horsemen.${k}.history`]);
+        const value = num(map[`horsemen.${k}.value`]);
+        if (value === null && history.length === 0) continue;
+        horsemen[k] = {
+            current: value ?? history[history.length - 1]?.value ?? null,
+            asOf: orNull(map[`horsemen.${k}.asOf`]) ?? history[history.length - 1]?.date ?? null,
+            stale: true, unavailable: value === null && history.length === 0, staleDays: STALE_DAYS,
+            history,
+        };
+    }
+    if (horsemen.bankruptcies) {
+        horsemen.bankruptcies.total = num(map['horsemen.bankruptcies.total']);
+        horsemen.bankruptcies.changePct = num(map['horsemen.bankruptcies.changePct']);
+        horsemen.bankruptcies.status = orNull(map['horsemen.bankruptcies.status']) ?? 'unknown';
+        // The chart plots business filings; `total` rides alongside as a stat.
+        horsemen.bankruptcies.history = horsemen.bankruptcies.history.map((p) => ({ ...p, total: null }));
+    }
+
     const ycCurrent = num(map['yieldCurve.current']);
+    const ycHistory = parsePackedHistory(map['yieldCurve.history']);
     const pmCurrent = num(map['profitMargin.current']);
     const peRatio = num(map['peRatio']);
 
     const metricCount = Object.keys(indicators).length + Object.keys(checklist).length
+        + Object.keys(horsemen).length
         + (ycCurrent !== null ? 1 : 0) + (pmCurrent !== null ? 1 : 0);
     if (metricCount === 0) return null;
 
     return {
+        horsemen,
         yieldCurve: ycCurrent !== null
-            ? { current: ycCurrent, asOf: orNull(map['yieldCurve.asOf']), stale: true, history: [] }
-            : { current: null, asOf: null, stale: false, history: [] },
+            ? { current: ycCurrent, asOf: orNull(map['yieldCurve.asOf']), stale: true, history: ycHistory }
+            : { current: null, asOf: null, stale: false, history: ycHistory },
         profitMargin: pmCurrent !== null
             ? { current: pmCurrent, asOf: orNull(map['profitMargin.asOf']), stale: true, history: [] }
             : { current: null, asOf: null, stale: false, history: [] },
