@@ -626,8 +626,17 @@ export async function GET(request) {
         // lines onto the best cached base we have (/tmp last-good, else the
         // Google-Sheet tier) and serve the union. Marked stale + never stored.
         if (failed.length === FRED_REQUESTS.length && horsemenLive > 0) {
-            const base = loadLastGood('fred', 7 * 864e5)?.data ?? await fetchSheetLkg(now).catch(() => null);
+            // Honour `?_fail=lastgood` here too. This path reads the /tmp cache
+            // DIRECTLY rather than through serve()'s guarded reader, so without
+            // this check the fault silently did nothing and the Sheet tier could
+            // not be reached in combination with live Horsemen (found on prod:
+            // `?_fail=fred,lastgood` still served the /tmp snapshot).
+            const lg = faults.has('lastgood') ? null : loadLastGood('fred', 7 * 864e5);
+            const base = lg?.data ?? await fetchSheetLkg(now).catch(() => null);
+            const baseLabel = lg ? `cache (last-known-good ${lg.savedAt})`
+                : (base?._meta?.source || 'no cached base');
             const merged = mergeHorsemenOverBase(base, {
+                baseLabel,
                 horsemen: Object.fromEntries(Object.entries(repairedHorsemen).filter(([k]) => k !== 'spread')),
                 yieldCurve: repairedHorsemen.spread || null,
                 messages: messages.filter((m) => m.startsWith('Horseman') || m.startsWith('FRED_API_KEY')),

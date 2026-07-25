@@ -271,10 +271,16 @@ export function mergeHorsemenOverBase(base, live) {
     const names = [...Object.keys(live.horsemen || {}), ...(live.yieldCurve ? ['spread'] : [])];
     merged._meta = {
         ...meta,
+        // The base's own `source` ("St. Louis Fed") and messages ("Loaded 17/17
+        // series") describe the CACHED snapshot, not this response. Left verbatim
+        // they read as fresh FRED data and flatly contradict `loadedCount: 0`
+        // (seen on prod). Relabel the source and prefix the inherited messages so
+        // nothing here can be mistaken for live data.
+        source: `${live.baseLabel || 'cache'} + live Horsemen (${names.join(', ')})`,
         stale: true,
         hasErrors: true,
         messages: [
-            ...(meta.messages || []),
+            ...(meta.messages || []).map((m) => `cached: ${m}`),
             `live FRED unavailable; Four Horsemen served LIVE from independent sources (${names.join(', ')}), rest from cache`,
             // Carry the per-line cascade trail through the merge — it is the only
             // way to see WHICH provider answered when verifying tiers on prod.
