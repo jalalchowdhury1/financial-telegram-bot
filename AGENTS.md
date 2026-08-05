@@ -756,8 +756,14 @@ Each finding has an `id`. Map id → meaning → fix:
   the live workflow uses the CLI + a separate PR step instead — trust the workflow.)*
 - A subsequent workflow step does the git work: if the agent changed nothing → Telegram
   "nothing to fix this week"; otherwise it runs `pytest` for a signal, creates branch
-  `self-improve/run-<run_id>`, commits `[skip ci]`, pushes, opens a PR via `gh pr create`,
+  `self-improve/run-<run_id>`, commits, pushes, opens a PR via `gh pr create`,
   and posts a Telegram summary with the PR link. It **never merges**; the owner reviews + merges.
+- **GOTCHA — do NOT put `[skip ci]` in that commit** (it was there until 2026-08-05). `ci.yml`
+  fires only on `pull_request` → main and `deploy-lambda.yml` only on push → main, so on a
+  feature-branch push the marker suppressed **nothing** — but on the PR it suppressed
+  `backend-tests` + `dashboard-tests`, which are **required checks** on `main`. The agent's own
+  PRs were unmergeable by design (first seen on #38: zero check runs, blocked). It would also
+  skip the Lambda deploy if it rode into a merge commit.
 - The agent's hard rules (`.github/self-improve-prompt.md`): be conservative (a clean no-op is
   success), one small single-concern change, cross-check this AGENTS.md first, and **never
   touch** secrets/keys, `aws/template.yaml`, live AWS config, `.env`, or `.github/workflows/`.

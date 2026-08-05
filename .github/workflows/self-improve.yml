@@ -92,7 +92,13 @@ jobs:
             git config user.email "actions@github.com"
             git checkout -b "$BRANCH"
             git add -A
-            git commit -m "self-improve: automated change (review before merge) [skip ci]"
+            # NO `[skip ci]` here. ci.yml triggers ONLY on `pull_request` to main, and
+            # deploy-lambda.yml only on push to main — so on a feature-branch push the
+            # marker suppressed nothing, while on the PR it suppressed `backend-tests` +
+            # `dashboard-tests`, which are REQUIRED checks on main. The agent's PR was
+            # therefore unmergeable by design (seen on #38), and the marker riding into
+            # a merge commit would also skip the Lambda deploy.
+            git commit -m "self-improve: automated change (review before merge)"
             git push origin "$BRANCH"
             # NEVER let a PR-create failure kill this step: the branch is already
             # pushed, so the work is safe, and the Telegram summary below is the
