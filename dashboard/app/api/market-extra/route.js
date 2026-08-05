@@ -66,10 +66,18 @@ function addCrosses(out, log) {
 }
 
 async function buildDirect(apiKey, poly, er, messages, faults = new Set()) {
-    const out = { fx: {}, commodities: {}, rates: {}, realEstate: {}, _meta: { source: 'Direct sources (fallback)', hasErrors: true, sourceLog: {}, messages } };
+    const out = { fx: {}, commodities: {}, rates: {}, realEstate: {}, _meta: { source: 'Direct sources (fallback)', hasErrors: false, sourceLog: {}, messages } };
     const built = await Promise.all(BASE_PATHS.map((p) => directMetric(p, apiKey, poly, er, faults).then((r) => [p, r]).catch(() => [p, null])));
     for (const [p, r] of built) if (r?.metric?.current != null) { setPath(out, p, r.metric); out._meta.sourceLog[p.split('.').pop()] = r.src; }
     addCrosses(out, out._meta.sourceLog);
+    // Derive health from what's actually missing (don't hardcode red): a full
+    // direct build is healthy data, just from fallback sources. Hardcoding
+    // hasErrors:true left market-extra perpetually degraded whenever the Lambda
+    // was down (e.g. a transient Lambda 503) even though the fallback filled
+    // every metric -- same reconciliation the Lambda path above already does.
+    const stillNull = BASE_PATHS.filter((p) => { const m = getPath(out, p); return !m || m.current == null; });
+    if (stillNull.length) out._meta.messages.push(`unavailable: ${stillNull.length} metrics`);
+    out._meta.hasErrors = stillNull.length > 0;
     return out;
 }
 
