@@ -94,10 +94,25 @@ jobs:
             git add -A
             git commit -m "self-improve: automated change (review before merge) [skip ci]"
             git push origin "$BRANCH"
-            URL=$(gh pr create --base main --head "$BRANCH" \
+            # NEVER let a PR-create failure kill this step: the branch is already
+            # pushed, so the work is safe, and the Telegram summary below is the
+            # only thing that tells the owner anything happened. `set -e` + the
+            # old `URL=$(gh pr create ... 2>&1 | tail -1)` did the opposite —
+            # pipefail propagated gh's exit code out of the assignment, aborting
+            # before the notify, and gh's error text vanished into $URL.
+            # (2026-08-05: that is exactly how run 31019492456 died, silently.)
+            COMPARE="${{ github.server_url }}/${{ github.repository }}/compare/${BRANCH}?expand=1"
+            if PR_OUT=$(gh pr create --base main --head "$BRANCH" \
               --title "Weekly self-improve: automated change" \
-              --body "Opened by the weekly self-improve agent (headless). Backend tests: ${TESTS}. Review before merging." 2>&1 | tail -1)
-            export MSG="🛠️ Weekly self-improve opened a PR for review: ${URL} (backend tests: ${TESTS})"
+              --body "Opened by the weekly self-improve agent (headless). Backend tests: ${TESTS}. Review before merging." 2>&1); then
+              URL=$(printf '%s\n' "$PR_OUT" | tail -1)
+              export MSG="🛠️ Weekly self-improve opened a PR for review: ${URL} (backend tests: ${TESTS})"
+            else
+              # Surface the real reason in the job log instead of swallowing it.
+              echo "::warning::gh pr create failed; branch is pushed, open the PR by hand."
+              printf '%s\n' "$PR_OUT"
+              export MSG="⚠️ Weekly self-improve pushed \`${BRANCH}\` but COULD NOT open the PR (backend tests: ${TESTS}). Open it here: ${COMPARE}"
+            fi
           fi
 
           python - <<'PY'
