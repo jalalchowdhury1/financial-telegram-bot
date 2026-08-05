@@ -756,10 +756,35 @@ Each finding has an `id`. Map id → meaning → fix:
   the live workflow uses the CLI + a separate PR step instead — trust the workflow.)*
 - A subsequent workflow step does the git work: if the agent changed nothing → Telegram
   "nothing to fix this week"; otherwise it runs `pytest` for a signal, creates branch
-  `self-improve/run-<run_id>`, commits `[skip ci]`, pushes, opens a PR via `gh pr create`,
+  `self-improve/run-<run_id>`, commits, pushes, opens a PR via `gh pr create`,
   and posts a Telegram summary with the PR link. It **never merges**; the owner reviews + merges.
+- **GOTCHA — do NOT put `[skip ci]` in that commit** (it was there until 2026-08-05). `ci.yml`
+  fires only on `pull_request` → main and `deploy-lambda.yml` only on push → main, so on a
+  feature-branch push the marker suppressed **nothing** — but on the PR it suppressed
+  `backend-tests` + `dashboard-tests`, which are **required checks** on `main`. The agent's own
+  PRs were unmergeable by design (first seen on #38: zero check runs, blocked). It would also
+  skip the Lambda deploy if it rode into a merge commit.
 - The agent's hard rules (`.github/self-improve-prompt.md`): be conservative (a clean no-op is
   success), one small single-concern change, cross-check this AGENTS.md first, and **never
   touch** secrets/keys, `aws/template.yaml`, live AWS config, `.env`, or `.github/workflows/`.
+- **GOTCHA — `gh pr create` needs a REPO SETTING, not just `pull-requests: write`.** Settings →
+  Actions → General → **"Allow GitHub Actions to create and approve pull requests"** must be ON
+  (API: `PUT /repos/{owner}/{repo}/actions/permissions/workflow`,
+  `can_approve_pull_request_reviews: true`). It was OFF, and on **2026-08-05** (run
+  `31019492456`) the agent made its first real change in 8 weekly runs, pushed the branch fine,
+  and then `gh pr create` was refused → the job failed. **Every prior green run was a no-op, so
+  this whole code path had never once executed** — a workflow that has "passed" 8 times can
+  still have a completely untested branch. If you ever see the branch pushed but no PR, check
+  this setting first.
+- **GOTCHA — never swallow that step's output.** The old line was
+  `URL=$(gh pr create … 2>&1 | tail -1)`. With `set -o pipefail` under GitHub's default
+  `bash -e`, gh's non-zero status propagated out of the ASSIGNMENT and killed the step, while
+  `2>&1` had already redirected the real error message into `$URL` where nobody saw it. Net
+  effect: no PR, no error text, and — because the step died before the notify — **no Telegram
+  either**; the only signal was GitHub's own "run failed" email. The PR-create call is now
+  wrapped in `if PR_OUT=$(…); then … else …`, which prints the failure as a `::warning::` and
+  still Telegrams, falling back to a `/compare/<branch>?expand=1` link. **The branch is already
+  pushed by that point, so the work is never lost — the notify matters more than the exit
+  code.**
 - **To fix anything here:** branch → fix + test → PR (CI gates it) → owner merges. Never push
   to `main`. Roll back via a PR's **Revert** button or a `known-good-*` git tag.
