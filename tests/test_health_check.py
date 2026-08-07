@@ -155,6 +155,24 @@ def test_check_report_delivered_backstop_only_warns_primary_is_down():
     assert "backstop" in f["title"].lower() or "backstop" in f["detail"].lower()
 
 
+def test_check_pe_source_ok_when_ttm():
+    assert hc.check_pe_source({"peRatio": 29.69, "peSource": "multpl"})["severity"] == "ok"
+
+
+def test_check_pe_source_warns_when_cape_substituted():
+    """FRED PE10 is Shiller CAPE (10-yr smoothed, ~40) standing in for the TTM P/E
+    (~30) the tile claims to show. Tier 2 (Yahoo) is dead from Vercel, so a multpl
+    HTML change drops straight to CAPE and overstates the tile ~40% with asOf=now."""
+    f = hc.check_pe_source({"peRatio": 42.12, "peSource": "cape", "peIsCape": True})
+    assert f["severity"] == "warn"
+    assert "cape" in f["detail"].lower()
+
+
+def test_check_pe_source_silent_on_old_payload_without_field():
+    """A deploy lag where /api/fred predates the peSource field must not false-alarm."""
+    assert hc.check_pe_source({"peRatio": 29.69})["severity"] == "ok"
+
+
 def test_check_config_urls_flags_missing_known_keys():
     f = hc.check_config_urls({"NOT_SO_BORING": "x"})
     assert f["severity"] == "warn"

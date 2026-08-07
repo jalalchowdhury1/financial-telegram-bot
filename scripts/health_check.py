@@ -84,6 +84,32 @@ def fred_metrics_for_na_check(fred):
     return metrics
 
 
+def check_pe_source(fred):
+    """The P/E tile is a layered scrape: multpl -> Yahoo -> FRED `PE10`. `PE10` is
+    Shiller CAPE, a 10-yr smoothed ratio (~40) — NOT the trailing-twelve-month P/E
+    (~30) the tile is labelled as. Tier 2 (Yahoo) is dead from Vercel datacenter IPs,
+    so a multpl markup change drops STRAIGHT to CAPE and overstates the tile by ~40%
+    while `peRatioAsOf` still reads `now`. Nothing surfaced that substitution before
+    2026-08-06: `peSource` was computed and discarded, and the P/E sits outside the
+    indicator sweep, so `endpoint_fred` stayed green."""
+    fid = "pe_source_substituted"
+    source = (fred or {}).get("peSource")
+    if source is None:
+        # Payload predates the peSource field (deploy lag) — unknowable, not known-bad.
+        return _finding(fid, "ok", "P/E source not reported (payload predates peSource)")
+    if source == "cape":
+        return _finding(
+            fid, "warn", "P/E tile is showing Shiller CAPE, not TTM",
+            detail=(f"peSource='cape' (FRED PE10, 10-yr smoothed) is standing in for the "
+                    f"trailing-twelve-month P/E the tile claims; current value "
+                    f"{(fred or {}).get('peRatio')}. The multpl scrape failed and the Yahoo "
+                    f"tier is dead from Vercel. Repair the multpl regex in "
+                    f"dashboard/app/api/fred/route.js."),
+            remediation="manual", evidence={"peSource": source, "peRatio": (fred or {}).get("peRatio")})
+    return _finding(fid, "ok", f"P/E from {source} (trailing-twelve-month)",
+                    evidence={"peSource": source})
+
+
 def check_indicators_na(metrics):
     """Flag dashboard metrics that are N/A (fetch failed) or genuinely overdue
     (stale > 3 days past their deadline). Normal reporting lag (a value that is present
@@ -357,7 +383,11 @@ def run_all_checks(generated_at):
                 metrics = fred_metrics_for_na_check(fred)
             except Exception:
                 metrics = None
+                fred = {}
             findings.append(check_indicators_na(metrics))
+            # peRatio is top-level, so it is NOT in the sweep above — check it here or a
+            # CAPE-for-TTM substitution stays invisible (see check_pe_source).
+            findings.append(check_pe_source(fred))
 
     delivery = _load_json_file(os.environ.get("DELIVERY_EVIDENCE", "delivery_evidence.json"),
                                {"cloudwatch_readable": False, "markers": [], "gha_success_today": False})

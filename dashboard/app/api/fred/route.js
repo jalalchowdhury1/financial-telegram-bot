@@ -331,7 +331,7 @@ async function repairHorsemen(responseData, { now, faults, blsKey, messages }) {
 // so the UI shows N/A — never a misleadingly old number.
 // ─────────────────────────────────────────────────────────────────────────────
 
-function buildResponse(series, peRatio, now) {
+function buildResponse(series, peRatio, now, peSource = null) {
     const {
         T10Y2Y: t10y2y, UNRATE: unrate, UMCSENT: umcsent, ICSA: icsa, BAMLC0A4CBBB: bbb,
         DFII10: dfii10, NFCI: nfci, M2SL: m2sl, RSXFS: rsxfs,
@@ -425,6 +425,14 @@ function buildResponse(series, peRatio, now) {
         horsemen,
         peRatio,
         peRatioAsOf: now.toISOString(), // scraped live each cache cycle
+        // WHICH layer won. Must be exposed: the last tier is FRED `PE10`, i.e.
+        // Shiller CAPE — a 10-yr smoothed ratio, NOT the trailing-twelve-month P/E
+        // the tile claims to show (CAPE runs ~40 vs TTM ~30). Tier 2 (Yahoo) is
+        // dead from Vercel, so a multpl HTML change drops straight to CAPE and
+        // silently overstates the tile by ~40% with `asOf = now`. Never drop this
+        // field: it is the only signal that a different metric is on screen.
+        peSource,
+        peIsCape: peSource === 'cape',
         recessions: recessionPeriods,
         indicators: {
             sahmRule: F(sahmRule, 'UNRATE', dateOf(unrate), { status: sahmRule >= 0.5 ? 'danger' : 'safe' }),
@@ -551,7 +559,13 @@ export async function GET(request) {
             } catch (e) { messages.push(`P/E CAPE failed: ${maskKey(e.message)}`); }
         }
 
-        const responseData = buildResponse(series, peRatio, now);
+        if (peSource === 'cape') {
+            messages.push('P/E is Shiller CAPE (10-yr smoothed), NOT trailing-twelve-month — multpl scrape failed');
+        } else if (!peRatio) {
+            messages.push('P/E unavailable — all layers failed');
+        }
+
+        const responseData = buildResponse(series, peRatio, now, peSource);
 
         // Four Horsemen: back the three FRED-fed lines with independent providers
         // (Treasury / BLS / keyless FRED CSV) whenever the primary left one empty
