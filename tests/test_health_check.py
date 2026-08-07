@@ -377,3 +377,142 @@ def test_fred_metrics_for_na_check_flags_overdue_bankruptcies():
     finding = hc.check_indicators_na(hc.fred_metrics_for_na_check(fred))
     assert finding["severity"] == "warn"
     assert "overdue" in finding["detail"]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# check_lambda_path — the HTTP data path's liveness signal (added 2026-08-06).
+#
+# /api/spy, /api/market-extra, /api/polymarket and /api/spy-daily-move call the
+# Lambda FIRST and fall back to direct sources. The fallback build deliberately
+# returns hasErrors:false (a full direct build is healthy data), so if the Lambda
+# lost its apigateway invoke grant — the EXACT failure that hid for two months on
+# the EventBridge grant (AGENTS §2 gotcha #0) — all four routes would silently
+# switch to fallbacks and every health signal would stay green.
+#
+# The source strings below are the REAL ones, captured live on 2026-08-06.
+# ─────────────────────────────────────────────────────────────────────────────
+LIVE_LAMBDA_PAYLOADS = {
+    # Lambda-built: bot/fetchers.py composes these (`<tier> + Finnhub Spot`).
+    "spy": {"current": 631.0, "_meta": {"source": "Polygon + Finnhub Spot", "hasErrors": False}},
+    "market-extra": {"_meta": {"source": "yfinance/Polygon/Finnhub/FRED/ER-API", "hasErrors": False}},
+    # These two carry a TOP-LEVEL `source` and no _meta.source at all.
+    "spy-daily-move": {"value": "+0.29%", "source": "Google Sheets"},
+    "polymarket": {"bets": [{"name": "x"}], "timestamp": "2026-08-06T00:00:00Z"},
+}
+
+LIVE_FALLBACK_PAYLOADS = {
+    "spy": {"current": 631.0, "_meta": {"source": "Polygon + Finnhub (fallback)", "hasErrors": False}},
+    "market-extra": {"_meta": {"source": "Direct sources (fallback)", "hasErrors": False}},
+    "spy-daily-move": {"value": "+0.29%", "source": "Finnhub (fallback)"},
+    "polymarket": {"bets": [], "source": "Polymarket Gamma API (fallback)"},
+}
+
+
+def test_check_lambda_path_ok_on_the_real_live_healthy_strings():
+    """The Lambda IS answering today; these exact strings must NOT alarm."""
+    f = hc.check_lambda_path(LIVE_LAMBDA_PAYLOADS)
+    assert f["severity"] == "ok", f
+    assert f["id"] == "lambda_primary_path"
+
+
+def test_check_lambda_path_warns_when_every_route_is_on_a_fallback():
+    f = hc.check_lambda_path(LIVE_FALLBACK_PAYLOADS)
+    assert f["severity"] == "warn"
+    for name in ("spy", "market-extra", "spy-daily-move", "polymarket"):
+        assert name in f["detail"], f["detail"]
+
+
+def test_check_lambda_path_warns_when_only_one_route_fell_back():
+    payloads = dict(LIVE_LAMBDA_PAYLOADS)
+    payloads["spy"] = LIVE_FALLBACK_PAYLOADS["spy"]
+    f = hc.check_lambda_path(payloads)
+    assert f["severity"] == "warn"
+    assert "spy" in f["detail"]
+    assert f["evidence"]["fallback_routes"] == ["spy"]
+
+
+def test_check_lambda_path_reads_a_top_level_source_when_there_is_no_meta():
+    """spy-daily-move / polymarket have no _meta.source — the label is top-level."""
+    payloads = dict(LIVE_LAMBDA_PAYLOADS)
+    payloads["spy-daily-move"] = {"value": "+0.29%", "source": "Yahoo Finance (fallback)"}
+    f = hc.check_lambda_path(payloads)
+    assert f["severity"] == "warn"
+    assert "spy-daily-move" in f["detail"]
+
+
+def test_check_lambda_path_is_ok_when_nothing_is_readable():
+    """Unknowable is not known-bad (the endpoint_* checks already cover an outage);
+    a probe that could not be parsed must never manufacture a Lambda alarm."""
+    f = hc.check_lambda_path({"spy": None, "market-extra": None,
+                              "spy-daily-move": None, "polymarket": None})
+    assert f["severity"] == "ok"
+
+
+def test_check_lambda_path_ignores_a_cached_lambda_label():
+    """serve()'s last-known-good re-labels the source but the payload still came
+    from the Lambda originally — endpoint_* already flags it via hasErrors."""
+    payloads = dict(LIVE_LAMBDA_PAYLOADS)
+    payloads["spy"] = {"_meta": {"source": "Polygon + Finnhub Spot (last-known-good 2026-08-05T09:00:00Z)",
+                                 "hasErrors": True}}
+    assert hc.check_lambda_path(payloads)["severity"] == "ok"
+
+
+def test_check_lambda_path_catches_every_lambda_spy_tier_label():
+    """bot/fetchers.py can label spy from any waterfall tier; none of them may
+    look like a dashboard fallback."""
+    for tier in ("yfinance + Finnhub Spot", "Polygon + Finnhub Spot", "Google Sheet + Finnhub Spot",
+                 "Stooq", "FRED S&P 500 Index"):
+        payloads = dict(LIVE_LAMBDA_PAYLOADS)
+        payloads["spy"] = {"_meta": {"source": tier}}
+        assert hc.check_lambda_path(payloads)["severity"] == "ok", tier
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# The N/A sweep must also cover the TOP-LEVEL cards (added 2026-08-06).
+#
+# yieldCurve / profitMargin / spEps live at the root of /api/fred, not under
+# `indicators` or `checklist`, so they sat outside fred_metrics_for_na_check
+# entirely. yieldCurve is the 10Y-2Y horseman (AGENTS: it reuses fred.yieldCurve
+# rather than duplicating it), so a frozen T10Y2Y that the repair cascade cannot
+# replace left the line frozen with failed.length==0, hasErrors:false and
+# endpoint_fred green — FOREVER — while its two sibling horsemen would have
+# warned through staleDays > 3.
+# ─────────────────────────────────────────────────────────────────────────────
+def test_fred_metrics_for_na_check_covers_the_top_level_cards():
+    fred = {
+        "yieldCurve": {"current": 0.44, "asOf": "2026-08-06", "stale": False,
+                       "staleDays": 0, "unavailable": False},
+        "profitMargin": {"current": 14.9, "asOf": "2026-01-01", "stale": False,
+                         "staleDays": 0, "unavailable": False},
+        "spEps": {"current": 264.69, "asOf": "2026-03-31", "stale": False,
+                  "staleDays": 0, "unavailable": False},
+    }
+    metrics = hc.fred_metrics_for_na_check(fred)
+    assert metrics["yieldCurve"]["value"] == 0.44
+    assert metrics["profitMargin"]["value"] == 14.9
+    assert metrics["spEps"]["value"] == 264.69
+    assert hc.check_indicators_na(metrics)["severity"] == "ok"
+
+
+def test_a_frozen_yield_curve_now_warns_like_its_sibling_horsemen():
+    """The whole point: FRED freezes T10Y2Y, the repair cascade adopts nothing,
+    and the 10Y-2Y line goes on showing a stale number. That must alarm."""
+    fred = {"yieldCurve": {"current": 0.44, "asOf": "2026-05-01", "stale": True,
+                           "staleDays": 90, "unavailable": False}}
+    f = hc.check_indicators_na(hc.fred_metrics_for_na_check(fred))
+    assert f["severity"] == "warn"
+    assert "yieldCurve" in f["detail"]
+    assert "overdue" in f["detail"]
+
+
+def test_an_unavailable_top_level_card_warns():
+    fred = {"spEps": {"current": None, "asOf": None, "unavailable": True, "staleDays": 0}}
+    f = hc.check_indicators_na(hc.fred_metrics_for_na_check(fred))
+    assert f["severity"] == "warn"
+    assert "spEps" in f["detail"]
+
+
+def test_top_level_cards_are_skipped_when_absent_or_malformed():
+    """A payload predating these fields (deploy lag) must not manufacture N/A warnings."""
+    f = hc.check_indicators_na(hc.fred_metrics_for_na_check({"yieldCurve": "nope"}))
+    assert f["severity"] == "ok", f

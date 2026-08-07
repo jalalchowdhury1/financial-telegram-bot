@@ -70,17 +70,39 @@ KNOWN_DISCONTINUED = {
 }
 
 
+# Cards that live at the ROOT of /api/fred rather than under `indicators`/`checklist`.
+# Like the horsemen they expose `current`, not `value`.
+TOP_LEVEL_FRED_CARDS = ["yieldCurve", "profitMargin", "spEps"]
+
+
 def fred_metrics_for_na_check(fred):
     """Collect every dashboard metric the N/A sweep should inspect: the indicator
-    tiles, the bull-checklist metrics, and the Four Horsemen series. Horsemen
-    entries use `current` rather than `value` (they carry chart history), so they
-    are mapped into the common {value, unavailable, staleDays, asOf} shape —
-    an unexpectedly N/A or overdue horseman (e.g. the uscourts bankruptcies feed
-    drifting after a file-naming change) then warns like any other indicator."""
+    tiles, the bull-checklist metrics, the Four Horsemen series, and the top-level
+    cards. Horsemen and top-level entries use `current` rather than `value` (they
+    carry chart history), so they are mapped into the common
+    {value, unavailable, staleDays, asOf} shape — an unexpectedly N/A or overdue
+    metric (e.g. the uscourts bankruptcies feed drifting after a file-naming
+    change) then warns like any other indicator.
+
+    `yieldCurve`, `profitMargin` and `spEps` were OUTSIDE this sweep until
+    2026-08-06. That mattered most for yieldCurve, which IS the 10Y-2Y horseman
+    (AGENTS §3: the card reuses `fred.yieldCurve` instead of duplicating it under
+    `horsemen`). If FRED froze T10Y2Y and the repair cascade adopted nothing, the
+    route's `failed` list stayed empty, `hasErrors` stayed false and endpoint_fred
+    stayed green forever — while claims and unemployment, the two lines drawn
+    right next to it, would have warned via staleDays > 3.
+
+    (`peRatio` is deliberately NOT here: it is covered by check_pe_source, which
+    reports the more specific CAPE-for-TTM substitution.)
+    """
     metrics = {**(fred.get("indicators") or {}), **(fred.get("checklist") or {})}
     for hk, hv in (fred.get("horsemen") or {}).items():
         if isinstance(hv, dict):
             metrics[f"horsemen_{hk}"] = {**hv, "value": hv.get("current")}
+    for key in TOP_LEVEL_FRED_CARDS:
+        card = fred.get(key)
+        if isinstance(card, dict):
+            metrics[key] = {**card, "value": card.get("current")}
     return metrics
 
 
@@ -108,6 +130,89 @@ def check_pe_source(fred):
             remediation="manual", evidence={"peSource": source, "peRatio": (fred or {}).get("peRatio")})
     return _finding(fid, "ok", f"P/E from {source} (trailing-twelve-month)",
                     evidence={"peSource": source})
+
+
+# The four Lambda-primary routes (AGENTS §1): each hits API Gateway -> Lambda first and
+# falls back to direct public sources. Every OTHER /api/* route is dashboard-only.
+LAMBDA_PRIMARY_ROUTES = ["spy", "market-extra", "spy-daily-move", "polymarket"]
+
+# Every dashboard fallback builder labels itself "... (fallback)" — verified against the
+# live endpoints 2026-08-06 by injecting ?_fail=lambda:
+#   spy            -> "Polygon + Finnhub (fallback)" | "Polygon (fallback)" | "Yahoo Finance (fallback)"
+#   market-extra   -> "Direct sources (fallback)"
+#   spy-daily-move -> "Finnhub (fallback)" | "Polygon (fallback)" | "Yahoo Finance (fallback)"
+#   polymarket     -> "Polymarket Gamma API (fallback)"
+# The Lambda's own labels (bot/fetchers.py: "<tier> + Finnhub Spot",
+# "yfinance/Polygon/Finnhub/FRED/ER-API", "Google Sheets") never contain it, so this one
+# marker separates the two paths for all four routes without a per-route allowlist that
+# would rot the next time a waterfall tier is renamed.
+FALLBACK_SOURCE_MARKER = "(fallback)"
+
+
+def _route_source(payload):
+    """The winning-source label, wherever the route puts it. spy/market-extra use
+    `_meta.source`; spy-daily-move/polymarket carry a TOP-LEVEL `source` and no `_meta`."""
+    if not isinstance(payload, dict):
+        return None
+    meta = payload.get("_meta")
+    if isinstance(meta, dict) and isinstance(meta.get("source"), str):
+        return meta["source"]
+    src = payload.get("source")
+    return src if isinstance(src, str) else None
+
+
+def check_lambda_path(payloads):
+    """Is the Lambda still serving the dashboard's HTTP data path, or is every route
+    quietly running on its fallback?
+
+    WHY THIS EXISTS. /api/spy, /api/market-extra, /api/polymarket and /api/spy-daily-move
+    are Lambda-primary. When the Lambda does not answer they fall back to direct public
+    sources and return `hasErrors:false` ON PURPOSE — a full direct build IS healthy data
+    (hard-coding hasErrors:true once made SPY perpetually red). The Lambda failure is
+    recorded only as a `_meta.messages` string that nothing reads. And scripts/health_check
+    probes Vercel, never the Lambda. So if the Lambda lost its apigateway invoke grant —
+    the EXACT failure mode that hid on the EventBridge grant for two months (AGENTS §2
+    gotcha #0) — all four routes would switch to fallbacks and every green check would
+    stay green.
+
+    A green check must prove the PRIMARY path ran. Here that means: the route's winning
+    source is a Lambda label, not a dashboard fallback label.
+
+    Unreadable payloads are SKIPPED, not counted against the Lambda: an endpoint that is
+    down is already `endpoint_<name>` critical, and unknowable must never become
+    known-bad (same rule as CloudWatch in check_report_delivered).
+    """
+    fid = "lambda_primary_path"
+    fallback, lambda_served, sources = [], [], {}
+    for name in LAMBDA_PRIMARY_ROUTES:
+        source = _route_source((payloads or {}).get(name))
+        if source is None:
+            continue
+        sources[name] = source
+        if FALLBACK_SOURCE_MARKER in source.lower():
+            fallback.append(name)
+        else:
+            lambda_served.append(name)
+
+    if fallback:
+        return _finding(
+            fid, "warn", "Dashboard is running on FALLBACKS — the Lambda data path is down",
+            detail=("These Lambda-primary routes served from direct sources instead: "
+                    + ", ".join(f"{n} ({sources[n]})" for n in fallback)
+                    + ". The dashboard still shows correct numbers, so nothing looks broken — "
+                      "but the API Gateway -> Lambda hop is failing. Check the Lambda's "
+                      "resource policy for an apigateway.amazonaws.com invoke grant "
+                      "(AGENTS §2 'Wiring a new API Gateway'), that LAMBDA_URL still points "
+                      "at the gateway base, and the function's recent CloudWatch errors."),
+            remediation="manual",
+            evidence={"fallback_routes": fallback, "lambda_routes": lambda_served, "sources": sources})
+
+    if not sources:
+        # Nothing readable — the endpoint probes own that failure, not this check.
+        return _finding(fid, "ok", "Lambda data path not checkable (no readable route payload)")
+
+    return _finding(fid, "ok", f"Lambda serving {len(lambda_served)}/{len(sources)} primary routes",
+                    evidence={"sources": sources})
 
 
 def check_indicators_na(metrics):
@@ -248,6 +353,10 @@ def _plain_english(f):
                 "back to backups and keeps working — this is just a heads-up; it usually self-clears.")
     if fid == "indicators_na":
         return "A dashboard number is blank that normally has data. Worth a peek, not an emergency."
+    if fid == "lambda_primary_path":
+        return ("The dashboard is quietly running on its backup data sources — the numbers you see "
+                "are still right, but the main AWS engine behind them isn't answering. Worth fixing "
+                "before something else leans on it.")
     if fid == "known_issue_config_urls":
         return "A small, already-known config gap. Not new and not urgent."
     if fid == "secret_leak":
@@ -370,9 +479,15 @@ def _load_json_file(path, default):
 def run_all_checks(generated_at):
     findings = []
     warm_up(VERCEL_BASE)   # absorb the cold-start cost once before probing
+    route_payloads = {}    # name -> parsed body, for the Lambda-path check below
     for name in ENDPOINTS:
         status, body = fetch_endpoint(VERCEL_BASE, name)
         findings.append(check_endpoint(name, status, body))
+        if status == 200:
+            try:
+                route_payloads[name] = json.loads(body)
+            except Exception:
+                pass
         # /api/fred carries the dashboard's economic indicators — inspect each for an
         # unexpected N/A (a real break) vs an expected one (discontinued series).
         if name == "fred" and status == 200:
@@ -388,6 +503,10 @@ def run_all_checks(generated_at):
             # peRatio is top-level, so it is NOT in the sweep above — check it here or a
             # CAPE-for-TTM substitution stays invisible (see check_pe_source).
             findings.append(check_pe_source(fred))
+
+    # The four Lambda-primary routes all degrade SILENTLY to direct sources, so the
+    # only way to see the Lambda's HTTP path die is to read which source won.
+    findings.append(check_lambda_path(route_payloads))
 
     delivery = _load_json_file(os.environ.get("DELIVERY_EVIDENCE", "delivery_evidence.json"),
                                {"cloudwatch_readable": False, "markers": [], "gha_success_today": False})
