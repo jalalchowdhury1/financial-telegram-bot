@@ -49,47 +49,74 @@ jobs:
         continue-on-error: true    # handled explicitly below so we always notify
         run: python scripts/build_bankruptcies_history.py
 
-      - name: Open a PR if the bake grew
+      # ONE step: do the git/PR work AND notify. These used to be two steps — the
+      # PR step wrote MSG to $GITHUB_ENV and a second step ran `if: env.MSG != ''`.
+      # That could not fire in the failure it exists to catch: under `set -uo
+      # pipefail` + GitHub's default `bash -e`, a failing `gh pr create` (or `git
+      # push`) propagated its exit code out of the ASSIGNMENT and killed the step
+      # BEFORE the `echo "MSG=..."`, so the notify step saw an empty MSG and was
+      # skipped. Net: branch pushed, no PR, NO TELEGRAM — while this workflow's
+      # whole contract is "silence is the healthy state", i.e. silence would have
+      # read as success. This is the same bug that killed self-improve.yml on
+      # 2026-08-05 (run 31019492456, the "Allow GitHub Actions to create and
+      # approve pull requests" repo setting was OFF); the pattern below is ported
+      # from that workflow's fix. The branch is already pushed by the time PR
+      # creation runs, so the work is never lost — THE NOTIFY MATTERS MORE THAN
+      # THE EXIT CODE.
+      - name: Open a PR if the bake grew, then notify Telegram
         id: pr
+        if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -uo pipefail
-          BAKE=dashboard/lib/data/bankruptciesBaked.json
-
-          if [ "${{ steps.rebake.outcome }}" = "failure" ]; then
-            # Either the script refused to shrink the file, or uscourts is down.
-            # Either way the committed bake is untouched and the card is fine.
-            echo "MSG=🔴 Bankruptcies rebake FAILED — the baked history was left untouched (the card still works, but the 4th horseman may be going stale). Check the Actions log." >> "$GITHUB_ENV"
-            exit 0
-          fi
-
-          if [ -z "$(git status --porcelain -- $BAKE)" ]; then
-            echo "MSG=" >> "$GITHUB_ENV"   # no change, stay silent
-            exit 0
-          fi
-
-          QUARTERS=$(python -c "import json;print(len(json.load(open('$BAKE'))))")
-          BRANCH="rebake/bankruptcies-${{ github.run_id }}"
-          git config user.name "github-actions"
-          git config user.email "actions@github.com"
-          git checkout -b "$BRANCH"
-          git add "$BAKE"
-          git commit -m "chore(data): refresh baked bankruptcies history (${QUARTERS} quarters)"
-          git push origin "$BRANCH"
-          URL=$(gh pr create --base main --head "$BRANCH" \
-            --title "chore(data): refresh baked bankruptcies history" \
-            --body "Automated monthly rebake of the Four Horsemen bankruptcies fallback: **${QUARTERS} quarters**. The script refuses to shrink the file, so this only ever adds or corrects quarters." 2>&1 | tail -1)
-          echo "MSG=🐎 Bankruptcies rebake: new quarter(s) available (${QUARTERS} total) — PR opened: ${URL}" >> "$GITHUB_ENV"
-
-      - name: Notify Telegram
-        if: env.MSG != ''
-        env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          python - <<'PY'
+          set -uo pipefail
+          BAKE=dashboard/lib/data/bankruptciesBaked.json
+          MSG=""
+
+          # Test against success, not against "failure": `continue-on-error` makes a
+          # broken rebuild look non-fatal, and a step SKIPPED because something
+          # earlier died is not healthy either.
+          if [ "${{ steps.rebake.outcome }}" != "success" ]; then
+            # Either the script refused to shrink the file, or uscourts is down.
+            # Either way the committed bake is untouched and the card is fine.
+            MSG="🔴 Bankruptcies rebake did not complete (outcome: ${{ steps.rebake.outcome }}) — the baked history was left untouched (the card still works, but the 4th horseman may be going stale). Check the Actions log."
+          elif [ -z "$(git status --porcelain -- $BAKE)" ]; then
+            MSG=""   # no new quarter — stay silent, that is the healthy state
+          else
+            QUARTERS=$(python -c "import json;print(len(json.load(open('$BAKE'))))")
+            BRANCH="rebake/bankruptcies-${{ github.run_id }}"
+            COMPARE="${{ github.server_url }}/${{ github.repository }}/compare/${BRANCH}?expand=1"
+            git config user.name "github-actions"
+            git config user.email "actions@github.com"
+            git checkout -b "$BRANCH"
+            git add "$BAKE"
+            git commit -m "chore(data): refresh baked bankruptcies history (${QUARTERS} quarters)"
+            if ! PUSH_OUT=$(git push origin "$BRANCH" 2>&1); then
+              echo "::warning::git push failed; no branch and no PR."
+              printf '%s\n' "$PUSH_OUT"
+              MSG="⚠️ Bankruptcies rebake found ${QUARTERS} quarters but COULD NOT PUSH the branch — no PR was opened. Check the Actions log; main is untouched."
+            elif PR_OUT=$(gh pr create --base main --head "$BRANCH" \
+              --title "chore(data): refresh baked bankruptcies history" \
+              --body "Automated monthly rebake of the Four Horsemen bankruptcies fallback: **${QUARTERS} quarters**. The script refuses to shrink the file, so this only ever adds or corrects quarters." 2>&1); then
+              URL=$(printf '%s\n' "$PR_OUT" | tail -1)
+              MSG="🐎 Bankruptcies rebake: new quarter(s) available (${QUARTERS} total) — PR opened: ${URL}"
+            else
+              # Surface the real reason in the job log instead of swallowing it into $URL.
+              # First thing to check: Settings ▸ Actions ▸ General ▸ "Allow GitHub Actions
+              # to create and approve pull requests".
+              echo "::warning::gh pr create failed; branch is pushed, open the PR by hand."
+              printf '%s\n' "$PR_OUT"
+              MSG="⚠️ Bankruptcies rebake pushed \`${BRANCH}\` (${QUARTERS} quarters) but COULD NOT open the PR. Open it here: ${COMPARE}"
+            fi
+          fi
+
+          if [ -n "$MSG" ]; then
+            export MSG
+            python - <<'PY'
           import os
           from bot.utils import send_to_telegram
           send_to_telegram(os.environ['TELEGRAM_TOKEN'], os.environ['TELEGRAM_CHAT_ID'], caption=os.environ['MSG'])
           PY
+          fi
