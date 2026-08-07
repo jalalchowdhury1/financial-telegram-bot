@@ -12,6 +12,8 @@
  * vol points). All of it is an approximation and the UI says so.
  */
 
+import { isStale } from './freshness';
+
 export const VOL_PROXIES = {
     SPY: { index: 'VIX', mult: 1 },
     QQQ: { index: 'VXN', mult: 1 },
@@ -23,6 +25,73 @@ export const VOL_PROXIES = {
 const ONE_YEAR = 252; // trading days
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/; // guard: lexicographic date compare is only safe on this shape
+
+/**
+ * Default staleness deadline for every vol source, in days.
+ *
+ * Everything this route reads is a DAILY series (CBOE/CNBC/FRED index closes,
+ * ETF daily bars), so the only legitimate gap is a weekend plus holidays — the
+ * same reasoning behind FRED_FRESHNESS.T10Y2Y = 7. A source still serving the
+ * same last point a week later is frozen, not quiet.
+ */
+export const VOL_FRESHNESS_DAYS = 7;
+
+/**
+ * Resolve one vol series through a source cascade.
+ *
+ * SAME CONTRACT AS copperGold's `resolveLeg` (and the horsemen cascades) —
+ * deliberately not a new pattern: skip fault-injected sources, reject results
+ * that are empty, and REJECT any series whose newest point is staler than the
+ * source allows, falling through to the next tier. Returns the first healthy
+ * series with a `tried` trail, or a null series if every source failed.
+ *
+ * WHY THE STALENESS GATE EXISTS (added 2026-08-06): this cascade previously
+ * accepted any array with `length > 0`. A CBOE CDN CSV that stops updating —
+ * or a CNBC endpoint that starts replaying an old window — would win tier 1
+ * forever and the table would present months-old vol as today's number, with
+ * `_meta.hasErrors:false`. Every sibling cascade in this repo already rejected
+ * stale sources; this one was the exception.
+ *
+ * A source descriptor is: { name, gate, freshnessDays?, fetch: async () =>
+ *   ascending [{date:'YYYY-MM-DD', value:number}] }.
+ *
+ * @returns {{points: Array|null, source: string|null, asOf: string|null, tried: string[]}}
+ */
+export async function resolveVolSeries(sources, faults, now = new Date()) {
+    const tried = [];
+    for (const s of sources) {
+        if (faults && faults.has(s.gate)) { tried.push(`${s.name}:off`); continue; }
+        try {
+            const points = await s.fetch();
+            const last = Array.isArray(points) && points.length ? points[points.length - 1] : null;
+            if (!last || !last.date || !Number.isFinite(last.value)) { tried.push(`${s.name}:empty`); continue; }
+            if (isStale(last.date, s.freshnessDays ?? VOL_FRESHNESS_DAYS, now)) {
+                tried.push(`${s.name}:stale(${last.date})`);
+                continue;
+            }
+            tried.push(`${s.name}:ok`);
+            return { points, source: s.name, asOf: last.date, tried };
+        } catch (e) { tried.push(`${s.name}:err`); }
+    }
+    return { points: null, source: null, asOf: null, tried };
+}
+
+/**
+ * Tickers whose row is not actually usable — `iv` or `rv21` is null.
+ *
+ * This is what `_meta.hasErrors` must be derived from. The old test was
+ * `hasErrors: !anyData`, i.e. true ONLY when every cell of every row was null:
+ * a permanently dead VVIX cascade (VVIX has NO FRED tier, so it is the most
+ * fragile of the three indices) nulled UVXY's entire row while the endpoint
+ * still reported itself green — and /api/vol gets no equivalent of
+ * check_indicators_na, so its own `_meta` is the only signal there is.
+ *
+ * A served value is never stale: `resolveVolSeries` rejects stale sources, so
+ * null is the only way a cell can be wrong.
+ */
+export function volIncompleteTickers(tickers) {
+    return (tickers || []).filter((t) => t && (t.iv == null || t.rv21 == null)).map((t) => t.ticker);
+}
 
 /**
  * Parse a CBOE daily-prices CSV. Two live schemas:

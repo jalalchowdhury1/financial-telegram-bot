@@ -24,7 +24,7 @@
 import { cnbcHistory, cnbcQuotes, polygonDaily, fredObservations, yahooChart } from '../../../lib/sources';
 import { serve } from '../../../lib/store';
 import { faultsFrom, gate } from '../../../lib/faults';
-import { parseCboeCsv, buildVolMetrics, VOL_PROXIES } from '../../../lib/vol';
+import { parseCboeCsv, buildVolMetrics, VOL_PROXIES, resolveVolSeries, volIncompleteTickers } from '../../../lib/vol';
 
 export const fetchCache = 'default-cache';
 
@@ -43,43 +43,50 @@ async function fetchCboe(name) {
 
 const toSeries = (hist) => hist.map((h) => ({ date: h.date, value: h.price })).filter((p) => Number.isFinite(p.value));
 
+/**
+ * Both cascades below hand `resolveVolSeries` an ordered list of source
+ * descriptors and let IT decide — exactly like `fetchCopperGold` hands
+ * `resolveLeg` its `copperSources`/`goldSources`. The important behaviour that
+ * buys us is the STALENESS REJECTION: a frozen tier is skipped rather than
+ * served, so the table can never present a months-old close as today's vol.
+ * Polygon's free tier is a day behind by design, so it gets a wider window.
+ */
 async function fetchIndex(name, fredKey, faults, notes) {
     const fredId = FRED_FALLBACK[name];
-    const chain = [
-        ['cboe', 'vol_cboe', () => fetchCboe(name)],
-        ['cnbc', 'vol_cnbc', async () => toSeries(await cnbcHistory(`.${name}`, { range: '3M' }))], // '3M' actually returns ~2y of daily bars
-        ...(fredId && fredKey ? [['fred', 'vol_fred', async () => {
-            const obs = await fredObservations(fredId, fredKey, { limit: 400, revalidate: 1800 });
-            return [...obs].reverse().map((o) => ({ date: o.date, value: o.value })).filter((p) => Number.isFinite(p.value));
-        }]] : []),
-        ['yahoo', 'vol_yahoo', async () => toSeries((await yahooChart(`^${name}`, { range: '2y', interval: '1d', revalidate: 1800 })).history)],
+    const sources = [
+        { name: 'cboe', gate: 'vol_cboe', fetch: () => fetchCboe(name) },
+        // '3M' actually returns ~2y of daily bars
+        { name: 'cnbc', gate: 'vol_cnbc', fetch: async () => toSeries(await cnbcHistory(`.${name}`, { range: '3M' })) },
+        ...(fredId && fredKey ? [{
+            name: 'fred', gate: 'vol_fred', fetch: async () => {
+                const obs = await fredObservations(fredId, fredKey, { limit: 400, revalidate: 1800 });
+                return [...obs].reverse().map((o) => ({ date: o.date, value: o.value })).filter((p) => Number.isFinite(p.value));
+            },
+        }] : []),
+        { name: 'yahoo', gate: 'vol_yahoo', fetch: async () => toSeries((await yahooChart(`^${name}`, { range: '2y', interval: '1d', revalidate: 1800 })).history) },
     ];
-    for (const [label, gateName, fn] of chain) {
-        try {
-            const series = await gate(gateName, faults, fn);
-            if (series && series.length) return { series, source: label };
-        } catch (e) {
-            notes.push(`${name} ${label}: ${String(e?.message).slice(0, 80)}`);
-        }
-    }
-    return { series: null, source: null };
+    const r = await resolveVolSeries(sources, faults, new Date());
+    if (!r.source) notes.push(`${name}: no fresh source [${r.tried.join(' ')}]`);
+    else if (r.tried.length > 1) notes.push(`${name}: ${r.source} [${r.tried.join(' ')}]`);
+    return { series: r.points, source: r.source, tried: r.tried };
 }
 
 async function fetchEtfCloses(ticker, polygonKey, faults, notes) {
-    const chain = [
-        ['cnbc', 'vol_cnbc', async () => (await cnbcHistory(ticker, { range: '3M' })).map((h) => h.price)],
-        ...(polygonKey ? [['polygon', 'vol_polygon', async () => (await polygonDaily(ticker, polygonKey, { years: 1, revalidate: 1800 })).history.map((h) => h.price)]] : []),
-        ['yahoo', 'vol_yahoo', async () => (await yahooChart(ticker, { range: '3mo', interval: '1d', revalidate: 1800 })).history.map((h) => h.price)],
+    const sources = [
+        { name: 'cnbc', gate: 'vol_cnbc', fetch: async () => toSeries(await cnbcHistory(ticker, { range: '3M' })) },
+        // Polygon's free tier is a day delayed BY DESIGN (see AGENTS §2 gotcha #3),
+        // which is immaterial for a 21-day window — give it room so the gate never
+        // rejects it for being exactly what it advertises.
+        ...(polygonKey ? [{
+            name: 'polygon', gate: 'vol_polygon', freshnessDays: 10,
+            fetch: async () => toSeries((await polygonDaily(ticker, polygonKey, { years: 1, revalidate: 1800 })).history),
+        }] : []),
+        { name: 'yahoo', gate: 'vol_yahoo', fetch: async () => toSeries((await yahooChart(ticker, { range: '3mo', interval: '1d', revalidate: 1800 })).history) },
     ];
-    for (const [label, gateName, fn] of chain) {
-        try {
-            const closes = await gate(gateName, faults, fn);
-            if (closes && closes.length) return { closes, source: label };
-        } catch (e) {
-            notes.push(`${ticker} ${label}: ${String(e?.message).slice(0, 80)}`);
-        }
-    }
-    return { closes: null, source: null };
+    const r = await resolveVolSeries(sources, faults, new Date());
+    if (!r.source) notes.push(`${ticker}: no fresh source [${r.tried.join(' ')}]`);
+    else if (r.tried.length > 1) notes.push(`${ticker}: ${r.source} [${r.tried.join(' ')}]`);
+    return { closes: r.points ? r.points.map((p) => p.value) : null, source: r.source, tried: r.tried };
 }
 
 /**
@@ -144,12 +151,24 @@ export async function GET(request) {
             if (indexResults[i].source) indexSources.push(`${n}:${indexResults[i].source}${liveIndices.has(n) ? '+live' : ''}`);
         });
 
-        const anyData = payload.tickers.some((t) => t.iv != null || t.rv21 != null);
+        // Honest health: a row is only usable with BOTH an IV and an RV21, so any
+        // ticker missing either one is an error. The old test (`!anyData`) only
+        // tripped when EVERY cell of EVERY row was null — so a permanently dead
+        // VVIX cascade (no FRED tier exists for VVIX) nulled UVXY's entire row
+        // while this endpoint reported itself green forever. /api/vol has no
+        // equivalent of check_indicators_na, so this `_meta` is the ONLY signal
+        // the health check gets; it has to tell the truth.
+        const incomplete = volIncompleteTickers(payload.tickers);
+        if (incomplete.length) notes.push(`incomplete rows: ${incomplete.join(', ')}`);
+        const tried = INDICES.map((n, i) => `${n}[${indexResults[i].tried.join(' ')}]`)
+            .concat(TICKERS.map((t, i) => `${t}[${etfResults[i].tried.join(' ')}]`));
         return {
             ...payload,
             _meta: {
                 source: indexSources.concat(etfSources).join(' · ') || 'none',
-                hasErrors: !anyData,
+                hasErrors: incomplete.length > 0,
+                incomplete,
+                tried,
                 messages: notes,
             },
         };

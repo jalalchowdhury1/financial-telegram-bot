@@ -1,4 +1,4 @@
-import { parseCboeCsv, realizedVol, ivRank, ivPercentile, buildVolMetrics, VOL_PROXIES } from '../vol';
+import { parseCboeCsv, realizedVol, ivRank, ivPercentile, buildVolMetrics, VOL_PROXIES, resolveVolSeries, volIncompleteTickers } from '../vol';
 
 describe('parseCboeCsv', () => {
     it('parses the OHLC schema (VIX/VXN) taking CLOSE', () => {
@@ -204,5 +204,80 @@ describe('buildVolMetrics — live intraday overrides', () => {
         expect(spy.iv).toBeCloseTo(20);
         expect(spy.live).toBe(false);
         expect(out.live_at).toBeNull();
+    });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Staleness gate (added 2026-08-06). /api/vol used to accept ANY series with
+// length > 0, so a frozen CBOE/CNBC feed served months-old vol as today's
+// number. Every sibling cascade (copperGold.resolveLeg, horsemen) rejects a
+// stale source and falls through; this one now does too.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('resolveVolSeries', () => {
+    const NOW = new Date('2026-08-06T12:00:00Z');
+    const pts = (date, value = 15) => [{ date: '2026-01-01', value: 10 }, { date, value }];
+    const src = (name, fetch, extra = {}) => ({ name, gate: `vol_${name}`, fetch, ...extra });
+
+    it('takes the first source whose newest point is fresh', async () => {
+        const r = await resolveVolSeries([src('cboe', async () => pts('2026-08-05'))], null, NOW);
+        expect(r.source).toBe('cboe');
+        expect(r.asOf).toBe('2026-08-05');
+        expect(r.tried).toEqual(['cboe:ok']);
+    });
+
+    it('REJECTS a stale source and falls through to a fresh one', async () => {
+        const r = await resolveVolSeries([
+            src('cboe', async () => pts('2026-05-01', 99)),   // frozen months ago
+            src('cnbc', async () => pts('2026-08-05', 15)),
+        ], null, NOW);
+        expect(r.source).toBe('cnbc');
+        expect(r.points[r.points.length - 1].value).toBe(15);
+        expect(r.tried).toEqual(['cboe:stale(2026-05-01)', 'cnbc:ok']);
+    });
+
+    it('returns a null series when every source is stale/empty/erroring', async () => {
+        const r = await resolveVolSeries([
+            src('cboe', async () => pts('2026-05-01')),
+            src('cnbc', async () => []),
+            src('yahoo', async () => { throw new Error('blocked'); }),
+        ], null, NOW);
+        expect(r.points).toBeNull();
+        expect(r.source).toBeNull();
+        expect(r.tried).toEqual(['cboe:stale(2026-05-01)', 'cnbc:empty', 'yahoo:err']);
+    });
+
+    it('honors the per-source fault gate like cg_* does', async () => {
+        const faults = new Set(['vol_cboe']);
+        const r = await resolveVolSeries([
+            src('cboe', async () => pts('2026-08-05', 99)),
+            src('cnbc', async () => pts('2026-08-05', 15)),
+        ], faults, NOW);
+        expect(r.source).toBe('cnbc');
+        expect(r.tried).toEqual(['cboe:off', 'cnbc:ok']);
+    });
+
+    it('allows a per-source freshness window (a day-delayed tier is still fresh)', async () => {
+        const r = await resolveVolSeries(
+            [src('polygon', async () => pts('2026-07-31'), { freshnessDays: 10 })], null, NOW);
+        expect(r.source).toBe('polygon');
+    });
+});
+
+describe('volIncompleteTickers', () => {
+    it('names every ticker missing iv or rv21', () => {
+        const tickers = [
+            { ticker: 'SPY', iv: 15, rv21: 14 },
+            { ticker: 'UVXY', iv: null, rv21: 77 },   // dead VVIX cascade (no FRED tier)
+            { ticker: 'QQQ', iv: 24, rv21: null },
+        ];
+        expect(volIncompleteTickers(tickers)).toEqual(['UVXY', 'QQQ']);
+    });
+
+    it('is empty on a fully healthy table', () => {
+        expect(volIncompleteTickers([{ ticker: 'SPY', iv: 15, rv21: 14 }])).toEqual([]);
+    });
+
+    it('treats a missing/empty table as incomplete-free but the caller sees no rows', () => {
+        expect(volIncompleteTickers(null)).toEqual([]);
     });
 });
