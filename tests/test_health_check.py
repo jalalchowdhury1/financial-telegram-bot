@@ -137,8 +137,22 @@ def test_check_report_delivered_unreadable_no_corroboration_is_warn():
 
 
 def test_check_report_delivered_gha_corroborates():
+    # CloudWatch unreadable → we cannot tell whether the Lambda delivered, so a
+    # successful runner run is the only evidence available and must stay `ok`
+    # (never a false alarm on a missing IAM grant).
     ev = {"cloudwatch_readable": False, "markers": [], "gha_success_today": True}
     assert hc.check_report_delivered(ev)["severity"] == "ok"
+
+
+def test_check_report_delivered_backstop_only_warns_primary_is_down():
+    """CloudWatch readable + NO Lambda marker + runner succeeded = the backstop
+    is silently covering for a dead primary. This exact state ran undetected
+    from 2026-06-01 to 2026-08-06 (the recreated Lambda lost its EventBridge
+    invoke grant) because this case returned `ok`."""
+    ev = {"cloudwatch_readable": True, "markers": [], "gha_success_today": True}
+    f = hc.check_report_delivered(ev)
+    assert f["severity"] == "warn"
+    assert "backstop" in f["title"].lower() or "backstop" in f["detail"].lower()
 
 
 def test_check_config_urls_flags_missing_known_keys():

@@ -128,7 +128,28 @@ def check_report_delivered(evidence):
                         detail="CloudWatch shows a REPORT_FAILED marker for today.",
                         remediation="auto:redispatch_daily_report", evidence={"markers": markers})
     if evidence.get("gha_success_today"):
+        # A delivered report is NOT proof the system is healthy. There are two
+        # senders: the Lambda (primary, EventBridge ~08:15 UTC) and the runner
+        # (backstop, daily_report.yml ~09:45 UTC). If CloudWatch was readable and
+        # showed no Lambda marker, the primary did NOT deliver and the backstop
+        # covered — the owner still gets the report, so this is a warn, not a
+        # critical, but it MUST NOT read as `ok`. Returning `ok` here is why the
+        # EventBridge outage of 2026-06-01 → 2026-08-06 stayed invisible for two
+        # months (the recreated Lambda lost its invoke grant AND its Telegram env
+        # vars; AWS/Events FailedInvocations sat at 1/day the whole time).
+        if evidence.get("cloudwatch_readable", False):
+            return _finding(
+                fid, "warn", "Report delivered by BACKSTOP only — Lambda path is down",
+                detail=("No REPORT_DELIVERED marker from the Lambda in the last 24h, but "
+                        "daily_report.yml succeeded. The EventBridge→Lambda primary path is "
+                        "failing and the runner is masking it. Check the rule's AWS/Events "
+                        "FailedInvocations metric, the Lambda's resource policy (needs an "
+                        "events.amazonaws.com invoke grant) and its env vars "
+                        "(TELEGRAM_TOKEN/TELEGRAM_CHAT_ID)."),
+                remediation="manual", evidence=evidence)
+        # CloudWatch unreadable → the Lambda path is unknowable, not known-bad.
         return _finding(fid, "ok", "Daily report delivered today (via daily_report.yml)",
+                        detail="CloudWatch unreadable, so the Lambda path could not be checked.",
                         evidence={"source": "github-actions"})
     if not evidence.get("cloudwatch_readable", False):
         return _finding(fid, "warn", "Could not confirm today's report delivery",
