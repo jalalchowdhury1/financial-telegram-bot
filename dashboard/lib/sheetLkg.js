@@ -175,12 +175,15 @@ export function reconstructFred(map, now = new Date()) {
 
     return {
         horsemen,
+        // staleDays/unavailable are carried here for the same reason every other
+        // reconstructed metric carries them: the health check's N/A sweep now covers
+        // these two top-level cards, and a card without staleDays reads as fresh.
         yieldCurve: ycCurrent !== null
-            ? { current: ycCurrent, asOf: orNull(map['yieldCurve.asOf']), stale: true, history: ycHistory }
-            : { current: null, asOf: null, stale: false, history: ycHistory },
+            ? { current: ycCurrent, asOf: orNull(map['yieldCurve.asOf']), stale: true, staleDays: STALE_DAYS, unavailable: false, history: ycHistory }
+            : { current: null, asOf: null, stale: false, staleDays: 0, unavailable: true, history: ycHistory },
         profitMargin: pmCurrent !== null
-            ? { current: pmCurrent, asOf: orNull(map['profitMargin.asOf']), stale: true, history: [] }
-            : { current: null, asOf: null, stale: false, history: [] },
+            ? { current: pmCurrent, asOf: orNull(map['profitMargin.asOf']), stale: true, staleDays: STALE_DAYS, unavailable: false, history: [] }
+            : { current: null, asOf: null, stale: false, staleDays: 0, unavailable: true, history: [] },
         peRatio,
         peRatioAsOf: updatedAt || now.toISOString(),
         recessions: [],

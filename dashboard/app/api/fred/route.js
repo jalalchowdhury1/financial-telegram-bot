@@ -313,11 +313,11 @@ async function repairHorsemen(responseData, { now, faults, blsKey, messages }) {
     // The spread powers BOTH the horsemen overlay and the standalone Yield Curve
     // card, which read `yieldCurve` — so it is repaired there, not under horsemen.
     repair('spread', spreadSources(now), responseData.yieldCurve, (r) => {
+        // Spread the whole horseman (it already carries staleDays/unavailable from
+        // withFreshness). A repaired-but-still-stale spread must stay visible to the
+        // health check's N/A sweep exactly like an unrepaired one.
         const h = buildHorseman(r, FRED_FRESHNESS.T10Y2Y, now);
-        responseData.yieldCurve = {
-            current: h.current, asOf: h.asOf, stale: h.stale, date: h.asOf,
-            history: h.history, source: h.source,
-        };
+        responseData.yieldCurve = { ...h, value: h.current, date: h.asOf };
         return responseData.yieldCurve;
     });
 
@@ -358,8 +358,13 @@ function buildResponse(series, peRatio, now, peSource = null) {
     if (recStart !== null) recessionPeriods.push({ start: recStart, end: recSorted[recSorted.length - 1].date });
 
     // ── Top cards ──
+    // SPREAD the whole withFreshness result — do NOT cherry-pick. `staleDays` and
+    // `unavailable` are what the daily health check's N/A sweep reads
+    // (health_check.py: fred_metrics_for_na_check / check_indicators_na), and this
+    // card is the 10Y-2Y horseman. Dropping them left a frozen yield curve
+    // permanently green while the two lines drawn beside it would have warned.
     const yc = withFreshness(t10y2y[0]?.value, dateOf(t10y2y), FRED_FRESHNESS.T10Y2Y, now);
-    const yieldCurve = { current: yc.value, asOf: yc.asOf, stale: yc.stale, date: t10y2y[0]?.date, history: [...t10y2y].reverse() };
+    const yieldCurve = { ...yc, current: yc.value, date: t10y2y[0]?.date, history: [...t10y2y].reverse() };
 
     const gdpMap = new Map();
     for (const gd of gdpData) gdpMap.set(gd.date, gd.value);
@@ -368,8 +373,9 @@ function buildResponse(series, peRatio, now, peSource = null) {
         const gdpValue = gdpMap.get(cp.date);
         if (gdpValue && gdpValue !== 0) profitMarginHistory.push({ date: cp.date, value: (cp.value / gdpValue) * 100 });
     }
+    // Same rule as yieldCurve above: spread, never cherry-pick.
     const pm = withFreshness(profitMarginHistory[0]?.value, profitMarginHistory[0]?.date, FRED_FRESHNESS.A053RC1Q027SBEA, now);
-    const profitMargin = { current: pm.value, asOf: pm.asOf, stale: pm.stale, date: profitMarginHistory[0]?.date || '', history: [...profitMarginHistory].reverse() };
+    const profitMargin = { ...pm, current: pm.value, date: profitMarginHistory[0]?.date || '', history: [...profitMarginHistory].reverse() };
 
     // ── Economic indicators ──
     const unrate3mo = unrate.length >= 3 ? unrate.slice(0, 3).reduce((s, v) => s + v.value, 0) / 3 : null;

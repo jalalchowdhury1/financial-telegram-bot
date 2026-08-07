@@ -162,3 +162,27 @@ describe('formatAsOf', () => {
         expect(formatAsOf('nope')).toBeNull();
     });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Deadlines must cover the publisher's REAL cadence, or graceful staleness turns
+// into a standing false alarm — the same trap that made UMCSENT/M2SL/DGORDER/
+// PSAVERT need 95 instead of 80. Now that these cards are in the health check's
+// N/A sweep, a too-tight deadline is not just an orange 🕐, it is a daily warn.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('FRED_FRESHNESS deadlines vs the real publication cadence', () => {
+    test('profitMargin (corporate profits) survives a full BEA quarterly cycle', () => {
+        // FRED dates a quarter at its START; BEA publishes corporate profits with the
+        // GDP 2nd estimate ~2 months after the quarter ENDS. So Q2 2026 (dated
+        // 2026-04-01) prints ~2026-08-27 and stays the newest point until Q3 prints
+        // ~2026-11-25 — by which time it is 238 days old and still perfectly current.
+        const asOf = '2026-04-01';
+        const justBeforeNextPrint = new Date('2026-11-25T12:00:00Z');
+        expect(isStale(asOf, FRED_FRESHNESS.A053RC1Q027SBEA, justBeforeNextPrint)).toBe(false);
+    });
+
+    test('but a genuinely dead corporate-profits feed still trips it', () => {
+        // A full extra quarter with no print (~330 days) must NOT pass.
+        expect(isStale('2026-04-01', FRED_FRESHNESS.A053RC1Q027SBEA,
+            new Date('2027-02-25T12:00:00Z'))).toBe(true);
+    });
+});

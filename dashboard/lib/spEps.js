@@ -15,7 +15,7 @@
  * TTM as-reported earnings inherently lag ~2-3 quarters and an old real number
  * beats an N/A. Fresh sources are still preferred over stale ones.
  */
-import { isStale } from './freshness';
+import { isStale, withFreshness } from './freshness';
 
 /** History start — matches the Profit Margin card's span (quarterly since 1947). */
 export const SP_EPS_START = '1947-01-01';
@@ -118,14 +118,21 @@ export async function resolveSpEps(sources, faults, now = new Date()) {
         if (!Number.isFinite(r.current) || !r.currentDate) { tried.push(`${s.name}:empty`); continue; }
         const stale = isStale(r.currentDate, s.freshnessDays, now);
         tried.push(`${s.name}:${stale ? `stale(${r.currentDate})` : 'ok'}`);
-        if (!fresh && !stale) fresh = { current: r.current, asOf: r.currentDate, source: s.name };
-        else if (!staleBest && stale) staleBest = { current: r.current, asOf: r.currentDate, source: s.name };
+        if (!fresh && !stale) fresh = { current: r.current, asOf: r.currentDate, source: s.name, freshnessDays: s.freshnessDays };
+        else if (!staleBest && stale) staleBest = { current: r.current, asOf: r.currentDate, source: s.name, freshnessDays: s.freshnessDays };
     }
     const level = fresh || staleBest;
+    // `staleDays` (whole days past the WINNING source's own deadline) is what the
+    // daily health check's N/A sweep tests (`staleDays > 3`). Graceful staleness is
+    // deliberate here — an old real earnings number beats an N/A — but it must still
+    // be VISIBLE: multpl and derived both dying, leaving datahub to serve a level
+    // years behind, is a real break, not normal reporting lag.
+    const f = level ? withFreshness(level.current, level.asOf, level.freshnessDays, now) : null;
     return {
         current: level ? level.current : null,
         asOf: level ? level.asOf : null,
         stale: !!(level && !fresh),
+        staleDays: f ? f.staleDays : 0,
         unavailable: !level,
         source: level ? level.source : null,
         historySource,

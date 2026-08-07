@@ -69,8 +69,16 @@ export const FRED_FRESHNESS = {
     PE10: 80,
     // Monthly but heavily lagged
     JTSJOL: 110,   // JOLTS publishes ~2 months behind
-    // Quarterly (GDP/corp profits — newest quarter is months old by date)
-    A053RC1Q027SBEA: 200,
+    // Quarterly (GDP/corp profits — newest quarter is months old by date).
+    // 250, NOT 200. FRED dates a quarter at its START and BEA publishes corporate
+    // profits with the GDP 2nd estimate ~2 months after the quarter ENDS, so e.g.
+    // Q2 2026 (dated 2026-04-01) only prints ~2026-08-27 and then remains the newest
+    // point until Q3 prints ~2026-11-25 — ageing to 238 days while being completely
+    // current. 200 marked it stale for ~5 weeks of every quarter (observed live
+    // 2026-08-06: newest point 2026-01-01, 217 days old, wrongly orange 🕐). Same
+    // class of mis-tuning as UMCSENT/M2SL at 80. 250 = 238 worst case + slack, and
+    // still catches a feed that misses an entire print.
+    A053RC1Q027SBEA: 250,
     GDP: 200,
 };
 

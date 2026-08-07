@@ -172,3 +172,39 @@ describe('resolveSpEps cascade', () => {
         expect(r.history).toEqual([]);
     });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// staleDays (added 2026-08-06) — spEps is in the health check's N/A sweep now,
+// and that sweep's overdue test is `staleDays > 3`. Without this field a
+// gracefully-stale EPS (multpl AND derived both dead, datahub serving a level
+// years behind) reported `stale: true` to the UI but stayed invisible to the
+// health check, because staleDays defaulted to 0.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('resolveSpEps staleDays', () => {
+    const src2 = (name, freshnessDays, result) => ({
+        name, freshnessDays, fetch: async () => result,
+    });
+
+    test('is 0 when a fresh source wins', async () => {
+        const r = await resolveSpEps(
+            [src2('multpl', 400, { current: 241.5, currentDate: iso(276), historyAsc: [] })],
+            new Set(), NOW);
+        expect(r.stale).toBe(false);
+        expect(r.staleDays).toBe(0);
+    });
+
+    test('counts whole days past the winning source deadline when only a stale level exists', async () => {
+        // 1100 days old against a 400-day window = 700 days overdue.
+        const r = await resolveSpEps(
+            [src2('datahub', 400, { current: 181.17, currentDate: iso(1100), historyAsc: [] })],
+            new Set(), NOW);
+        expect(r.stale).toBe(true);
+        expect(r.staleDays).toBe(700);
+    });
+
+    test('is 0 when nothing resolved at all (unavailable, not overdue)', async () => {
+        const r = await resolveSpEps([src2('multpl', 400, null)], new Set(), NOW);
+        expect(r.unavailable).toBe(true);
+        expect(r.staleDays).toBe(0);
+    });
+});
