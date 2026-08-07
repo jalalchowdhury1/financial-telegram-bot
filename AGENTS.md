@@ -265,6 +265,15 @@ multi-candidate "favorites" lists; a fresher momentum window via the CLOB price-
   **Late-month monthlies are 95** (`UMCSENT`, `M2SL`, `DGORDER`, `PSAVERT`) — their free FRED
   series only print ~the 26th of the following month, so the newest point ages to ~85d before
   the next print; 80 false-alarmed them N/A for ~a week each month. Don't drop these to 80.
+  **Corporate profits (`A053RC1Q027SBEA`, the Profit Margin card) is 250, not 200** — same
+  class of mis-tuning. FRED dates a quarter at its START and BEA publishes corporate profits
+  with the GDP **2nd estimate ~2 months after the quarter ENDS**, so Q2 2026 (dated
+  `2026-04-01`) only prints ~2026-08-27 and then stays the newest point until Q3 prints
+  ~2026-11-25 — ageing to **238 days while being completely current**. At 200 the card was
+  wrongly orange 🕐 for ~5 weeks of every quarter (observed live 2026-08-06: newest point
+  `2026-01-01`, 217 days old). 250 = the 238-day worst case + slack, and still catches a feed
+  that misses a whole print. This mattered more once the card entered the N/A sweep below:
+  a too-tight deadline stopped being a cosmetic 🕐 and became a daily false `warn`.
 - **Stale ≠ N/A (graceful staleness).** A value past its deadline is NO LONGER nulled: it keeps
   showing as the **last-known value in orange with a 🕐 clock** ("As of <date> (stale)").
   `value` goes `null` (→ true N/A, yellow) ONLY when the fetch returns nothing
@@ -272,9 +281,24 @@ multi-candidate "favorites" lists; a fresher momentum window via the CLOB price-
   `staleDays` (whole days past deadline) and `freshnessNote` returns `tone`
   (`fresh|stale|unavailable`). The health check (`scripts/health_check.py:check_indicators_na`)
   warns only when a metric is `unavailable` OR `staleDays > 3` (genuinely overdue) — normal
-  reporting lag never alarms — and it sweeps `indicators`, `checklist` AND the `horsemen`
-  block (`fred_metrics_for_na_check` maps horsemen `current`→`value`, so e.g. a dead
-  uscourts bankruptcies feed eventually warns as `horsemen_bankruptcies`). A genuinely
+  reporting lag never alarms — and it sweeps `indicators`, `checklist`, the `horsemen`
+  block AND the **top-level cards `yieldCurve` / `profitMargin` / `spEps`**
+  (`fred_metrics_for_na_check` maps `current`→`value` for both groups, so e.g. a dead
+  uscourts bankruptcies feed eventually warns as `horsemen_bankruptcies`). The top-level
+  three were OUTSIDE the sweep until 2026-08-06, which mattered most for **`yieldCurve`,
+  because it IS the 10Y−2Y horseman** (the card reuses `fred.yieldCurve` rather than
+  duplicating it): if FRED froze `T10Y2Y` and the repair cascade adopted nothing, `failed`
+  stayed empty, `hasErrors` stayed false and `endpoint_fred` stayed green **forever**, while
+  claims and unemployment — the two lines drawn right beside it — would have warned via
+  `staleDays > 3`. **When building these cards, SPREAD the whole `withFreshness` result
+  (`{...yc, current: yc.value}`) — never cherry-pick.** `buildResponse` used to hand-pick
+  `{current, asOf, stale, date, history}` and DROP `staleDays`/`unavailable`, which is
+  exactly what made them invisible to the sweep; the same applies to the repaired spread in
+  `repairHorsemen` and to `reconstructFred` in `lib/sheetLkg.js`. `resolveSpEps` now also
+  returns `staleDays` for the same reason (graceful staleness is deliberate there, but it
+  must still be VISIBLE — multpl and derived both dying, leaving datahub to serve a level
+  years behind, is a real break, not reporting lag). `peRatio` is deliberately NOT in the
+  sweep — `check_pe_source` reports the more specific CAPE-for-TTM substitution. A genuinely
   discontinued series keeps showing old orange data and warns daily until replaced or added to
   `KNOWN_DISCONTINUED`. `isGood` still keeps the payload as long as **≥1 series loaded**
   (`loadedCount > 0`); a total 0/17 outage falls through to last-known-good.
@@ -371,6 +395,25 @@ multi-candidate "favorites" lists; a fresher momentum window via the CLOB price-
   SOURCE** (tripping one disables it everywhere, like `cg_*`): **`vol_cboe` / `vol_cnbc` /
   `vol_fred` / `vol_polygon` / `vol_yahoo`**. `_meta.source` lists the winning source per
   series (e.g. `VIX:cboe · SPY:cnbc`). The endpoint is in the health-check's GET sweep.
+  - **Staleness gate + honest `hasErrors` (added 2026-08-06).** Both cascades now go
+    through `lib/vol.js: resolveVolSeries`, which is the SAME contract as copper/gold's
+    `resolveLeg` — skip fault-injected sources, reject empty ones, and **reject any series
+    whose newest point is older than `VOL_FRESHNESS_DAYS` (7)**, falling through to the next
+    tier with a `tried` trail (`cboe:stale(2026-05-01) → cnbc:ok`). Before this the cascade
+    accepted any array with `length > 0`, so a frozen CBOE CSV or a CNBC endpoint replaying
+    an old window would win tier 1 forever and the table would present **months-old vol as
+    today's number**. Everything here is a DAILY series, so 7 days = a long holiday weekend
+    (same reasoning as `FRED_FRESHNESS.T10Y2Y`); Polygon's tier gets `freshnessDays: 10`
+    because its free tier is a day behind BY DESIGN (§2 gotcha #3). A served value is
+    therefore never stale — null is the only way a cell can be wrong.
+    `_meta.hasErrors` is now `volIncompleteTickers(tickers).length > 0` — **any ticker
+    missing `iv` OR `rv21`**. The old test was `hasErrors: !anyData`, which only tripped
+    when EVERY cell of EVERY row was null: a permanently dead **VVIX** cascade (VVIX has
+    **no FRED tier**, so it is the most fragile of the three indices) nulled UVXY's entire
+    row while the endpoint still reported itself green. `/api/vol` gets no equivalent of
+    `check_indicators_na`, so this `_meta` is the ONLY signal the health check has — it has
+    to tell the truth. `_meta` also carries `incomplete` (the ticker names) and `tried`
+    (the full per-series cascade trail).
   UI thresholds (hedgelab convention): percentile/rank ≤10 green (cheap), ≥70 orange,
   ≥90 red (panic); negative VRP orange (realized above implied = stress).
 - **Four Horsemen — Recession Watch** (`FourHorsemen.js`, full-width card after the
@@ -450,6 +493,21 @@ multi-candidate "favorites" lists; a fresher momentum window via the CLOB price-
     quarter. Test-fired 2026-07-25 (`workflow_dispatch`): walked all 99 quarters, newest
     `2026-03-31 total=591,850 business=25,960` (matches live), printed `no change (99
     quarters)`, opened no PR, sent no Telegram — i.e. the silent-when-healthy path works.
+    **The notify could not fire in the failure it exists to catch (fixed 2026-08-06).** The
+    PR work and the Telegram were two steps: the first did `URL=$(gh pr create … | tail -1)`
+    under `set -uo pipefail` + `bash -e`, and the second was `if: env.MSG != ''` with no
+    `if: always()`. A failing `gh pr create` (e.g. the "Allow GitHub Actions to create and
+    approve pull requests" repo setting being OFF, which killed self-improve on 2026-08-05 —
+    see §7) propagated its exit code out of the ASSIGNMENT and killed the step **before**
+    the `echo "MSG=…"`, so the notify saw an empty `MSG` and was skipped. Net: branch
+    pushed, no PR, **no Telegram** — and since silence is this workflow's healthy state,
+    the failure read as success. A failing `git push` had the same shape. Both are now ONE
+    step with `if: always()`, using self-improve's pattern (`if PR_OUT=$(gh pr create …)`
+    / `if ! PUSH_OUT=$(git push …)`, a `::warning::` with the real error, and a
+    `/compare/<branch>?expand=1` fallback link), sending only when `MSG` is non-empty so
+    "no new quarter" stays silent. It also tests `steps.rebake.outcome != "success"` rather
+    than `= "failure"`, so a **skipped** rebuild is not read as healthy. Shape-tested in
+    `tests/test_workflows.py` (both this and `self-improve.yml`).
   - **INDEPENDENT SOURCES for the three FRED-fed lines** (`lib/horsemen.js`, added
     2026-07-25, PRs #35+#36). Before this, claims/unemployment/spread had exactly ONE live
     provider (the FRED API) behind ONE api key — while copper/gold got 4-5 providers per leg
@@ -683,8 +741,9 @@ multi-candidate "favorites" lists; a fresher momentum window via the CLOB price-
   bankruptcies history from uscourts.gov F-2 tables (run with `uv run`; rarely needed —
   the dashboard's live tier keeps the newest quarter fresh on its own).
 - `tests/` — pytest: `test_polymarket_fetcher`, `test_run_report`, `test_utils`,
-  `test_health_check`, `test_collect_health_context`. Dashboard Jest tests live under
-  `dashboard/**/__tests__/`.
+  `test_health_check`, `test_collect_health_context`, `test_workflows` (shape tests for the
+  two "silence is healthy" workflows — needs `PyYAML`, in `requirements-dev.txt`).
+  Dashboard Jest tests live under `dashboard/**/__tests__/`.
 - `.github/workflows/` — `deploy-lambda.yml` (auto-deploys the Lambda on `bot/**` /
   `lambda_handler.py` changes), `daily_report.yml` (09:45 UTC runner-based report backstop +
   CloudWatch skip-guard + self-retry harness), `ci.yml` (pytest + jest + build on every PR —
@@ -710,6 +769,30 @@ silent when green and alerts only on warn/critical (`--notify`). **Weekly**
 (`self-improve.yml`, Wed 13:00 UTC) a headless Claude agent reads the recent reports + this
 file and opens PRs the owner approves (it never self-merges; branch protection enforces it).
 
+### ⚠️ The governing principle for every check in this file
+**A green check must prove the PRIMARY path ran. If a FALLBACK can satisfy the check, the
+check is a false negative** — and this system is built almost entirely out of fallbacks, so
+that is the default failure mode, not an edge case. Every silent outage this repo has had
+was of exactly this shape: something degraded, a backup absorbed it, and the monitor kept
+reporting green. Known instances, all fixed 2026-08-06:
+- `check_report_delivered` returned `ok` when only the **GHA backstop** delivered — hid a
+  dead EventBridge→Lambda path for **two months** (§2 gotcha #0).
+- The **P/E tile** silently served Shiller CAPE when the TTM scrape broke → `check_pe_source`.
+- **`/api/vol`** accepted any non-empty series, so a frozen feed served months-old vol as
+  current, and `hasErrors` only tripped if EVERY cell was null → staleness gate + per-ticker
+  `hasErrors`.
+- The **four Lambda-primary routes** fall back to direct sources with `hasErrors:false`, so
+  a dead Lambda was invisible → `lambda_primary_path`.
+- **`yieldCurve`/`profitMargin`/`spEps`** sat outside the N/A sweep, so a frozen `T10Y2Y`
+  could never warn → they are in `fred_metrics_for_na_check` now.
+- **`rebake-bankruptcies.yml`** could not Telegram in the failure it exists to catch, while
+  "silence is the healthy state" made that read as success.
+
+When you add or change a check, ask: *what would this report if the primary died and the
+backup covered?* If the answer is "ok", it is not a check. The mirror-image rule still
+applies though — **unknowable ≠ known-bad** (an unreadable CloudWatch or an unparseable
+payload must never manufacture an alarm), and normal reporting lag must never alarm.
+
 ### How detection works (deterministic, $0)
 `scripts/health_check.py` runs all checks, each yielding a finding
 `{id, severity (ok|warn|critical), title, detail, remediation, evidence}`; `overall` = worst
@@ -721,10 +804,29 @@ severity. It is **never-throw** — a broken probe becomes a finding, not a cras
   (`PROBE_ATTEMPTS=3`, `PROBE_BACKOFF=(3,10,20)`, `PROBE_TIMEOUT=45`), and **retries a
   self-reported-degraded 200** too — so a cold start / slow first load / momentary blip is
   never mistaken for an outage.
-- **`indicators_na`** — inspects `/api/fred`'s `indicators` + `checklist` + `horsemen`
+- **`indicators_na`** — inspects `/api/fred`'s `indicators` + `checklist` + `horsemen` +
+  the top-level `yieldCurve`/`profitMargin`/`spEps` cards
   (via `fred_metrics_for_na_check`); an unexpected `null`/`unavailable`/overdue metric
   is `warn`; a metric on the `KNOWN_DISCONTINUED` allowlist (currently `lei`) is expected and
   never alarmed.
+- **`lambda_primary_path`** — **is the Lambda still serving the dashboard's HTTP data
+  path, or is everything quietly on fallbacks?** `/api/spy`, `/api/market-extra`,
+  `/api/spy-daily-move` and `/api/polymarket` are Lambda-primary; when the Lambda does not
+  answer they fall back to direct public sources and return `hasErrors:false`
+  **on purpose** (a full direct build IS healthy data — hard-coding `hasErrors:true` once
+  made SPY perpetually red), recording the Lambda failure only in a `_meta.messages` string
+  nothing reads. The prober only ever touches Vercel. So a lost `apigateway` invoke grant —
+  the EXACT failure that hid on the EventBridge grant for two months (§2 gotcha #0) — would
+  flip all four routes to fallbacks with every check still green. The check reads **which
+  source won**: every dashboard fallback builder labels itself `… (fallback)`
+  (`Polygon + Finnhub (fallback)`, `Direct sources (fallback)`, `Finnhub (fallback)`,
+  `Polymarket Gamma API (fallback)`) and no Lambda label ever contains that marker
+  (`Polygon + Finnhub Spot`, `yfinance/Polygon/Finnhub/FRED/ER-API`, `Google Sheets`), so
+  one marker separates the paths for all four routes without a per-route allowlist that
+  would rot the next time a waterfall tier is renamed. Unreadable payloads are **skipped,
+  not counted against the Lambda** (`endpoint_<name>` already owns an outage; unknowable
+  must never become known-bad). Verify it end-to-end with `?_fail=lambda`, which forces
+  every one of the four onto its fallback.
 - **`report_delivered_today`** — from delivery evidence gathered by the workflow (CloudWatch
   `REPORT_DELIVERED`/`REPORT_FAILED` markers in a **rolling 24 h** window + whether
   `daily_report.yml` succeeded in the same rolling 24 h). Lambda marker present → `ok`;
@@ -753,6 +855,7 @@ Each finding has an `id`. Map id → meaning → fix:
 | `report_delivered_today` **severity `warn`, title "delivered by BACKSTOP only"** | The report *did* reach the owner, but the **runner backstop sent it and the Lambda did not** — the primary path is down and used to be invisible | Check `AWS/Events` **`FailedInvocations`** for rule `daily-financial-report-trigger` (a steady 1/day = the Lambda is rejecting EventBridge), then the Lambda's **resource policy** (needs an `events.amazonaws.com` invoke grant, Sid `AllowEventBridgeDailyReport`) and its **env vars**. See gotcha #0 in §2 — recreating the function wipes both. |
 | `endpoint_<name>` | `/api/<name>` returned non-200, invalid JSON, a bare `NaN`, or `_meta.hasErrors` | Hit the live URL, read `_meta.messages`; fix per §3 (never-throw, sanitize NaN). Slow first loads + transient degradation are already retried, so a flagged endpoint is genuinely failing. |
 | `indicators_na` | A dashboard indicator is N/A **unexpectedly** | `detail` names the metric; repair/extend its fallback. Known-discontinued metrics are allowlisted (`KNOWN_DISCONTINUED`) and never alarmed. |
+| `lambda_primary_path` | The dashboard is serving correct numbers **from its fallbacks** — the API Gateway → Lambda hop is failing | `evidence.fallback_routes` names which routes fell back. Check the Lambda's **resource policy** for an `apigateway.amazonaws.com` invoke grant (§2 "Wiring a new API Gateway"), that Vercel's `LAMBDA_URL` still points at the gateway base (NOT the dead Function URL), and the function's recent CloudWatch errors. Nothing looks broken on the page — that is exactly why this check exists. |
 | `known_issue_config_urls` | `bot/config.py` `URLS` missing a required key | Add the key — the URLs live in `dashboard/lib/constants.js`. |
 | `secret_leak` | gitleaks found a credential in the repo | **Rotate it immediately**, then remove the literal (env vars only). |
 | `ci_health` | An **active** workflow's **latest** run failed | Open that run, read the failure, fix + PR. Historical/fixed failures and deleted workflows are already excluded. |
