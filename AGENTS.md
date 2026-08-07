@@ -90,10 +90,11 @@ The deploy runs `update-function-code` ONLY. **`aws/template.yaml` (the SAM temp
 never applied.** Lambda env vars, memory/timeout, the EventBridge schedule, and the
 Function URL are all hand-managed in the AWS console and can drift from the template.
 **Editing `template.yaml` does NOT change the live function** — change those in the
-console (or extend the workflow) and update the template to match. Concrete known drift:
-`template.yaml` declares the schedule as `cron(15 8 * * ? *)` (08:15 UTC) but the live
-EventBridge rule fires ~**09:15 UTC** (the workflows are written around 09:15). Trust the
-code/workflow comments over the template for the live schedule.
+console (or extend the workflow) and update the template to match. Live schedule (verified
+against the actual rule 2026-08-06): EventBridge rule `daily-financial-report-trigger`,
+`cron(15 8 * * ? *)` = **08:15 UTC**, matching the template. (This section used to claim
+the live rule fired ~09:15 UTC — that was wrong. The downstream workflow crons at 09:45
+and 14:00 UTC still work fine with an 08:15 send; they only assume "before 09:45".)
 
 ### Hard rules for the deployment package
 - **Never build Lambda deps on a Mac.** Native wheels (numpy/pandas) built locally crash
@@ -113,7 +114,20 @@ code/workflow comments over the template for the live schedule.
   (both are gitignored). A small committed `aws/deployment.zip` exists as a historical
   artifact and is **not** what CI ships — ignore it.
 
-### Three Lambda gotchas that have caused real outages
+### Four Lambda gotchas that have caused real outages
+0. **Recreating the Lambda wipes its resource policy — re-grant EventBridge, not just
+   API Gateway.** The function was recreated 2026-06-01; the API Gateway invoke grants
+   were restored (see "Wiring a new API Gateway" below) but the EventBridge grant was
+   forgotten. Result: the schedule rule fired every morning and got AccessDenied at the
+   Lambda — **1 silent `FailedInvocations`/day for 2 months** (the GHA 09:45 backstop
+   masked it; fixed 2026-08-06). EventBridge invoke failures produce NO CloudWatch logs
+   on the Lambda — check the `AWS/Events` `FailedInvocations` metric for the rule. Re-grant:
+   ```bash
+   aws lambda add-permission --function-name financial-telegram-report \
+     --statement-id AllowEventBridgeDailyReport --action lambda:InvokeFunction \
+     --principal events.amazonaws.com \
+     --source-arn "arn:aws:events:us-east-1:463256610967:rule/daily-financial-report-trigger"
+   ```
 1. **yfinance must cache to `/tmp`.** Lambda's filesystem is read-only except `/tmp`.
    Without a writable TZ/cookie cache, every Yahoo call is a fresh cookieless scrape and
    Yahoo **429-rate-limits / IP-bans** the function. `bot/fetchers.py:_fetch_yfinance`
