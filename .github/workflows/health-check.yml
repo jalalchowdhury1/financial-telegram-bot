@@ -48,8 +48,12 @@ jobs:
             --filter-pattern '?REPORT_DELIVERED ?REPORT_FAILED' \
             --query 'events[].message' --output json 2>/dev/null) || { READABLE=false; MARKERS='[]'; }
           [ -z "$MARKERS" ] && MARKERS='[]'
-          GHA_TODAY=$(gh run list --workflow daily_report.yml --status success --created "$(date -u +%Y-%m-%d)" --json databaseId --jq 'length' 2>/dev/null || echo 0)
-          GHA_BOOL=$([ "${GHA_TODAY:-0}" -gt 0 ] && echo true || echo false)
+          # Same rolling 24h window as CloudWatch above — NOT a UTC calendar day. A UTC-day
+          # check run just past midnight UTC (e.g. a manual run at 8pm ET) sees zero runs
+          # "today", false-flags critical, and auto-redispatches a duplicate report
+          # (happened 2026-08-07T00:02Z).
+          GHA_24H=$(gh run list --workflow daily_report.yml --status success --limit 20 --json createdAt --jq '[.[] | select((now - (.createdAt | fromdateiso8601)) < 86400)] | length' 2>/dev/null || echo 0)
+          GHA_BOOL=$([ "${GHA_24H:-0}" -gt 0 ] && echo true || echo false)
           echo "{\"cloudwatch_readable\": $READABLE, \"markers\": $MARKERS, \"gha_success_today\": $GHA_BOOL}" > delivery_evidence.json
           cat delivery_evidence.json
 
