@@ -726,11 +726,21 @@ severity. It is **never-throw** — a broken probe becomes a finding, not a cras
   is `warn`; a metric on the `KNOWN_DISCONTINUED` allowlist (currently `lei`) is expected and
   never alarmed.
 - **`report_delivered_today`** — from delivery evidence gathered by the workflow (CloudWatch
-  `REPORT_DELIVERED`/`REPORT_FAILED` markers in the last 24 h + whether `daily_report.yml`
-  succeeded today). `REPORT_FAILED` or no marker (and CloudWatch readable) → `critical` +
-  `remediation: auto:redispatch_daily_report`; marker present or a GHA success → `ok`;
-  CloudWatch unreadable with no corroboration → `warn` ("could not confirm"), never a false
-  critical.
+  `REPORT_DELIVERED`/`REPORT_FAILED` markers in a **rolling 24 h** window + whether
+  `daily_report.yml` succeeded in the same rolling 24 h). Lambda marker present → `ok`;
+  `REPORT_FAILED`, or no marker with no GHA run → `critical` + `remediation:
+  auto:redispatch_daily_report`; CloudWatch unreadable with no corroboration → `warn`
+  ("could not confirm"), never a false critical.
+  **A GHA success alone is NOT `ok`.** There are two senders — the Lambda (primary,
+  EventBridge ~08:15 UTC) and the runner (backstop, ~09:45 UTC). CloudWatch readable + no
+  Lambda marker + GHA success → **`warn`: "delivered by BACKSTOP only"**, because the report
+  arrived but the primary is dead. Treating that as `ok` is what hid the 2026-06-01 →
+  2026-08-06 EventBridge outage for two months. CloudWatch *unreadable* still returns `ok`
+  (unknowable ≠ known-bad, so a missing IAM grant can't false-alarm).
+  **Both windows are rolling 24 h on purpose — never a UTC calendar day.** A calendar-day
+  query run just past 00:00 UTC finds zero runs "today", escalates to `critical`, and
+  auto-redispatches a **duplicate report** (happened 2026-08-07T00:02Z; the same bug class
+  was fixed once before in PR #5 and reintroduced by the GHA cross-check).
 - **`known_issue_config_urls`**, **`secret_leak`** (gitleaks), **`ci_health`** (latest run
   per **active** workflow) — see the table below.
 
@@ -740,6 +750,7 @@ Each finding has an `id`. Map id → meaning → fix:
 | Finding `id` | What it means | How to act |
 |---|---|---|
 | `report_delivered_today` | Couldn't confirm today's Telegram report went out | `cloudwatch_readable:false` → the `logs:FilterLogEvents` IAM grant is missing (owner action), **not a real outage**. A `REPORT_FAILED` marker → a real send failure: read the Lambda's CloudWatch logs; the daily run may already have re-dispatched `daily_report.yml`. |
+| `report_delivered_today` **severity `warn`, title "delivered by BACKSTOP only"** | The report *did* reach the owner, but the **runner backstop sent it and the Lambda did not** — the primary path is down and used to be invisible | Check `AWS/Events` **`FailedInvocations`** for rule `daily-financial-report-trigger` (a steady 1/day = the Lambda is rejecting EventBridge), then the Lambda's **resource policy** (needs an `events.amazonaws.com` invoke grant, Sid `AllowEventBridgeDailyReport`) and its **env vars**. See gotcha #0 in §2 — recreating the function wipes both. |
 | `endpoint_<name>` | `/api/<name>` returned non-200, invalid JSON, a bare `NaN`, or `_meta.hasErrors` | Hit the live URL, read `_meta.messages`; fix per §3 (never-throw, sanitize NaN). Slow first loads + transient degradation are already retried, so a flagged endpoint is genuinely failing. |
 | `indicators_na` | A dashboard indicator is N/A **unexpectedly** | `detail` names the metric; repair/extend its fallback. Known-discontinued metrics are allowlisted (`KNOWN_DISCONTINUED`) and never alarmed. |
 | `known_issue_config_urls` | `bot/config.py` `URLS` missing a required key | Add the key — the URLs live in `dashboard/lib/constants.js`. |
