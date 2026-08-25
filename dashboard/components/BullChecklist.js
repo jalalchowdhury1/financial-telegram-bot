@@ -1,6 +1,8 @@
 'use client';
 import ErrorBoundary from './ErrorBoundary';
 import Skeleton from './Skeleton';
+import Delta from './Delta';
+import { useMark } from './MarkProvider';
 import { freshnessNote } from '../lib/freshness';
 
 const TOOLTIPS = {
@@ -36,6 +38,56 @@ const BENCHMARKS = {
     savings: (status) => status === 'strong' ? '← Healthy' : status === 'good' ? '← OK' : '← Low'
 };
 
+/** How each checklist value is rendered. Shared by the tile and its "was" popover. */
+function fmtValue(key, v) {
+    if (typeof v !== 'number') return 'N/A';
+    if (key === 'housing' || key === 'jolts') return `${v.toFixed(0)}K`;
+    if (key === 'nfci') return v.toFixed(2);
+    return `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`;
+}
+
+/**
+ * One checklist tile. Extracted from the map so it can call `useMark` — hooks
+ * cannot run inside a callback. The checklist keys are already the marks keys.
+ */
+function ChecklistItem({ itemKey, item }) {
+    const mark = useMark(itemKey, item.value);
+    const note = freshnessNote(item);
+    const icon = note.tone === 'unavailable' ? '\u26AA'
+        : note.tone === 'stale' ? '\u{1F550}'
+        : item.bullish ? '\u2705' : '\u{1F534}';
+    // A stale or unavailable number is not a fresh print — never mark it.
+    const shown = note.tone === 'fresh' ? mark : null;
+    return (
+        <div className="checklist-item" style={{ padding: '12px 14px', alignItems: 'center' }}>
+            <span className="checklist-icon">{icon}</span>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                <span
+                    className="checklist-text tooltip-trigger"
+                    style={{ flex: 'none', color: 'var(--text-primary)' }}
+                    data-tooltip={`${TOOLTIPS[itemKey]}${note.suffix}`}
+                >
+                    {item.label}
+                </span>
+                <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', lineHeight: 1.2 }}>
+                    {SUBTITLES[itemKey]}
+                </span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '3px' }}>
+                <Delta mark={shown} format={(v) => fmtValue(itemKey, v)}
+                    className={`checklist-value ${item.bullish ? 'stat-positive' : 'stat-negative'}`}>
+                    <span style={{ fontSize: '0.95rem', ...(note.tone === 'stale' ? { color: 'var(--orange)' } : note.tone === 'unavailable' ? { color: 'var(--yellow)' } : {}) }}>
+                        {fmtValue(itemKey, item.value)}
+                    </span>
+                </Delta>
+                <span className="checklist-benchmark" style={{ opacity: 0.9 }}>
+                    {BENCHMARKS[itemKey] ? BENCHMARKS[itemKey](item.status) : '\u2014'}
+                </span>
+            </div>
+        </div>
+    );
+}
+
 export default function BullChecklist({ fred, loading }) {
     return (
         <div className="card full-width" style={{ animationDelay: '0.6s' }}>
@@ -52,41 +104,9 @@ export default function BullChecklist({ fred, loading }) {
                 {loading || !fred || fred.error ? <Skeleton count={8} /> : (
                     <>
                         <div className="checklist-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
-                            {Object.entries(fred.checklist).map(([key, item]) => {
-                                const note = freshnessNote(item);
-                                const icon = note.tone === 'unavailable' ? '⚪'
-                                    : note.tone === 'stale' ? '🕐'
-                                    : item.bullish ? '✅' : '🔴';
-                                return (
-                                <div className="checklist-item" key={key} style={{ padding: '12px 14px', alignItems: 'center' }}>
-                                    <span className="checklist-icon">{icon}</span>
-                                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                                        <span
-                                            className="checklist-text tooltip-trigger"
-                                            style={{ flex: 'none', color: 'var(--text-primary)' }}
-                                            data-tooltip={`${TOOLTIPS[key]}${note.suffix}`}
-                                        >
-                                            {item.label}
-                                        </span>
-                                        <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', lineHeight: 1.2 }}>
-                                            {SUBTITLES[key]}
-                                        </span>
-                                    </div>
-                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '3px' }}>
-                                        <span className={`checklist-value ${item.bullish ? 'stat-positive' : 'stat-negative'}`} style={{ fontSize: '0.95rem', ...(note.tone === 'stale' ? { color: 'var(--orange)' } : note.tone === 'unavailable' ? { color: 'var(--yellow)' } : {}) }}>
-                                            {typeof item.value === 'number' ? (
-                                                key === 'housing' || key === 'jolts' ? `${item.value.toFixed(0)}K` :
-                                                    key === 'nfci' ? `${item.value.toFixed(2)}` :
-                                                        `${item.value >= 0 && key !== 'nfci' ? '+' : ''}${item.value.toFixed(1)}%`
-                                            ) : 'N/A'}
-                                        </span>
-                                        <span className="checklist-benchmark" style={{ opacity: 0.9 }}>
-                                            {BENCHMARKS[key] ? BENCHMARKS[key](item.status) : '—'}
-                                        </span>
-                                    </div>
-                                </div>
-                                );
-                            })}
+                            {Object.entries(fred.checklist).map(([key, item]) => (
+                                <ChecklistItem key={key} itemKey={key} item={item} />
+                            ))}
                         </div>
                         {(() => {
                             const items = Object.values(fred.checklist);

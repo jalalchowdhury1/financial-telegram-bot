@@ -15,6 +15,23 @@ import BullChecklist from '../components/BullChecklist';
 import ExtraMarketsGrid from '../components/ExtraMarketsGrid';
 import PolymarketTable from '../components/PolymarketTable';
 import VolMetricsTable from '../components/VolMetricsTable';
+import Delta from '../components/Delta';
+import MarkChip from '../components/MarkChip';
+import { MarkProvider, useMark, collectLiveValues } from '../components/MarkProvider';
+
+/**
+ * A hero number that can carry a fresh-print mark. Lives here rather than in the JSX
+ * because `useMark` is a hook and the cards are rendered inline in Dashboard.
+ * A stale value is never marked — an old number reappearing is not a new print.
+ */
+function HeroValue({ markKey, raw, stale, format, style, children }) {
+    const mark = useMark(markKey, raw);
+    return (
+        <div className="hero-price" style={style}>
+            <Delta mark={stale ? null : mark} format={format}>{children}</Delta>
+        </div>
+    );
+}
 
 // ============ MAIN DASHBOARD ============
 export default function Dashboard() {
@@ -29,6 +46,7 @@ export default function Dashboard() {
     const [systemStatus, setSystemStatus] = useState(null);
     const [apiErrors, setApiErrors] = useState([]);
     const [refreshing, setRefreshing] = useState(false);
+    const [history, setHistory] = useState(null);
 
     async function fetchAll() {
         setLoading(true);
@@ -36,13 +54,17 @@ export default function Dashboard() {
         setApiErrors([]);
         try {
             const timestamp = Date.now();
-            const [sheetsRes, spyRes, spyDailyMoveRes, fgRes, fredRes, extraRes] = await Promise.all([
+            const [sheetsRes, spyRes, spyDailyMoveRes, fgRes, fredRes, extraRes, historyRes] = await Promise.all([
                 fetch(`/api/sheets?_t=${timestamp}`, { cache: 'no-store' }).then(r => r.json()).catch(() => null),
                 fetch(`/api/spy?_t=${timestamp}`, { cache: 'no-store' }).then(r => r.json()).catch(() => null),
                 fetch(`/api/spy-daily-move?_t=${timestamp}`, { cache: 'no-store' }).then(r => r.json()).catch(() => null),
                 fetch(`/api/fear-greed?_t=${timestamp}`, { cache: 'no-store' }).then(r => r.json()).catch(() => null),
                 fetch(`/api/fred?_t=${timestamp}`, { cache: 'no-store' }).then(r => r.json()).catch(() => null),
                 fetch(`/api/market-extra?_t=${timestamp}`, { cache: 'no-store' }).then(r => r.json()).catch(() => null),
+                // Baselines for the fresh-print marks. Deliberately last and deliberately
+                // swallowed: if it fails the digest is null, no marks render, and every
+                // number reads exactly as it does today.
+                fetch(`/api/history?_t=${timestamp}`, { cache: 'no-store' }).then(r => r.json()).catch(() => null),
             ]);
 
             setSheets(sheetsRes);
@@ -51,6 +73,7 @@ export default function Dashboard() {
             setFg(fgRes);
             setFred(fredRes);
             setExtraMarkets(extraRes);
+            setHistory(historyRes);
 
             setSystemStatus({
                 spy: spyRes?._meta,
@@ -108,6 +131,7 @@ export default function Dashboard() {
     const fgColor = (score) => score < 25 ? 'var(--red)' : score < 45 ? '#f97316' : score < 55 ? 'var(--text-muted)' : score < 75 ? 'var(--green)' : '#15803d';
 
     return (
+        <MarkProvider history={history}>
         <div className="dashboard">
             {/* Auto-Refresh Visualizer */}
             {lastUpdated && <div key={lastUpdated} className="auto-refresh-bar" style={{ animation: 'progress-fill 300s linear forwards' }}></div>}
@@ -121,6 +145,7 @@ export default function Dashboard() {
                         <span className="live-dot" />
                         {loading ? 'Loading live data...' : `Updated ${lastUpdated}`}
                     </div>
+                    <MarkChip values={collectLiveValues(fred, extraMarkets, sheets)} />
                     <button className="refresh-btn" onClick={fetchAll} disabled={refreshing} title="Refresh all data">
                         <svg className={refreshing ? 'spinning' : ''} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                             <polyline points="23 4 23 10 17 10" />
@@ -276,9 +301,12 @@ export default function Dashboard() {
                         ) : (
                             <>
                                 <div className="hero-price-section">
-                                    <div className="hero-price" style={{ fontSize: '2.2rem', color: fred.yieldCurve.stale ? 'var(--orange)' : fred.yieldCurve.current >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                                    <HeroValue markKey="yieldCurve" raw={fred.yieldCurve.current}
+                                        stale={fred.yieldCurve.stale}
+                                        format={(v) => `${v >= 0 ? '+' : ''}${v.toFixed(3)}%`}
+                                        style={{ fontSize: '2.2rem', color: fred.yieldCurve.stale ? 'var(--orange)' : fred.yieldCurve.current >= 0 ? 'var(--green)' : 'var(--red)' }}>
                                         {fred.yieldCurve.stale ? '🕐 ' : ''}{fred.yieldCurve.current >= 0 ? '+' : ''}{fred.yieldCurve.current.toFixed(3)}%
-                                    </div>
+                                    </HeroValue>
                                     {fred.yieldCurve.stale && (
                                         <div className="hero-change" style={{ color: 'var(--text-muted)', fontSize: '0.72rem', marginTop: '4px' }}>
                                             Last data {formatAsOf(fred.yieldCurve.asOf)} (stale)
@@ -308,9 +336,11 @@ export default function Dashboard() {
                         ) : (
                             <>
                                 <div className="hero-price-section">
-                                    <div className="hero-price" style={{ fontSize: '2.2rem', color: fred.profitMargin.stale ? 'var(--orange)' : 'var(--green)' }}>
+                                    <HeroValue markKey="profitMargin" raw={fred.profitMargin.current}
+                                        stale={fred.profitMargin.stale} format={(v) => `${v.toFixed(2)}%`}
+                                        style={{ fontSize: '2.2rem', color: fred.profitMargin.stale ? 'var(--orange)' : 'var(--green)' }}>
                                         {fred.profitMargin.stale ? '🕐 ' : ''}{fred.profitMargin.current.toFixed(2)}%
-                                    </div>
+                                    </HeroValue>
                                     {fred.profitMargin.stale && (
                                         <div className="hero-change" style={{ color: 'var(--text-muted)', fontSize: '0.72rem', marginTop: '4px' }}>
                                             Last data {formatAsOf(fred.profitMargin.asOf)} (stale)
@@ -340,9 +370,12 @@ export default function Dashboard() {
                         ) : (
                             <>
                                 <div className="hero-price-section">
-                                    <div className="hero-price" style={{ fontSize: '2.2rem', color: fred.spEps.stale ? 'var(--orange)' : 'var(--green)' }}>
+                                    {/* spEps has no daily snapshot, so it carries no mark — see lib/marks.js */}
+                                    <HeroValue markKey={undefined} raw={fred.spEps.current}
+                                        stale={fred.spEps.stale} format={(v) => `$${v.toFixed(2)}`}
+                                        style={{ fontSize: '2.2rem', color: fred.spEps.stale ? 'var(--orange)' : 'var(--green)' }}>
                                         {fred.spEps.stale ? '🕐 ' : ''}${fred.spEps.current.toFixed(2)}
-                                    </div>
+                                    </HeroValue>
                                     {fred.spEps.stale && (
                                         <div className="hero-change" style={{ color: 'var(--text-muted)', fontSize: '0.72rem', marginTop: '4px' }}>
                                             Last data {formatAsOf(fred.spEps.asOf)} (stale)
@@ -495,5 +528,6 @@ export default function Dashboard() {
                 </div>
             )}
         </div>
+        </MarkProvider>
     );
 }

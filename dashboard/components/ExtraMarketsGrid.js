@@ -1,6 +1,8 @@
 'use client';
 import ErrorBoundary from './ErrorBoundary';
 import Skeleton from './Skeleton';
+import Delta from './Delta';
+import { useMark } from './MarkProvider';
 
 function Sparkline({ data, color }) {
     if (!data || data.length < 2) return null;
@@ -20,6 +22,10 @@ function Sparkline({ data, color }) {
 }
 
 function MarketRow({ item }) {
+    // Hooks must run unconditionally, so this sits above the early return.
+    // markKey is undefined for every FX / commodity / crypto row, and useMark
+    // returns null for an unclassified key — those rows are never marked.
+    const mark = useMark(item?.markKey, item?.data?.current);
     if (!item?.data) return null;
     const d = item.data;
     const val = d.current;
@@ -28,9 +34,11 @@ function MarketRow({ item }) {
     const isPos = pct >= 0;
     const color = !hasChange ? 'var(--text-muted)' : isPos ? 'var(--green)' : 'var(--red)';
     const sign = isPos ? '+' : '';
-    const displayVal = item.format
-        ? item.format(val)
-        : `${item.prefix ?? ''}${val != null ? val.toFixed(item.decimals ?? 2) : 'N/A'}${item.suffix ?? ''}`;
+    /** Render any value for this row the same way — used for the tile and its "was" popover. */
+    const fmtOne = (v) => (item.format
+        ? item.format(v)
+        : `${item.prefix ?? ''}${v != null ? v.toFixed(item.decimals ?? 2) : 'N/A'}${item.suffix ?? ''}`);
+    const displayVal = fmtOne(val);
 
     return (
         <div style={{
@@ -46,9 +54,13 @@ function MarketRow({ item }) {
                         {item.name}
                     </span>
                 </div>
-                <div style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)', fontFamily: "'JetBrains Mono', monospace" }}>
-                    {displayVal}
-                </div>
+                <Delta mark={mark} format={fmtOne}
+                    className="market-row-value"
+                    >
+                    <span style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)', fontFamily: "'JetBrains Mono', monospace" }}>
+                        {displayVal}
+                    </span>
+                </Delta>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px', paddingLeft: '10px', flexShrink: 0 }}>
                 {hasChange ? (
@@ -93,15 +105,15 @@ export default function ExtraMarketsGrid({ data, loading }) {
     // ---- LEFT: Real Estate + Rates (7 items) ----
     const left = [
         realEstate?.rentIndex ? {
-            ticker: 'ZRI', name: 'US Median Monthly Rent',
+            ticker: 'ZRI', name: 'US Median Monthly Rent', markKey: 'rentIndex',
             data: realEstate.rentIndex, prefix: '$', suffix: '', decimals: 0
         } : null,
         realEstate?.mortgagePayment ? {
-            ticker: 'MTGPMT', name: 'Estimated Monthly Mortgage',
+            ticker: 'MTGPMT', name: 'Estimated Monthly Mortgage', markKey: 'mortgagePayment',
             data: realEstate.mortgagePayment, prefix: '$', suffix: '', decimals: 0
         } : null,
         rates?.mortgageRate ? {
-            ticker: 'MORT30', name: '30-Year Fixed Mortgage Rate',
+            ticker: 'MORT30', name: '30-Year Fixed Mortgage Rate', markKey: 'mortgageRate',
             data: rates.mortgageRate, prefix: '', suffix: '%', decimals: 2
         } : null,
         rates?.tnx ? {
@@ -121,7 +133,7 @@ export default function ExtraMarketsGrid({ data, loading }) {
             data: commodities.cl, prefix: '$', suffix: '', decimals: 2
         } : null,
         realEstate?.atnhpi ? {
-            ticker: 'ATNHPI', name: 'US House Price Index',
+            ticker: 'ATNHPI', name: 'US House Price Index', markKey: 'atnhpi',
             data: realEstate.atnhpi, prefix: '', suffix: '', decimals: 2
         } : null,
     ].filter(Boolean);

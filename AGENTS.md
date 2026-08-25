@@ -234,6 +234,55 @@ Frontend row: topic emoji + question + colored **%** bar + **▲▼** 30-day mom
 when |change| ≥ 0.02) + volume in $M/$k + a muted "resolves in Nd". Out of scope (v2):
 multi-candidate "favorites" lists; a fresher momentum window via the CLOB price-history endpoint.
 
+### ✦ Fresh Print Marks (`/api/history` + `Delta.js` + `lib/marks.js`)
+
+Marks a number whose change is NEWS, so the owner can scan the page and see what moved.
+Design doc: `docs/superpowers/specs/2026-08-25-fresh-print-marks-design.md`.
+
+**The rule is CADENCE, not diff.** Measured over 167 days of the history sheet, the columns
+split cleanly: 17 change <0.2×/day (they only move when an agency publishes, so a change IS
+the news → `●` print mark), 5 change 0.35–0.67×/day (only a 2σ day is news → `⌃`/`⌄` move
+mark), the rest change daily (never marked). The measured rate sits beside every entry in
+`SHEET_METRICS` as its justification. **Do not derive the class at runtime** — a series
+frozen by a dead upstream looks "slow" and would then fire loudly on recovery.
+Result: **52% of days nothing lights at all.** That silence is the feature.
+
+**Two clocks, and they must not be confused.** `/api/history` reads the sheet's DAILY
+SNAPSHOT and returns only what history can know (`baseline`, `heldFrom`, `runs`, `sigma`).
+`markFor()` compares that against the **live** value. Deciding the mark inside the digest is
+wrong twice over: the sheet is a 10am/10pm snapshot, so a print landing at 8:30am would go
+unmarked for hours, and before today's row exists the comparison degenerates to a row
+against itself.
+
+**Five traps, all of which bit during implementation:**
+1. **Precision.** The scraper writes rounded values (`-0.56`); `/api/fred` returns full
+   precision (`-0.559`). Comparing them directly lit SIX metrics every single day, all
+   false. Compare at the sheet's stored precision (`decimalsOf` → `compareDp`, floored at
+   2 dp). Regression-tested with the real observed pairs.
+2. **Timezone.** `todayET()` is pinned to `America/New_York`. The route runs on Vercel in
+   UTC while the sheet's dates come from an ET cron — a naive `new Date()` picks the wrong
+   baseline every evening between 8pm and midnight.
+3. **Stacking context.** The popover MUST be portalled to `document.body` with
+   `position: fixed`. `.card` sets `backdrop-filter`, which creates a stacking context; an
+   absolutely-positioned popover is trapped inside it and the next card paints over it. A
+   test asserts the popover is not a descendant of its trigger.
+4. **Chip vs. page.** The cards refuse to mark a stale/unavailable value; `collectLiveValues`
+   applies the SAME `fresh()` filter. Without it the header chip claimed "4 new prints"
+   above a page with no marks on it (seen on a Sheet-LKG load).
+5. **Unit + sentinel changes in the history.** 2026-03-18 switched units
+   (`212000 → 212`); rows before 2026-05-08 use a bare `0` as a missing sentinel. Both are
+   rejected (`isUnitJump`, `parseValue`) or they light false marks.
+
+**NOT markable, deliberately:** `spEps`, `horsemen.unemployment/bankruptcies/claims`.
+`/api/fred` ships full `history[]` for them, but that is a list of OBSERVATIONS, not daily
+snapshots — its newest point IS the current value, so a mark could never fire, and an
+observation is dated to its period and published weeks later so its date says nothing about
+when the print arrived. Marking them needs four new far-right scraper columns.
+
+**Failure mode is invisible.** If `/api/history` fails, the digest is empty, no marks render,
+and every number reads exactly as it does today. A wrong mark is far worse than a missing one,
+so `isGood` rejects an empty digest rather than letting it claim "nothing changed".
+
 ### `market-extra` + the status footer (where a "red" bug lived)
 - `/api/market-extra` is Lambda-primary, then fills only the metrics the Lambda returned
   `null` from **direct sources** (Polygon for FX/gold/BTC; FRED for oil/rates; ER-API →
