@@ -125,3 +125,42 @@ describe('resilience', () => {
         expect(document.querySelector('.mark-pop')).toBeInTheDocument();
     });
 });
+
+/**
+ * REGRESSION — caught in the browser on 2026-08-25. The cards refuse to mark a stale
+ * value, but the header chip counted one anyway, so a Sheet-last-known-good load showed
+ * "4 new prints" above a page with no marks on it. The two must apply the same rule.
+ */
+describe('collectLiveValues freshness', () => {
+    const { collectLiveValues } = require('../MarkProvider');
+
+    const metric = (over) => ({ value: 5, stale: false, unavailable: false, ...over });
+
+    test('passes a fresh value through', () => {
+        const v = collectLiveValues({ checklist: { nfci: metric({ value: -0.56 }) } }, null, null);
+        expect(v.nfci).toBe(-0.56);
+    });
+
+    test('withholds a stale value, so the chip cannot count what no card will mark', () => {
+        const v = collectLiveValues({ checklist: { nfci: metric({ stale: true }) } }, null, null);
+        expect(v.nfci).toBeUndefined();
+    });
+
+    test('withholds an unavailable value', () => {
+        const v = collectLiveValues({ indicators: { claims: metric({ unavailable: true }) } }, null, null);
+        expect(v.claims).toBeUndefined();
+    });
+
+    test('withholds a stale yield curve and profit margin', () => {
+        const v = collectLiveValues(
+            { yieldCurve: { current: 0.5, stale: true }, profitMargin: { current: 14.9, stale: true } },
+            null, null,
+        );
+        expect(v.yieldCurve).toBeUndefined();
+        expect(v.profitMargin).toBeUndefined();
+    });
+
+    test('survives entirely absent payloads', () => {
+        expect(() => collectLiveValues(null, null, null)).not.toThrow();
+    });
+});

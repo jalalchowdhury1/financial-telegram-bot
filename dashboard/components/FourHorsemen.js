@@ -2,6 +2,8 @@
 import { useEffect, useState } from 'react';
 import ErrorBoundary from './ErrorBoundary';
 import Skeleton from './Skeleton';
+import Delta from './Delta';
+import { useMark } from './MarkProvider';
 import { freshnessNote, formatAsOf } from '../lib/freshness';
 
 /**
@@ -260,7 +262,15 @@ function useIsNarrow() {
     return narrow;
 }
 
-function StatChip({ color, label, value, chip, warn, metric }) {
+function StatChip({ color, label, value, chip, warn, metric, markKey, markRaw, fmtPrev }) {
+    // No horseman is markable today: all four are backed by FRED observation series
+    // rather than daily snapshots, so there is no honest "what it was yesterday" to
+    // show. See the note in lib/marks.js. markKey is left unset and useMark returns
+    // null, so this renders exactly as it did before.
+    // markRaw is passed explicitly: horsemen metrics key their number as `current`,
+    // the spread's synthesised metric uses `value`. Guessing the shape would have
+    // silently produced no mark on claims and unemployment.
+    const mark = useMark(markKey, markRaw);
     const note = freshnessNote(metric);
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
@@ -269,9 +279,11 @@ function StatChip({ color, label, value, chip, warn, metric }) {
                 {label}
             </span>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: '1.05rem', fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: metric?.stale ? 'var(--orange)' : 'var(--text)' }}>
-                    {metric?.stale ? '🕐 ' : ''}{value}
-                </span>
+                <Delta mark={metric?.stale ? null : mark} format={fmtPrev}>
+                    <span style={{ fontSize: '1.05rem', fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: metric?.stale ? 'var(--orange)' : 'var(--text)' }}>
+                        {metric?.stale ? '🕐 ' : ''}{value}
+                    </span>
+                </Delta>
                 {chip && (
                     <span style={{ fontSize: '0.62rem', fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: chip.bad ? 'var(--red)' : 'var(--green)', whiteSpace: 'nowrap' }}>
                         {chip.text}

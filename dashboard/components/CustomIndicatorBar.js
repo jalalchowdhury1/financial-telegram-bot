@@ -1,6 +1,11 @@
 'use client';
+import Delta from './Delta';
+import { useMark } from './MarkProvider';
 
 export default function CustomIndicatorBar({ sheets, loading }) {
+    // AAII is the only pill that earns a mark: it prints weekly on Thursdays.
+    // VIX changes daily, and NotSoBoring / FrontRunner are not in the history sheet.
+    const aaiiMark = useMark('aaiiDiff', parseFloat(sheets?.AAIIDiff));
     return (
         <div className="indicator-bar">
             <div className={`indicator-pill${!loading && sheets?.NotSoBoring && sheets.NotSoBoring !== 'ON' ? ' pill-alert' : ''}`}>
@@ -29,9 +34,12 @@ export default function CustomIndicatorBar({ sheets, loading }) {
                     const dateStr = targetDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
                     return (
                         <>
-                            <div className="value" style={{ color: isBullish ? 'var(--green)' : 'var(--text-primary)' }}>
-                                {sheets.AAIIDiff}
-                            </div>
+                            <Delta mark={aaiiMark} className="value"
+                                format={(v) => `${v > 0 ? '+' : ''}${v.toFixed(2)}%`}>
+                                <span style={{ color: isBullish ? 'var(--green)' : 'var(--text-primary)' }}>
+                                    {sheets.AAIIDiff}
+                                </span>
+                            </Delta>
                             <div className="pill-detail" style={{ fontSize: '0.68rem', marginTop: '4px', color: isBullish ? 'var(--green)' : 'var(--text-muted)', fontWeight: 600 }}>
                                 {isBullish ? '🟢' : '⚪'} {isBullish ? 'Bullish' : 'Neutral'} outlook → {dateStr}
                             </div>

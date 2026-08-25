@@ -22,6 +22,8 @@ const SIGMA_MULT = 2;
 const MIN_MOVES = 20;      // below this there is no meaningful σ to compare against
 const MAX_RUNS = 8;        // sparkline points
 const WINDOW_DAYS = 400;   // bound the walk-back; older rows predate two schema changes
+const MIN_DP = 2;          // the sheet's working precision
+const MAX_DP = 6;          // beyond this we are comparing float noise, not numbers
 
 /**
  * Every metric carried by Sheet1, keyed by the name the dashboard uses for it.
@@ -75,20 +77,26 @@ export const SHEET_METRICS = {
 };
 
 /**
- * Metrics NOT in the sheet, whose previous print is derived on the client from the
- * `history[]` arrays /api/fred already returns. LEI is deliberately absent — the FRED
- * series died and its column is written blank.
+ * NOT MARKABLE, and it is worth knowing why: spEps, horsemen.unemployment,
+ * horsemen.bankruptcies and horsemen.claims.
+ *
+ * /api/fred ships full `history[]` arrays for all four, so it is tempting to derive
+ * their previous print the same way. It does not work. The sheet stores a daily
+ * SNAPSHOT — yesterday's row is genuinely what the dashboard showed yesterday, so
+ * "did this change?" is answerable. A FRED history is a list of OBSERVATIONS: its
+ * newest point IS the current value, so the baseline always equals the live value and
+ * such a metric could never fire. Worse, an observation is dated to its PERIOD
+ * (unemployment for July is dated 2026-07-01) and published weeks later, so its date
+ * says nothing about when the print reached us.
+ *
+ * Marking them correctly needs a daily snapshot, i.e. four new far-right columns in
+ * the financial-dashboard-history scraper. Until then they are deliberately unmarked —
+ * an inert mark that silently never fires is worse than no mark at all.
  */
-export const FRED_HISTORY_METRICS = {
-    spEps:        { kind: 'print', label: 'S&P 500 EPS' },
-    unemployment: { kind: 'print', label: 'Unemployment Rate' },
-    bankruptcies: { kind: 'print', label: 'US Bankruptcies' },
-    hClaims:      { kind: 'print', label: 'Initial Jobless Claims' },
-};
 
 /** @returns {'print'|'move'|'none'} */
 export function classify(key) {
-    const m = SHEET_METRICS[key] || FRED_HISTORY_METRICS[key];
+    const m = SHEET_METRICS[key];
     return m ? m.kind : 'none';
 }
 
@@ -141,6 +149,31 @@ export function isUnitJump(a, b) {
     return (r >= 900 && r <= 1100) || (r >= 900000 && r <= 1100000);
 }
 
+/**
+ * Decimal places in a raw sheet cell. The scraper stores ROUNDED values ("-0.56") while
+ * /api/fred returns full precision ("-0.559"), so a naive comparison marks those metrics
+ * every single day. Caught end-to-end on 2026-08-25: six of them were falsely lit.
+ */
+export function decimalsOf(raw) {
+    const s = String(raw ?? '').trim();
+    const i = s.indexOf('.');
+    return i < 0 ? 0 : Math.min(s.length - i - 1, MAX_DP);
+}
+
+/** Round to `dp` places, half-away-from-zero, without float drift. */
+export function roundTo(v, dp) {
+    if (!Number.isFinite(v)) return v;
+    const f = 10 ** dp;
+    return Math.round((v + Number.EPSILON * Math.sign(v || 1)) * f) / f;
+}
+
+/**
+ * The precision at which a live value and a stored baseline are COMPARABLE.
+ * Floored at MIN_DP so a baseline written as "0.1" still distinguishes a real move
+ * to 0.12 — the alternative (comparing at the baseline's own 1 dp) would swallow it.
+ */
+export const compareDp = (dp) => Math.max(dp ?? 0, MIN_DP);
+
 const daysBetween = (a, b) =>
     Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86400000);
 
@@ -156,11 +189,11 @@ export function buildSeries(rows, col) {
         if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
         const v = parseValue(r[col]);
         if (v === null) { byDate.delete(date); continue; }
-        byDate.set(date, v);
+        byDate.set(date, { value: v, dp: decimalsOf(r[col]) });
     }
     return [...byDate.entries()]
         .sort((a, b) => (a[0] < b[0] ? -1 : 1))
-        .map(([date, value]) => ({ date, value }));
+        .map(([date, { value, dp }]) => ({ date, value, dp }));
 }
 
 /** Trim a series to the trailing window, so the walk-back can never reach a dead schema. */
@@ -217,6 +250,7 @@ export function historyFor(series, today) {
     return {
         baseline: base.value,
         baselineDate: base.date,
+        dp: base.dp ?? MIN_DP,
         heldFrom: prior[hi].date,
         runs: runs.slice(-MAX_RUNS),
         sigma,
@@ -243,7 +277,14 @@ export function markFor(key, live, entry, today) {
 
     // a units change or an N/A recovery is plumbing, not news
     if (isUnitJump(baseline, live)) return null;
-    const delta = live - baseline;
+
+    // Compare at the SHEET's precision, not the API's. The scraper rounds ("-0.56")
+    // while /api/fred returns full precision ("-0.559") — comparing those directly
+    // marks six metrics every single day, all of them false.
+    const dp = compareDp(entry.dp);
+    const shownLive = roundTo(live, dp);
+    const shownPrev = roundTo(baseline, dp);
+    const delta = shownLive - shownPrev;
     if (Math.abs(delta) <= EPS) return null;
 
     if (kind === 'move') {
@@ -251,23 +292,23 @@ export function markFor(key, live, entry, today) {
         if (Math.abs(delta) <= SIGMA_MULT * entry.sigma) return null;
         return {
             kind: 'move',
-            value: live,
-            prev: baseline,
+            value: shownLive,
+            prev: shownPrev,
             dir: delta > 0 ? 1 : -1,
             sigma: entry.sigma,
             move: delta,
-            runs: [...(entry.dailyRuns || []), live].slice(-MAX_RUNS),
+            runs: [...(entry.dailyRuns || []), shownLive].slice(-MAX_RUNS),
         };
     }
 
     return {
         kind: 'print',
-        value: live,
-        prev: baseline,
+        value: shownLive,
+        prev: shownPrev,
         dir: delta > 0 ? 1 : -1,
         heldFrom: entry.heldFrom,
         heldDays: daysBetween(entry.heldFrom, today),
-        runs: [...(entry.runs || []), live].slice(-MAX_RUNS),
+        runs: [...(entry.runs || []), shownLive].slice(-MAX_RUNS),
     };
 }
 
@@ -283,8 +324,10 @@ export function buildDigest(rows, now = new Date()) {
         const entry = historyFor(buildSeries(rows, meta.col), today);
         if (!entry) continue;
         out[key] = { kind: meta.kind, label: meta.label, ...entry };
-        if (meta.kind === 'print') delete out[key].sigma;      // unused, keep the payload lean
-        else delete out[key].runs;
+        // Each kind uses exactly one series and one comparison; drop the rest so the
+        // digest stays ~2KB against a sheet that grows two rows every day.
+        if (meta.kind === 'print') { delete out[key].sigma; delete out[key].dailyRuns; }
+        else { delete out[key].runs; }
     }
     return { today, metrics: out };
 }

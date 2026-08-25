@@ -1,7 +1,7 @@
 # Fresh Print Marks — design
 
 **Date:** 2026-08-25
-**Status:** approved (treatment B · Breath chosen 2026-08-25)
+**Status:** IMPLEMENTED 2026-08-25 (treatment B · Breath). See the "What changed during implementation" section at the end — four defects were found by end-to-end verification that the design did not anticipate.
 **Mockup:** https://claude.ai/code/artifact/1c5feac5-2829-4595-a064-d1d2c4514f52
 
 ## The problem
@@ -227,3 +227,48 @@ output. CI (`ci.yml`) is the merge gate.
 - Marking SPY, Fear & Greed, the Polymarket board or the volatility table.
 - Any change to `financial-dashboard-history`. `Sheet1`'s append-only column invariant is
   untouched; this feature is a **reader only**.
+
+
+---
+
+## What changed during implementation
+
+Four things the design got wrong, all caught by running it against real data rather than by
+unit tests. Recorded here because each one is a trap the next person would fall into too.
+
+1. **The digest must not decide the mark.** As designed, `/api/history` compared the sheet's
+   newest row against its previous row. That is wrong twice: the sheet is a 10am/10pm
+   snapshot while the dashboard renders LIVE values, so a print landing at 8:30am went
+   unmarked for hours; and when today's row did not exist yet the comparison degenerated to
+   a row against itself and returned nothing. Split into `historyFor()` (what history knows)
+   and `markFor()` (compares against the live value).
+
+2. **Precision — the one that would have ruined the feature.** The scraper writes rounded
+   values (`-0.56`) and `/api/fred` returns full precision (`-0.559`). Comparing them
+   directly marked **six metrics every single day**, all false: nfci, m2, retail, indpro,
+   durable, profitMargin. Every unit test passed because they used consistent precision on
+   both sides. Fixed by comparing at the sheet's stored precision, floored at 2 dp, with a
+   regression test built from the exact live/baseline pairs observed on 2026-08-25.
+
+3. **Four metrics are not markable at all.** The design said `spEps` and the Four Horsemen
+   could derive their baseline from `/api/fred`'s `history[]`. They cannot: a FRED history
+   is a list of OBSERVATIONS, so its newest point IS the current value and the baseline can
+   never differ from it. They would have shipped as inert marks that silently never fire.
+   Removed, with the reasoning recorded in `lib/marks.js`. Enabling them means four new
+   far-right columns in the scraper.
+
+4. **The header chip disagreed with the page.** Cards suppress marks on stale or unavailable
+   values; the chip counted them anyway. On a Sheet-last-known-good load it read
+   "4 new prints" above a page with no marks on it. `collectLiveValues` now applies the same
+   freshness filter, and a regression test covers it.
+
+Also worth noting: `heldFrom` is retained on move-tier entries even though only print marks
+display it — a few bytes against the cost of a second shape to reason about.
+
+**Verification performed:** 334 Jest tests; `npm run build` with `/api/history` confirmed as
+`λ` (not `○`); the digest built against the real sheet (22 metrics, 4.1KB); an end-to-end
+pass combining the live `/api/fred`, `/api/market-extra` and `/api/sheets` payloads with the
+real digest (0 marks — 2026-08-25 was genuinely a quiet day, matching an independent analysis
+of the raw sheet); and a browser pass against a production build confirming the marks render,
+the chip count matches the rendered marks exactly, and all four popovers portal to
+`document.body`, stay inside the viewport, and have nothing painted over them.

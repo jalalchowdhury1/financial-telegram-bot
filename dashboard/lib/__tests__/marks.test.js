@@ -1,5 +1,5 @@
 import {
-    classify, parseValue, todayET, isUnitJump,
+    classify, parseValue, todayET, isUnitJump, decimalsOf, roundTo,
     buildSeries, historyFor, markFor, buildDigest, SHEET_METRICS,
 } from '../marks';
 
@@ -34,7 +34,9 @@ describe('classify', () => {
 
     it('never marks anything that changes every day', () => {
         ['tnx', 't2y', 'dxy', 'cl', 'usdcad', 'usdinr', 'usdbdt', 'inrbdt', 'cadinr',
-            'cadbdt', 'gold', 'btc', 'vixCurrent', 'vix3m', 'vixFearGreed', 'lei'].forEach(k => {
+            'cadbdt', 'gold', 'btc', 'vixCurrent', 'vix3m', 'vixFearGreed', 'lei',
+            // no daily snapshot exists for these, so they cannot be marked honestly
+            'spEps', 'unemployment', 'bankruptcies', 'hClaims'].forEach(k => {
                 expect(classify(k)).toBe('none');
             });
     });
@@ -123,13 +125,20 @@ describe('buildSeries', () => {
     ];
 
     it('collapses duplicate dates to the last row for that date', () => {
-        expect(buildSeries(rows, 1)).toEqual(S([
+        expect(buildSeries(rows, 1).map(p => [p.date, p.value])).toEqual([
             ['2026-08-23', 10], ['2026-08-24', 11], ['2026-08-25', 12],
-        ]));
+        ]);
     });
 
     it('drops absent values entirely rather than carrying them', () => {
-        expect(buildSeries(rows, 2)).toEqual(S([['2026-08-23', 1000], ['2026-08-24', 2000]]));
+        expect(buildSeries(rows, 2).map(p => [p.date, p.value])).toEqual([
+            ['2026-08-23', 1000], ['2026-08-24', 2000],
+        ]);
+    });
+
+    it('records the stored precision of each cell', () => {
+        const withDp = [['2026-08-23', '-0.56'], ['2026-08-24', '1239']];
+        expect(buildSeries(withDp, 1).map(p => p.dp)).toEqual([2, 0]);
     });
 
     it('returns an empty series for a column that never had data', () => {
@@ -268,5 +277,75 @@ describe('buildDigest', () => {
         expect(() => buildDigest([], new Date())).not.toThrow();
         expect(() => buildDigest([['garbage']], new Date())).not.toThrow();
         expect(buildDigest([], new Date()).metrics).toEqual({});
+    });
+});
+
+
+describe('precision — the sheet rounds, the API does not', () => {
+    it('counts decimal places, capped so float tails cannot inflate it', () => {
+        expect(decimalsOf('-0.56')).toBe(2);
+        expect(decimalsOf('1239')).toBe(0);
+        expect(decimalsOf('0.1')).toBe(1);
+        expect(decimalsOf('13.77872944')).toBe(6);
+        expect(decimalsOf('')).toBe(0);
+        expect(decimalsOf(undefined)).toBe(0);
+    });
+
+    it('rounds without float drift', () => {
+        expect(roundTo(1.005, 2)).toBe(1.01);
+        expect(roundTo(-0.559, 2)).toBe(-0.56);
+        expect(roundTo(14.917120500741222, 2)).toBe(14.92);
+    });
+
+    /**
+     * REGRESSION — caught end-to-end on 2026-08-25, not by any unit test.
+     * The scraper writes rounded values; /api/fred returns full precision. Comparing
+     * them directly lit six metrics every single day, all false. These are the exact
+     * live/baseline pairs observed that day.
+     */
+    describe('does not mark a value that only differs by the sheet rounding', () => {
+        const cases = [
+            ['nfci',          -0.559,              '-0.56',   -0.56],
+            ['m2',             5.525755718,        '5.53',     5.53],
+            ['retail',         0.3370171624887889, '0.34',     0.34],
+            ['indpro',         1.9349992283,       '1.93',     1.93],
+            ['durable',        4.6595004452,       '4.66',     4.66],
+            ['profitMargin',  14.917120500741222,  '14.92',   14.92],
+            ['sahmRule',       0.10000000000000053, '0.1',     0.1],
+        ];
+        it.each(cases)('%s stays unmarked', (key, live, raw, baseline) => {
+            const entry = {
+                baseline, baselineDate: '2026-08-24', heldFrom: '2026-08-01',
+                dp: decimalsOf(raw), runs: [baseline], sigma: 0.5, dailyRuns: [baseline],
+            };
+            expect(markFor(key, live, entry, '2026-08-25')).toBeNull();
+        });
+    });
+
+    it('still marks a change that survives rounding', () => {
+        const entry = {
+            baseline: -0.56, baselineDate: '2026-08-24', heldFrom: '2026-08-01',
+            dp: 2, runs: [-0.56], sigma: null, dailyRuns: [-0.56],
+        };
+        expect(markFor('nfci', -0.52, entry, '2026-08-25')).toMatchObject({ prev: -0.56, value: -0.52 });
+    });
+
+    it('a one-decimal baseline still resolves a two-decimal move', () => {
+        // dp is floored at 2, so 0.1 -> 0.12 is a real print, not rounding noise
+        const entry = {
+            baseline: 0.1, baselineDate: '2026-08-24', heldFrom: '2026-08-01',
+            dp: 1, runs: [0.1], sigma: null, dailyRuns: [0.1],
+        };
+        expect(markFor('sahmRule', 0.12, entry, '2026-08-25')).toMatchObject({ prev: 0.1, value: 0.12 });
+    });
+
+    it('reports the ROUNDED pair, so the popover agrees with the rendered number', () => {
+        const entry = {
+            baseline: 14.83, baselineDate: '2026-08-24', heldFrom: '2026-08-01',
+            dp: 2, runs: [14.83], sigma: null, dailyRuns: [14.83],
+        };
+        const m = markFor('profitMargin', 14.917120500741222, entry, '2026-08-25');
+        expect(m.value).toBe(14.92);
+        expect(m.runs[m.runs.length - 1]).toBe(14.92);
     });
 });
