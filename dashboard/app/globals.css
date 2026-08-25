@@ -188,7 +188,8 @@ body::before {
   cursor: help;
 }
 
-.tooltip-trigger:hover::after {
+.tooltip-trigger:hover::after,
+.tooltip-trigger.tooltip-open::after {
   content: attr(data-tooltip);
   position: absolute;
   top: 100%;
@@ -205,7 +206,7 @@ body::before {
   font-weight: 500;
   white-space: normal;
   width: max-content;
-  max-width: 280px;
+  max-width: min(280px, calc(100vw - 40px));
   z-index: 9999;
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.05);
   pointer-events: none;
@@ -217,7 +218,8 @@ body::before {
   animation: fadeIn 0.2s ease forwards;
 }
 
-.tooltip-trigger:hover::before {
+.tooltip-trigger:hover::before,
+.tooltip-trigger.tooltip-open::before {
   content: '';
   position: absolute;
   top: 100%;
@@ -233,12 +235,14 @@ body::before {
 }
 
 /* Force the last 2 pills in the indicator row to anchor right instead of left to avoid edge bleed */
-.indicator-pill:nth-last-child(-n+2) .tooltip-trigger:hover::after {
+.indicator-pill:nth-last-child(-n+2) .tooltip-trigger:hover::after,
+.tooltip-trigger.tooltip-open::after {
   left: auto;
   right: 0;
 }
 
-.indicator-pill:nth-last-child(-n+2) .tooltip-trigger:hover::before {
+.indicator-pill:nth-last-child(-n+2) .tooltip-trigger:hover::before,
+.tooltip-trigger.tooltip-open::before {
   left: auto;
   right: 15px;
 }
@@ -252,7 +256,8 @@ body::before {
 
 .status-items {
   display: inline-flex;
-  gap: 16px;
+  flex-wrap: wrap;
+  gap: 8px 16px;
   justify-content: center;
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.65rem;
@@ -431,7 +436,10 @@ body::before {
 /* ========== GRID ========== */
 .dashboard-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  /* minmax(0, ...) not 1fr: a bare 1fr track floors at the items' min-content
+     width, so a single wide card widened the whole grid and the page scrolled
+     sideways on a phone. */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 20px;
 }
 
@@ -441,6 +449,7 @@ body::before {
 
 /* ========== CARD ========== */
 .card {
+  min-width: 0;             /* never let card content widen its grid track */
   background: var(--bg-card);
   backdrop-filter: blur(12px);
   border: 1px solid var(--border-card);
@@ -867,7 +876,7 @@ body::before {
 /* ========== RESPONSIVE ========== */
 @media (max-width: 900px) {
   .dashboard-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .indicator-bar {
@@ -1024,7 +1033,8 @@ body::before {
   }
 
   /* Tooltips on mobile */
-  .tooltip-trigger:hover::after {
+  .tooltip-trigger:hover::after,
+.tooltip-trigger.tooltip-open::after {
     top: 100%;
     left: 0;
     right: auto;
@@ -1037,7 +1047,8 @@ body::before {
     z-index: 10000;
   }
 
-  .tooltip-trigger:hover::before {
+  .tooltip-trigger:hover::before,
+.tooltip-trigger.tooltip-open::before {
     top: 100%;
     left: 15px;
     right: auto;
@@ -1048,12 +1059,14 @@ body::before {
   }
 
   /* Override the last two indicator pills on mobile to right-anchor to avoid right-side clipping */
-  .indicator-pill:nth-last-child(-n+2) .tooltip-trigger:hover::after {
+  .indicator-pill:nth-last-child(-n+2) .tooltip-trigger:hover::after,
+.tooltip-trigger.tooltip-open::after {
     left: auto;
     right: 0;
   }
 
-  .indicator-pill:nth-last-child(-n+2) .tooltip-trigger:hover::before {
+  .indicator-pill:nth-last-child(-n+2) .tooltip-trigger:hover::before,
+.tooltip-trigger.tooltip-open::before {
     left: auto;
     right: 15px;
   }
@@ -1240,4 +1253,42 @@ body::before {
     grid-template-columns: 1fr;
     gap: 24px 0;
   }
+}
+
+/* ========================================
+   HEADER — phone layout
+   At 428pt the header was four stacked blocks (title, subtitle, a status row
+   crammed against the refresh button, and a two-line helper) before any data.
+   ======================================== */
+.header-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+.hide-sm { display: inline; }
+
+@media (max-width: 560px) {
+  /* Decoration only — the title already says what this is, and it cost two lines. */
+  .dashboard-header > .subtitle:first-of-type { display: none; }
+
+  .dashboard-header h1 { font-size: 1.35rem; margin-bottom: 4px; }
+  .dashboard-header { padding: 12px 0 6px; margin-bottom: 12px; }
+
+  .header-status { gap: 8px; margin-top: 8px; }
+  .live-badge {
+    margin-top: 0;
+    padding: 5px 10px;
+    font-size: 0.66rem;
+    letter-spacing: 0.03em;
+  }
+  /* "Updated 2026-08-25 13:37" -> "Updated 13:37"; the date is always today. */
+  .upd-date { display: none; }
+  .hide-sm { display: none; }
+
+  /* 34px is under the 44pt iOS touch target. */
+  .refresh-btn { width: 40px; height: 40px; }
+  .mark-chip { padding: 7px 11px; }
 }

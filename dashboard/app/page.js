@@ -116,6 +116,27 @@ export default function Dashboard() {
         setRefreshing(false);
     }
 
+    // The explanatory tooltips are pure CSS :hover, which does not exist on touch —
+    // so on a phone every as-of date and metric explanation was unreachable, while the
+    // header cheerfully said "hover any number for its date". Tapping a trigger now
+    // toggles the same tooltip; tapping elsewhere, or Esc, dismisses it.
+    useEffect(() => {
+        const closeAll = (except) => document.querySelectorAll('.tooltip-trigger.tooltip-open')
+            .forEach((el) => { if (el !== except) el.classList.remove('tooltip-open'); });
+        const onClick = (e) => {
+            const trigger = e.target.closest?.('.tooltip-trigger');
+            closeAll(trigger);
+            if (trigger) trigger.classList.toggle('tooltip-open');
+        };
+        const onKey = (e) => { if (e.key === 'Escape') closeAll(null); };
+        document.addEventListener('click', onClick);
+        document.addEventListener('keydown', onKey);
+        return () => {
+            document.removeEventListener('click', onClick);
+            document.removeEventListener('keydown', onKey);
+        };
+    }, []);
+
     useEffect(() => {
         const REFRESH_MS = 5 * 60 * 1000;
         fetchAll();
@@ -163,10 +184,18 @@ export default function Dashboard() {
             <header className="dashboard-header">
                 <h1>Jalal's Financial Dashboard</h1>
                 <p className="subtitle">Live market data, economic indicators & AI-powered assessment</p>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', marginTop: '12px' }}>
+                <div className="header-status">
                     <div className="live-badge">
                         <span className="live-dot" />
-                        {loading ? 'Loading live data...' : `Updated ${lastUpdated}`}
+                        {loading ? 'Loading live data...' : (
+                            <>
+                                Updated{' '}
+                                {/* the date is hidden on phones — it is always today, and the
+                                    full string pushed this badge into the refresh button */}
+                                <span className="upd-date">{lastUpdated?.slice(0, 10)} </span>
+                                {lastUpdated?.slice(11)}
+                            </>
+                        )}
                     </div>
                     <MarkChip values={collectLiveValues(fred, extraMarkets, sheets)} />
                     <button className="refresh-btn" onClick={fetchAll} disabled={refreshing} title="Refresh all data">
@@ -179,7 +208,7 @@ export default function Dashboard() {
                 </div>
                 {fred?._meta?.fetchedAt && (
                     <p className="subtitle" style={{ fontSize: '0.7rem', opacity: 0.6, marginTop: '6px' }}>
-                        Economic data as of {new Date(fred._meta.fetchedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })} · refreshes every 30 min · hover any number for its date
+                        Economic data as of {new Date(fred._meta.fetchedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}<span className="hide-sm"> · refreshes every 30 min</span> · tap any number for its date
                     </p>
                 )}
             </header>
