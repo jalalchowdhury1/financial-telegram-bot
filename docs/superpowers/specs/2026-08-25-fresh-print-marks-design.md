@@ -37,7 +37,7 @@ Resulting frequency, measured over 166 day-pairs: **52% of days nothing lights, 
 | Mark | Glyph | Fires when |
 |---|---|---|
 | **New print** | `●` | A slow-cadence metric's value differs from the last snapshot of a prior calendar day. |
-| **Outsized move** | `⌃` / `⌄` | A daily metric's move exceeds 2σ of its own trailing daily moves. Directional. |
+| **Outsized move** | `⌃` / `⌄` | A daily metric's move exceeds 2σ of its own trailing daily moves. Directional. Requires **≥20 prior daily moves**; below that the metric is simply unmarked. |
 
 Both use **cyan `#22d3ee`** — the only hue the dashboard's semantic palette has not claimed
 (green/red = bullish/bearish, yellow = unavailable, orange = stale, indigo = chart lines).
@@ -107,7 +107,10 @@ Follows the existing conventions exactly:
   (`.../1lA-_yjLMc3qDTt9sogSPQrCohNULIk5wwJYfb5wIHfc/export?format=csv&gid=0`), no credentials.
   Confirmed publicly readable. Reuses `parseCsvLine` from `lib/sheetLkg.js`.
 - Returns a **compact digest**, not the sheet: one entry per tracked metric —
-  `{ prev, changedOn, heldFrom, heldDays, runs[] }`. ~2KB against a ~100KB CSV.
+  `{ kind, prev, changedOn, heldFrom, heldDays, runs[] }`. ~2KB against a ~100KB CSV.
+  `runs` differs by kind and the popover labels it accordingly: for a print mark it is the last
+  8 **distinct** values (`LAST N PRINTS`), for a move mark the last 8 **daily snapshots**
+  (`LAST 7 SESSIONS`).
 - Cached like every other route; a failure degrades to no marks at all, never to wrong marks.
 
 The client fetches it alongside the existing six calls in `page.js: fetchAll`.
@@ -134,10 +137,21 @@ Three real hazards, all present in the live history:
 3. **N/A ↔ value transitions.** A metric recovering from `N/A` is a plumbing event, not
    economic news. **Never mark a transition where either side is blank or `N/A`.**
 
-Additionally: require a minimum relative delta (>0.05%) so rounding jitter cannot fire a mark,
-and anchor the baseline to **the last snapshot row whose Date is strictly earlier than today's
-local date** — robust whether or not today's row has been written yet (the scraper runs
-10am/10pm ET, and duplicate-date rows are normal).
+**Baseline selection.** The baseline is the last snapshot row whose Date is strictly earlier
+than today — robust whether or not today's row has been written yet (duplicate-date rows are
+normal, since the scraper runs twice daily).
+
+"Today" **must be computed in `America/New_York`**, not in the server's locale. The route runs
+on Vercel in UTC, and the sheet's Date column is stamped by a scraper on an ET cron; between
+8pm and midnight ET the UTC date is already tomorrow, so a naive `new Date()` would resolve
+"today" to the wrong day and silently select the wrong baseline every evening. Use
+`Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' })` to get a `YYYY-MM-DD` string
+and compare lexically against the sheet's dates.
+
+**Equality.** Sheet values are already rounded to display precision, so a plain inequality is
+the right test — compared with an epsilon of `1e-9` for float safety only. A relative-delta
+threshold was considered and rejected: it would suppress genuinely small prints (NFCI moves
+±0.01) while the three guards above already cover the pathological cases.
 
 ## Components
 
@@ -149,17 +163,35 @@ local date** — robust whether or not today's row has been written yet (the scr
 - **`components/MarkProvider.js`** — context holding the `/api/history` digest plus the
   fred-derived entries, so `Delta` call sites stay one prop wide.
 
-Existing components gain `<Delta>` wrappers only — no restructuring:
-`EconomicIndicatorGrid` (sahm, sentiment, claims), `BullChecklist` (all 8),
-`ExtraMarketsGrid` (ZRI, MTGPMT, MORT30 only), `CustomIndicatorBar` (AAII only),
-the Profit Margin and S&P 500 EPS cards, and the `FourHorsemen` stat chips
-(unemployment, bankruptcies, claims).
+Existing components gain `<Delta>` wrappers only — no restructuring.
+
+**Print marks (`●`)**
+
+| Component | Metrics |
+|---|---|
+| `EconomicIndicatorGrid` | sahmRule, sentiment, claims |
+| `BullChecklist` | all 8 |
+| `ExtraMarketsGrid` | ZRI (rent), MTGPMT, MORT30, **ATNHPI** |
+| `CustomIndicatorBar` | AAII only — not VIX, not NotSoBoring/FrontRunner |
+| Profit Margin card, S&P 500 EPS card | the hero value |
+| `FourHorsemen` stat chips | unemployment, bankruptcies, claims |
+
+**Move marks (`⌃`/`⌄`)**
+
+| Component | Metrics |
+|---|---|
+| `EconomicIndicatorGrid` | creditSpread, realYields, copperGold, peRatio |
+| Yield Curve card | the hero value |
+
+Everything else on the page is explicitly unmarked: SPY, Fear & Greed, the volatility
+table, the Polymarket board, and every FX / commodity / crypto row in `ExtraMarketsGrid`.
 
 ## Header affordance
 
-A small chip beside the existing "Updated …" badge: `● 3 new prints`. Rendered **only when the
-count is non-zero**, so a quiet day adds nothing to the page. Clicking it scrolls to the next
-marked value.
+A small chip beside the existing "Updated …" badge, counting both kinds:
+`● 3 new prints · 1 outsized move`. Each clause is omitted when its count is zero, and the whole
+chip is omitted when both are — so a quiet day adds nothing to the page. Clicking it scrolls to
+the next marked value.
 
 ## Error handling
 
