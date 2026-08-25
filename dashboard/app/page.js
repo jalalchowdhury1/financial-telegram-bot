@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import ErrorBoundary from '../components/ErrorBoundary';
 import { freshnessNote, formatAsOf } from '../lib/freshness';
 
@@ -47,11 +47,18 @@ export default function Dashboard() {
     const [apiErrors, setApiErrors] = useState([]);
     const [refreshing, setRefreshing] = useState(false);
     const [history, setHistory] = useState(null);
+    // Refresh behaviour: `loading` (skeletons) is for the FIRST load only. Every
+    // later fetch is a background refresh — the page keeps showing what it has,
+    // and only the header spinner moves. Before this, the 5-minute auto-refresh
+    // collapsed all 12 cards to skeletons for ~10s while you were reading.
+    const hasLoadedRef = useRef(false);
+    const lastFetchRef = useRef(0);
 
     async function fetchAll() {
-        setLoading(true);
+        if (!hasLoadedRef.current) setLoading(true);
         setRefreshing(true);
         setApiErrors([]);
+        lastFetchRef.current = Date.now();
         try {
             const timestamp = Date.now();
             const [sheetsRes, spyRes, spyDailyMoveRes, fgRes, fredRes, extraRes, historyRes] = await Promise.all([
@@ -67,13 +74,16 @@ export default function Dashboard() {
                 fetch(`/api/history?_t=${timestamp}`, { cache: 'no-store' }).then(r => r.json()).catch(() => null),
             ]);
 
-            setSheets(sheetsRes);
-            setSpy(spyRes);
-            setSpyDailyMove(spyDailyMoveRes);
-            setFg(fgRes);
-            setFred(fredRes);
-            setExtraMarkets(extraRes);
-            setHistory(historyRes);
+            // A null here means the fetch itself failed (the routes never 500).
+            // Keep the previous payload rather than blanking a card that had data.
+            setSheets(prev => sheetsRes ?? prev);
+            setSpy(prev => spyRes ?? prev);
+            setSpyDailyMove(prev => spyDailyMoveRes ?? prev);
+            setFg(prev => fgRes ?? prev);
+            setFred(prev => fredRes ?? prev);
+            setExtraMarkets(prev => extraRes ?? prev);
+            setHistory(prev => historyRes ?? prev);
+            hasLoadedRef.current = true;
 
             setSystemStatus({
                 spy: spyRes?._meta,
@@ -107,9 +117,22 @@ export default function Dashboard() {
     }
 
     useEffect(() => {
+        const REFRESH_MS = 5 * 60 * 1000;
         fetchAll();
-        const interval = setInterval(fetchAll, 5 * 60 * 1000); // Auto-refresh every 5 minutes
-        return () => clearInterval(interval);
+        // Auto-refresh every 5 minutes — but not while the tab is hidden. /api/fred
+        // alone is ~650KB, so an idle background tab was pulling ~8MB/hour. On
+        // returning to the tab, refresh immediately if the data has gone stale.
+        const interval = setInterval(() => {
+            if (!document.hidden) fetchAll();
+        }, REFRESH_MS);
+        const onVisible = () => {
+            if (!document.hidden && Date.now() - lastFetchRef.current > REFRESH_MS) fetchAll();
+        };
+        document.addEventListener('visibilitychange', onVisible);
+        return () => {
+            clearInterval(interval);
+            document.removeEventListener('visibilitychange', onVisible);
+        };
     }, []);
 
     const fgSegments = [
@@ -437,9 +460,11 @@ export default function Dashboard() {
             {/* FOOTER */}
             <footer className="dashboard-footer">
                 <p>Jalal's Financial Dashboard v7.0 — Data from FRED, CNN, Stooq, ExchangeRate-API, Yahoo Finance &amp; Google Sheets</p>
-                <p style={{ fontSize: '0.7rem', opacity: 0.6, marginTop: '4px' }}>
-                    Deployed: {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                </p>
+                {process.env.NEXT_PUBLIC_BUILD_TIME && (
+                    <p style={{ fontSize: '0.7rem', opacity: 0.6, marginTop: '4px' }}>
+                        Deployed: {new Date(process.env.NEXT_PUBLIC_BUILD_TIME).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                )}
             </footer>
 
             {/* SYSTEM ERROR LOGS */}

@@ -184,7 +184,7 @@ export default function ExtraMarketsGrid({ data, loading }) {
                     <span className="badge badge-blue">FX · Commodities · Real Estate · Rates</span>
                 </div>
                 <ErrorBoundary>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 48px' }}>
+                    <div className="extra-markets-grid">
                         <Column title="🏠 Real Estate & Rates" items={left} />
                         <Column title="💱 FX, Commodities & Crypto" items={right} />
                     </div>

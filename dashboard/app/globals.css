@@ -1004,11 +1004,6 @@ body::before {
   }
 
   /* Tighter checklist items */
-  /* Checklist — single column on mobile */
-  .checklist-grid {
-    grid-template-columns: 1fr !important;
-    gap: 6px !important;
-  }
 
   .card .checklist-item {
     padding: 10px 10px;
@@ -1217,4 +1212,32 @@ body::before {
 @media (prefers-reduced-motion: reduce) {
   .mark-glyph, .mark-pop { animation: none !important; }
   .mark-num::after { transition: none; }
+}
+
+/* ========================================
+   TWO-COLUMN CARD GRIDS
+   Bull Checklist and Global Markets were inline 2-column grids with no media
+   query — on a phone each column was ~170px wide. They collapse at 640px
+   (the rest of the dashboard goes single-column at 900px, but these are
+   full-width cards, so two columns still fit comfortably until much narrower).
+   ======================================== */
+.checklist-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+.extra-markets-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 48px;
+}
+@media (max-width: 640px) {
+  .checklist-grid {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+  .extra-markets-grid {
+    grid-template-columns: 1fr;
+    gap: 24px 0;
+  }
 }

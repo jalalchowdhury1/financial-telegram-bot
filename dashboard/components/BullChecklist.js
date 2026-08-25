@@ -103,7 +103,7 @@ export default function BullChecklist({ fred, loading }) {
             <ErrorBoundary>
                 {loading || !fred || fred.error ? <Skeleton count={8} /> : (
                     <>
-                        <div className="checklist-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
+                        <div className="checklist-grid">
                             {Object.entries(fred.checklist).map(([key, item]) => (
                                 <ChecklistItem key={key} itemKey={key} item={item} />
                             ))}
