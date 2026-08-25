@@ -28,7 +28,7 @@ const STALE_DAYS = 4; // > 3 so the health check flags the genuine outage
 const HORSEMEN_KEYS = ['claims', 'unemployment', 'spread', 'bankruptcies'];
 
 /** Parse a single CSV line into fields, honoring gviz's double-quote wrapping. */
-function parseCsvLine(line) {
+export function parseCsvLine(line) {
     const out = [];
     let cur = '', inQ = false;
     for (let i = 0; i < line.length; i++) {
