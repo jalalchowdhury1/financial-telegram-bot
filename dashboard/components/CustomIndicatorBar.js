@@ -16,14 +16,23 @@ export default function CustomIndicatorBar({ sheets, loading }) {
                 </div>
                 <div className="value">{loading ? '...' : (sheets?.NotSoBoring || 'N/A')}</div>
             </div>
-            <div className={`indicator-pill${!loading && sheets?.FrontRunner && !sheets.FrontRunner.startsWith('BIL') ? ' pill-alert' : ''}`}>
+            {/* The only pill that links out: opens the Catalyst Radar, which shows how
+                close each Frontrunner trigger is and what crossing it would do. */}
+            <a
+                href="https://nuts-radar.vercel.app"
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Open the Catalyst Radar — how close each trigger is, and what is scheduled"
+                className={`indicator-pill pill-link${!loading && sheets?.FrontRunner && !sheets.FrontRunner.startsWith('BIL') ? ' pill-alert' : ''}`}
+            >
                 <div className="label">
-                    <span className="tooltip-trigger" data-tooltip="A contrarian strategy that rotates into Volatility (VIX) hedges when markets overheat (RSI > 79) and buys oversold Tech/Leveraged ETFs during deep dips.">
+                    <span className="tooltip-trigger" data-tooltip="A contrarian strategy that rotates into Volatility (VIX) hedges when markets overheat (RSI > 79) and buys oversold Tech/Leveraged ETFs during deep dips. Click to open the Catalyst Radar.">
                         <span className="emoji">🔑</span>FrontRunner
                     </span>
+                    <span className="pill-out" aria-hidden="true">↗</span>
                 </div>
                 <div className="value">{loading ? '...' : (sheets?.FrontRunner || 'N/A')}</div>
-            </div>
+            </a>
             <div className={`indicator-pill${!loading && sheets?.AAIIDiff && parseFloat(sheets.AAIIDiff) > 20 ? ' pill-alert' : ''}`}>
                 <div className="label"><span className="emoji">🔸</span>AAII Diff</div>
                 {!loading && sheets?.AAIIDiff ? (() => {

@@ -371,6 +371,26 @@ body::before {
   /* Forces the hovered pill to the front of the stacking context */
 }
 
+/* A pill that is itself a link (FrontRunner → the Catalyst Radar). Keeps the pill
+   styling, adds a small outward arrow that brightens on hover. */
+.pill-link {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+}
+
+.pill-link .pill-out {
+  float: right;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  opacity: 0.5;
+  transition: opacity 0.3s ease;
+}
+
+.pill-link:hover .pill-out {
+  opacity: 1;
+}
+
 .indicator-pill .label {
   font-size: 0.72rem;
   font-weight: 600;
