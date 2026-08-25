@@ -1270,6 +1270,43 @@ body::before {
 }
 .hide-sm { display: inline; }
 
+/* The three header controls are sized as ONE set, not three independent ones.
+   .live-badge in particular carried margin-top:12px from when it was a standalone
+   block — inside a centre-aligned flex row that drags its whole margin box down
+   and it no longer lines up with its neighbours. */
+.header-status .live-badge,
+.header-status .mark-chip,
+.header-status .refresh-btn {
+  height: 32px;
+  margin-top: 0;
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+.header-status .live-badge,
+.header-status .mark-chip {
+  padding: 0 13px;
+  font-size: 0.7rem;
+  line-height: 1;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.header-status .refresh-btn {
+  width: 32px;
+  position: relative;
+}
+/* Keep a comfortable tap target without making the button visually taller than
+   the two pills beside it. */
+.header-status .refresh-btn::after {
+  content: '';
+  position: absolute;
+  inset: -7px;
+}
+.header-status .live-dot,
+.header-status .mark-chip-dot {
+  width: 6px;
+  height: 6px;
+}
+
 @media (max-width: 560px) {
   /* Decoration only — the title already says what this is, and it cost two lines. */
   .dashboard-header > .subtitle:first-of-type { display: none; }
@@ -1278,17 +1315,19 @@ body::before {
   .dashboard-header { padding: 12px 0 6px; margin-bottom: 12px; }
 
   .header-status { gap: 8px; margin-top: 8px; }
-  .live-badge {
-    margin-top: 0;
-    padding: 5px 10px;
+
+  .header-status .live-badge,
+  .header-status .mark-chip,
+  .header-status .refresh-btn { height: 30px; }
+  .header-status .live-badge,
+  .header-status .mark-chip {
+    padding: 0 11px;
     font-size: 0.66rem;
     letter-spacing: 0.03em;
   }
+  .header-status .refresh-btn { width: 30px; }
+
   /* "Updated 2026-08-25 13:37" -> "Updated 13:37"; the date is always today. */
   .upd-date { display: none; }
   .hide-sm { display: none; }
-
-  /* 34px is under the 44pt iOS touch target. */
-  .refresh-btn { width: 40px; height: 40px; }
-  .mark-chip { padding: 7px 11px; }
 }
