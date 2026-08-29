@@ -868,9 +868,29 @@ so `isGood` rejects an empty digest rather than letting it claim "nothing change
 The repo monitors itself. **Daily** (`health-check.yml`, **14:00 UTC**) a pure-code prober
 (`scripts/health_check.py`) checks the LIVE system and, on any warn/critical, sends the owner
 a Telegram alert **written to be pasted straight into a Claude session** (a plain-English
-"💬" line per finding + an ELI10 BOTTOM LINE). On a **manual** (`workflow_dispatch`) run it
-always posts — a clean ✅ green check (`--summary`) or the alert; on a **scheduled** run it is
-silent when green and alerts only on warn/critical (`--notify`). **Weekly**
+"💬" line per finding + an ELI10 BOTTOM LINE). The workflow is silent when green and alerts
+only on warn/critical (`--notify`) — **except** a human manually re-running it via
+`workflow_dispatch` with the `force_alert` input ticked, who always gets posted a result
+(`--summary`): a clean ✅ green check, or the alert.
+
+**`force_alert` (workflow_dispatch input, boolean, default `false`) — added 2026-08-29,
+"One Clock".** Before this, the alert step keyed purely on
+`github.event_name == 'workflow_dispatch'`, i.e. *any* manual dispatch always posted —
+which was a fine proxy for "a human is testing this" back when workflow_dispatch had no
+other caller. One Clock adds AWS EventBridge as a **second, automated** trigger for this
+same workflow — it also fires `workflow_dispatch` (EventBridge can't originate a native
+`schedule` event), daily, but sends no inputs. Left as `github.event_name ==
+'workflow_dispatch'`, that would have posted a Telegram alert **every single day even when
+completely healthy**, destroying the exact "silence when healthy" contract this section
+documents. `force_alert` is the seam that tells the two apart: EventBridge's dispatch
+always gets the default `false` → same silent-when-healthy path as the cron. A human
+ticking the box in the Actions UI sets it `true` → still gets the old always-post testing
+behavior. The step condition is `inputs.force_alert || steps.sev.outputs.overall != 'ok'`
+(the `inputs` context, not the stringly-typed `github.event.inputs`, so the boolean
+compares cleanly); on a `schedule`-triggered run `inputs` is not populated and
+`inputs.force_alert` safely evaluates to `null`/falsy rather than erroring, so the
+schedule path is unchanged. No other step in this workflow depended on the old
+`github.event_name == 'workflow_dispatch'` condition. **Weekly**
 (`self-improve.yml`, Wed 13:00 UTC) a headless Claude agent reads the recent reports + this
 file and opens PRs the owner approves (it never self-merges; branch protection enforces it).
 
