@@ -170,8 +170,9 @@ watch mode; `--testPathPattern <Name>` filters. Next.js 13.5.6, React 18 (App Ro
 ### Environment / secrets (Vercel, Production + Preview)
 The repo is **public** — keys NEVER go in code; they live in **Vercel env vars**:
 - `LAMBDA_URL` — the API Gateway base (NOT the Function URL — see §1).
-- `FRED_API_KEY` — used by `/api/fred`, `/api/sheets` (VIX/sentiment proxy),
-  `/api/fear-greed` (VIXCLS), and the copper/gold legs.
+- `FRED_API_KEY` — used by `/api/fred`, `/api/sheets` (Layer 4's VIX/sentiment proxy, AND
+  now the primary source for the VIX pill's fear/greed TAG — see below), `/api/fear-greed`
+  (VIXCLS), and the copper/gold legs.
 - `POLYGON_KEY` — **note the name** (not `POLYGON_API_KEY`; the Lambda's *own* env var IS
   `POLYGON_API_KEY`, but the **dashboard** reads `process.env.POLYGON_KEY`). Used by spy,
   spy-daily-move, market-extra, and the gold leg of copper/gold.
@@ -209,6 +210,37 @@ The repo is **public** — keys NEVER go in code; they live in **Vercel env vars
   decimal 0–1, rendered as a %) — not `bet.probability`. The modal links to the bare
   `https://polymarket.com` homepage; per-market deep links were deliberately avoided as
   unreliable (the API doesn't surface a usable slug).
+
+### VIX pill fear/greed tag (`/api/sheets` + `lib/vixFearGreed.js`)
+The VIX pill in `CustomIndicatorBar.js` shows a `current | threeMonth | fearGreed` triple
+(e.g. "14.43 | 17.48 | GREED13"). `current`/`threeMonth` still come straight from the
+Google Sheet (`GOOGLE_SHEETS.VIX`, gid `790638481`, cells A2/B2). `fearGreed` (the
+"GREED13"-style tag) has been written into that sheet's **C2** once a day by a separate
+repo, **vix-fear-greed**, which the owner is retiring — the computation (added
+2026-08-28) is now folded into the dashboard itself so the pill keeps working once that
+repo is deleted (it may still exist and still be writing C2 today; treat it as gone).
+- **Formula** (`lib/vixFearGreed.js: fearGreedTag`, matches the retired repo's
+  `fear_greed.py` exactly): `sma50` = 50-day rolling mean of VIX daily closes, `latest` =
+  most recent close, `pct_diff = (latest - sma50) / sma50`, `score =
+  round(abs(pct_diff)*100)` capped at 99 and zero-padded to 2 digits, tag = `FEAR<score>`
+  if `pct_diff > 0`, `GREED<score>` if `pct_diff < 0`, else `NEUTRAL00`. Only the trailing
+  50 valid closes matter (a rolling mean's last value depends on nothing earlier), so
+  `computeVixFearGreedTag` fetches FRED `VIXCLS`'s newest ~280 observations (plenty of
+  buffer for the odd missing `.` print) rather than a literal 1-year window.
+- **Source cascade** (`resolveVixFearGreedTag`): FRED-computed (primary) → the sheet's C2
+  value already parsed by whichever of the 5 sheets-cascade layers won (transition
+  fallback, for as long as the retired repo's last-written value is still sitting in the
+  sheet) → `'N/A'`. **Which source won is always named in `_meta.messages`** — the
+  fallback never silently looks identical to a healthy computed reading (§7's governing
+  principle: a fallback that satisfies the caller unnoticed is a false negative). Verify
+  with `?_fail=vix_fred` (forces the FRED path to fail, exercising the sheet fallback) on
+  prod after any change here.
+- **Don't confuse this with `/api/fear-greed`** — that route computes CNN's unrelated
+  0–100 "EXTREME FEAR…EXTREME GREED" index (a different gauge, feeding a different
+  component) and shares no code with this tag despite the similar name.
+- Once vix-fear-greed is fully deleted and C2 stops being refreshed, the sheet fallback
+  tier becomes permanently stale — harmless to leave as a dead tier (it degrades to
+  `'N/A'` once the cell goes empty) rather than ripping it out, unless it gets confusing.
 
 ### Polymarket "Market Sentiment" board (`/api/polymarket` + `PolymarketTable.js`)
 Both the Lambda fetcher (`bot/fetchers.py:fetch_polymarket_trending`, **primary**) and the
@@ -688,7 +720,9 @@ so `isGood` rejects an empty digest rather than letting it claim "nothing change
   `?_fail=fred` → independent providers; `?_fail=fred,lastgood` → live horsemen merged over
   the Sheet base; `?_fail=fred,lastgood,hm_treasury,hm_bls,hm_fredcsv` → the Sheet tier
   alone. Note `lastgood` must be honoured by BOTH `serve()` and any code that calls
-  `loadLastGood()` directly (see the #36 gotcha in §3).
+  `loadLastGood()` directly (see the #36 gotcha in §3). `/api/sheets` adds **`vix_fred`**
+  (kill the VIX pill's FRED-computed fear/greed tag → falls back to the sheet's C2 value;
+  see "VIX pill fear/greed tag" above).
 
 ---
 

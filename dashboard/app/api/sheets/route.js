@@ -1,6 +1,8 @@
 import fs from 'fs';
 import { GOOGLE_SHEETS } from '../../../lib/constants';
 import { fetchText, fetchJson } from '../../../lib/fetcher';
+import { faultsFrom } from '../../../lib/faults';
+import { resolveVixFearGreedTag } from '../../../lib/vixFearGreed';
 
 export const dynamic = 'force-dynamic';
 const CACHE_FILE = '/tmp/financial-dashboard-sheets-cache.json';
@@ -62,17 +64,22 @@ function loadCache() {
     return null;
 }
 
-export async function GET() {
+/**
+ * The original 5-layer Google Sheets cascade, unchanged in behavior — just
+ * factored out of GET() so it returns `{results, source, hasErrors, messages}`
+ * instead of returning a Response directly. This gives GET() exactly ONE
+ * place to layer the FRED-computed VIX fear/greed override on top of
+ * whichever layer won (see resolveVixFearGreedTag in lib/vixFearGreed.js),
+ * regardless of which of these 5 layers supplied the rest of the payload.
+ */
+async function resolveSheetsCascade() {
     const messages = [];
 
     // Layer 1: Live Google Sheets (primary URLs)
     try {
         const results = await fetchSheets(SHEETS);
         saveCache(results);
-        return Response.json({
-            ...results,
-            _meta: { source: 'Google Sheets (Live)', hasErrors: false, messages: ['Live data loaded'] }
-        });
+        return { results, source: 'Google Sheets (Live)', hasErrors: false, messages: ['Live data loaded'] };
     } catch (e) { messages.push(`Layer 1 (Live Sheets) failed: ${e.message}`); }
 
     // Layer 2: /tmp cache from previous successful load
@@ -81,10 +88,7 @@ export async function GET() {
         const isRecent = cached._cachedAt && (Date.now() - new Date(cached._cachedAt).getTime()) < 24 * 60 * 60 * 1000;
         if (isRecent) {
             messages.push(`Serving cache from ${cached._cachedAt}`);
-            return Response.json({
-                ...cached,
-                _meta: { source: 'Google Sheets (Cached)', hasErrors: true, messages }
-            });
+            return { results: cached, source: 'Google Sheets (Cached)', hasErrors: true, messages };
         }
         messages.push('Cache exists but is stale (>24h), trying other sources');
     } else {
@@ -96,10 +100,7 @@ export async function GET() {
         const altSheets = SHEETS.map(s => ({ ...s, url: altUrl(s.url) }));
         const results = await fetchSheets(altSheets);
         saveCache(results);
-        return Response.json({
-            ...results,
-            _meta: { source: 'Google Sheets (Alt URL)', hasErrors: true, messages }
-        });
+        return { results, source: 'Google Sheets (Alt URL)', hasErrors: true, messages };
     } catch (e) { messages.push(`Layer 3 (Alt URL) failed: ${e.message}`); }
 
     // Layer 4: FRED/Yahoo proxies for VIX + AAII sentiment estimate
@@ -139,24 +140,45 @@ export async function GET() {
             VIX: { current: vixCurrent, threeMonth: 'N/A', fearGreed: 'N/A' },
             AAIIDiff: aaiDiff
         };
-        return Response.json({
-            ...results,
-            _meta: { source: 'FRED Proxy (VIX + sentiment)', hasErrors: true, messages }
-        });
+        return { results, source: 'FRED Proxy (VIX + sentiment)', hasErrors: true, messages };
     } catch (e) { messages.push(`Layer 4 (FRED proxy) failed: ${e.message}`); }
 
     // Layer 5: Stale cache (even if >24h) or hardcoded defaults
     if (cached) {
         messages.push(`Serving stale cache from ${cached._cachedAt}`);
-        return Response.json({
-            ...cached,
-            _meta: { source: 'Stale Cache (all sources failed)', hasErrors: true, messages }
-        });
+        return { results: cached, source: 'Stale Cache (all sources failed)', hasErrors: true, messages };
     }
 
     messages.push('All 5 layers failed — returning static defaults');
+    return { results: STATIC_DEFAULTS, source: 'Static Defaults', hasErrors: true, messages };
+}
+
+export async function GET(request) {
+    const faults = faultsFrom(request);
+    const { results, source, hasErrors, messages } = await resolveSheetsCascade();
+
+    // VIX fear/greed tag (the pill's "GREED13"-style value): FRED-computed is
+    // now the primary source (folds in the vix-fear-greed repo's formula —
+    // see lib/vixFearGreed.js), the sheet's C2 value already sitting in
+    // `results.VIX.fearGreed` (from whichever cascade layer above won) is the
+    // transition fallback for as long as that repo still writes it, and
+    // 'N/A' is the last resort. Which source actually won is always recorded
+    // in `messages` so a silent fall-back to the sheet is never invisible.
+    const sheetFearGreed = results?.VIX?.fearGreed ?? 'N/A';
+    const { tag: vixFearGreed, message: fearGreedMessage } = await resolveVixFearGreedTag({
+        fredApiKey: process.env.FRED_API_KEY,
+        fetchJson,
+        sheetValue: sheetFearGreed,
+        faults
+    });
+    messages.push(fearGreedMessage);
+
+    const finalResults = results?.VIX
+        ? { ...results, VIX: { ...results.VIX, fearGreed: vixFearGreed } }
+        : results;
+
     return Response.json({
-        ...STATIC_DEFAULTS,
-        _meta: { source: 'Static Defaults', hasErrors: true, messages }
+        ...finalResults,
+        _meta: { source, hasErrors, messages }
     });
 }
