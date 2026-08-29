@@ -70,3 +70,39 @@ def test_returns_dashboard_tag_even_if_sheet_would_disagree():
 def requests_exc():
     import requests
     return requests.RequestException("dashboard down")
+
+
+# --- the fear/greed SCORE must survive into the brief ---------------------
+# clean_val() strips trailing digits because the FrontRunner cell arrives as
+# "BIL (T-Bill ETF)1". Applying it to the fear/greed tag also ate the score:
+# "GREED13" rendered as bare "GREED". The score is real signal (13 = VIX sits
+# ~13% under its own 50-day mean), not a spreadsheet artifact.
+def _row(*cells):
+    r = MagicMock()
+    r.status_code = 200
+    r.text = "h\n" + ",".join(cells) + "\n"
+    return r
+
+
+def test_brief_keeps_the_fear_greed_score():
+    nsb = MagicMock(status_code=200, text="a,b\nc,d\ne,ON\n")
+    fr = MagicMock(status_code=200, text="h\nBIL (T-Bill ETF)1\n")
+    aaii = MagicMock(status_code=200, text="h\na,b,c,d,11.50%\n")
+
+    def side_effect(url, *a, **kw):
+        if "vercel.app" in url:
+            return DASH_OK
+        if "10Y8Jus8" in url:
+            return nsb
+        if "1zQQ2am1" in url:
+            return aaii
+        return fr
+
+    with patch("bot.fetchers.requests.get", side_effect=side_effect):
+        from bot.fetchers import fetch_google_sheet_indicators
+        out = fetch_google_sheet_indicators()
+
+    assert "GREED13" in out, f"score stripped from the tag:\n{out}"
+    # the FrontRunner artifact digit must STILL be stripped
+    assert "BIL (T-Bill ETF)\n" in out
+    assert "BIL (T-Bill ETF)1" not in out

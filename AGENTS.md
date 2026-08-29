@@ -250,6 +250,12 @@ repo is deleted (it may still exist and still be writing C2 today; treat it as g
   bot must never go back to reading C2 first:** once vix-fear-greed is deleted nothing
   writes that cell, so it would serve a frozen tag forever with no error and no alert.
   One formula, one place — the site and the brief cannot disagree.
+- **The tag is NOT passed through `clean_val()`.** That helper strips trailing digits
+  because the FrontRunner cell arrives as `"BIL (T-Bill ETF)1"`; applied to the tag it
+  also ate the score, so `GREED13` reached Telegram as bare `GREED`. The digits ARE the
+  signal (13 ≈ VIX sitting 13% under its 50-day mean). Fixed 2026-08-29; `tests/
+  test_vix_source.py::test_brief_keeps_the_fear_greed_score` pins both halves (score
+  kept, FrontRunner artifact still stripped).
 - **Don't confuse this with `/api/fear-greed`** — that route computes CNN's unrelated
   0–100 "EXTREME FEAR…EXTREME GREED" index (a different gauge, feeding a different
   component) and shares no code with this tag despite the similar name.

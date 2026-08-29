@@ -112,7 +112,12 @@ def fetch_google_sheet_indicators() -> str:
             f"🛡️ NotSoBoring : {clean_val(not_so_boring_val)}\n\n"
             f"🔑 FrontRunner : {clean_val(front_runner_val)}\n\n"
             f"🔸 AAII Diff : {clean_val(aaii_val)} (G | >20% | 6mths out)\n\n"
-            f"🎢 VIX: (Current | 3M) : {clean_val(vix_current)} | {clean_val(vix_3m)} | {clean_val(fear_greed_status)}\n"
+            # fear_greed_status is NOT passed through clean_val: the tag's
+            # trailing digits are its score (GREED13 = VIX ~13% under its
+            # 50-day mean), not the spreadsheet artifact clean_val exists to
+            # strip off FrontRunner's "BIL (T-Bill ETF)1". It arrives already
+            # clean from /api/sheets (and from C2 on the fallback path).
+            f"🎢 VIX: (Current | 3M) : {clean_val(vix_current)} | {clean_val(vix_3m)} | {fear_greed_status}\n"
             f"\n[Financial Dashboard History](https://docs.google.com/spreadsheets/d/1lA-_yjLMc3qDTt9sogSPQrCohNULIk5wwJYfb5wIHfc/edit?gid=0#gid=0)"
         )
         print("✓ Successfully fetched and parsed Google Sheet indicators")
