@@ -5,6 +5,11 @@ on:
   schedule:
     - cron: '0 14 * * *'   # 14:00 UTC ≈ 10:00 ET — well after the 4:15 ET / 9:15 UTC report
   workflow_dispatch:
+    inputs:
+      force_alert:
+        description: 'Always Telegram the result (green check or alert), even if healthy — for manually testing this workflow. Leave unchecked to get the same silent-when-healthy behavior as a scheduled/EventBridge run.'
+        type: boolean
+        default: false
 
 concurrency:
   group: health-check
@@ -99,12 +104,20 @@ jobs:
         id: sev
         run: echo "overall=$(python -c "import json;print(json.load(open('health-report.json'))['overall'])")" >> "$GITHUB_OUTPUT"
 
-      # Manual run → always post a clean check (✅ green, or the alert). Scheduled run →
-      # silent when green, alert only on a real problem (no daily spam).
+      # A HUMAN manually re-running this (workflow_dispatch with `force_alert` ticked)
+      # always gets posted a clean check (✅ green, or the alert) so testing works.
+      # Everyone else — the schedule AND AWS EventBridge, which also dispatches this
+      # via workflow_dispatch but never sets `force_alert` (One Clock, added 2026-08-29)
+      # — is silent when green and alerts only on a real problem (no daily spam). Do
+      # NOT key this off `github.event_name == 'workflow_dispatch'` alone any more:
+      # once EventBridge dispatches daily, that would alert every day even when
+      # healthy, which is exactly the "silence when healthy" contract AGENTS.md §7
+      # documents. `inputs.force_alert` is null (falsy) on a schedule-triggered run —
+      # see AGENTS.md §7 for why that's safe to rely on here.
       - name: Telegram summary / alert
-        if: github.event_name == 'workflow_dispatch' || steps.sev.outputs.overall != 'ok'
+        if: inputs.force_alert || steps.sev.outputs.overall != 'ok'
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "${{ inputs.force_alert }}" = "true" ]; then
             python scripts/health_check.py --summary health-report.json
           else
             python scripts/health_check.py --notify health-report.json
