@@ -26,6 +26,49 @@ try:
 except ImportError:
     poly_client = None
 
+def _vix_from_sheet() -> tuple:
+    """The old path: read the VIX tab's A2/B2/C2 straight off the Google Sheet."""
+    r = requests.get(URLS['VIX'], timeout=10)
+    rows = list(csv.reader(StringIO(r.text)))
+    return rows[1][0].strip(), rows[1][1].strip(), rows[1][2].strip()
+
+
+def fetch_vix_row() -> tuple:
+    """
+    Return (current, 3-month, fear/greed tag) for the brief's VIX line.
+
+    PRIMARY is the dashboard's /api/sheets. The dashboard computes the
+    fear/greed tag itself (CBOE same-day -> FRED cascade; see
+    dashboard/lib/vixFearGreed.js), so the formula lives in exactly ONE place
+    and the site and this brief can never disagree.
+
+    This deliberately does NOT read the sheet's cell C2 first. C2 was written
+    once a day by the separate vix-fear-greed repo; the moment that repo is
+    deleted nothing writes it, and the cell keeps serving its last value
+    forever — a frozen tag with no error and no alert. A fallback that
+    silently satisfies the caller is a false negative (AGENTS.md §7).
+
+    FALLBACK is the sheet, exactly as before, for a dashboard outage. That is
+    still C2 for the tag, so it can be stale post-deletion — but it only fires
+    when the dashboard is down, which fleet-health already alarms on.
+    """
+    def _usable(v):
+        return bool(v) and str(v).strip().upper() not in ('', 'N/A', 'NONE')
+
+    try:
+        r = requests.get(URLS['DASHBOARD_SHEETS'], timeout=15)
+        r.raise_for_status()
+        vix = (r.json() or {}).get('VIX') or {}
+        current, three_m, tag = vix.get('current'), vix.get('threeMonth'), vix.get('fearGreed')
+        if _usable(current) and _usable(three_m) and _usable(tag):
+            return str(current).strip(), str(three_m).strip(), str(tag).strip()
+        logging.warning("VIX: dashboard returned unusable values %r — falling back to the sheet", vix)
+    except Exception as e:
+        logging.warning("VIX: dashboard fetch failed (%s) — falling back to the sheet", e)
+
+    return _vix_from_sheet()
+
+
 def fetch_google_sheet_indicators() -> str:
     """
     Fetch custom indicator values from assigned Google Sheets via CSV export.
@@ -48,12 +91,9 @@ def fetch_google_sheet_indicators() -> str:
         reader_aaii = list(csv.reader(StringIO(r_aaii.text)))
         aaii_val = reader_aaii[1][4].strip()
 
-        # 4. VIX
-        r_vix = requests.get(URLS['VIX'], timeout=10)
-        reader_vix = list(csv.reader(StringIO(r_vix.text)))
-        vix_current = reader_vix[1][0].strip()
-        vix_3m = reader_vix[1][1].strip()
-        fear_greed_status = reader_vix[1][2].strip()
+        # 4. VIX — from the dashboard (single source of truth for the
+        #    fear/greed tag), sheet as graceful fallback. See fetch_vix_row.
+        vix_current, vix_3m, fear_greed_status = fetch_vix_row()
 
         # Helper to strip trailing non-text/non-special characters (like the weird numbers in the screenshot)
         import re

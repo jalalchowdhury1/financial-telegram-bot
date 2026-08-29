@@ -168,6 +168,7 @@ export async function GET(request) {
     const { tag: vixFearGreed, message: fearGreedMessage } = await resolveVixFearGreedTag({
         fredApiKey: process.env.FRED_API_KEY,
         fetchJson,
+        fetchText,
         sheetValue: sheetFearGreed,
         faults
     });

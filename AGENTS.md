@@ -227,14 +227,29 @@ repo is deleted (it may still exist and still be writing C2 today; treat it as g
   50 valid closes matter (a rolling mean's last value depends on nothing earlier), so
   `computeVixFearGreedTag` fetches FRED `VIXCLS`'s newest ~280 observations (plenty of
   buffer for the odd missing `.` print) rather than a literal 1-year window.
-- **Source cascade** (`resolveVixFearGreedTag`): FRED-computed (primary) → the sheet's C2
-  value already parsed by whichever of the 5 sheets-cascade layers won (transition
-  fallback, for as long as the retired repo's last-written value is still sitting in the
-  sheet) → `'N/A'`. **Which source won is always named in `_meta.messages`** — the
-  fallback never silently looks identical to a healthy computed reading (§7's governing
-  principle: a fallback that satisfies the caller unnoticed is a false negative). Verify
-  with `?_fail=vix_fred` (forces the FRED path to fail, exercising the sheet fallback) on
-  prod after any change here.
+- **⚠️ FRED runs a trading day behind — that is why CBOE is the primary tier.** The
+  retired repo read yfinance `^VIX` (same-day). Verified 2026-08-29: FRED's newest
+  `VIXCLS` print was Thu 08/27 (14.51 → `GREED12`) while Friday's real close of 14.43
+  gives `GREED13`. Making FRED primary would have been a silent one-day regression on
+  both the pill and the Telegram brief. `computeVixFearGreedTagFromCboe` reads CBOE's
+  own keyless daily-history CSV (`cdn.cboe.com/.../VIX_History.csv`) with the SAME
+  `parseCboeCsv` helper `/api/vol` already uses.
+- **Source cascade** (`resolveVixFearGreedTag`): **CBOE-computed (primary, same-day)** →
+  **FRED-computed** (fallback; correct formula but typically one trading day stale) → the
+  sheet's C2 value already parsed by whichever of the 5 sheets-cascade layers won (last
+  resort, only meaningful while something still writes C2) → `'N/A'`. **Which source won
+  is always named in `_meta.messages`** — the fallback never silently looks identical to a
+  healthy computed reading (§7's governing principle: a fallback that satisfies the caller
+  unnoticed is a false negative). Verify on prod after any change here with
+  `?_fail=vix_cboe` (forces the FRED tier) and `?_fail=vix_cboe,vix_fred` (forces the
+  sheet tier).
+- **The Telegram brief consumes this route, not the sheet** (added 2026-08-29).
+  `bot/fetchers.py: fetch_vix_row` fetches `URLS['DASHBOARD_SHEETS']`
+  (`/api/sheets`) and takes `current`/`threeMonth`/`fearGreed` from it, falling back to
+  the sheet CSV only if the dashboard is unreachable or returns `N/A`s. **This is why the
+  bot must never go back to reading C2 first:** once vix-fear-greed is deleted nothing
+  writes that cell, so it would serve a frozen tag forever with no error and no alert.
+  One formula, one place — the site and the brief cannot disagree.
 - **Don't confuse this with `/api/fear-greed`** — that route computes CNN's unrelated
   0–100 "EXTREME FEAR…EXTREME GREED" index (a different gauge, feeding a different
   component) and shares no code with this tag despite the similar name.
@@ -722,7 +737,8 @@ so `isGood` rejects an empty digest rather than letting it claim "nothing change
   alone. Note `lastgood` must be honoured by BOTH `serve()` and any code that calls
   `loadLastGood()` directly (see the #36 gotcha in §3). `/api/sheets` adds **`vix_fred`**
   (kill the VIX pill's FRED-computed fear/greed tag → falls back to the sheet's C2 value;
-  see "VIX pill fear/greed tag" above).
+  see "VIX pill fear/greed tag" above) and **`vix_cboe`** (kill the CBOE tier → falls
+  through to FRED; pair them as `?_fail=vix_cboe,vix_fred` to reach the sheet's C2).
 
 ---
 

@@ -23,8 +23,21 @@
  * is more than enough buffer for missing prints.
  */
 import { gate } from './faults';
+import { parseCboeCsv } from './vol';
 
 const VIXCLS_LIMIT = 280;
+
+/**
+ * CBOE's own daily-history CSV for VIX — keyless, authoritative (they compute
+ * the index) and, critically, SAME-DAY. FRED's VIXCLS runs one trading day
+ * behind: verified 2026-08-29, when FRED's newest print was Thu 08/27 (14.51
+ * -> GREED12) while Friday's real close of 14.43 gives GREED13. The old
+ * vix-fear-greed repo read yfinance ^VIX and was same-day, so making FRED the
+ * primary would have been a silent one-day regression on the pill and on the
+ * Telegram brief. Same CSV/parser already used by /api/vol.
+ */
+export const CBOE_VIX_URL =
+    'https://cdn.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv';
 
 /** FRED `series/observations` URL for VIXCLS, newest-first, `limit` rows. */
 export function fredVixUrl(apiKey, limit = VIXCLS_LIMIT) {
@@ -101,6 +114,20 @@ export async function computeVixFearGreedTag(apiKey, { fetchJson, limit = VIXCLS
 }
 
 /**
+ * Fetch CBOE's VIX daily history and compute the tag. Throws on any failure
+ * (network/HTTP error, unparseable CSV, < 50 usable closes) — callers decide
+ * the fallback. `fetchText` is injected for the same testability reason as
+ * `fetchJson` above.
+ */
+export async function computeVixFearGreedTagFromCboe({ fetchText } = {}) {
+    const text = await fetchText(CBOE_VIX_URL, { revalidate: 0 });
+    const series = parseCboeCsv(text);
+    const tag = fearGreedTag(series.map((o) => o.value));
+    if (!tag) throw new Error(`Insufficient CBOE VIX data (${series.length} valid closes, need >= 50)`);
+    return tag;
+}
+
+/**
  * The VIX pill's fear/greed source cascade: FRED-computed (primary) -> the
  * Google Sheet's C2 value already read by the sheets cascade (transition
  * fallback, while the vix-fear-greed repo that writes it still runs) ->
@@ -113,14 +140,31 @@ export async function computeVixFearGreedTag(apiKey, { fetchJson, limit = VIXCLS
  * `faults` (optional Set) supports the repo's `?_fail=vix_fred` convention
  * for forcing the fallback path on prod to re-verify it.
  */
-export async function resolveVixFearGreedTag({ fredApiKey, fetchJson, sheetValue = 'N/A', faults, limit } = {}) {
+export async function resolveVixFearGreedTag({ fredApiKey, fetchJson, fetchText, sheetValue = 'N/A', faults, limit } = {}) {
+    const trail = [];
+
+    // Tier 1: CBOE (same-day, keyless, authoritative).
+    try {
+        const tag = await gate('vix_cboe', faults, () => computeVixFearGreedTagFromCboe({ fetchText }));
+        return { tag, message: 'VIX fear/greed: computed from CBOE VIX daily history (same-day close)' };
+    } catch (e) {
+        trail.push(`CBOE failed (${e.message})`);
+    }
+
+    // Tier 2: FRED VIXCLS — same formula, but typically one trading day behind.
     try {
         const tag = await gate('vix_fred', faults, () => computeVixFearGreedTag(fredApiKey, { fetchJson, limit }));
-        return { tag, message: 'VIX fear/greed: computed from FRED VIXCLS (formula matches the retired vix-fear-greed repo)' };
-    } catch (e) {
         return {
-            tag: sheetValue,
-            message: `VIX fear/greed: FRED computation failed (${e.message}) — using sheet value (${sheetValue})`,
+            tag,
+            message: `VIX fear/greed: ${trail.join('; ')} — computed from FRED VIXCLS instead (may lag one trading day)`,
         };
+    } catch (e) {
+        trail.push(`FRED failed (${e.message})`);
     }
+
+    // Tier 3: the sheet's C2, whatever last wrote it.
+    return {
+        tag: sheetValue,
+        message: `VIX fear/greed: ${trail.join('; ')} — using sheet value (${sheetValue})`,
+    };
 }
