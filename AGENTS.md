@@ -801,10 +801,13 @@ so `isGood` rejects an empty digest rather than letting it claim "nothing change
   body), `fetch_spy_with_fallback` (yfinance→Polygon→Sheet→FRED, Finnhub spot override),
   `fetch_spy_daily_move`, `fetch_market_extra` (FX/commodities/rates/real-estate; six
   provider chains run concurrently under `MARKET_EXTRA_DEADLINE_SECONDS`: yfinance →
-  Polygon → Finnhub **BTC only** (its OANDA:* forex/commodity symbols are paid-tier, 403
-  forever) → FRED incl. gold London PM fix `GOLDPMGBD228NLBM` → USD spot chain ER-API →
-  Frankfurter → Fawaz → keyless spot last resorts gold-api.com / Coinbase; Stooq is gone —
-  its download endpoint sits behind a JS proof-of-work wall), and
+  Polygon → **CNBC** (keyless live quote + 1Y bars: `@GC.1` gold, `@CL.1` WTI, `CAD=`,
+  `INR=`, `BTC.CB=`; the history-bearing middle tier that covers Yahoo rate-limit hours) →
+  FRED incl. gold London PM fix `GOLDPMGBD228NLBM` → Frankfurter time-series (FX history)
+  / Coinbase candles (BTC history) → spot last resorts: Finnhub **BTC only** (its OANDA:*
+  symbols are paid-tier, 403 forever), USD spot chain ER-API → Frankfurter → Fawaz,
+  gold-api.com, Coinbase spot. Stooq is gone — its download endpoint sits behind a JS
+  proof-of-work wall), and
   `fetch_polymarket_trending` (the curated sentiment board), and `calculate_rsi` (Wilder RSI
   used by the SPY waterfall).
 - `bot/config.py` — `URLS` (Google-Sheet/data source URLs, mirror `dashboard/lib/constants.js`)

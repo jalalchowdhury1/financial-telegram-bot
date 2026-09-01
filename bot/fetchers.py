@@ -398,6 +398,141 @@ def _fetch_coinbase_spot() -> Optional[Dict[str, Any]]:
     return _spot_only(float(amount)) if amount else None
 
 
+def _rows_to_metric(rows: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """[{date, price}] oldest->newest -> the standard metric shape (needs >= 2 rows)."""
+    if len(rows) < 2:
+        return None
+    current, prev = rows[-1]['price'], rows[-2]['price']
+    return {
+        'current': current,
+        'dailyChange': {'value': round(current - prev, 6), 'pct': _calc_pct(current, prev)},
+        'history': rows,
+        'lastDate': rows[-1]['date'],
+    }
+
+
+# ── CNBC (keyless; live quote + 1Y daily bars; datacenter-reachable) ─────────
+# The dashboard already trusts these endpoints for gold/copper/VIX (lib/sources.js
+# cnbcQuotes / cnbcHistory). Symbols: '@GC.1' gold (COMEX front month), '@CL.1' WTI,
+# 'CAD=' / 'INR=' USD FX spot, 'BTC.CB=' Bitcoin (Coinbase).
+HISTORY_ROWS = 400  # what yfinance/Polygon return; keeps the Lambda payload the same size
+CNBC_QUOTE_URL = 'https://quote.cnbc.com/quote-html-webservice/quote.htm?symbols={}&output=json'
+CNBC_HISTORY_URL = 'https://ts-api.cnbc.com/harmony/app/charts/1Y.json?symbol={}'
+
+
+def _fetch_cnbc_quotes(symbols: List[str]) -> Dict[str, Dict[str, Any]]:
+    """One batched call -> {symbol: {price, change, change_pct, as_of}}."""
+    from urllib.parse import quote
+    url = CNBC_QUOTE_URL.format('%7C'.join(quote(sym, safe='') for sym in symbols))
+    r = requests.get(url, timeout=10, headers=_HEADERS)
+    r.raise_for_status()
+    raw = (r.json().get('QuickQuoteResult') or {}).get('QuickQuote')
+    items = raw if isinstance(raw, list) else ([raw] if raw else [])
+    out: Dict[str, Dict[str, Any]] = {}
+    for it in items:
+        try:
+            price = float(it.get('last'))
+        except (TypeError, ValueError):
+            continue
+        def _f(v: Any) -> float:
+            try:
+                return float(v)
+            except (TypeError, ValueError):
+                return 0.0
+        last_time = it.get('last_time') or ''
+        out[it.get('symbol')] = {'price': price, 'change': _f(it.get('change')),
+                                 'change_pct': _f(it.get('change_pct')),
+                                 'as_of': last_time[:10] if len(last_time) >= 10 else None}
+    return out
+
+
+def _fetch_cnbc_history(symbol: str) -> List[Dict[str, Any]]:
+    """1Y daily closes, oldest -> newest."""
+    from urllib.parse import quote
+    r = requests.get(CNBC_HISTORY_URL.format(quote(symbol, safe='')), timeout=10, headers=_HEADERS)
+    r.raise_for_status()
+    bars = (r.json().get('barData') or {}).get('priceBars') or []
+    rows = []
+    for b in bars:
+        tt = str(b.get('tradeTime') or '')
+        try:
+            price = float(b.get('close'))
+        except (TypeError, ValueError):
+            continue
+        if len(tt) < 8:
+            continue
+        rows.append({'date': f'{tt[:4]}-{tt[4:6]}-{tt[6:8]}', 'price': price})
+    # CNBC's 1Y feed carries several bars per day; keep the last close per date.
+    by_date = {r['date']: r for r in rows}
+    return [by_date[d] for d in sorted(by_date)][-HISTORY_ROWS:]
+
+
+def _fetch_cnbc_metrics(symbols: List[str]) -> Dict[str, Dict[str, Any]]:
+    """{symbol: metric} — live quote merged onto the daily bars. A symbol with a
+    quote but no bars is served spot-only; one with neither is omitted."""
+    try:
+        quotes = _fetch_cnbc_quotes(symbols)
+    except Exception as e:
+        print(f'[CNBC] quotes failed: {e}')
+        quotes = {}
+    out: Dict[str, Dict[str, Any]] = {}
+    for sym in symbols:
+        try:
+            hist = _fetch_cnbc_history(sym)
+        except Exception as e:
+            print(f'[CNBC] history {sym} failed: {e}')
+            hist = []
+        q = quotes.get(sym)
+        if q:
+            if q['as_of'] and hist:  # merge the live print onto the bars (never a 1-point history)
+                if hist[-1]['date'] == q['as_of']:
+                    hist[-1] = {'date': q['as_of'], 'price': q['price']}
+                elif hist[-1]['date'] < q['as_of']:
+                    hist.append({'date': q['as_of'], 'price': q['price']})
+            out[sym] = {'current': q['price'],
+                        'dailyChange': {'value': q['change'], 'pct': q['change_pct']},
+                        'history': hist, 'lastDate': hist[-1]['date'] if hist else q['as_of']}
+        else:
+            m = _rows_to_metric(hist)
+            if m:
+                out[sym] = m
+    return out
+
+
+def _fetch_frankfurter_series(symbols: List[str], days: int = 400) -> Dict[str, Dict[str, Any]]:
+    """ECB daily USD-base rates with history (keyless; no BDT) -> {sym: metric}."""
+    from datetime import datetime, timedelta
+    start = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+    url = f'https://api.frankfurter.dev/v1/{start}..?base=USD&symbols={",".join(symbols)}'
+    r = requests.get(url, timeout=15, headers=_HEADERS)
+    r.raise_for_status()
+    by_date = r.json().get('rates') or {}
+    out: Dict[str, Dict[str, Any]] = {}
+    for sym in symbols:
+        rows = [{'date': d, 'price': float(v[sym])} for d, v in sorted(by_date.items()) if v.get(sym) is not None]
+        m = _rows_to_metric(rows[-HISTORY_ROWS:])
+        if m:
+            out[sym] = m
+    return out
+
+
+def _fetch_coinbase_candles() -> Optional[Dict[str, Any]]:
+    """BTC-USD daily closes from Coinbase Exchange (keyless, ~300 days, newest first)."""
+    from datetime import datetime, timezone
+    r = requests.get('https://api.exchange.coinbase.com/products/BTC-USD/candles?granularity=86400',
+                     timeout=10, headers=_HEADERS)
+    r.raise_for_status()
+    rows = []
+    for c in r.json() or []:  # [time, low, high, open, close, volume]
+        try:
+            rows.append({'date': datetime.fromtimestamp(int(c[0]), timezone.utc).strftime('%Y-%m-%d'),
+                         'price': float(c[4])})
+        except (TypeError, ValueError, IndexError):
+            continue
+    rows.sort(key=lambda x: x['date'])
+    return _rows_to_metric(rows[-HISTORY_ROWS:])
+
+
 def fetch_spy_with_fallback(fred_api_key: Optional[str] = None,
                             polygon_api_key: Optional[str] = None,
                             finnhub_api_key: Optional[str] = None) -> Dict[str, Any]:
@@ -616,11 +751,14 @@ def fetch_market_extra(fred_api_key: str,
 
     Layer 1: yfinance (everything it covers, with history)
     Layer 2: Polygon (FX with history, BTC, Gold)
-    Layer 3: Finnhub (BTC spot only -- its OANDA:* forex/commodity symbols are paid-tier
-             and 403'd on every free-tier call for weeks, so they are not requested)
+    Layer 3: CNBC (keyless; live quote + 1Y daily bars for gold, WTI, USD/CAD, USD/INR,
+             BTC). Added 2026-09-01 because yfinance is Yahoo-rate-limited for hours at a
+             time and Polygon 429s on the free tier, leaving only spot-only fallbacks.
     Layer 4: FRED (FX, Oil, Gold London PM fix, rates, real-estate, all with history)
-             + USD spot rates (ER-API -> Frankfurter -> Fawaz; BDT, DXY)
-    Layer 5: keyless spot last resorts: gold-api.com (Gold), Coinbase (BTC).
+             + Frankfurter time-series (FX with history) + Coinbase candles (BTC history)
+    Layer 5: spot last resorts: Finnhub BINANCE:BTCUSDT (its OANDA:* forex/commodity
+             symbols are paid-tier, 403 forever, not requested), USD spot chain
+             (ER-API -> Frankfurter -> Fawaz; BDT, DXY), gold-api.com (Gold), Coinbase (BTC).
              (Stooq, the old last resort, now sits behind a JS proof-of-work challenge.)
 
     The six provider chains are independent, so they run CONCURRENTLY and the whole
@@ -726,7 +864,29 @@ def fetch_market_extra(fred_api_key: str,
             print(f'[Finnhub] BINANCE:BTCUSDT failed: {e}')
         return out
 
-    # 6. Keyless spot last resorts
+    # 6. CNBC -- live quote + daily history, one batched quote call + one history call each
+    CNBC_SYMBOLS = {'gold': '@GC.1', 'oil': '@CL.1', 'usdcad': 'CAD=', 'usdinr': 'INR=', 'btc': 'BTC.CB='}
+
+    def cnbc_chain() -> Dict[str, Dict]:
+        try:
+            got = _fetch_cnbc_metrics(list(CNBC_SYMBOLS.values()))
+        except Exception as e:
+            print(f'[CNBC] failed: {e}')
+            return {}
+        out = {name: got[sym] for name, sym in CNBC_SYMBOLS.items() if got.get(sym, {}).get('current')}
+        for name in out:
+            print(f'[CNBC] {CNBC_SYMBOLS[name]}: {out[name]["current"]}')
+        return out
+
+    # 7. Frankfurter time-series -- FX history when yfinance/Polygon/CNBC/FRED all miss
+    def frankfurter_chain() -> Dict[str, Dict]:
+        try:
+            return _fetch_frankfurter_series(['CAD', 'INR'])
+        except Exception as e:
+            print(f'[Frankfurter] series failed: {e}')
+            return {}
+
+    # 8. Keyless last resorts
     def gold_api_chain() -> Optional[Dict]:
         try:
             return _fetch_gold_api()
@@ -734,18 +894,24 @@ def fetch_market_extra(fred_api_key: str,
             print(f'[gold-api] failed: {e}')
             return None
 
-    def coinbase_chain() -> Optional[Dict]:
+    def coinbase_chain() -> Dict[str, Optional[Dict]]:
+        out: Dict[str, Optional[Dict]] = {'candles': None, 'spot': None}
         try:
-            return _fetch_coinbase_spot()
+            out['candles'] = _fetch_coinbase_candles()
         except Exception as e:
-            print(f'[Coinbase] failed: {e}')
-            return None
+            print(f'[Coinbase] candles failed: {e}')
+        if not out['candles']:
+            try:
+                out['spot'] = _fetch_coinbase_spot()
+            except Exception as e:
+                print(f'[Coinbase] spot failed: {e}')
+        return out
 
     chains = {'FRED': fred_chain, 'ER-API': er_chain, 'yfinance': yf_chain,
-              'Polygon': poly_chain, 'Finnhub': fh_chain,
-              'gold-api': gold_api_chain, 'Coinbase': coinbase_chain}
-    results: Dict[str, Any] = {'FRED': [], 'ER-API': None, 'yfinance': {},
-                               'Polygon': {}, 'Finnhub': {}, 'gold-api': None, 'Coinbase': None}
+              'Polygon': poly_chain, 'Finnhub': fh_chain, 'CNBC': cnbc_chain,
+              'Frankfurter': frankfurter_chain, 'gold-api': gold_api_chain, 'Coinbase': coinbase_chain}
+    results: Dict[str, Any] = {'FRED': [], 'ER-API': None, 'yfinance': {}, 'Polygon': {}, 'Finnhub': {},
+                               'CNBC': {}, 'Frankfurter': {}, 'gold-api': None, 'Coinbase': {}}
     late_messages: List[str] = []
     started = time.monotonic()
     pool = ThreadPoolExecutor(max_workers=len(chains), thread_name_prefix='market-extra')
@@ -794,8 +960,22 @@ def fetch_market_extra(fred_api_key: str,
     poly_gold: Optional[Dict] = _poly.get('gold')
 
     fh_btc: Optional[Dict] = (results['Finnhub'] or {}).get('btc')
+
+    _cnbc = results['CNBC'] or {}
+    cnbc_usdcad: Optional[Dict] = _cnbc.get('usdcad')
+    cnbc_usdinr: Optional[Dict] = _cnbc.get('usdinr')
+    cnbc_gold: Optional[Dict] = _cnbc.get('gold')
+    cnbc_oil: Optional[Dict] = _cnbc.get('oil')
+    cnbc_btc: Optional[Dict] = _cnbc.get('btc')
+
+    _fx_series = results['Frankfurter'] or {}
+    fr_usdcad: Optional[Dict] = _fx_series.get('CAD')
+    fr_usdinr: Optional[Dict] = _fx_series.get('INR')
+
     gold_spot: Optional[Dict] = results['gold-api']
-    btc_coinbase: Optional[Dict] = results['Coinbase']
+    _cb = results['Coinbase'] or {}
+    btc_candles: Optional[Dict] = _cb.get('candles')
+    btc_coinbase: Optional[Dict] = _cb.get('spot')
 
     # 7. Compute spot-only values from ER-API
     bdt_rate = er_rates.get('BDT') if er_rates else None
@@ -831,9 +1011,12 @@ def fetch_market_extra(fred_api_key: str,
             id(poly_usdcad): 'Polygon', id(poly_usdinr): 'Polygon',
             id(poly_btc): 'Polygon', id(poly_gold): 'Polygon',
             id(fh_btc): 'Finnhub',
+            id(cnbc_usdcad): 'CNBC', id(cnbc_usdinr): 'CNBC', id(cnbc_gold): 'CNBC',
+            id(cnbc_oil): 'CNBC', id(cnbc_btc): 'CNBC',
             id(usdcad_fred): 'FRED', id(usdinr_fred): 'FRED', id(gold_fred): 'FRED',
             id(cl_fred): 'FRED', id(tnx_fred): 'FRED', id(t2y_fred): 'FRED',
-            id(gold_spot): 'gold-api', id(btc_coinbase): 'Coinbase',
+            id(fr_usdcad): 'Frankfurter', id(fr_usdinr): 'Frankfurter',
+            id(gold_spot): 'gold-api', id(btc_candles): 'Coinbase', id(btc_coinbase): 'Coinbase',
         }
         for c in candidates:
             if c and c.get('current') is not None:
@@ -842,22 +1025,28 @@ def fetch_market_extra(fred_api_key: str,
         source_log[key] = 'null'
         return None
 
-    # USD/CAD: yfinance → Polygon → FRED (stale-check) → USD spot-rates chain
-    usdcad = _resolve('usdcad', yf_usdcad, poly_usdcad)
+    # USD/CAD: yfinance → Polygon → CNBC → FRED (stale-check) → Frankfurter series → spot chain
+    usdcad = _resolve('usdcad', yf_usdcad, poly_usdcad, cnbc_usdcad)
     if usdcad is None:
         if usdcad_fred and not _is_stale(usdcad_fred):
             usdcad = usdcad_fred
             source_log['usdcad'] = 'FRED'
+        elif fr_usdcad and fr_usdcad.get('current'):
+            usdcad = fr_usdcad
+            source_log['usdcad'] = 'Frankfurter'
         elif cad_rate:
             usdcad = _spot_only(cad_rate)
             source_log['usdcad'] = 'ER-API'
 
-    # USD/INR: yfinance → Polygon → FRED (stale-check) → USD spot-rates chain
-    usdinr = _resolve('usdinr', yf_usdinr, poly_usdinr)
+    # USD/INR: yfinance → Polygon → CNBC → FRED (stale-check) → Frankfurter series → spot chain
+    usdinr = _resolve('usdinr', yf_usdinr, poly_usdinr, cnbc_usdinr)
     if usdinr is None:
         if usdinr_fred and not _is_stale(usdinr_fred):
             usdinr = usdinr_fred
             source_log['usdinr'] = 'FRED'
+        elif fr_usdinr and fr_usdinr.get('current'):
+            usdinr = fr_usdinr
+            source_log['usdinr'] = 'Frankfurter'
         elif inr_rate:
             usdinr = _spot_only(inr_rate)
             source_log['usdinr'] = 'ER-API'
@@ -902,15 +1091,14 @@ def fetch_market_extra(fred_api_key: str,
     else:
         source_log['cadinr'] = 'null'
 
-    # Oil: yfinance (WTI CL=F) → FRED DCOILWTICO. (No keyless live WTI source exists;
-    # EIA / oilprice APIs need keys and Finnhub's OANDA:BCO_USD is paid-tier.)
-    cl = _resolve('cl', yf_oil, cl_fred)
+    # Oil: yfinance (WTI CL=F) → CNBC @CL.1 (live, with history) → FRED DCOILWTICO
+    cl = _resolve('cl', yf_oil, cnbc_oil, cl_fred)
 
-    # BTC: yfinance → Polygon → Finnhub → Coinbase spot
-    btc = _resolve('btc', yf_btc, poly_btc, fh_btc, btc_coinbase)
+    # BTC: yfinance → Polygon → CNBC → Coinbase candles → Finnhub spot → Coinbase spot
+    btc = _resolve('btc', yf_btc, poly_btc, cnbc_btc, btc_candles, fh_btc, btc_coinbase)
 
-    # Gold: yfinance → Polygon → FRED London PM fix (stale-check, has history) → gold-api spot
-    gold = _resolve('gold', yf_gold, poly_gold,
+    # Gold: yfinance → Polygon → CNBC @GC.1 → FRED London PM fix (stale-check) → gold-api spot
+    gold = _resolve('gold', yf_gold, poly_gold, cnbc_gold,
                     gold_fred if (gold_fred and not _is_stale(gold_fred)) else None,
                     gold_spot)
 
@@ -942,7 +1130,7 @@ def fetch_market_extra(fred_api_key: str,
     # 10. Build _meta summary
     null_count = sum(1 for v in source_log.values() if 'null' in v)
     msgs = []
-    for src in ['yfinance', 'Polygon', 'Finnhub', 'FRED', 'ER-API', 'gold-api', 'Coinbase']:
+    for src in ['yfinance', 'Polygon', 'CNBC', 'Finnhub', 'FRED', 'Frankfurter', 'ER-API', 'gold-api', 'Coinbase']:
         n = sum(1 for v in source_log.values() if v == src)
         if n:
             msgs.append(f'{src}: {n}')
