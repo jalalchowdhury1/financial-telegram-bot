@@ -331,32 +331,58 @@ def _fetch_yfinance(symbol: str, invert: bool = False, days: int = 1500) -> Opti
         return None
 
 
+# Polygon's free tier allows 5 requests/min and the key is shared with the dashboard.
+# One dashboard load = /api/spy (1) + /api/market-extra (4) = 5, so any second
+# invocation inside the same minute (health-check retry, Vercel warm-up, a refresh)
+# 429s -- CloudWatch 2026-09-01 showed 429 counts tracking invocation bursts 1:1.
+# Three mitigations: results are cached in the warm container so a burst re-uses
+# data instead of re-fetching; calls are staggered; the chain stops at the first
+# 429 rather than burning the remaining calls (the next tier fills the gaps).
+POLYGON_CACHE_TTL_SECONDS = 600
+POLYGON_STAGGER_SECONDS = 1.0
+_POLYGON_CACHE: Dict[str, Any] = {}   # (symbol, days) -> (monotonic_stamp, metric)
+
+
+class PolygonRateLimited(Exception):
+    """Polygon answered 429 -- the per-minute quota is spent for the whole key."""
+
+
 def _fetch_polygon_aggs(symbol: str, api_key: str, days: int = 1500) -> Optional[Dict[str, Any]]:
-    """Fetch daily aggregates from Polygon.io — returns standard data shape with history."""
+    """Fetch daily aggregates from Polygon.io — returns standard data shape with history.
+    Cached per (symbol, days) for POLYGON_CACHE_TTL_SECONDS while the container is warm."""
     if not api_key:
         return None
+    import time
+    cache_key = f'{symbol}|{days}'
+    hit = _POLYGON_CACHE.get(cache_key)
+    if hit and time.monotonic() - hit[0] < POLYGON_CACHE_TTL_SECONDS:
+        return hit[1]
     from datetime import datetime, timedelta
     end = datetime.now().strftime('%Y-%m-%d')
     start = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
     url = (f'https://api.polygon.io/v2/aggs/ticker/{symbol}/range/1/day/{start}/{end}'
            f'?apiKey={api_key}&limit=1000&sort=asc&adjusted=true')
     r = requests.get(url, timeout=20, headers=_HEADERS)
+    if r.status_code == 429:
+        raise PolygonRateLimited(f'Polygon 429 for {symbol}')
     r.raise_for_status()
     data = r.json()
     results = data.get('results', [])
     if len(results) < 2:
         return None
-    from datetime import datetime as _dt
-    rows = [{'date': _dt.utcfromtimestamp(res['t'] / 1000).strftime('%Y-%m-%d'), 'price': res['c']}
+    from datetime import datetime as _dt, timezone as _tz
+    rows = [{'date': _dt.fromtimestamp(res['t'] / 1000, _tz.utc).strftime('%Y-%m-%d'), 'price': res['c']}
             for res in results]
     current = rows[-1]['price']
     prev = rows[-2]['price']
-    return {
+    metric = {
         'current': current,
         'dailyChange': {'value': round(current - prev, 4), 'pct': _calc_pct(current, prev)},
         'history': rows,
         'lastDate': rows[-1]['date'],
     }
+    _POLYGON_CACHE[cache_key] = (time.monotonic(), metric)
+    return metric
 
 
 def _fetch_finnhub_quote(symbol: str, api_key: str) -> Optional[Dict[str, Any]]:
@@ -778,6 +804,8 @@ def fetch_market_extra(fred_api_key: str,
     if not fred_api_key:
         raise ValueError('FRED_API_KEY not configured')
 
+    late_messages: List[str] = []  # surfaced in _meta.messages (deadline skips, Polygon 429)
+
     # 1. FRED -- 3 per batch with 300 ms gap to avoid 429
     def fred_chain() -> List[Any]:
         fred_spec = [
@@ -833,21 +861,27 @@ def fetch_market_extra(fred_api_key: str,
             time.sleep(0.1)
         return out
 
-    # 4. Polygon -- FX with history, BTC, Gold
+    # 4. Polygon -- FX with history, BTC, Gold (staggered; cached; stops at the first 429)
     def poly_chain() -> Dict[str, Dict]:
         out: Dict[str, Dict] = {}
         if not polygon_api_key:
             return out
-        for sym, var_name in [('C:USDCAD', 'usdcad'), ('C:USDINR', 'usdinr'),
-                               ('X:BTCUSD', 'btc'), ('C:XAUUSD', 'gold')]:
+        symbols = [('C:USDCAD', 'usdcad'), ('C:USDINR', 'usdinr'), ('X:BTCUSD', 'btc'), ('C:XAUUSD', 'gold')]
+        for i, (sym, var_name) in enumerate(symbols):
+            if i:
+                time.sleep(POLYGON_STAGGER_SECONDS)
             try:
                 result = _fetch_polygon_aggs(sym, polygon_api_key, days=400)
                 if result and result.get('current'):
                     out[var_name] = result
                     print(f'[Polygon] {sym}: {result["current"]}')
+            except PolygonRateLimited as e:
+                skipped = [s_ for s_, _ in symbols[i:]]
+                print(f'[Polygon] {e} -- quota spent, skipping {", ".join(skipped)}')
+                late_messages.append(f'Polygon 429: skipped {", ".join(skipped)}')
+                break
             except Exception as e:
                 print(f'[Polygon] {sym} failed: {e}')
-            time.sleep(0.1)
         return out
 
     # 5. Finnhub -- BTC spot only (see docstring: OANDA:* symbols are paid-tier)
@@ -912,7 +946,6 @@ def fetch_market_extra(fred_api_key: str,
               'Frankfurter': frankfurter_chain, 'gold-api': gold_api_chain, 'Coinbase': coinbase_chain}
     results: Dict[str, Any] = {'FRED': [], 'ER-API': None, 'yfinance': {}, 'Polygon': {}, 'Finnhub': {},
                                'CNBC': {}, 'Frankfurter': {}, 'gold-api': None, 'Coinbase': {}}
-    late_messages: List[str] = []
     started = time.monotonic()
     pool = ThreadPoolExecutor(max_workers=len(chains), thread_name_prefix='market-extra')
     futures = {name: pool.submit(fn) for name, fn in chains.items()}

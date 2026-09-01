@@ -372,3 +372,77 @@ def test_frankfurter_series_and_coinbase_candles_parse_live_shapes():
         b = fetchers._fetch_coinbase_candles()
         assert b['current'] == 77592.93 and b['history'][0]['price'] == 78919.36
         assert b['history'][-1]['date'] == '2026-09-01' and b['lastDate'] == '2026-09-01'
+
+
+# ─── Polygon: free tier is 5 requests/min and the key is shared ─────────────
+# One dashboard load = spy (1) + market-extra (4) = 5 calls, so ANY second
+# invocation inside the same minute (health-check retry, Vercel warm-up, a
+# refresh) 429s. CloudWatch 2026-09-01: 429 count tracked invocation bursts 1:1.
+
+def _poly_payload(closes):
+    return {'results': [{'t': 1756684800000 + i * 86400000, 'c': c} for i, c in enumerate(closes)]}
+
+
+@pytest.fixture
+def poly_cache_clear():
+    fetchers._POLYGON_CACHE.clear()
+    yield
+    fetchers._POLYGON_CACHE.clear()
+
+
+def test_polygon_result_is_reused_within_the_warm_container(poly_cache_clear):
+    with patch.object(fetchers.requests, 'get') as get:
+        get.return_value.raise_for_status.return_value = None
+        get.return_value.json.return_value = _poly_payload([1.0, 1.1])
+        a = fetchers._fetch_polygon_aggs('C:USDCAD', 'k', days=400)
+        b = fetchers._fetch_polygon_aggs('C:USDCAD', 'k', days=400)
+        fetchers._fetch_polygon_aggs('C:USDINR', 'k', days=400)  # different symbol -> its own call
+    assert a == b and a['current'] == 1.1
+    assert get.call_count == 2
+
+
+def test_polygon_cache_expires(poly_cache_clear):
+    with patch.object(fetchers.requests, 'get') as get, patch('time.monotonic') as mono:
+        get.return_value.raise_for_status.return_value = None
+        get.return_value.json.return_value = _poly_payload([1.0, 1.1])
+        mono.return_value = 1000.0
+        fetchers._fetch_polygon_aggs('X:BTCUSD', 'k')
+        mono.return_value = 1000.0 + fetchers.POLYGON_CACHE_TTL_SECONDS + 1
+        fetchers._fetch_polygon_aggs('X:BTCUSD', 'k')
+    assert get.call_count == 2
+
+
+def test_polygon_429_is_a_distinct_error_and_is_not_cached(poly_cache_clear):
+    import requests as rq
+    with patch.object(fetchers.requests, 'get') as get:
+        resp = MagicMock(); resp.status_code = 429
+        get.return_value.raise_for_status.side_effect = rq.HTTPError('429 Too Many Requests', response=resp)
+        get.return_value.status_code = 429
+        with pytest.raises(fetchers.PolygonRateLimited):
+            fetchers._fetch_polygon_aggs('C:XAUUSD', 'k')
+    assert not fetchers._POLYGON_CACHE
+
+
+def test_polygon_chain_staggers_calls_and_stops_at_the_first_429():
+    asked, sleeps = [], []
+
+    def poly(sym, key, days=400):
+        asked.append(sym)
+        if len(asked) == 2:
+            raise fetchers.PolygonRateLimited('429')
+        return _metric(1.0)
+
+    with patch('time.sleep', lambda s: sleeps.append(s)):
+        ctxs = [c for c in _all_dead() if c.attribute != '_fetch_polygon_aggs']
+        for c in ctxs:
+            c.start()
+        try:
+            with patch.object(fetchers, '_fetch_polygon_aggs', poly):
+                out = fetch_market_extra('key', polygon_api_key='p', finnhub_api_key='f')
+        finally:
+            for c in ctxs:
+                c.stop()
+    assert asked == ['C:USDCAD', 'C:USDINR']  # bailed out; BTC + gold never requested
+    assert fetchers.POLYGON_STAGGER_SECONDS in sleeps
+    assert out['_meta']['sourceLog']['usdcad'] == 'Polygon'
+    assert any('Polygon' in m and '429' in m for m in out['_meta']['messages']), out['_meta']['messages']
