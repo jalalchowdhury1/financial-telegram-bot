@@ -429,8 +429,9 @@ so `isGood` rejects an empty digest rather than letting it claim "nothing change
   `polygonDaily`/`fredObservations`/`yahooChart` in `lib/sources.js`):
   - **Copper $/lb**: CNBC `@HG.1` (keyless, daily history) → FRED `PCOPPUSDM` (key; ÷2204.6226
     from $/tonne; monthly) → gold-api.com `HG` (keyless spot) → Yahoo `HG=F` (self-heal).
-  - **Gold $/oz**: CNBC `@GC.1` (keyless, daily history) → Polygon `C:XAUUSD` (key) → FRED
-    `GOLDPMGBD228NLBM` (key; daily) → gold-api.com `XAU` (keyless spot) → Yahoo `GC=F`.
+  - **Gold $/oz**: CNBC `@GC.1` (keyless, daily history) → Polygon `C:XAUUSD` (key) →
+    gold-api.com `XAU` (keyless spot) → Yahoo `GC=F`. (FRED's LBMA fix `GOLDPMGBD228NLBM`
+    was discontinued — 404 on both FRED hosts — and was removed from every cascade 2026-09-01.)
   - The gold leg's Polygon source reads `process.env.POLYGON_KEY` (passed through from GET).
   CNBC + FRED give history → the 1mo/3mo delta; spot-only sources still give the level. A
   genuine N/A here (all sources down) is a real signal the daily health-check flags.
@@ -803,7 +804,8 @@ so `isGood` rejects an empty digest rather than letting it claim "nothing change
   provider chains run concurrently under `MARKET_EXTRA_DEADLINE_SECONDS`: yfinance →
   Polygon → **CNBC** (keyless live quote + 1Y bars: `@GC.1` gold, `@CL.1` WTI, `CAD=`,
   `INR=`, `BTC.CB=`; the history-bearing middle tier that covers Yahoo rate-limit hours) →
-  FRED incl. gold London PM fix `GOLDPMGBD228NLBM` → Frankfurter time-series (FX history)
+  FRED (API host, 3 series in flight, keyless `fredgraph.csv` fallback per series) →
+  Frankfurter time-series (FX history)
   / Coinbase candles (BTC history) → spot last resorts: Finnhub **BTC only** (its OANDA:*
   symbols are paid-tier, 403 forever), USD spot chain ER-API → Frankfurter → Fawaz,
   gold-api.com, Coinbase spot. Stooq is gone — its download endpoint sits behind a JS

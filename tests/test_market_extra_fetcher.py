@@ -150,26 +150,26 @@ def test_finnhub_is_only_asked_for_the_symbol_its_free_tier_serves(quiet_sleep):
     assert asked == ['BINANCE:BTCUSDT']
 
 
-def test_gold_falls_to_fred_london_fix_then_gold_api(quiet_sleep):
-    """Stooq (the old last resort) is behind a JS challenge now. Gold: yfinance ->
-    Polygon -> FRED GOLDPMGBD228NLBM (history, stale-checked) -> gold-api.com spot."""
+def test_gold_last_resort_is_gold_api_spot(quiet_sleep):
+    """Stooq (the old last resort) is behind a JS challenge, and FRED's LBMA gold fix
+    GOLDPMGBD228NLBM was discontinued (404 on both FRED hosts, 2026-09-01 -- the tier
+    added in #44 never worked). Gold: yfinance -> Polygon -> CNBC -> gold-api.com spot."""
+    asked = []
+
     def fred(series_id, key, limit):
-        return _fresh_fred_rows(4370.0, 4350.0) if series_id == 'GOLDPMGBD228NLBM' else []
+        asked.append(series_id)
+        return []
 
     ctxs = _all_dead()
     for c in ctxs:
         c.start()
     try:
-        with patch.object(fetchers, '_fetch_fred_series', fred):
-            out = fetch_market_extra('key')
-        assert out['commodities']['gc']['current'] == 4370.0
-        assert out['_meta']['sourceLog']['gold'] == 'FRED'
-        assert len(out['commodities']['gc']['history']) == 2
-
-        with patch.object(fetchers, '_fetch_gold_api', _slow(0, _metric(4374.0))):
+        with patch.object(fetchers, '_fetch_fred_series', fred), \
+             patch.object(fetchers, '_fetch_gold_api', _slow(0, _metric(4374.0))):
             out = fetch_market_extra('key')
         assert out['commodities']['gc']['current'] == 4374.0
         assert out['_meta']['sourceLog']['gold'] == 'gold-api'
+        assert 'GOLDPMGBD228NLBM' not in asked
     finally:
         for c in ctxs:
             c.stop()
@@ -274,16 +274,12 @@ def test_cnbc_serves_gold_oil_fx_btc_with_history_when_yfinance_and_polygon_are_
     assert set(asked) == {'@GC.1', '@CL.1', 'CAD=', 'INR=', 'BTC.CB='}
 
 
-def test_cnbc_sits_below_polygon_but_above_fred_and_spot(quiet_sleep):
-    def fred(series_id, key, limit):
-        return _fresh_fred_rows(4370.0, 4350.0) if series_id == 'GOLDPMGBD228NLBM' else []
-
+def test_cnbc_sits_below_polygon_but_above_spot(quiet_sleep):
     out = _run_with({'_fetch_polygon_aggs': _slow(0, _metric(4400.0)),
-                     '_fetch_cnbc_metrics': _slow(0, {'@GC.1': _hist_metric(4404.3, 4481.5)}),
-                     '_fetch_fred_series': fred})
+                     '_fetch_cnbc_metrics': _slow(0, {'@GC.1': _hist_metric(4404.3, 4481.5)})})
     assert out['_meta']['sourceLog']['gold'] == 'Polygon'
     out = _run_with({'_fetch_cnbc_metrics': _slow(0, {'@GC.1': _hist_metric(4404.3, 4481.5)}),
-                     '_fetch_fred_series': fred, '_fetch_gold_api': _slow(0, _metric(4374.0))})
+                     '_fetch_gold_api': _slow(0, _metric(4374.0))})
     assert out['_meta']['sourceLog']['gold'] == 'CNBC'
 
 
@@ -446,3 +442,54 @@ def test_polygon_chain_staggers_calls_and_stops_at_the_first_429():
     assert fetchers.POLYGON_STAGGER_SECONDS in sleeps
     assert out['_meta']['sourceLog']['usdcad'] == 'Polygon'
     assert any('Polygon' in m and '429' in m for m in out['_meta']['messages']), out['_meta']['messages']
+
+
+# ─── FRED: slow API hours must not take the rates tier down ──────────────────
+# 2026-09-01 17:00 UTC: api.stlouisfed.org answered in 1-7 s and read-timed-out at
+# 15 s while fred.stlouisfed.org/graph/fredgraph.csv (keyless) answered in 0.3 s.
+# Nine serial calls x 15 s blew the 22 s deadline and 10Y/2Y/mortgage -- FRED-only
+# metrics -- went unavailable.
+
+def test_fred_series_falls_back_to_the_keyless_fredgraph_csv_host():
+    import requests as rq
+    calls = []
+
+    def get(url, **kw):
+        calls.append(url)
+        if 'api.stlouisfed.org' in url:
+            raise rq.exceptions.ReadTimeout('read timeout')
+        r = MagicMock(); r.raise_for_status.return_value = None
+        r.text = 'observation_date,DGS10\n2026-08-26,4.66\n2026-08-27,.\n2026-08-28,4.73\n'
+        return r
+
+    with patch.object(fetchers.requests, 'get', get):
+        obs = fetchers._fetch_fred_series('DGS10', 'key', limit=2)
+    assert [u for u in calls if 'fredgraph.csv?id=DGS10' in u]
+    assert obs == [{'date': '2026-08-28', 'value': 4.73}, {'date': '2026-08-26', 'value': 4.66}]  # desc, '.' skipped, limited
+
+
+def test_fred_series_uses_the_api_when_it_works():
+    with patch.object(fetchers.requests, 'get') as get:
+        get.return_value.raise_for_status.return_value = None
+        get.return_value.json.return_value = {'observations': [{'date': '2026-08-28', 'value': '4.73'},
+                                                               {'date': '2026-08-27', 'value': '.'}]}
+        obs = fetchers._fetch_fred_series('DGS10', 'key')
+    assert obs == [{'date': '2026-08-28', 'value': 4.73}]
+    assert get.call_count == 1
+    assert get.call_args.kwargs['timeout'] <= 8
+
+
+def test_fred_chain_fetches_series_concurrently(quiet_sleep):
+    # 9 series x 0.3 s: serial ~2.7 s; 3 workers ~0.9 s.
+    ctxs = [c for c in _all_dead() if c.attribute != '_fetch_fred_series']
+    for c in ctxs:
+        c.start()
+    try:
+        with patch.object(fetchers, '_fetch_fred_series', _slow(0.3, [])):
+            t0 = time.monotonic()
+            fetch_market_extra('key')
+            elapsed = time.monotonic() - t0
+    finally:
+        for c in ctxs:
+            c.stop()
+    assert elapsed < 2.0, f'took {elapsed:.1f}s -- FRED series are still fetched one at a time'
