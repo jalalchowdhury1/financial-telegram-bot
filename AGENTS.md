@@ -798,7 +798,12 @@ so `isGood` rejects an empty digest rather than letting it claim "nothing change
   (dashboard GET routes), `handle_eventbridge` (daily report). Dispatches HTTP vs schedule.
 - `bot/fetchers.py` — the data waterfalls: `fetch_google_sheet_indicators` (Telegram report
   body), `fetch_spy_with_fallback` (yfinance→Polygon→Sheet→Stooq→FRED, Finnhub spot override),
-  `fetch_spy_daily_move`, `fetch_market_extra` (FX/commodities/rates/real-estate), and
+  `fetch_spy_daily_move`, `fetch_market_extra` (FX/commodities/rates/real-estate; six
+  provider chains run concurrently under `MARKET_EXTRA_DEADLINE_SECONDS`: yfinance →
+  Polygon → Finnhub **BTC only** (its OANDA:* forex/commodity symbols are paid-tier, 403
+  forever) → FRED incl. gold London PM fix `GOLDPMGBD228NLBM` → USD spot chain ER-API →
+  Frankfurter → Fawaz → keyless spot last resorts gold-api.com / Coinbase; Stooq is gone —
+  its download endpoint sits behind a JS proof-of-work wall), and
   `fetch_polymarket_trending` (the curated sentiment board). `fetch_spy_stats`/`calculate_rsi`
   are legacy Stooq helpers.
 - `bot/config.py` — `URLS` (Google-Sheet/data source URLs, mirror `dashboard/lib/constants.js`)
