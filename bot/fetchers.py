@@ -304,11 +304,42 @@ def _spot_only(value: Optional[float]) -> Optional[Dict[str, Any]]:
     return {'current': value, 'dailyChange': {'value': 0, 'pct': 0}, 'history': []}
 
 
-def _fetch_exchange_rates() -> Optional[dict]:
+def _fetch_erapi_rates() -> Optional[dict]:
     r = requests.get('https://open.er-api.com/v6/latest/USD', timeout=10, headers=_HEADERS)
     r.raise_for_status()
     data = r.json()
     return data.get('rates') if data.get('result') == 'success' else None
+
+
+def _fetch_frankfurter_rates() -> Optional[dict]:
+    """ECB reference rates (no BDT). Host moved from api.frankfurter.app (now a 301)."""
+    r = requests.get('https://api.frankfurter.dev/v1/latest?base=USD', timeout=10, headers=_HEADERS)
+    r.raise_for_status()
+    return r.json().get('rates') or None
+
+
+def _fetch_fawaz_rates() -> Optional[dict]:
+    """fawazahmed0/currency-api on jsDelivr: keyless, ~200 currencies incl. BDT."""
+    r = requests.get('https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.min.json',
+                     timeout=10, headers=_HEADERS)
+    r.raise_for_status()
+    usd = r.json().get('usd') or {}
+    return {k.upper(): float(v) for k, v in usd.items()} or None
+
+
+def _fetch_exchange_rates() -> Optional[dict]:
+    """USD-base spot rates: ER-API -> Frankfurter -> Fawaz (same chain the dashboard's
+    /api/market-extra uses). Replaces Finnhub's OANDA:* FX quotes, which 403 on the
+    free tier."""
+    for name, fn in (('ER-API', _fetch_erapi_rates), ('Frankfurter', _fetch_frankfurter_rates),
+                     ('Fawaz', _fetch_fawaz_rates)):
+        try:
+            rates = fn()
+            if rates and (rates.get('CAD') or rates.get('INR')):
+                return rates
+        except Exception as e:
+            print(f'[ExchangeRate] {name} failed: {e}')
+    return None
 
 
 def _compute_dxy(rates: dict) -> Optional[float]:
@@ -414,34 +445,21 @@ def _fetch_finnhub_quote(symbol: str, api_key: str) -> Optional[Dict[str, Any]]:
     }
 
 
-def _fetch_stooq(symbol: str) -> Optional[Dict[str, Any]]:
-    try:
-        url = f'https://stooq.com/q/d/l/?s={symbol}&i=d'
-        r = requests.get(url, timeout=15, headers=_HEADERS)
-        lines = r.text.strip().split('\n')
-        if len(lines) < 2 or 'No data' in lines[0]:
-            return None
-        rows: List[Dict[str, Any]] = []
-        for line in lines[1:]:
-            parts = line.split(',')
-            if len(parts) >= 5:
-                try:
-                    rows.append({'date': parts[0].strip(), 'price': float(parts[4].strip())})
-                except ValueError:
-                    pass
-        if len(rows) < 2:
-            return None
-        rows = rows[-30:]  # type: ignore[assignment]
-        current = rows[-1]['price']
-        prev = rows[-2]['price']
-        return {
-            'current': current,
-            'dailyChange': {'value': round(current - prev, 4), 'pct': _calc_pct(current, prev)},
-            'history': rows,
-        }
-    except Exception as e:
-        print(f'[Stooq] {symbol}: {e}')
-        return None
+def _fetch_gold_api() -> Optional[Dict[str, Any]]:
+    """Live XAU/USD spot from gold-api.com (keyless; the dashboard's /api/fred uses it
+    too). Spot-only, no history."""
+    r = requests.get('https://api.gold-api.com/price/XAU', timeout=10, headers=_HEADERS)
+    r.raise_for_status()
+    price = r.json().get('price')
+    return _spot_only(float(price)) if price else None
+
+
+def _fetch_coinbase_spot() -> Optional[Dict[str, Any]]:
+    """BTC-USD spot from Coinbase (keyless). Spot-only, no history."""
+    r = requests.get('https://api.coinbase.com/v2/prices/BTC-USD/spot', timeout=10, headers=_HEADERS)
+    r.raise_for_status()
+    amount = (r.json().get('data') or {}).get('amount')
+    return _spot_only(float(amount)) if amount else None
 
 
 def fetch_spy_with_fallback(fred_api_key: Optional[str] = None,
@@ -682,10 +700,14 @@ def fetch_market_extra(fred_api_key: str,
     Fetch FX rates, commodities, rates, and real-estate data.
     Returns JSON matching the Next.js /api/market-extra response shape.
 
-    Layer 1: Polygon (FX with history, BTC, Gold)
-    Layer 2: Finnhub (BTC, Gold, Oil, FX spot)
-    Layer 3: FRED (FX with history, Oil, rates, real-estate) + ExchangeRate-API (BDT, DXY)
-    Layer 4: Stooq (BTC, Gold last resort)
+    Layer 1: yfinance (everything it covers, with history)
+    Layer 2: Polygon (FX with history, BTC, Gold)
+    Layer 3: Finnhub (BTC spot only -- its OANDA:* forex/commodity symbols are paid-tier
+             and 403'd on every free-tier call for weeks, so they are not requested)
+    Layer 4: FRED (FX, Oil, Gold London PM fix, rates, real-estate, all with history)
+             + USD spot rates (ER-API -> Frankfurter -> Fawaz; BDT, DXY)
+    Layer 5: keyless spot last resorts: gold-api.com (Gold), Coinbase (BTC).
+             (Stooq, the old last resort, now sits behind a JS proof-of-work challenge.)
 
     The six provider chains are independent, so they run CONCURRENTLY and the whole
     fetch is bounded by `deadline_seconds`; a chain still running at the deadline is
@@ -716,6 +738,7 @@ def fetch_market_extra(fred_api_key: str,
             ('DEXCAUS', 35),         # 6 - USD/CAD
             ('DEXINUS', 35),         # 7 - USD/INR
             ('ATNHPIUS39300Q', 35),  # 8 - All-Trans House Price Index
+            ('GOLDPMGBD228NLBM', 35),  # 9 - Gold, London PM fix (USD/oz)
         ]
         raw: List[Any] = []
         for i in range(0, len(fred_spec), 3):
@@ -775,35 +798,40 @@ def fetch_market_extra(fred_api_key: str,
             time.sleep(0.1)
         return out
 
-    # 5. Finnhub -- BTC, Gold, Oil, FX spot fallbacks
+    # 5. Finnhub -- BTC spot only (see docstring: OANDA:* symbols are paid-tier)
     def fh_chain() -> Dict[str, Dict]:
         out: Dict[str, Dict] = {}
         if not finnhub_api_key:
             return out
-        for sym, var_name in [('BINANCE:BTCUSDT', 'btc'), ('OANDA:XAU_USD', 'gold'),
-                               ('OANDA:BCO_USD', 'oil'), ('OANDA:USD_CAD', 'usdcad'),
-                               ('OANDA:USD_INR', 'usdinr')]:
-            try:
-                result = _fetch_finnhub_quote(sym, finnhub_api_key)
-                if result and result.get('current'):
-                    out[var_name] = result
-                    print(f'[Finnhub] {sym}: {result["current"]}')
-            except Exception as e:
-                print(f'[Finnhub] {sym} failed: {e}')
-            time.sleep(0.1)
+        try:
+            result = _fetch_finnhub_quote('BINANCE:BTCUSDT', finnhub_api_key)
+            if result and result.get('current'):
+                out['btc'] = result
+                print(f'[Finnhub] BINANCE:BTCUSDT: {result["current"]}')
+        except Exception as e:
+            print(f'[Finnhub] BINANCE:BTCUSDT failed: {e}')
         return out
 
-    # 6. Stooq for BTC and Gold (last resort)
-    def stooq_chain() -> Dict[str, Optional[Dict]]:
-        time.sleep(0.15)
-        btc = _fetch_stooq('btc.v')
-        time.sleep(0.15)
-        return {'btc': btc, 'gold': _fetch_stooq('xauusd')}
+    # 6. Keyless spot last resorts
+    def gold_api_chain() -> Optional[Dict]:
+        try:
+            return _fetch_gold_api()
+        except Exception as e:
+            print(f'[gold-api] failed: {e}')
+            return None
+
+    def coinbase_chain() -> Optional[Dict]:
+        try:
+            return _fetch_coinbase_spot()
+        except Exception as e:
+            print(f'[Coinbase] failed: {e}')
+            return None
 
     chains = {'FRED': fred_chain, 'ER-API': er_chain, 'yfinance': yf_chain,
-              'Polygon': poly_chain, 'Finnhub': fh_chain, 'Stooq': stooq_chain}
+              'Polygon': poly_chain, 'Finnhub': fh_chain,
+              'gold-api': gold_api_chain, 'Coinbase': coinbase_chain}
     results: Dict[str, Any] = {'FRED': [], 'ER-API': None, 'yfinance': {},
-                               'Polygon': {}, 'Finnhub': {}, 'Stooq': {}}
+                               'Polygon': {}, 'Finnhub': {}, 'gold-api': None, 'Coinbase': None}
     late_messages: List[str] = []
     started = time.monotonic()
     pool = ThreadPoolExecutor(max_workers=len(chains), thread_name_prefix='market-extra')
@@ -823,7 +851,7 @@ def fetch_market_extra(fred_api_key: str,
     pool.shutdown(wait=False, cancel_futures=True)
 
     fred_raw: List[Any] = list(results['FRED'] or [])
-    while len(fred_raw) < 9:
+    while len(fred_raw) < 10:
         fred_raw.append([])
     mortgage_data = fred_raw[0]
     rent_data     = fred_raw[1]
@@ -834,6 +862,7 @@ def fetch_market_extra(fred_api_key: str,
     cad_data      = fred_raw[6]
     inr_data      = fred_raw[7]
     atnhpi_data   = fred_raw[8]
+    gold_fix_data = fred_raw[9]
 
     er_rates: Optional[dict] = results['ER-API']
 
@@ -850,16 +879,9 @@ def fetch_market_extra(fred_api_key: str,
     poly_btc: Optional[Dict] = _poly.get('btc')
     poly_gold: Optional[Dict] = _poly.get('gold')
 
-    _fh = results['Finnhub'] or {}
-    fh_btc: Optional[Dict] = _fh.get('btc')
-    fh_gold: Optional[Dict] = _fh.get('gold')
-    fh_oil: Optional[Dict] = _fh.get('oil')
-    fh_usdcad: Optional[Dict] = _fh.get('usdcad')
-    fh_usdinr: Optional[Dict] = _fh.get('usdinr')
-
-    _st = results['Stooq'] or {}
-    btc_stooq = _st.get('btc')
-    gold_stooq = _st.get('gold')
+    fh_btc: Optional[Dict] = (results['Finnhub'] or {}).get('btc')
+    gold_spot: Optional[Dict] = results['gold-api']
+    btc_coinbase: Optional[Dict] = results['Coinbase']
 
     # 7. Compute spot-only values from ER-API
     bdt_rate = er_rates.get('BDT') if er_rates else None
@@ -882,8 +904,9 @@ def fetch_market_extra(fred_api_key: str,
     mort_std = _standardize_fred(mortgage_data)
     rent_std = _standardize_fred(rent_data, multiplier=4.41)
     atnhpi_std = _standardize_fred(atnhpi_data)
+    gold_fred = _standardize_fred(gold_fix_data)
 
-    # 9. Build final values: yfinance → Polygon → Finnhub → FRED/ER-API → Stooq
+    # 9. Build final values: yfinance → Polygon → Finnhub → FRED/ER-API → keyless spot
     source_log: Dict[str, str] = {}
 
     def _resolve(key: str, *candidates: Optional[Dict]) -> Optional[Dict]:
@@ -893,11 +916,10 @@ def fetch_market_extra(fred_api_key: str,
             id(yf_btc): 'yfinance', id(yf_gold): 'yfinance', id(yf_oil): 'yfinance',
             id(poly_usdcad): 'Polygon', id(poly_usdinr): 'Polygon',
             id(poly_btc): 'Polygon', id(poly_gold): 'Polygon',
-            id(fh_btc): 'Finnhub', id(fh_gold): 'Finnhub',
-            id(fh_oil): 'Finnhub', id(fh_usdcad): 'Finnhub', id(fh_usdinr): 'Finnhub',
-            id(usdcad_fred): 'FRED', id(usdinr_fred): 'FRED',
+            id(fh_btc): 'Finnhub',
+            id(usdcad_fred): 'FRED', id(usdinr_fred): 'FRED', id(gold_fred): 'FRED',
             id(cl_fred): 'FRED', id(tnx_fred): 'FRED', id(t2y_fred): 'FRED',
-            id(btc_stooq): 'Stooq', id(gold_stooq): 'Stooq',
+            id(gold_spot): 'gold-api', id(btc_coinbase): 'Coinbase',
         }
         for c in candidates:
             if c and c.get('current') is not None:
@@ -906,8 +928,8 @@ def fetch_market_extra(fred_api_key: str,
         source_log[key] = 'null'
         return None
 
-    # USD/CAD: yfinance → Polygon → Finnhub → FRED (stale-check) → ER-API
-    usdcad = _resolve('usdcad', yf_usdcad, poly_usdcad, fh_usdcad)
+    # USD/CAD: yfinance → Polygon → FRED (stale-check) → USD spot-rates chain
+    usdcad = _resolve('usdcad', yf_usdcad, poly_usdcad)
     if usdcad is None:
         if usdcad_fred and not _is_stale(usdcad_fred):
             usdcad = usdcad_fred
@@ -916,8 +938,8 @@ def fetch_market_extra(fred_api_key: str,
             usdcad = _spot_only(cad_rate)
             source_log['usdcad'] = 'ER-API'
 
-    # USD/INR: yfinance → Polygon → Finnhub → FRED (stale-check) → ER-API
-    usdinr = _resolve('usdinr', yf_usdinr, poly_usdinr, fh_usdinr)
+    # USD/INR: yfinance → Polygon → FRED (stale-check) → USD spot-rates chain
+    usdinr = _resolve('usdinr', yf_usdinr, poly_usdinr)
     if usdinr is None:
         if usdinr_fred and not _is_stale(usdinr_fred):
             usdinr = usdinr_fred
@@ -966,14 +988,17 @@ def fetch_market_extra(fred_api_key: str,
     else:
         source_log['cadinr'] = 'null'
 
-    # Oil: yfinance (WTI CL=F) → Finnhub → FRED
-    cl = _resolve('cl', yf_oil, fh_oil, cl_fred)
+    # Oil: yfinance (WTI CL=F) → FRED DCOILWTICO. (No keyless live WTI source exists;
+    # EIA / oilprice APIs need keys and Finnhub's OANDA:BCO_USD is paid-tier.)
+    cl = _resolve('cl', yf_oil, cl_fred)
 
-    # BTC: yfinance → Polygon → Finnhub → Stooq
-    btc = _resolve('btc', yf_btc, poly_btc, fh_btc, btc_stooq)
+    # BTC: yfinance → Polygon → Finnhub → Coinbase spot
+    btc = _resolve('btc', yf_btc, poly_btc, fh_btc, btc_coinbase)
 
-    # Gold: yfinance → Polygon → Finnhub → Stooq
-    gold = _resolve('gold', yf_gold, poly_gold, fh_gold, gold_stooq)
+    # Gold: yfinance → Polygon → FRED London PM fix (stale-check, has history) → gold-api spot
+    gold = _resolve('gold', yf_gold, poly_gold,
+                    gold_fred if (gold_fred and not _is_stale(gold_fred)) else None,
+                    gold_spot)
 
     tnx = _resolve('tnx', tnx_fred)
     t2y = _resolve('t2y', t2y_fred)
@@ -1003,7 +1028,7 @@ def fetch_market_extra(fred_api_key: str,
     # 10. Build _meta summary
     null_count = sum(1 for v in source_log.values() if 'null' in v)
     msgs = []
-    for src in ['yfinance', 'Polygon', 'Finnhub', 'FRED', 'ER-API', 'Stooq']:
+    for src in ['yfinance', 'Polygon', 'Finnhub', 'FRED', 'ER-API', 'gold-api', 'Coinbase']:
         n = sum(1 for v in source_log.values() if v == src)
         if n:
             msgs.append(f'{src}: {n}')
