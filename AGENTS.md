@@ -109,7 +109,7 @@ and 14:00 UTC still work fine with an 08:15 send; they only assume "before 09:45
   `requirements.txt`). Keep `bot/` **lite** — no heavy plotting/bulky libs; deploy size
   and cold start depend on it. (`aws/requirements-lambda-minimal.txt` is a pure-Python
   subset kept for reference; CI uses `requirements-lambda.txt`, which adds
-  pandas/pandas-datareader/yfinance.)
+  pandas/yfinance.)
 - If you ever build locally, clean up `package/` and `*.zip` so they don't pollute git
   (both are gitignored). A small committed `aws/deployment.zip` exists as a historical
   artifact and is **not** what CI ships — ignore it.
@@ -154,7 +154,8 @@ aws lambda add-permission --function-name financial-telegram-report \
 
 ### SPY waterfall (Lambda `fetch_spy_with_fallback`)
 yfinance (full history) → Polygon (full history) → Google Sheet `SPY_INDICATORS`
-(pre-computed values, plus `SPY_DAILY_MOVE` for the 3Y return) → Stooq CSV → FRED `SP500`.
+(pre-computed values, plus `SPY_DAILY_MOVE` for the 3Y return) → FRED `SP500`.
+(Stooq was removed 2026-09-01: its download endpoint sits behind a JS proof-of-work wall.)
 Whichever wins, the result is normalized to the `/api/spy` shape and **chart history +
 MA50/MA200 are computed from FRED `SP500`** when only pre-computed indicators are available.
 Finnhub spot overrides the latest price (gotcha #3). `_meta.source` records the winning tier.
@@ -346,7 +347,7 @@ so `isGood` rejects an empty digest rather than letting it claim "nothing change
   status footer shows red even when every metric was filled.
 - The footer (`dashboard/app/page.js`, `.system-status-bar`) colors each source from its
   route's `_meta`/`source` string: red if `hasErrors`/Failed/Static/Stale, yellow for
-  degraded sources (Stooq/FRED proxies/VIX proxy/cached), green otherwise. **Green must mean
+  degraded sources (FRED proxies/VIX proxy/cached), green otherwise. **Green must mean
   the data is actually healthy** — don't hardcode a status; derive it. (Note: `buildSpy` in
   `/api/spy` returns `hasErrors:false` on a *full validated build* — a degraded source is
   conveyed by the source label only; hard-coding `hasErrors:true` once made SPY perpetually red.)
@@ -751,10 +752,10 @@ so `isGood` rejects an empty digest rather than letting it claim "nothing change
 ## 4. Known issues / open items (updated 2026-06-08)
 
 **✅ Resolved 2026-06-01** (kept here so the history is legible):
-- `bot/config.py` `URLS` now has `SPY_DAILY_MOVE`, `SPY_INDICATORS`, `STOOQ_SPY` (mirrored
-  from `dashboard/lib/constants.js`) — the Lambda SPY fallback tiers no longer `KeyError`.
-  *Note:* Stooq's `q/d/l` download endpoint now gates behind an apikey, so `STOOQ_SPY` is a
-  graceful **dead fallback** (the yfinance/Polygon/Finnhub tiers cover SPY).
+- `bot/config.py` `URLS` now has `SPY_DAILY_MOVE`, `SPY_INDICATORS` (mirrored from
+  `dashboard/lib/constants.js`) — the Lambda SPY fallback tiers no longer `KeyError`.
+  *Note:* it also had `STOOQ_SPY` until 2026-09-01, when the dead Stooq tier (JS-walled
+  download endpoint) was removed from both bot and dashboard along with `pandas-datareader`.
 - Silent daily-report failure fixed: `bot/main.py` `run_report()` returns `False` on empty
   content / failed send and `__main__` `sys.exit(1)` → green == sent, retry harness fires.
 - Telegram delivery hardened: `send_to_telegram` retries as plain text on a Markdown 400 and
@@ -797,15 +798,15 @@ so `isGood` rejects an empty digest rather than letting it claim "nothing change
 - `lambda_handler.py` — Lambda entry; `_clean_nans`, `_ok`/`_err`, `handle_http_api`
   (dashboard GET routes), `handle_eventbridge` (daily report). Dispatches HTTP vs schedule.
 - `bot/fetchers.py` — the data waterfalls: `fetch_google_sheet_indicators` (Telegram report
-  body), `fetch_spy_with_fallback` (yfinance→Polygon→Sheet→Stooq→FRED, Finnhub spot override),
+  body), `fetch_spy_with_fallback` (yfinance→Polygon→Sheet→FRED, Finnhub spot override),
   `fetch_spy_daily_move`, `fetch_market_extra` (FX/commodities/rates/real-estate; six
   provider chains run concurrently under `MARKET_EXTRA_DEADLINE_SECONDS`: yfinance →
   Polygon → Finnhub **BTC only** (its OANDA:* forex/commodity symbols are paid-tier, 403
   forever) → FRED incl. gold London PM fix `GOLDPMGBD228NLBM` → USD spot chain ER-API →
   Frankfurter → Fawaz → keyless spot last resorts gold-api.com / Coinbase; Stooq is gone —
   its download endpoint sits behind a JS proof-of-work wall), and
-  `fetch_polymarket_trending` (the curated sentiment board). `fetch_spy_stats`/`calculate_rsi`
-  are legacy Stooq helpers.
+  `fetch_polymarket_trending` (the curated sentiment board), and `calculate_rsi` (Wilder RSI
+  used by the SPY waterfall).
 - `bot/config.py` — `URLS` (Google-Sheet/data source URLs, mirror `dashboard/lib/constants.js`)
   + `FRED_SERIES` IDs + `TIMEZONE`/`REPORT_TIME` (for the `bot/main.py` scheduler).
 - `bot/utils.py` — env loading (`load_environment_variables`, requires

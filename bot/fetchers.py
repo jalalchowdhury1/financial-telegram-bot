@@ -1,6 +1,6 @@
 """
 Data fetching logic for the financial-telegram-bot.
-Handles FRED API, Stooq (SPY), and Google Sheets integration.
+Handles FRED API, the SPY/market waterfalls, and Google Sheets integration.
 """
 
 import csv
@@ -13,18 +13,10 @@ from bot.config import URLS, RSI_PERIOD
 # Optional heavy dependencies (for fetchers that need them)
 try:
     import pandas as pd
-    import pandas_datareader.data as web
     import numpy as np
 except ImportError:
     pd = None
-    web = None
     np = None
-
-# Try to import poly_client for Polymarket data fetching
-try:
-    from poly_client import poly_client
-except ImportError:
-    poly_client = None
 
 def _vix_from_sheet() -> tuple:
     """The old path: read the VIX tab's A2/B2/C2 straight off the Google Sheet."""
@@ -164,62 +156,6 @@ def calculate_rsi(prices: Any, period: int = RSI_PERIOD) -> float:
     rsi = 100 - (100 / (1 + rs))
 
     return float(rsi)
-
-def fetch_spy_stats() -> Dict[str, float]:
-    """
-    Fetch SPY statistics natively from the Stooq financial database.
-    """
-    print("Fetching SPY data from Stooq (pandas-datareader)...")
-
-    if pd is None or web is None:
-        logging.warning("pandas/pandas-datareader not available, skipping SPY fetcher")
-        raise ImportError("pandas dependencies not available")
-
-    try:
-        df = web.DataReader('SPY.US', 'stooq')
-        
-        if df.empty:
-            raise ValueError("Stooq returned empty data for SPY.US")
-            
-        df = df.rename(columns={'Open': 'Open', 'High': 'High', 'Low': 'Low', 'Close': 'Close', 'Volume': 'Volume'})
-        df.index = pd.to_datetime(df.index)
-        df = df.sort_index()
-
-        days_available = min(756, len(df))
-        current_price = float(df['Close'].iloc[-1])
-
-        if pd.isna(current_price) or current_price <= 0:
-            raise ValueError("Invalid current price data format.")
-
-        ma_200 = float(df['Close'].tail(200).mean()) if len(df) >= 200 else float(df['Close'].mean())
-        ma_200_pct = ((current_price - ma_200) / ma_200) * 100
-
-        days_52w = min(252, len(df))
-        week_52_high = float(df['Close'].tail(days_52w).max())
-        high_52w_pct = ((current_price - week_52_high) / week_52_high) * 100
-
-        rsi_9d = calculate_rsi(df['Close'], period=RSI_PERIOD)
-
-        price_past = float(df['Close'].iloc[-days_available])
-        return_3y_pct = ((current_price - price_past) / price_past) * 100
-
-        stats = {
-            'current': current_price,
-            'ma_200': ma_200,
-            'ma_200_pct': ma_200_pct,
-            'week_52_high': week_52_high,
-            'high_52w_pct': high_52w_pct,
-            'rsi_9d': rsi_9d,
-            'return_3y_pct': return_3y_pct
-        }
-
-        print(f"✓ SPY data fetched successfully")
-        return stats
-
-    except Exception as e:
-        print(f"ERROR: Failed to fetch SPY data from Stooq: {str(e)}")
-        raise
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Dashboard Lambda fetchers
@@ -471,8 +407,7 @@ def fetch_spy_with_fallback(fred_api_key: Optional[str] = None,
 
     Layer 0: Polygon (full history → compute all indicators)
     Layer 1: Google Sheets pre-calculated indicators
-    Layer 2: Stooq CSV (raw prices)
-    Layer 3: FRED SP500 series
+    Layer 2: FRED SP500 series
     """
     if pd is None:
         logging.warning("pandas not available, returning placeholder SPY data")
@@ -541,28 +476,7 @@ def fetch_spy_with_fallback(fred_api_key: Optional[str] = None,
         except Exception as e:
             print(f'[SPY] Layer 1 (Google Sheet) failed: {e}')
 
-    # Layer 2: Stooq CSV
-    if not indicators and not rows:
-        try:
-            r = requests.get(URLS['STOOQ_SPY'], timeout=15, headers=_HEADERS)
-            parsed_rows = []
-            for line in r.text.strip().split('\n')[1:]:
-                parts = line.split(',')
-                if len(parts) >= 5:
-                    try:
-                        close = float(parts[4].strip())
-                        if close > 0:
-                            parsed_rows.append({'date': parts[0].strip(), 'close': close})
-                    except ValueError:
-                        pass
-            if len(parsed_rows) >= 10:
-                rows = parsed_rows
-                data_source = 'Stooq'
-                print(f'[SPY] Layer 2 (Stooq) loaded {len(rows)} rows')
-        except Exception as e:
-            print(f'[SPY] Layer 2 (Stooq) failed: {e}')
-
-    # Layer 3: FRED SP500
+    # Layer 2: FRED SP500
     if not indicators and not rows and fred_api_key:
         try:
             url = (f'https://api.stlouisfed.org/fred/series/observations'
@@ -574,9 +488,9 @@ def fetch_spy_with_fallback(fred_api_key: Optional[str] = None,
             if len(fred_rows) >= 10:
                 rows = fred_rows
                 data_source = 'FRED S&P 500 Index'
-                print(f'[SPY] Layer 3 (FRED) loaded {len(rows)} rows')
+                print(f'[SPY] Layer 2 (FRED) loaded {len(rows)} rows')
         except Exception as e:
-            print(f'[SPY] Layer 3 (FRED SP500) failed: {e}')
+            print(f'[SPY] Layer 2 (FRED SP500) failed: {e}')
 
     if not indicators and len(rows) < 10:
         raise ValueError('Insufficient SPY data — all sources failed')
@@ -619,7 +533,7 @@ def fetch_spy_with_fallback(fred_api_key: Optional[str] = None,
         current = rows[-1]['close']
         prev_close = rows[-2]['close']
         
-        # Override with Finnhub spot price to guarantee live data if Polygon/Stooq metrics are stale
+        # Override with Finnhub spot price to guarantee live data if Polygon metrics are stale
         # Finnhub 'c' (current) / 'pc' (previous close)
         if finnhub_api_key:
             try:

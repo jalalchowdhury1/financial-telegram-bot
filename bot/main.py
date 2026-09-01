@@ -21,7 +21,7 @@ from apscheduler.triggers.cron import CronTrigger
 
 # Import from the modular bot package
 from bot.utils import load_environment_variables, send_to_telegram, report_marker
-from bot.fetchers import fetch_google_sheet_indicators, fetch_spy_stats
+from bot.fetchers import fetch_google_sheet_indicators
 
 from bot.config import TIMEZONE, REPORT_TIME
 
@@ -60,14 +60,6 @@ def run_report():
             return False
         print("✓ Sent Google Sheets indicators.")
 
-        # 2. Add a quick text summary for SPY (Disabled per user request)
-        # try:
-        #     spy = fetch_spy_stats()
-        #     spy_text = f"📈 *SPY Market Snapshot*\nPrice: ${spy['current']:.2f} ({spy['change_pct']:+.2f}%)\n9D RSI: {spy['rsi_9d']:.2f}"
-        #     send_to_telegram(env_vars['TELEGRAM_TOKEN'], env_vars['TELEGRAM_CHAT_ID'], caption=spy_text)
-        #     print("✓ Sent SPY text summary.")
-        # except Exception as e:
-        #     print(f"Skipping SPY summary: {e}")
         pass
 
         pass

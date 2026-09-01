@@ -56,22 +56,6 @@ export async function yahooChart(ticker, { range = '1mo', interval = '1d', reval
     return { current, prevClose, history, meta };
 }
 
-/** Stooq daily CSV -> { current, prevClose, history }. (Note: Stooq now gates
- *  bulk CSV behind an API key for many IPs; kept as a last-resort only.) */
-export async function stooqDaily(symbol, { revalidate = 300 } = {}) {
-    const text = await withRetry(() => fetchText(`https://stooq.com/q/d/l/?s=${encodeURIComponent(symbol)}&i=d`, { revalidate }));
-    const lines = text.trim().split('\n');
-    if (lines.length < 2 || !/^Date,/i.test(lines[0])) throw new Error(`Stooq: no CSV for ${symbol}`);
-    const history = [];
-    for (let i = 1; i < lines.length; i++) {
-        const cols = lines[i].split(',');
-        const close = parseFloat(cols[4]);
-        if (cols[0] && !Number.isNaN(close)) history.push({ date: cols[0], price: close });
-    }
-    if (!history.length) throw new Error(`Stooq: empty for ${symbol}`);
-    return { current: history[history.length - 1].price, prevClose: history[history.length - 2]?.price ?? history[history.length - 1].price, history };
-}
-
 /** CoinGecko simple price (keyless) -> { current, prevClose }. */
 export async function coingeckoPrice(id = 'bitcoin', { revalidate = 300 } = {}) {
     const data = await withRetry(() => fetchJson(`https://api.coingecko.com/api/v3/simple/price?ids=${id}&vs_currencies=usd&include_24hr_change=true`, { revalidate }));

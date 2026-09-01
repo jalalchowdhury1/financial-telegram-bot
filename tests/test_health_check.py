@@ -180,7 +180,7 @@ def test_check_config_urls_flags_missing_known_keys():
 
 
 def test_check_config_urls_ok_when_all_present():
-    urls = {k: "x" for k in ("SPY_DAILY_MOVE", "SPY_INDICATORS", "STOOQ_SPY")}
+    urls = {k: "x" for k in ("SPY_DAILY_MOVE", "SPY_INDICATORS")}
     assert hc.check_config_urls(urls)["severity"] == "ok"
 
 
@@ -480,7 +480,7 @@ def test_check_lambda_path_catches_every_lambda_spy_tier_label():
     """bot/fetchers.py can label spy from any waterfall tier; none of them may
     look like a dashboard fallback."""
     for tier in ("yfinance + Finnhub Spot", "Polygon + Finnhub Spot", "Google Sheet + Finnhub Spot",
-                 "Stooq", "FRED S&P 500 Index"):
+                 "FRED S&P 500 Index"):
         payloads = dict(LIVE_LAMBDA_PAYLOADS)
         payloads["spy"] = {"_meta": {"source": tier}}
         assert hc.check_lambda_path(payloads)["severity"] == "ok", tier
