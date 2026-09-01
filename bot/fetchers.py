@@ -668,9 +668,16 @@ def fetch_spy_daily_move() -> Dict[str, Any]:
         return {'value': None, 'source': 'Failed', 'error': str(e)}
 
 
+# API Gateway HTTP APIs hard-cap every integration at 30 s and answer 503 past it;
+# the dashboard then silently falls back to direct sources. Leave headroom for the
+# gateway hop and JSON serialisation.
+MARKET_EXTRA_DEADLINE_SECONDS = 22.0
+
+
 def fetch_market_extra(fred_api_key: str,
                        polygon_api_key: Optional[str] = None,
-                       finnhub_api_key: Optional[str] = None) -> Dict[str, Any]:
+                       finnhub_api_key: Optional[str] = None,
+                       deadline_seconds: float = MARKET_EXTRA_DEADLINE_SECONDS) -> Dict[str, Any]:
     """
     Fetch FX rates, commodities, rates, and real-estate data.
     Returns JSON matching the Next.js /api/market-extra response shape.
@@ -679,37 +686,143 @@ def fetch_market_extra(fred_api_key: str,
     Layer 2: Finnhub (BTC, Gold, Oil, FX spot)
     Layer 3: FRED (FX with history, Oil, rates, real-estate) + ExchangeRate-API (BDT, DXY)
     Layer 4: Stooq (BTC, Gold last resort)
+
+    The six provider chains are independent, so they run CONCURRENTLY and the whole
+    fetch is bounded by `deadline_seconds`; a chain still running at the deadline is
+    skipped (its metrics resolve from the next source in the waterfall) and noted in
+    `_meta.messages`. WHY: run strictly one after another, the ~25 upstream calls
+    (each with a 10-20 s timeout) averaged 10 s and exceeded 30 s on ~6% of Lambda
+    invocations (max 59 s). API Gateway HTTP APIs cut the integration at 30 s with a
+    503, so on any slow-upstream day the dashboard quietly served from its fallbacks
+    while every check stayed green (health check `lambda_primary_path`, 2026-09-01).
+    Calls WITHIN a chain stay sequential: those pauses are per-provider rate-limit
+    etiquette (FRED 429s, Polygon's 5/min free tier).
     """
     import time
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 
     if not fred_api_key:
         raise ValueError('FRED_API_KEY not configured')
 
-    # 1. Batch FRED requests — 3 per batch with 300 ms gap to avoid 429
-    fred_spec = [
-        ('MORTGAGE30US', 30),    # 0 – 30Y mortgage rate
-        ('CUUR0000SEHA', 30),    # 1 – shelter/rent CPI
-        ('MSPUS', 5),            # 2 – median home price
-        ('DCOILWTICO', 35),      # 3 – WTI crude oil
-        ('DGS10', 35),           # 4 – 10Y treasury yield
-        ('DGS2', 35),            # 5 – 2Y treasury yield
-        ('DEXCAUS', 35),         # 6 – USD/CAD
-        ('DEXINUS', 35),         # 7 – USD/INR
-        ('ATNHPIUS39300Q', 35),  # 8 – All-Trans House Price Index
-    ]
-    fred_raw: List[Any] = []
-    _fred_spec: List[Any] = list(fred_spec)
-    for i in range(0, len(_fred_spec), 3):
-        for j in range(i, min(i + 3, len(_fred_spec))):
-            series_id, limit = _fred_spec[j]  # type: ignore[misc]
-            try:
-                fred_raw.append(_fetch_fred_series(series_id, fred_api_key, limit))
-            except Exception as e:
-                print(f'[FRED] {series_id} failed: {e}')
-                fred_raw.append([])
-        if i + 3 < len(fred_spec):
-            time.sleep(0.3)
+    # 1. FRED -- 3 per batch with 300 ms gap to avoid 429
+    def fred_chain() -> List[Any]:
+        fred_spec = [
+            ('MORTGAGE30US', 30),    # 0 - 30Y mortgage rate
+            ('CUUR0000SEHA', 30),    # 1 - shelter/rent CPI
+            ('MSPUS', 5),            # 2 - median home price
+            ('DCOILWTICO', 35),      # 3 - WTI crude oil
+            ('DGS10', 35),           # 4 - 10Y treasury yield
+            ('DGS2', 35),            # 5 - 2Y treasury yield
+            ('DEXCAUS', 35),         # 6 - USD/CAD
+            ('DEXINUS', 35),         # 7 - USD/INR
+            ('ATNHPIUS39300Q', 35),  # 8 - All-Trans House Price Index
+        ]
+        raw: List[Any] = []
+        for i in range(0, len(fred_spec), 3):
+            for j in range(i, min(i + 3, len(fred_spec))):
+                series_id, limit = fred_spec[j]
+                try:
+                    raw.append(_fetch_fred_series(series_id, fred_api_key, limit))
+                except Exception as e:
+                    print(f'[FRED] {series_id} failed: {e}')
+                    raw.append([])
+            if i + 3 < len(fred_spec):
+                time.sleep(0.3)
+        return raw
 
+    # 2. ExchangeRate-API (free, no key) for BDT pairs and DXY
+    def er_chain() -> Optional[dict]:
+        try:
+            return _fetch_exchange_rates()
+        except Exception as e:
+            print(f'[ExchangeRate] failed: {e}')
+            return None
+
+    # 3. yfinance -- highest priority for everything it covers
+    def yf_chain() -> Dict[str, Dict]:
+        out: Dict[str, Dict] = {}
+        for sym, var_name, invert in [
+            ('USDCAD=X', 'usdcad', False),
+            ('USDINR=X', 'usdinr', False),
+            ('BTC-USD',  'btc',    False),
+            ('GC=F',     'gold',   False),
+            ('CL=F',     'oil',    False),
+        ]:
+            try:
+                result = _fetch_yfinance(sym, invert=invert, days=400)
+                if result and result.get('current'):
+                    out[var_name] = result
+                    print(f'[yfinance] {sym}: {result["current"]}')
+            except Exception as e:
+                print(f'[yfinance] {sym} failed: {e}')
+            time.sleep(0.1)
+        return out
+
+    # 4. Polygon -- FX with history, BTC, Gold
+    def poly_chain() -> Dict[str, Dict]:
+        out: Dict[str, Dict] = {}
+        if not polygon_api_key:
+            return out
+        for sym, var_name in [('C:USDCAD', 'usdcad'), ('C:USDINR', 'usdinr'),
+                               ('X:BTCUSD', 'btc'), ('C:XAUUSD', 'gold')]:
+            try:
+                result = _fetch_polygon_aggs(sym, polygon_api_key, days=400)
+                if result and result.get('current'):
+                    out[var_name] = result
+                    print(f'[Polygon] {sym}: {result["current"]}')
+            except Exception as e:
+                print(f'[Polygon] {sym} failed: {e}')
+            time.sleep(0.1)
+        return out
+
+    # 5. Finnhub -- BTC, Gold, Oil, FX spot fallbacks
+    def fh_chain() -> Dict[str, Dict]:
+        out: Dict[str, Dict] = {}
+        if not finnhub_api_key:
+            return out
+        for sym, var_name in [('BINANCE:BTCUSDT', 'btc'), ('OANDA:XAU_USD', 'gold'),
+                               ('OANDA:BCO_USD', 'oil'), ('OANDA:USD_CAD', 'usdcad'),
+                               ('OANDA:USD_INR', 'usdinr')]:
+            try:
+                result = _fetch_finnhub_quote(sym, finnhub_api_key)
+                if result and result.get('current'):
+                    out[var_name] = result
+                    print(f'[Finnhub] {sym}: {result["current"]}')
+            except Exception as e:
+                print(f'[Finnhub] {sym} failed: {e}')
+            time.sleep(0.1)
+        return out
+
+    # 6. Stooq for BTC and Gold (last resort)
+    def stooq_chain() -> Dict[str, Optional[Dict]]:
+        time.sleep(0.15)
+        btc = _fetch_stooq('btc.v')
+        time.sleep(0.15)
+        return {'btc': btc, 'gold': _fetch_stooq('xauusd')}
+
+    chains = {'FRED': fred_chain, 'ER-API': er_chain, 'yfinance': yf_chain,
+              'Polygon': poly_chain, 'Finnhub': fh_chain, 'Stooq': stooq_chain}
+    results: Dict[str, Any] = {'FRED': [], 'ER-API': None, 'yfinance': {},
+                               'Polygon': {}, 'Finnhub': {}, 'Stooq': {}}
+    late_messages: List[str] = []
+    started = time.monotonic()
+    pool = ThreadPoolExecutor(max_workers=len(chains), thread_name_prefix='market-extra')
+    futures = {name: pool.submit(fn) for name, fn in chains.items()}
+    for name, fut in futures.items():
+        remaining = max(0.0, deadline_seconds - (time.monotonic() - started))
+        try:
+            results[name] = fut.result(timeout=remaining)
+        except FutureTimeout:
+            print(f'[market-extra] {name} still running at the {deadline_seconds:.0f}s '
+                  f'deadline -- skipped, resolving from the next source')
+            late_messages.append(f'{name} skipped: deadline {deadline_seconds:.0f}s')
+        except Exception as e:
+            print(f'[market-extra] {name} chain failed: {e}')
+    # Don't block on stragglers; they finish (or hit their own HTTP timeout) in the
+    # background and are simply discarded.
+    pool.shutdown(wait=False, cancel_futures=True)
+
+    fred_raw: List[Any] = list(results['FRED'] or [])
     while len(fred_raw) < 9:
         fred_raw.append([])
     mortgage_data = fred_raw[0]
@@ -722,96 +835,31 @@ def fetch_market_extra(fred_api_key: str,
     inr_data      = fred_raw[7]
     atnhpi_data   = fred_raw[8]
 
-    # 2. ExchangeRate-API (free, no key) for BDT pairs and DXY
-    er_rates: Optional[dict] = None
-    try:
-        er_rates = _fetch_exchange_rates()
-    except Exception as e:
-        print(f'[ExchangeRate] failed: {e}')
+    er_rates: Optional[dict] = results['ER-API']
 
-    # 3. yfinance — highest priority for everything it covers
-    yf_usdcad: Optional[Dict] = None
-    yf_usdinr: Optional[Dict] = None
-    yf_btc: Optional[Dict] = None
-    yf_gold: Optional[Dict] = None
-    yf_oil: Optional[Dict] = None
-    for sym, var_name, invert in [
-        ('USDCAD=X', 'usdcad', False),
-        ('USDINR=X', 'usdinr', False),
-        ('BTC-USD',  'btc',    False),
-        ('GC=F',     'gold',   False),
-        ('CL=F',     'oil',    False),
-    ]:
-        try:
-            result = _fetch_yfinance(sym, invert=invert, days=400)
-            if result and result.get('current'):
-                if var_name == 'usdcad': yf_usdcad = result
-                elif var_name == 'usdinr': yf_usdinr = result
-                elif var_name == 'btc': yf_btc = result
-                elif var_name == 'gold': yf_gold = result
-                elif var_name == 'oil': yf_oil = result
-                print(f'[yfinance] {sym}: {result["current"]}')
-        except Exception as e:
-            print(f'[yfinance] {sym} failed: {e}')
-        time.sleep(0.1)
+    _yf = results['yfinance'] or {}
+    yf_usdcad: Optional[Dict] = _yf.get('usdcad')
+    yf_usdinr: Optional[Dict] = _yf.get('usdinr')
+    yf_btc: Optional[Dict] = _yf.get('btc')
+    yf_gold: Optional[Dict] = _yf.get('gold')
+    yf_oil: Optional[Dict] = _yf.get('oil')
 
-    # 4. Polygon — FX with history, BTC, Gold (fallback to yfinance)
-    poly_usdcad: Optional[Dict] = None
-    poly_usdinr: Optional[Dict] = None
-    poly_btc: Optional[Dict] = None
-    poly_gold: Optional[Dict] = None
-    if polygon_api_key:
-        for sym, var_name in [('C:USDCAD', 'usdcad'), ('C:USDINR', 'usdinr'),
-                               ('X:BTCUSD', 'btc'), ('C:XAUUSD', 'gold')]:
-            try:
-                result = _fetch_polygon_aggs(sym, polygon_api_key, days=400)
-                if result and result.get('current'):
-                    if var_name == 'usdcad':
-                        poly_usdcad = result
-                    elif var_name == 'usdinr':
-                        poly_usdinr = result
-                    elif var_name == 'btc':
-                        poly_btc = result
-                    elif var_name == 'gold':
-                        poly_gold = result
-                    print(f'[Polygon] {sym}: {result["current"]}')
-            except Exception as e:
-                print(f'[Polygon] {sym} failed: {e}')
-            time.sleep(0.1)
+    _poly = results['Polygon'] or {}
+    poly_usdcad: Optional[Dict] = _poly.get('usdcad')
+    poly_usdinr: Optional[Dict] = _poly.get('usdinr')
+    poly_btc: Optional[Dict] = _poly.get('btc')
+    poly_gold: Optional[Dict] = _poly.get('gold')
 
-    # 5. Finnhub — BTC, Gold, Oil, FX spot fallbacks
-    fh_btc: Optional[Dict] = None
-    fh_gold: Optional[Dict] = None
-    fh_oil: Optional[Dict] = None
-    fh_usdcad: Optional[Dict] = None
-    fh_usdinr: Optional[Dict] = None
-    if finnhub_api_key:
-        for sym, var_name in [('BINANCE:BTCUSDT', 'btc'), ('OANDA:XAU_USD', 'gold'),
-                               ('OANDA:BCO_USD', 'oil'), ('OANDA:USD_CAD', 'usdcad'),
-                               ('OANDA:USD_INR', 'usdinr')]:
-            try:
-                result = _fetch_finnhub_quote(sym, finnhub_api_key)
-                if result and result.get('current'):
-                    if var_name == 'btc':
-                        fh_btc = result
-                    elif var_name == 'gold':
-                        fh_gold = result
-                    elif var_name == 'oil':
-                        fh_oil = result
-                    elif var_name == 'usdcad':
-                        fh_usdcad = result
-                    elif var_name == 'usdinr':
-                        fh_usdinr = result
-                    print(f'[Finnhub] {sym}: {result["current"]}')
-            except Exception as e:
-                print(f'[Finnhub] {sym} failed: {e}')
-            time.sleep(0.1)
+    _fh = results['Finnhub'] or {}
+    fh_btc: Optional[Dict] = _fh.get('btc')
+    fh_gold: Optional[Dict] = _fh.get('gold')
+    fh_oil: Optional[Dict] = _fh.get('oil')
+    fh_usdcad: Optional[Dict] = _fh.get('usdcad')
+    fh_usdinr: Optional[Dict] = _fh.get('usdinr')
 
-    # 6. Stooq for BTC and Gold (last resort)
-    time.sleep(0.15)
-    btc_stooq = _fetch_stooq('btc.v')
-    time.sleep(0.15)
-    gold_stooq = _fetch_stooq('xauusd')
+    _st = results['Stooq'] or {}
+    btc_stooq = _st.get('btc')
+    gold_stooq = _st.get('gold')
 
     # 7. Compute spot-only values from ER-API
     bdt_rate = er_rates.get('BDT') if er_rates else None
@@ -961,6 +1009,7 @@ def fetch_market_extra(fred_api_key: str,
             msgs.append(f'{src}: {n}')
     if null_count:
         msgs.append(f'unavailable: {null_count} metrics')
+    msgs.extend(late_messages)
 
     return {
         'fx': {'usdcad': usdcad, 'usdinr': usdinr, 'usdbdt': usdbdt,
