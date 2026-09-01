@@ -488,7 +488,7 @@ export default function Dashboard() {
 
             {/* FOOTER */}
             <footer className="dashboard-footer">
-                <p>Jalal's Financial Dashboard v7.0 — Data from FRED, CNN, Stooq, ExchangeRate-API, Yahoo Finance &amp; Google Sheets</p>
+                <p>Jalal's Financial Dashboard v7.0 — Data from FRED, CNN, Polygon, ExchangeRate-API, Yahoo Finance &amp; Google Sheets</p>
                 {process.env.NEXT_PUBLIC_BUILD_TIME && (
                     <p style={{ fontSize: '0.7rem', opacity: 0.6, marginTop: '4px' }}>
                         Deployed: {new Date(process.env.NEXT_PUBLIC_BUILD_TIME).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
@@ -526,15 +526,14 @@ export default function Dashboard() {
                 <div className="system-status-bar">
                     <div className="status-items">
                         <span className={`status-item ${systemStatus.spy?.hasErrors ? 'status-error' :
-                            (systemStatus.spy?.source?.includes('Stooq') || systemStatus.spy?.source?.includes('FRED')) ? 'status-warn' : ''
+                            systemStatus.spy?.source?.includes('FRED') ? 'status-warn' : ''
                             }`}>
                             [SPY: {
                                 systemStatus.spy?.source?.includes('yfinance') ? 'yfinance' :
                                     systemStatus.spy?.source?.includes('Polygon') ? 'Polygon' :
                                         systemStatus.spy?.source?.includes('Google Sheet') ? 'GSheet' :
-                                            systemStatus.spy?.source?.includes('Stooq') ? 'Stooq' :
-                                                systemStatus.spy?.source?.includes('FRED') ? 'FRED Fallback' :
-                                                    systemStatus.spy?.source || 'OK'
+                                            systemStatus.spy?.source?.includes('FRED') ? 'FRED Fallback' :
+                                                systemStatus.spy?.source || 'OK'
                             }]
                         </span>
                         <span className={`status-item ${systemStatus.fred?.hasErrors ? 'status-error' : ''}`}>

@@ -1,4 +1,4 @@
-import { yahooChart, stooqDaily, coingeckoPrice, dbnomicsFred, dailyChange, dxyFromUsdRates, polygonDaily, fredObservations, krakenSpot, fawazRates, cnbcQuotes, cnbcHistory, goldApiSpot } from '../sources';
+import { yahooChart, coingeckoPrice, dbnomicsFred, dailyChange, dxyFromUsdRates, polygonDaily, fredObservations, krakenSpot, fawazRates, cnbcQuotes, cnbcHistory, goldApiSpot } from '../sources';
 
 // Mock the network: proxyFetch -> global.fetch. Return ok + json()/text().
 function mockFetch(payload, { text = false } = {}) {
@@ -32,21 +32,6 @@ describe('dbnomicsFred', () => {
     test('throws on empty', async () => {
         mockFetch({ series: { docs: [{ period: [], value: [] }] } });
         await expect(dbnomicsFred('X')).rejects.toThrow();
-    });
-});
-
-describe('stooqDaily', () => {
-    test('parses CSV oldest->newest with current/prev', async () => {
-        mockFetch('Date,Open,High,Low,Close,Volume\n2026-05-28,1,2,0.5,1.5,100\n2026-05-29,1,2,0.5,1.7,100', { text: true });
-        const out = await stooqDaily('spy.us');
-        expect(out.current).toBe(1.7);
-        expect(out.prevClose).toBe(1.5);
-        expect(out.history).toHaveLength(2);
-        expect(out.history[0]).toEqual({ date: '2026-05-28', price: 1.5 });
-    });
-    test('rejects bad CSV', async () => {
-        mockFetch('garbage', { text: true });
-        await expect(stooqDaily('x')).rejects.toThrow();
     });
 });
 
