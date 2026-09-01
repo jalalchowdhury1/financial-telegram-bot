@@ -431,6 +431,25 @@ def test_check_lambda_path_warns_when_only_one_route_fell_back():
     assert f["evidence"]["fallback_routes"] == ["spy"]
 
 
+def test_check_lambda_path_partial_fallback_blames_the_handler_not_the_grant():
+    """2026-09-01: market-extra fell back (Lambda took 49-59 s > API Gateway's 30 s cap)
+    while spy was Lambda-served. The invoke grant was fine; the alert must not send
+    the reader there."""
+    payloads = dict(LIVE_LAMBDA_PAYLOADS)
+    payloads["market-extra"] = LIVE_FALLBACK_PAYLOADS["market-extra"]
+    f = hc.check_lambda_path(payloads)
+    assert f["severity"] == "warn"
+    assert "30 s" in f["detail"] and "reachable" in f["detail"], f["detail"]
+    assert "resource policy" not in f["detail"], f["detail"]
+    assert "spy" in f["detail"]  # names what the Lambda DID serve
+
+
+def test_check_lambda_path_total_fallback_points_at_the_invoke_grant():
+    f = hc.check_lambda_path(LIVE_FALLBACK_PAYLOADS)
+    assert "resource policy" in f["detail"], f["detail"]
+    assert f["evidence"]["lambda_routes"] == []
+
+
 def test_check_lambda_path_reads_a_top_level_source_when_there_is_no_meta():
     """spy-daily-move / polymarket have no _meta.source — the label is top-level."""
     payloads = dict(LIVE_LAMBDA_PAYLOADS)

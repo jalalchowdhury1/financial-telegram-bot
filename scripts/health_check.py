@@ -195,16 +195,33 @@ def check_lambda_path(payloads):
             lambda_served.append(name)
 
     if fallback:
+        fell = ", ".join(f"{n} ({sources[n]})" for n in fallback)
+        if lambda_served:
+            # The Lambda answered OTHER routes in this same run, so the gateway hop and
+            # the invoke grant are fine -- it's this route's handler. In practice that
+            # means it ran past API Gateway's 30 s integration cap (gateway answers 503,
+            # Vercel falls back): 2026-09-01, /api/market-extra took 49-59 s while
+            # /api/spy took 0.7 s. Don't send the reader to the resource policy.
+            title = "Dashboard route(s) on FALLBACK — a Lambda handler is failing or too slow"
+            detail = (
+                f"Served from direct sources instead: {fell}. But the Lambda IS reachable — "
+                f"it served {', '.join(lambda_served)} in this same run — so this is NOT the "
+                "API Gateway invoke grant or LAMBDA_URL. The handler behind the fallen-back "
+                "route is erroring or exceeding API Gateway's 30 s integration cap (the "
+                "gateway then answers 503 and Vercel falls back). Check CloudWatch for that "
+                "route: 'Trigger: HTTP /api/<route>' → the REPORT line's Duration (>30000 ms "
+                "= timeout) and any upstream failures logged between them.")
+        else:
+            title = "Dashboard is running on FALLBACKS — the Lambda data path is down"
+            detail = (
+                f"These Lambda-primary routes served from direct sources instead: {fell}. "
+                "The dashboard still shows correct numbers, so nothing looks broken — "
+                "but the API Gateway -> Lambda hop is failing. Check the Lambda's "
+                "resource policy for an apigateway.amazonaws.com invoke grant "
+                "(AGENTS §2 'Wiring a new API Gateway'), that LAMBDA_URL still points "
+                "at the gateway base, and the function's recent CloudWatch errors.")
         return _finding(
-            fid, "warn", "Dashboard is running on FALLBACKS — the Lambda data path is down",
-            detail=("These Lambda-primary routes served from direct sources instead: "
-                    + ", ".join(f"{n} ({sources[n]})" for n in fallback)
-                    + ". The dashboard still shows correct numbers, so nothing looks broken — "
-                      "but the API Gateway -> Lambda hop is failing. Check the Lambda's "
-                      "resource policy for an apigateway.amazonaws.com invoke grant "
-                      "(AGENTS §2 'Wiring a new API Gateway'), that LAMBDA_URL still points "
-                      "at the gateway base, and the function's recent CloudWatch errors."),
-            remediation="manual",
+            fid, "warn", title, detail=detail, remediation="manual",
             evidence={"fallback_routes": fallback, "lambda_routes": lambda_served, "sources": sources})
 
     if not sources:
