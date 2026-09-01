@@ -88,7 +88,7 @@ const dateOf = (arr) => arr?.[0]?.date ?? null;
 //   COPPER $/lb : CNBC @HG.1 (keyless, daily history) → FRED PCOPPUSDM (key)
 //                 → gold-api.com HG (keyless spot) → Yahoo HG=F (self-heal)
 //   GOLD   $/oz : CNBC @GC.1 (keyless, daily history) → Polygon C:XAUUSD (key)
-//                 → FRED GOLDPMGBD228NLBM (key) → gold-api.com XAU → Yahoo GC=F
+//                 → gold-api.com XAU → Yahoo GC=F   (FRED's GOLDPMGBD228NLBM is discontinued)
 //
 // Each source can be fault-injected for testing the cascade end-to-end, e.g.
 // `?_fail=cg_cnbc` forces both legs past CNBC; `?_fail=cg_cnbc,cg_fred,cg_polygon`
@@ -145,14 +145,6 @@ function goldSources(fredKey, polyKey) {
             const last = p.history[p.history.length - 1];
             if (!last) throw new Error('Polygon C:XAUUSD: no history');
             return { current: p.current, currentDate: last.date, historyAsc: p.history };
-        } },
-        { name: 'fred', freshnessDays: 12, fetch: async () => {  // daily LBMA fix
-            if (!fredKey) throw new Error('no FRED key');
-            const obs = await fredObservations('GOLDPMGBD228NLBM', fredKey, { limit: 200 });
-            const historyAsc = [...obs].reverse().map((o) => ({ date: o.date, price: o.value }));
-            const last = historyAsc[historyAsc.length - 1];
-            if (!last) throw new Error('FRED GOLDPMGBD228NLBM: no observations');
-            return { current: last.price, currentDate: last.date, historyAsc };
         } },
         { name: 'goldapi', freshnessDays: 7, fetch: async () => {
             const s = await goldApiSpot('XAU');              // gold, $/oz (spot, no history)

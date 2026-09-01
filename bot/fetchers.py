@@ -172,15 +172,44 @@ def _calc_pct(current: float, base: float) -> float:
     return ((current - base) / base) * 100
 
 
+FRED_TIMEOUT_SECONDS = 8
+
+
+def _fetch_fredgraph_csv(series_id: str, limit: int) -> list:
+    """FRED's keyless chart-download host (fred.stlouisfed.org/graph/fredgraph.csv).
+    Same data as the API, different host; on 2026-09-01 it answered in 0.3 s while the
+    API host took 1-7 s and read-timed-out. Newest first, like the API call."""
+    r = requests.get(f'https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}',
+                     timeout=FRED_TIMEOUT_SECONDS, headers=_HEADERS)
+    r.raise_for_status()
+    rows = []
+    for line in r.text.strip().split('\n')[1:]:
+        parts = line.split(',')
+        if len(parts) < 2 or parts[1].strip() in ('', '.'):
+            continue
+        try:
+            rows.append({'date': parts[0].strip(), 'value': float(parts[1])})
+        except ValueError:
+            continue
+    rows.reverse()
+    return rows[:limit]
+
+
 def _fetch_fred_series(series_id: str, api_key: str, limit: int = 35) -> list:
+    """Newest-first observations. API host first; on any failure (timeout, 5xx,
+    rate-limit) fall back to the keyless fredgraph.csv host."""
     url = (f'https://api.stlouisfed.org/fred/series/observations'
            f'?series_id={series_id}&api_key={api_key}'
            f'&file_type=json&sort_order=desc&limit={limit}')
-    r = requests.get(url, timeout=15, headers=_HEADERS)
-    r.raise_for_status()
-    data = r.json()
-    return [{'date': o['date'], 'value': float(o['value'])}
-            for o in data.get('observations', []) if o['value'] != '.']
+    try:
+        r = requests.get(url, timeout=FRED_TIMEOUT_SECONDS, headers=_HEADERS)
+        r.raise_for_status()
+        data = r.json()
+        return [{'date': o['date'], 'value': float(o['value'])}
+                for o in data.get('observations', []) if o['value'] != '.']
+    except Exception as e:
+        print(f'[FRED] {series_id} API failed ({e.__class__.__name__}); trying fredgraph.csv')
+        return _fetch_fredgraph_csv(series_id, limit)
 
 
 def _standardize_fred(data: list, multiplier: float = 1.0) -> Optional[Dict[str, Any]]:
@@ -780,7 +809,8 @@ def fetch_market_extra(fred_api_key: str,
     Layer 3: CNBC (keyless; live quote + 1Y daily bars for gold, WTI, USD/CAD, USD/INR,
              BTC). Added 2026-09-01 because yfinance is Yahoo-rate-limited for hours at a
              time and Polygon 429s on the free tier, leaving only spot-only fallbacks.
-    Layer 4: FRED (FX, Oil, Gold London PM fix, rates, real-estate, all with history)
+    Layer 4: FRED (FX, Oil, rates, real-estate, all with history; API host with a
+             keyless fredgraph.csv fallback per series)
              + Frankfurter time-series (FX with history) + Coinbase candles (BTC history)
     Layer 5: spot last resorts: Finnhub BINANCE:BTCUSDT (its OANDA:* forex/commodity
              symbols are paid-tier, 403 forever, not requested), USD spot chain
@@ -806,7 +836,10 @@ def fetch_market_extra(fred_api_key: str,
 
     late_messages: List[str] = []  # surfaced in _meta.messages (deadline skips, Polygon 429)
 
-    # 1. FRED -- 3 per batch with 300 ms gap to avoid 429
+    # 1. FRED -- 3 series in flight at a time (was strictly serial: 9 x up to 15 s
+    #    blew the deadline on a slow-FRED hour and took 10Y/2Y/mortgage, which only
+    #    FRED serves, down with it). Each series also falls back to fredgraph.csv.
+    #    (GOLDPMGBD228NLBM used to be here; FRED discontinued the LBMA gold fix.)
     def fred_chain() -> List[Any]:
         fred_spec = [
             ('MORTGAGE30US', 30),    # 0 - 30Y mortgage rate
@@ -818,20 +851,18 @@ def fetch_market_extra(fred_api_key: str,
             ('DEXCAUS', 35),         # 6 - USD/CAD
             ('DEXINUS', 35),         # 7 - USD/INR
             ('ATNHPIUS39300Q', 35),  # 8 - All-Trans House Price Index
-            ('GOLDPMGBD228NLBM', 35),  # 9 - Gold, London PM fix (USD/oz)
         ]
-        raw: List[Any] = []
-        for i in range(0, len(fred_spec), 3):
-            for j in range(i, min(i + 3, len(fred_spec))):
-                series_id, limit = fred_spec[j]
-                try:
-                    raw.append(_fetch_fred_series(series_id, fred_api_key, limit))
-                except Exception as e:
-                    print(f'[FRED] {series_id} failed: {e}')
-                    raw.append([])
-            if i + 3 < len(fred_spec):
-                time.sleep(0.3)
-        return raw
+
+        def one(spec: Any) -> list:
+            series_id, limit = spec
+            try:
+                return _fetch_fred_series(series_id, fred_api_key, limit)
+            except Exception as e:
+                print(f'[FRED] {series_id} failed: {e}')
+                return []
+
+        with ThreadPoolExecutor(max_workers=3, thread_name_prefix='fred') as fred_pool:
+            return list(fred_pool.map(one, fred_spec))
 
     # 2. ExchangeRate-API (free, no key) for BDT pairs and DXY
     def er_chain() -> Optional[dict]:
@@ -964,7 +995,7 @@ def fetch_market_extra(fred_api_key: str,
     pool.shutdown(wait=False, cancel_futures=True)
 
     fred_raw: List[Any] = list(results['FRED'] or [])
-    while len(fred_raw) < 10:
+    while len(fred_raw) < 9:
         fred_raw.append([])
     mortgage_data = fred_raw[0]
     rent_data     = fred_raw[1]
@@ -975,7 +1006,6 @@ def fetch_market_extra(fred_api_key: str,
     cad_data      = fred_raw[6]
     inr_data      = fred_raw[7]
     atnhpi_data   = fred_raw[8]
-    gold_fix_data = fred_raw[9]
 
     er_rates: Optional[dict] = results['ER-API']
 
@@ -1031,7 +1061,6 @@ def fetch_market_extra(fred_api_key: str,
     mort_std = _standardize_fred(mortgage_data)
     rent_std = _standardize_fred(rent_data, multiplier=4.41)
     atnhpi_std = _standardize_fred(atnhpi_data)
-    gold_fred = _standardize_fred(gold_fix_data)
 
     # 9. Build final values: yfinance → Polygon → Finnhub → FRED/ER-API → keyless spot
     source_log: Dict[str, str] = {}
@@ -1046,7 +1075,7 @@ def fetch_market_extra(fred_api_key: str,
             id(fh_btc): 'Finnhub',
             id(cnbc_usdcad): 'CNBC', id(cnbc_usdinr): 'CNBC', id(cnbc_gold): 'CNBC',
             id(cnbc_oil): 'CNBC', id(cnbc_btc): 'CNBC',
-            id(usdcad_fred): 'FRED', id(usdinr_fred): 'FRED', id(gold_fred): 'FRED',
+            id(usdcad_fred): 'FRED', id(usdinr_fred): 'FRED',
             id(cl_fred): 'FRED', id(tnx_fred): 'FRED', id(t2y_fred): 'FRED',
             id(fr_usdcad): 'Frankfurter', id(fr_usdinr): 'Frankfurter',
             id(gold_spot): 'gold-api', id(btc_candles): 'Coinbase', id(btc_coinbase): 'Coinbase',
@@ -1130,10 +1159,8 @@ def fetch_market_extra(fred_api_key: str,
     # BTC: yfinance → Polygon → CNBC → Coinbase candles → Finnhub spot → Coinbase spot
     btc = _resolve('btc', yf_btc, poly_btc, cnbc_btc, btc_candles, fh_btc, btc_coinbase)
 
-    # Gold: yfinance → Polygon → CNBC @GC.1 → FRED London PM fix (stale-check) → gold-api spot
-    gold = _resolve('gold', yf_gold, poly_gold, cnbc_gold,
-                    gold_fred if (gold_fred and not _is_stale(gold_fred)) else None,
-                    gold_spot)
+    # Gold: yfinance → Polygon → CNBC @GC.1 → gold-api spot
+    gold = _resolve('gold', yf_gold, poly_gold, cnbc_gold, gold_spot)
 
     tnx = _resolve('tnx', tnx_fred)
     t2y = _resolve('t2y', t2y_fred)

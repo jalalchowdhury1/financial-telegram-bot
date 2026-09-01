@@ -1,4 +1,4 @@
-import { polygonDaily, erApiRates, frankfurterRates, fawazRates, dxyFromUsdRates, coinbaseSpot, coingeckoPrice, krakenSpot, fredObservations, dailyChange } from '../../../lib/sources';
+import { polygonDaily, erApiRates, frankfurterRates, fawazRates, dxyFromUsdRates, coinbaseSpot, coingeckoPrice, krakenSpot, fredObservations, dailyChange, goldApiSpot } from '../../../lib/sources';
 import { serve } from '../../../lib/store';
 import { faultsFrom } from '../../../lib/faults';
 
@@ -36,7 +36,7 @@ async function directMetric(path, apiKey, poly, er, faults = new Set()) {
         case 'fx.usdinr': { if (poly) { const p = await safe(polyMetric('C:USDINR', poly)); if (p) return { metric: p, src: 'Polygon' }; } return er?.INR != null ? { metric: flat(er.INR), src: 'ER-API' } : null; }
         case 'fx.usdbdt': return er?.BDT != null ? { metric: flat(er.BDT), src: 'ER-API' } : null;
         case 'fx.dxy': { const d = dxyFromUsdRates(er); return d != null ? { metric: flat(d), src: 'computed (ER-API)' } : null; }
-        case 'commodities.gc': { const p = poly && await safe(polyMetric('C:XAUUSD', poly)); if (p) return { metric: p, src: 'Polygon' }; const f = await safe(() => fredMetric('GOLDPMGBD228NLBM', apiKey)); return f ? { metric: f, src: 'FRED (London fix)' } : null; }
+        case 'commodities.gc': { const p = poly && await safe(polyMetric('C:XAUUSD', poly)); if (p) return { metric: p, src: 'Polygon' }; const g = await safe(() => goldApiSpot('XAU')); return g ? { metric: flat(g.current), src: 'gold-api' } : null; }  // FRED's GOLDPMGBD228NLBM is discontinued
         case 'commodities.cl': { const f = await safe(() => fredMetric('DCOILWTICO', apiKey)); return f ? { metric: f, src: 'FRED' } : null; }
         case 'commodities.btc': {
             const p = poly && await safe(polyMetric('X:BTCUSD', poly)); if (p) return { metric: p, src: 'Polygon' };
