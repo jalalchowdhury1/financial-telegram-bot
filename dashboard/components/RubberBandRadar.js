@@ -136,7 +136,7 @@ function Legs({ m }) {
             ))}
             {m.lag_pair && (
                 <span style={{ gridColumn: '1 / -1', color: 'var(--text-muted)', fontSize: '0.68rem' }}>
-                    {m.lag_pair[0]} lagging {m.lag_pair[1]}: {m.lag_months ?? '—'} month{m.lag_months === 1 ? '' : 's'} running (exit rule at 2). Backtest curves, not account values.
+                    {m.lag_pair[0]} lagging {m.lag_pair[1]}: {m.lag_months ?? '—'} month{m.lag_months === 1 ? '' : 's'} running (exit rule at 2).
                 </span>
             )}
         </div>
@@ -205,9 +205,8 @@ export default function RubberBandRadar() {
                             <BandChart history={data.history} />
                         </div>
                         <Legs m={data.dials.machines} />
-                        <div style={{ color: 'var(--text-muted)', fontSize: '0.65rem', marginTop: 10, opacity: 0.8, lineHeight: 1.5 }}>
-                            <b>How to read it:</b> the machine buys oversold dips and sells overbought rips — a rubber band. Green = the band still snaps back (the last 30 dips beat an ordinary day). The slow dial only says STOP after 60 straight losing days, which last happened in 1991; the fast dial is an early LOOK and has been wrong 12 of 12 times since 1993. Blind spot: a slow grinding bear (2001, 2008) keeps the dials green — the machine-health lines are the backstop there.
-                            {' '}As of {data.asOf}{stale ? ` · STALE (${data._meta?.ageDays} days old — nightly run missed)` : ''} · QQQ adjusted closes (bit-for-bit the machine's own data since 2010).
+                        <div style={{ color: 'var(--text-muted)', fontSize: '0.65rem', marginTop: 10, opacity: 0.8 }}>
+                            As of {data.asOf} · QQQ Wilder RSI-10 (dips &lt;32, rips &gt;79){stale ? ` · STALE (${data._meta?.ageDays}d old)` : ''}
                         </div>
                     </>
                 )}
