@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Installed copy lives at ~/Library/LaunchAgents/com.jalal.rubber-band.plist on the Mac mini
+     with RUBBER_BAND_ALERT_CHAT filled in. StartCalendarInterval ONLY (never StartInterval —
+     it silently pends on this machine). Weekdays 18:30 local = after the close + Composer's
+     end-of-day backtest data. -->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.jalal.rubber-band</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/jalalchowdhury/PycharmProjects/financial-telegram-bot/scripts/rubber_band_nightly.sh</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/jalalchowdhury/PycharmProjects/financial-telegram-bot</string>
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>18</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>18</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>18</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>18</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>18</integer><key>Minute</key><integer>30</integer></dict>
+    </array>
+    <key>StandardOutPath</key>
+    <string>/Users/jalalchowdhury/Library/Logs/rubber-band.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/jalalchowdhury/Library/Logs/rubber-band.log</string>
+    <key>RunAtLoad</key>
+    <false/>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>/Users/jalalchowdhury</string>
+        <key>USER</key>
+        <string>jalalchowdhury</string>
+        <key>PATH</key>
+        <string>/Users/jalalchowdhury/.local/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+        <key>RUBBER_BAND_ALERT_CHAT</key>
+        <string>FILL_IN_ON_THE_MAC_MINI</string>
+    </dict>
+</dict>
+</plist>

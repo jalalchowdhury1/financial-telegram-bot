@@ -535,3 +535,29 @@ def test_top_level_cards_are_skipped_when_absent_or_malformed():
     """A payload predating these fields (deploy lag) must not manufacture N/A warnings."""
     f = hc.check_indicators_na(hc.fred_metrics_for_na_check({"yieldCurve": "nope"}))
     assert f["severity"] == "ok", f
+
+
+# --- Rubber Band Radar ---------------------------------------------------------
+def test_rubber_band_endpoint_is_swept():
+    assert "rubber-band" in hc.ENDPOINTS
+
+
+def test_check_rubber_band_fresh_is_ok():
+    p = {"asOf": "2026-09-01", "dials": {"slow": {"colour": "green"}}, "verdict": {"colour": "green"},
+         "_meta": {"stale": False, "ageDays": 1}}
+    f = hc.check_rubber_band(p)
+    assert f["severity"] == "ok"
+
+
+def test_check_rubber_band_stale_is_warn_with_age():
+    p = {"asOf": "2026-08-25", "dials": {"slow": {"colour": "green"}}, "verdict": {"colour": "green"},
+         "_meta": {"stale": True, "ageDays": 8, "messages": ["snapshot is 8 days old"]}}
+    f = hc.check_rubber_band(p)
+    assert f["severity"] == "warn" and "8" in f["title"] + f["detail"]
+    assert "launchctl" in f["detail"] or "Mac mini" in f["detail"]
+
+
+def test_check_rubber_band_missing_dials_is_critical():
+    f = hc.check_rubber_band({"asOf": None, "dials": None, "verdict": None, "_meta": {"source": "Unavailable"}})
+    assert f["severity"] == "critical"
+    assert hc.check_rubber_band(None)["severity"] == "critical"

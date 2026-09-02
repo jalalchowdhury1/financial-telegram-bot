@@ -26,7 +26,7 @@ VERCEL_BASE = os.environ.get("DASHBOARD_BASE_URL", "https://financial-telegram-b
 # GET-able dashboard data endpoints. NOTE: /api/assessment is POST-only (needs a request
 # body), so it's excluded from this GET sweep — probing it properly is a Phase 2 candidate.
 ENDPOINTS = ["spy", "spy-daily-move", "market-extra", "polymarket", "fred",
-             "sheets", "fear-greed", "vol"]
+             "sheets", "fear-greed", "vol", "rubber-band"]
 REQUIRED_CONFIG_URL_KEYS = ["SPY_DAILY_MOVE", "SPY_INDICATORS"]
 NAN_RE = re.compile(r"\bNaN\b|\bInfinity\b|\b-Infinity\b")
 SEVERITY_ORDER = {"ok": 0, "warn": 1, "critical": 2}
@@ -59,6 +59,29 @@ def check_endpoint(name, status_code, body_text):
                         detail="; ".join(meta.get("messages", []))[:300] or "running on fallback / source unavailable",
                         remediation="manual", evidence={"_meta": meta})
     return _finding(fid, "ok", f"/api/{name} healthy")
+
+
+def check_rubber_band(payload):
+    """The Rubber Band Radar snapshot is produced OFF-platform (a launchd job on the Mac
+    mini, scripts/rubber_band.py) and relayed by /api/rubber-band. So "degraded" here
+    almost always means the nightly job did not run — a fix nobody on Vercel can make.
+    Stale = warn with the age; no dials at all (the route's last-resort fallback) = critical."""
+    fid = "rubber_band_snapshot"
+    if not isinstance(payload, dict) or not isinstance(payload.get("dials"), dict) \
+            or not isinstance(payload.get("verdict"), dict):
+        return _finding(fid, "critical", "/api/rubber-band has no snapshot",
+                        detail="Neither the gist nor a last-known-good copy could be served. "
+                               "On the Mac mini: `~/PycharmProjects/financial-telegram-bot/.venv/bin/python "
+                               "scripts/rubber_band.py run` then check ~/.config/rubber-band/state.json.",
+                        remediation="manual", evidence={"_meta": (payload or {}).get("_meta") if isinstance(payload, dict) else None})
+    meta = payload.get("_meta") or {}
+    if meta.get("stale"):
+        age = meta.get("ageDays")
+        return _finding(fid, "warn", f"rubber band snapshot stale ({age} days old, as of {payload.get('asOf')})",
+                        detail="The nightly Mac mini run has not published. Check `launchctl list | grep rubber-band` "
+                               "and ~/Library/Logs/rubber-band.log on the Mac mini; rerun scripts/rubber_band.py run.",
+                        remediation="manual", evidence={"asOf": payload.get("asOf"), "ageDays": age})
+    return _finding(fid, "ok", f"rubber band snapshot fresh (as of {payload.get('asOf')}, verdict {payload['verdict'].get('colour')})")
 
 
 # Indicators that are N/A ON PURPOSE — their upstream series is dead/frozen, so they are
@@ -520,6 +543,10 @@ def run_all_checks(generated_at):
             # peRatio is top-level, so it is NOT in the sweep above — check it here or a
             # CAPE-for-TTM substitution stays invisible (see check_pe_source).
             findings.append(check_pe_source(fred))
+        # /api/rubber-band is produced off-platform (Mac mini launchd job) — a stale
+        # snapshot means that job missed, which nothing on Vercel can fix.
+        if name == "rubber-band" and status == 200:
+            findings.append(check_rubber_band(route_payloads.get(name)))
 
     # The four Lambda-primary routes all degrade SILENTLY to direct sources, so the
     # only way to see the Lambda's HTTP path die is to read which source won.

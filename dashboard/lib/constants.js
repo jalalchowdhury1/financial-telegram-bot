@@ -90,6 +90,9 @@ export const EXTERNAL_URLS = {
     // the datahub mirror of Shiller's data ships a matching 'Real Earnings' column.
     MULTPL_EPS: 'https://www.multpl.com/s-p-500-earnings/table/by-month',
     DATAHUB_SHILLER: 'https://raw.githubusercontent.com/datasets/s-and-p-500/main/data/data.csv',
+    // Rubber Band Radar snapshot: computed nightly on the Mac mini (scripts/rubber_band.py),
+    // published to a secret gist so the dashboard never needs yfinance or Composer creds.
+    RUBBER_BAND_GIST: 'https://gist.githubusercontent.com/jalalchowdhury1/9dfca7e5fe9617b7bb1b85ec4e70413c/raw/rubber-band.json',
     YAHOO_PE: 'https://finance.yahoo.com/quote/SPY/key-statistics',
     CNN_FEAR_GREED: 'https://production.dataviz.cnn.io/index/fearandgreed/graphdata',
     RAPIDAPI_FEAR_GREED: 'https://fear-and-greed-index.p.rapidapi.com/v1/fgi',

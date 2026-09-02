@@ -352,6 +352,20 @@ so `isGood` rejects an empty digest rather than letting it claim "nothing change
   `/api/spy` returns `hasErrors:false` on a *full validated build* — a degraded source is
   conveyed by the source label only; hard-coding `hasErrors:true` once made SPY perpetually red.)
 
+### 🪢 Rubber Band Radar (`/api/rubber-band` + `RubberBandRadar.js` + `scripts/rubber_band.py`)
+- Five daily regime dials ("is dip-buying still paying?"). **The maths runs OFF-platform**: a
+  launchd job on the owner's Mac mini (`scripts/rubber_band_nightly.sh`, weekdays 18:30 ET)
+  computes the snapshot from yfinance QQQ closes + Composer backtest curves and publishes it
+  to a secret gist (`EXTERNAL_URLS.RUBBER_BAND_GIST`). Vercel only relays it; the Lambda is
+  not involved. Research record + every threshold: `docs/rubber-band.md`. Do not change a
+  threshold without re-running the record.
+- The route is never-throw via `serve()`; a snapshot older than 4 days is served with
+  `_meta.stale` (a missed nightly run — nothing on Vercel can fix that). Health check:
+  `check_rubber_band`. The Telegram brief carries one optional 🪢 line
+  (`fetch_rubber_band_line`) that must never fail the brief.
+- Alerts (colour change or failed run) go to the owner's alert thread from the Mac mini,
+  chat id via the launchd env — never in the repo.
+
 ### FRED route specifics (`/api/fred`) — subtle, don't regress
 - The route uses `export const fetchCache = 'default-cache'` and stays dynamic by reading
   the request, so Next's Data Cache via per-fetch `revalidate` works (don't switch it to
@@ -812,6 +826,8 @@ so `isGood` rejects an empty digest rather than letting it claim "nothing change
   proof-of-work wall), and
   `fetch_polymarket_trending` (the curated sentiment board), and `calculate_rsi` (Wilder RSI
   used by the SPY waterfall).
+- `scripts/rubber_band.py` — Rubber Band Radar engine (pure maths + Mac mini nightly I/O; see
+  §3 and `docs/rubber-band.md`). `scripts/rubber_band_nightly.sh` — its launchd wrapper.
 - `bot/config.py` — `URLS` (Google-Sheet/data source URLs, mirror `dashboard/lib/constants.js`)
   + `FRED_SERIES` IDs + `TIMEZONE`/`REPORT_TIME` (for the `bot/main.py` scheduler).
 - `bot/utils.py` — env loading (`load_environment_variables`, requires

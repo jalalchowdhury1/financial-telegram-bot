@@ -15,6 +15,7 @@ import BullChecklist from '../components/BullChecklist';
 import ExtraMarketsGrid from '../components/ExtraMarketsGrid';
 import PolymarketTable from '../components/PolymarketTable';
 import VolMetricsTable from '../components/VolMetricsTable';
+import RubberBandRadar from '../components/RubberBandRadar';
 import Delta from '../components/Delta';
 import MarkChip from '../components/MarkChip';
 import { MarkProvider, useMark, collectLiveValues } from '../components/MarkProvider';
@@ -445,6 +446,9 @@ export default function Dashboard() {
 
                 {/* FOUR HORSEMEN — RECESSION WATCH (full width) */}
                 <FourHorsemen fred={fred} loading={loading} />
+
+                {/* RUBBER BAND RADAR — is the dip-buying regime alive? (full width, nightly from the Mac mini) */}
+                <RubberBandRadar />
 
                 {/* SPY HISTORICAL CHART */}
                 <div className="card" style={{ animationDelay: '0.55s' }}>
