@@ -87,6 +87,9 @@ def fetch_google_sheet_indicators() -> str:
         #    fear/greed tag), sheet as graceful fallback. See fetch_vix_row.
         vix_current, vix_3m, fear_greed_status = fetch_vix_row()
 
+        # 5. Rubber Band Radar — optional, never fails the brief (empty on any problem).
+        rubber_band_line = fetch_rubber_band_line()
+
         # Helper to strip trailing non-text/non-special characters (like the weird numbers in the screenshot)
         import re
         def clean_val(v):
@@ -110,6 +113,7 @@ def fetch_google_sheet_indicators() -> str:
             # strip off FrontRunner's "BIL (T-Bill ETF)1". It arrives already
             # clean from /api/sheets (and from C2 on the fallback path).
             f"🎢 VIX: (Current | 3M) : {clean_val(vix_current)} | {clean_val(vix_3m)} | {fear_greed_status}\n"
+            + (f"\n{rubber_band_line}\n" if rubber_band_line else "") +
             f"\n[Financial Dashboard History](https://docs.google.com/spreadsheets/d/1lA-_yjLMc3qDTt9sogSPQrCohNULIk5wwJYfb5wIHfc/edit?gid=0#gid=0)"
         )
         print("✓ Successfully fetched and parsed Google Sheet indicators")
@@ -118,6 +122,39 @@ def fetch_google_sheet_indicators() -> str:
     except Exception as e:
         print(f"WARNING: Failed to fetch Google Sheet indicators: {e}")
         return ""
+
+_RB_EMOJI = {"green": "🟢", "amber": "🟡", "red": "🔴", "grey": "⚪"}
+
+
+def fetch_rubber_band_line() -> str:
+    """
+    One line for the brief from the dashboard's /api/rubber-band: five coloured dots
+    (dip-slow, dip-fast, evidence-age, rip, machines) + the plain-English verdict.
+    Returns "" on ANY problem — the brief must never depend on this line.
+    """
+    try:
+        r = requests.get(URLS['DASHBOARD_RUBBER_BAND'], timeout=10)
+        r.raise_for_status()
+        j = r.json()
+        dials = j.get('dials') if isinstance(j, dict) else None
+        verdict = j.get('verdict') if isinstance(j, dict) else None
+        if not isinstance(dials, dict) or not isinstance(verdict, dict):
+            return ""
+        keys = ('slow', 'fast', 'age', 'rip', 'machines')
+        if any(not isinstance(dials.get(k), dict) or dials[k].get('colour') not in _RB_EMOJI for k in keys):
+            return ""
+        dots = "".join(_RB_EMOJI[dials[k]['colour']] for k in keys)
+        text = str(verdict.get('text') or '').strip()
+        meta = j.get('_meta') or {}
+        stale = ""
+        if meta.get('stale'):
+            age = meta.get('ageDays')
+            stale = f" ⚠️ STALE ({age} days old)" if age is not None else " ⚠️ STALE"
+        return f"🪢 Rubber band {dots}{stale} — {text} (as of {j.get('asOf')})"
+    except Exception as e:
+        print(f"WARNING: rubber band line skipped: {e}")
+        return ""
+
 
 def calculate_rsi(prices: Any, period: int = RSI_PERIOD) -> float:
     """

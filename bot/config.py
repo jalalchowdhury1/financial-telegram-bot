@@ -39,6 +39,9 @@ URLS = {
     # the now-retired vix-fear-greed repo used to write. 'VIX' above stays as the
     # graceful fallback for a dashboard outage.
     'DASHBOARD_SHEETS': "https://financial-telegram-bot-beryl.vercel.app/api/sheets",
+    # Rubber Band Radar: five regime dials computed nightly on the Mac mini and
+    # relayed by the dashboard. One optional line in the brief; never fails it.
+    'DASHBOARD_RUBBER_BAND': "https://financial-telegram-bot-beryl.vercel.app/api/rubber-band",
     # SPY data-tier sources used by bot/fetchers.py (fetch_spy_with_fallback /
     # fetch_spy_daily_move). Previously missing → those tiers KeyError'd and were dead
     # (AGENTS.md §4). URLs mirror dashboard/lib/constants.js so bot + dashboard agree.
