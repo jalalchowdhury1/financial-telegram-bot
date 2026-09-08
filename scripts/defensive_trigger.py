@@ -23,6 +23,7 @@ CLI:
   defensive_trigger.py nag [--dry]                       hourly: pick DONE up from the 📡 thread, remind
   defensive_trigger.py ack                               Jalal said DONE through the concierge
   defensive_trigger.py set INVESTED|DEFENSIVE            manual correction (no message)
+  defensive_trigger.py steps                             preview today's GO DEFENSIVE / RE-ENTER steps (no send)
   defensive_trigger.py status
 """
 import json
@@ -34,6 +35,9 @@ import sys
 import urllib.parse
 import urllib.request
 from datetime import date, datetime, timedelta, timezone
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import tranche_state as tranche                      # noqa: E402 — the Tranche Map's tick boxes + INSTRUMENTS.json
 
 STATE_DIR = os.path.expanduser(os.environ.get("RUBBER_BAND_STATE_DIR", "~/.config/rubber-band"))
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -124,17 +128,54 @@ def _book(snap):
     return ((snap.get("spec") or {}).get("machines") or {}).get("book") or {"C3": 0.68, "m1": 0.20, "hedges": 0.12}
 
 
-def steps_defensive(snap):
+def default_ctx(mode):
+    """What the Tranche Map says today: funded symphonies + collision notes for `mode`. Empty when the files are absent."""
+    return tranche.tranche_context(mode)
+
+
+_LOGIN = {"jalal": "Your Composer login", "nabila": "Nabila's Composer login"}
+
+
+def _by_login(funded):
+    for login in ("jalal", "nabila"):
+        mine = [f for f in funded if f["login"] == login]
+        if mine:
+            yield _LOGIN.get(login, f"{login}'s Composer login"), mine
+
+
+def steps_defensive(snap, ctx=None):
+    """Names the symphonies that hold money TODAY (Tranche Map ticks), grouped by whose Composer login."""
+    funded = (ctx or {}).get("funded") or []
+    if funded:
+        lines, n = [], 0
+        for heading, mine in _by_login(funded):
+            lines.append(f"<i>{heading}</i>")
+            for f in mine:
+                n += 1
+                lines.append(f"{n}. Composer → <b>{f['name']}</b> ({f['account']}) → Withdraw → <b>50%</b> of its value → confirm")
+        return "\n".join(lines) + "\nCash stays parked in Composer. Fills at the next close (~3:50pm ET)."
     lines = [f"{i}. Composer → <b>{name}</b> → Withdraw → <b>50%</b> of its value → confirm"
              for i, name in enumerate(_book(snap), 1)]
-    return "\n".join(lines) + "\nCash stays parked in Composer. Fills at the next close (~3:50pm ET)."
+    return ("\n".join(lines) + "\nCash stays parked in Composer. Fills at the next close (~3:50pm ET)."
+            "\n⚠️ Instrument list unavailable — these are the radar's look-through names. Use the symphonies that "
+            "actually hold money (TRANCHE-EXECUTION.md / INSTRUMENTS.json).")
 
 
-def steps_reentry(snap):
+def steps_reentry(snap, ctx=None):
+    funded = (ctx or {}).get("funded") or []
+    if funded:
+        parts = [f"{heading}: " + ", ".join(f"<b>{f['name']}</b>" for f in mine) for heading, mine in _by_login(funded)]
+        return ("Composer → each of these → Invest the parked half back (same login you parked it from):\n"
+                + "\n".join(f"• {p}" for p in parts))
     book = _book(snap)
     w = " / ".join(f"{int(round(v * 100))}" for v in book.values())
     names = " / ".join(book)
     return f"Composer → each algo → Invest the parked cash back so the book is {w} ({names}) again."
+
+
+def _notes(ctx):
+    notes = (ctx or {}).get("notes") or []
+    return ("\n\n" + "\n".join(f"⚠️ {n}" for n in notes)) if notes else ""
 
 
 def fire_reasons(st, snap):
@@ -151,18 +192,18 @@ def fire_reasons(st, snap):
     return out
 
 
-def msg_fire(snap, reasons):
+def msg_fire(snap, reasons, ctx=None):
     why = "\n".join(f"• {r}" for r in reasons)
     return (f"🛑 <b>GO DEFENSIVE — move 50% of the book to cash</b>\n"
             f"Radar as of {snap['asOf']}:\n{why}\n\n"
-            f"Do this now — 2 minutes, every algo stays on:\n{steps_defensive(snap)}\n\n"
+            f"Do this now — 2 minutes, every algo stays on:\n{steps_defensive(snap, ctx)}{_notes(ctx)}\n\n"
             f"Reply <b>DONE</b> here when it's in. I'll remind you every hour until then.")
 
 
-def msg_reenter(snap, edge):
+def msg_reenter(snap, edge, ctx=None):
     return (f"🟢 <b>RE-ENTER — put the parked cash back</b>\n"
             f"Radar green {REENTRY_CLOSES} closes running; dip edge {edge:+.2f}% (as of {snap['asOf']}).\n"
-            f"{steps_reentry(snap)}\n\nReply <b>DONE</b> here when it's in.")
+            f"{steps_reentry(snap, ctx)}{_notes(ctx)}\n\nReply <b>DONE</b> here when it's in.")
 
 
 def msg_stand_down(snap):
@@ -204,9 +245,11 @@ def dial_colours(snap):
     return {k: snap["dials"][k]["colour"] for k in ("slow", "fast", "age", "rip", "machines")}
 
 
-def evaluate(snap, st, send=send_telegram, now=None, log=print):
-    """One new close in, at most one transition + one message out."""
+def evaluate(snap, st, send=send_telegram, now=None, log=print, ctx=None):
+    """One new close in, at most one transition + one message out.
+    `ctx`: callable(mode) → Tranche Map context (tests inject it); the default reads the files on this machine."""
     now = now or datetime.now(timezone.utc)
+    ctx_for = ctx if callable(ctx) else ((lambda mode: ctx) if ctx is not None else default_ctx)
     asof = snap["asOf"]
     if asof == st.get("last_asof"):
         log(f"  no new close (asOf {asof}) — nothing counted")
@@ -233,11 +276,13 @@ def evaluate(snap, st, send=send_telegram, now=None, log=print):
 
     m = st["mode"]
     if m == "INVESTED" and fire:
-        go("PENDING_DEFENSIVE", msg_fire(snap, reasons), reasons[0][:90], steps_defensive(snap))
+        c = ctx_for("PENDING_DEFENSIVE")
+        go("PENDING_DEFENSIVE", msg_fire(snap, reasons, c), reasons[0][:90], steps_defensive(snap, c))
     elif m == "PENDING_DEFENSIVE" and not fire:
         go("INVESTED", msg_stand_down(snap), "alarm cleared before action")
     elif m == "DEFENSIVE" and st["green_streak"] >= REENTRY_CLOSES:
-        go("PENDING_REENTRY", msg_reenter(snap, edge), f"{REENTRY_CLOSES} green closes, edge {edge:+.2f}%", steps_reentry(snap))
+        c = ctx_for("PENDING_REENTRY")
+        go("PENDING_REENTRY", msg_reenter(snap, edge, c), f"{REENTRY_CLOSES} green closes, edge {edge:+.2f}%", steps_reentry(snap, c))
     elif m == "PENDING_REENTRY" and not green_ok:
         go("DEFENSIVE", msg_hold(snap), "green streak broke before re-entry")
     else:
@@ -374,6 +419,14 @@ def main(argv):
         st.update(mode=mode, pending=None)
         _record(st, now, st.get("last_asof"), mode, "set by hand")
         print(f"  mode set to {mode}")
+    elif cmd == "steps":
+        path = args[args.index("--snapshot") + 1] if "--snapshot" in args else _path("rubber-band.json")
+        snap = json.load(open(path)) if os.path.exists(path) else {"spec": {}}
+        for mode, fn in (("PENDING_DEFENSIVE", steps_defensive), ("PENDING_REENTRY", steps_reentry)):
+            c = default_ctx(mode)
+            ticked = ", ".join(k for k, v in c["ticks"].items() if v) or "none"
+            print(f"--- {mode} (instrument list {'loaded' if c['loaded'] else 'MISSING'}; ticked: {ticked})\n{fn(snap, c)}{_notes(c)}\n")
+        return 0
     elif cmd == "status":
         print(json.dumps({k: st.get(k) for k in ("mode", "last_asof", "streak", "green_streak", "pending",
                                                   "defensive_since", "invested_since")}, indent=1))
