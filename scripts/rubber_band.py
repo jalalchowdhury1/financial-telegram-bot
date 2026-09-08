@@ -10,15 +10,17 @@ live in the bottom half behind injectable functions.
 
 The five dials (every threshold below was tested on QQQ 1971→, see docs/rubber-band.md):
   1 slow   — last 30 oversold dips (Wilder RSI-10 < 32 ≈ the machine's TQQQ<31 trigger):
-             next-day return minus the market's own drift over the same span. Below zero for
-             60 straight days = STOP (fired 15× 1972-91, never since 1993).
+             next-day return minus the market's own drift over the same span. Below zero on
+             45 of the last 60 days = STOP (1971→ test: fires Jan 1972, covers 88% of 1972-91
+             in 8 episodes, never since 1993; "60 straight days" covered 71% in 15 episodes).
   2 fast   — same maths, last 20 dips. LOOK only: leads the slow line by months in a real
              flip, but every alarm since 1993 was false.
   3 age    — how many years the 30 dips span (fresh evidence < 3.3y, stale > 4y).
   4 rip    — last 30 overbought days (RSI-10 > 79 = the machine's sell trigger): if the
-             market keeps rising after a rip for 60 straight days, the 1970s are back.
-  5 machines — each leg's backtest drawdown vs the written tripwire lines, months underwater,
-             m1-vs-C3 lag.
+             market keeps rising after rips on 45 of the last 60 days, the 1970s are back.
+  5 machines — is any leg doing something it has NEVER done: deeper than its own worst completed
+             drawdown, underwater longer than ever, through a written line, or the hedge sleeve
+             falling with the book. (m1-vs-C3 lag is shown, never judged — since 2026-09-08.)
 
 CLI:
     python scripts/rubber_band.py run [--out FILE] [--no-publish] [--no-alert]
@@ -38,13 +40,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # --- The spec: every number here is a tested, written-down decision -----------------
 SPEC = {
-    "version": "1.0",
+    "version": "1.1",        # 2026-09-08: 45-of-60 STOP, self-referential machine records, lag rule retired
     "ticker": "QQQ",
     "rsi_window": 10,
-    "dip": {"rsi_below": 32, "slow_n": 30, "fast_n": 20, "hold_days": 1, "stop_after_red_days": 60},
+    "dip": {"rsi_below": 32, "slow_n": 30, "fast_n": 20, "hold_days": 1, "stop_of": 45, "stop_window": 60},
     "crosscheck": {"dd_days": 10, "dd_below": -0.06, "n": 30},
     "age": {"amber_years": 3.3, "red_years": 4.0},          # p75 / p90 of the span since 1993
-    "rip": {"rsi_above": 79, "n": 30, "red_after_hot_days": 60},
+    "rip": {"rsi_above": 79, "n": 30, "hot_of": 45, "hot_window": 60},
     "machines": {
         # written lines from the money-radar plan §3.2; None = no line written for that leg
         "legs": [
@@ -52,11 +54,19 @@ SPEC = {
             {"name": "C3",   "id": "oJF4TTzhjbS8YrfOEqvK", "line_pct": -54},
             {"name": "m1",   "id": "oYAwQVVRyUFHln4sWbFV", "line_pct": None},
             {"name": "C8-T", "id": "LyRMxIoIqQ4X1ywtf1az", "line_pct": -31},
+            {"name": "hedges", "id": "TOnRRwxkXtdL0S3yXpNm", "line_pct": None, "role": "hedge"},   # GLD/BTAL 50/50 mirror of the C6/C8 sleeve, created 2026-09-08, NOT funded
         ],
         "near_line_pts": 10,
-        "underwater_months_line": 9,
-        "lag_pair": ["m1", "C3"],
-        "lag_months_line": 2,
+        # self-referential records: a leg is judged against its OWN completed history (before its current peak)
+        "min_history_days": 250,       # records only count once a leg has a year of history before its peak
+        "record_amber_frac": 0.85,     # amber at 85% of the leg's worst completed drawdown
+        "underwater_amber_frac": 0.75, # amber at 75% of its longest completed underwater stretch
+        # hedge-failure rule (the fastest signal): book down more than book_drop_pct over fast_window_days
+        # while the hedge sleeve did not rise = the construction is broken
+        "fast_window_days": 20,
+        "book_drop_pct": -10.0,        # UNTESTED until a hedges curve exists — backtest on the deep curves before trusting it
+        "book": {"C3": 0.68, "m1": 0.20, "hedges": 0.12},
+        "lag_pair": ["m1", "C3"],      # shown on the dashboard, NOT in the verdict (retired 2026-09-08: a 2-month run is a coin flip)
     },
     "history_days": 750,
 }
@@ -179,10 +189,19 @@ def run_length_at_end(vals, negative=True):
     return k
 
 
-def colour_dip(excess, red_days, stop_after):
-    if excess >= 0:
-        return "green"
-    return "red" if red_days >= stop_after else "amber"
+def count_at_end(vals, window, negative=True):
+    """How many of the last `window` values are on the wrong side (None never counts)."""
+    return sum(1 for v in vals[-window:] if v is not None and ((v < 0) if negative else (v > 0)))
+
+
+def colour_dip(excess, neg_days, stop_of):
+    """red: at least stop_of of the window's days were below zero (a single good day no longer
+    resets the clock). amber: today is below zero, or most of the window was. green otherwise."""
+    if neg_days >= stop_of:
+        return "red"
+    if excess < 0 or neg_days >= math.ceil(stop_of * 0.75):
+        return "amber"
+    return "green"
 
 
 def colour_age(years, spec=SPEC):
@@ -193,10 +212,12 @@ def colour_age(years, spec=SPEC):
     return "red"
 
 
-def colour_rip(excess, hot_days, red_after):
-    if excess <= 0:
-        return "green"
-    return "red" if hot_days >= red_after else "amber"
+def colour_rip(excess, hot_days, hot_of):
+    if hot_days >= hot_of:
+        return "red"
+    if excess > 0 or hot_days >= math.ceil(hot_of * 0.75):
+        return "amber"
+    return "green"
 
 
 # --- machines ---------------------------------------------------------------------------
@@ -210,10 +231,17 @@ def _months_between(d1, d2, fallback_days=None):
         return (fallback_days or 0) // 21
 
 
-def leg_health(dates, vals):
+def leg_health(dates, vals, window=20):
+    """Where the leg stands vs its OWN completed history — everything before the current peak.
+    A drawdown deeper than any that ever completed, or a stretch underwater longer than any that
+    ever completed, is the leg doing something it has never done."""
     peak, peak_date, peak_i, worst = -1.0, None, 0, 0.0
+    worst_prior, longest_prior = 0.0, 0
     for i, (d, v) in enumerate(zip(dates, vals)):
         if v > peak:
+            if peak_date is not None:                       # a new high closes the previous stretch
+                worst_prior = worst
+                longest_prior = max(longest_prior, _months_between(peak_date, dates[i - 1], i - 1 - peak_i))
             peak, peak_date, peak_i = v, d, i
         dd = v / peak - 1
         worst = min(worst, dd)
@@ -224,6 +252,11 @@ def leg_health(dates, vals):
         "peak_date": peak_date,
         "months_underwater": 0 if dd_pct >= 0 else _months_between(peak_date, dates[-1], len(vals) - 1 - peak_i),
         "worst_dd_pct": round(worst * 100, 2),
+        "worst_dd_prior_pct": round(worst_prior * 100, 2),
+        "longest_underwater_prior_months": longest_prior,
+        "days_before_peak": peak_i,
+        "first_date": dates[0],
+        "ret_window_pct": round((last / vals[-1 - window] - 1) * 100, 2) if len(vals) > window else None,
         "asOf": dates[-1],
     }
 
@@ -256,27 +289,50 @@ def lag_months(dates_a, a, dates_b, b):
     return k
 
 
-def colour_machines(legs, lag_months, spec=SPEC):
+def colour_machines(legs, lag_months=None, spec=SPEC):
+    """Is any leg doing something it has never done? lag_months is carried for display only."""
     m = spec["machines"]
     reasons, colour = [], "green"
+
+    def worsen(to, why):
+        nonlocal colour
+        if _RANK[to] > _RANK[colour]:
+            colour = to
+        reasons.append(why)
+
+    by_name = {l["name"]: l for l in legs}
     for leg in legs:
-        line = leg.get("line_pct")
-        dd = leg.get("dd_pct")
+        dd, name = leg.get("dd_pct"), leg["name"]
         if dd is None:
             continue
+        line = leg.get("line_pct")
         if line is not None and dd <= line:
-            colour = "red"
-            reasons.append(f"{leg['name']} is through its line ({dd:+.0f}% vs {line:+.0f}%)")
-        elif line is not None and dd <= line + m["near_line_pts"] and colour != "red":
-            colour = "amber"
-            reasons.append(f"{leg['name']} is within {m['near_line_pts']} points of its line ({dd:+.0f}% vs {line:+.0f}%)")
-        if (leg.get("months_underwater") or 0) >= m["underwater_months_line"]:
-            colour = "red"
-            reasons.append(f"{leg['name']} has been underwater {leg['months_underwater']} months (line: {m['underwater_months_line']})")
-    if lag_months >= m["lag_months_line"]:
-        colour = "red"
-        reasons.append(f"{m['lag_pair'][0]} has lagged {m['lag_pair'][1]} {lag_months} months running — the written rule says exit {m['lag_pair'][0]}")
-    return {"colour": colour, "reasons": reasons}
+            worsen("red", f"{name} is through its written line ({dd:+.0f}% vs {line:+.0f}%)")
+        elif line is not None and dd <= line + m["near_line_pts"]:
+            worsen("amber", f"{name} is within {m['near_line_pts']} points of its line ({dd:+.0f}% vs {line:+.0f}%)")
+        enough = (leg.get("days_before_peak") or 0) >= m["min_history_days"]
+        prior = leg.get("worst_dd_prior_pct")
+        if enough and prior is not None and prior < 0:
+            if dd <= prior:
+                worsen("red", f"{name} is in its deepest drawdown ever ({dd:+.0f}% vs {prior:+.0f}% record since {leg.get('first_date')})")
+            elif dd <= prior * m["record_amber_frac"]:
+                worsen("amber", f"{name} is at {dd / prior:.0%} of its record drawdown ({dd:+.0f}% vs {prior:+.0f}%)")
+        uw, longest = leg.get("months_underwater") or 0, leg.get("longest_underwater_prior_months")
+        if enough and longest:
+            if uw > longest:
+                worsen("red", f"{name} has been underwater {uw} months — longer than ever before ({longest})")
+            elif uw >= max(3, math.ceil(longest * m["underwater_amber_frac"])):
+                worsen("amber", f"{name} has been underwater {uw} months (record {longest})")
+    hedge = next((l for l in legs if l.get("role") == "hedge" and l.get("ret_window_pct") is not None), None)
+    parts = [(by_name[k]["ret_window_pct"], w) for k, w in (m.get("book") or {}).items()
+             if k in by_name and by_name[k].get("ret_window_pct") is not None]
+    hedge_check = "off: no hedges curve configured"
+    if hedge and parts and sum(w for _, w in parts) >= 0.5:
+        book = sum(r * w for r, w in parts) / sum(w for _, w in parts)
+        hedge_check = f"book {book:+.1f}% / hedges {hedge['ret_window_pct']:+.1f}% over {m['fast_window_days']}d"
+        if book <= m["book_drop_pct"] and hedge["ret_window_pct"] <= 0:
+            worsen("red", f"hedges are not hedging: book {book:+.1f}% and hedges {hedge['ret_window_pct']:+.1f}% over the same {m['fast_window_days']} days")
+    return {"colour": colour, "reasons": reasons, "hedge_check": hedge_check}
 
 
 # --- verdict ------------------------------------------------------------------------------
@@ -299,23 +355,23 @@ def verdict(dials):
     elif slow["colour"] == "green":
         bits.append(f"The rubber band is working: the last {slow['n']} dips paid {slow['excess_pct']:+.2f}% more than an ordinary day.")
     elif slow["colour"] == "amber":
-        bits.append(f"Dip-buying has lost money for {slow['red_days']} days running — watch, it becomes STOP at {slow['stop_after']}.")
+        bits.append(f"Dip-buying is below water ({slow['excess_pct']:+.2f}%): {slow['red_days']} of the last {slow['window']} days lost money — STOP at {slow['stop_after']}.")
     else:
-        bits.append(f"STOP: dip-buying has lost money for {slow['red_days']} straight days — this is what 1973–1990 looked like.")
+        bits.append(f"STOP: dip-buying lost money on {slow['red_days']} of the last {slow['window']} days — this is what 1973–1990 looked like.")
     if fast["colour"] == "red":
         bits.append("The fast line is red (a LOOK, not an order — every fast alarm since 1993 was false).")
     if age["colour"] != "green" and age["colour"] != "grey":
         bits.append(f"The evidence is {age['years']}y old — quiet market, few dips; a real flip would refresh it within months.")
     if rip["colour"] == "red":
-        bits.append("Rips keep running instead of fading — the 1970s pattern; the sell-the-rip half is broken.")
+        bits.append(f"Rips keep running instead of fading ({rip['hot_days']} of the last {rip['window']} days) — the 1970s pattern; the sell-the-rip half is broken.")
     elif rip["colour"] == "amber":
-        bits.append(f"Rips have kept running for {rip['hot_days']} days — watch.")
-    if mach["colour"] == "red":
-        bits.append("A written tripwire is hit: " + "; ".join(mach["reasons"]) + ".")
-    elif mach["colour"] == "amber":
-        bits.append("A leg is near its line: " + "; ".join(mach["reasons"]) + ".")
+        bits.append(f"Rips have kept running ({rip['hot_days']} of the last {rip['window']} days, alarm at {rip['red_after']}) — watch.")
+    if mach["colour"] == "grey":
+        bits.append("No machine curves this run.")
     elif mach["colour"] == "green":
-        bits.append("All legs inside their lines.")
+        bits.append("All legs inside their lines, nothing unprecedented.")
+    else:
+        bits.append("; ".join(mach["reasons"]) + ".")
     return {"colour": worst, "text": " ".join(bits)}
 
 
@@ -341,13 +397,13 @@ def build_snapshot(dates, px, curves, spec=SPEC, generated_at=None):
     fast_s = series_excess(dips, ret, spec["dip"]["fast_n"], n, hold)
     rip_s = series_excess(rips, ret, spec["rip"]["n"], n, hold)
 
-    def dip_dial(n_events, series, stop_after):
+    def dip_dial(n_events, series, stop_of, window):
         st = window_stats(dips, ret, n_events, t, hold)
         if st is None:
             return dict(grey, n=n_events, reason="fewer than %d paid-off dips in the data" % n_events)
-        red_days = run_length_at_end(series, negative=True)
+        red_days = count_at_end(series, window, negative=True)      # of the last `window` days
         return {
-            "colour": colour_dip(st["excess"], red_days, stop_after),
+            "colour": colour_dip(st["excess"], red_days, stop_of),
             "n": n_events,
             "excess_pct": _pct(st["excess"]),
             "mean_event_pct": _pct(st["mean_event"]),
@@ -359,11 +415,13 @@ def build_snapshot(dates, px, curves, spec=SPEC, generated_at=None):
             "first_event": dates[st["first_event_index"]],
             "last_event": dates[st["last_event_index"]],
             "red_days": red_days,
-            "stop_after": stop_after,
+            "red_run": run_length_at_end(series, negative=True),
+            "window": window,
+            "stop_after": stop_of,
         }
 
-    slow = dip_dial(spec["dip"]["slow_n"], slow_s, spec["dip"]["stop_after_red_days"])
-    fast = dip_dial(spec["dip"]["fast_n"], fast_s, spec["dip"]["stop_after_red_days"])
+    slow = dip_dial(spec["dip"]["slow_n"], slow_s, spec["dip"]["stop_of"], spec["dip"]["stop_window"])
+    fast = dip_dial(spec["dip"]["fast_n"], fast_s, spec["dip"]["stop_of"], spec["dip"]["stop_window"])
     fast["look_only"] = True
 
     cc = window_stats(dds, ret, spec["crosscheck"]["n"], t, hold)
@@ -385,36 +443,39 @@ def build_snapshot(dates, px, curves, spec=SPEC, generated_at=None):
     if rs is None:
         rip = dict(grey, n=spec["rip"]["n"])
     else:
-        hot_days = run_length_at_end(rip_s, negative=False)
+        hot_days = count_at_end(rip_s, spec["rip"]["hot_window"], negative=False)
         rip = {
-            "colour": colour_rip(rs["excess"], hot_days, spec["rip"]["red_after_hot_days"]),
+            "colour": colour_rip(rs["excess"], hot_days, spec["rip"]["hot_of"]),
             "n": rs["n"], "excess_pct": _pct(rs["excess"]), "mean_event_pct": _pct(rs["mean_event"]),
             "se_pct": _pct(rs["se"]), "hit": round(rs["hit"], 3),
             "span_years": round(rs["span_days"] / TRADING_DAYS_PER_YEAR, 1),
             "first_event": dates[rs["first_event_index"]], "last_event": dates[rs["last_event_index"]],
-            "hot_days": hot_days, "red_after": spec["rip"]["red_after_hot_days"],
+            "hot_days": hot_days, "hot_run": run_length_at_end(rip_s, negative=False),
+            "window": spec["rip"]["hot_window"], "red_after": spec["rip"]["hot_of"],
         }
 
     legs = []
     for leg in spec["machines"]["legs"]:
         c = curves.get(leg["name"])
-        row = {"name": leg["name"], "line_pct": leg["line_pct"]}
+        row = {"name": leg["name"], "line_pct": leg["line_pct"], "role": leg.get("role")}
         if c and len(c[1]) >= 2:
-            row.update(leg_health(c[0], c[1]))
+            row.update(leg_health(c[0], c[1], window=spec["machines"]["fast_window_days"]))
         else:
-            row.update({"dd_pct": None, "months_underwater": None, "asOf": None, "missing": True})
+            row.update({"dd_pct": None, "months_underwater": None, "asOf": None, "missing": True,
+                        "unconfigured": not leg.get("id")})
         legs.append(row)
     a_name, b_name = spec["machines"]["lag_pair"]
     lag = 0
     if curves.get(a_name) and curves.get(b_name):
         lag = lag_months(curves[a_name][0], curves[a_name][1], curves[b_name][0], curves[b_name][1])
     if all(l.get("missing") for l in legs):
-        machines = dict(grey, legs=legs, lag_months=None, reasons=["no machine curves this run"])
+        machines = dict(grey, legs=legs, lag_months=None, lag_pair=spec["machines"]["lag_pair"],
+                        reasons=["no machine curves this run"])
     else:
         cm = colour_machines(legs, lag, spec)
-        machines = {"colour": cm["colour"], "reasons": cm["reasons"], "legs": legs, "lag_months": lag,
-                    "lag_pair": spec["machines"]["lag_pair"],
-                    "underwater_months_line": spec["machines"]["underwater_months_line"]}
+        machines = {"colour": cm["colour"], "reasons": cm["reasons"], "hedge_check": cm["hedge_check"],
+                    "legs": legs, "lag_months": lag, "lag_pair": spec["machines"]["lag_pair"],
+                    "lag_is_info_only": True}
 
     dials = {"slow": slow, "fast": fast, "age": age, "rip": rip, "machines": machines}
     hist = []
@@ -540,6 +601,8 @@ def fetch_all_curves(spec=SPEC, fetch=fetch_curve, log=print):
     """Never-throw: a leg that fails is simply absent (the dial shows it as missing)."""
     out = {}
     for leg in spec["machines"]["legs"]:
+        if not leg.get("id"):
+            continue                                     # unconfigured leg (e.g. hedges until its id is pasted)
         try:
             out[leg["name"]] = fetch(leg["id"])
             log(f"  curve {leg['name']}: {len(out[leg['name']][0])} days to {out[leg['name']][0][-1]}")
@@ -608,6 +671,20 @@ def alert_text(snap, changes):
     return "\n".join(lines)
 
 
+def defensive_summary(path=None):
+    """State of scripts/defensive_trigger.py (INVESTED / DEFENSIVE / pending) as the dashboard shows it.
+    None until the trigger has run once; never raises — the radar must publish even if the trigger is broken."""
+    p = path or _state_path("defensive.json")
+    if not os.path.exists(p):
+        return None
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from defensive_trigger import load_state as load_defensive, summary
+        return summary(load_defensive(p))
+    except Exception as e:                        # noqa: BLE001
+        return {"mode": "UNKNOWN", "error": f"{type(e).__name__}: {str(e)[:100]}"}
+
+
 def run(out_path=None, publish=True, alert=True, fetch_closes=None,
         fetch_curves=None, publisher=None, notifier=None, log=print):
     # defaults resolved at call time so tests (and monkeypatching) can swap the I/O
@@ -622,6 +699,7 @@ def run(out_path=None, publish=True, alert=True, fetch_closes=None,
     log(f"  closes: {len(px)} bars {dates[0]} → {dates[-1]}")
     curves = fetch_curves()
     snap = build_snapshot(dates, px, curves)
+    snap["defensive"] = defensive_summary()      # decision layer's mode/streaks, for the dashboard
     state = load_state()
     prev = state.get("last_snapshot")
     changes = colour_changes(prev, snap)

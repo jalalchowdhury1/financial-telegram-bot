@@ -78,3 +78,67 @@ All five green.
   `check_rubber_band` warns with the age and points at the Mac mini log.
 - The only decision the radar does NOT make: what action a sustained red triggers. That is
   the owner's call, written in the money-radar plan.
+
+## v1.1 — 2026-09-08: rules re-tested on the 1971→ store, decision layer added
+
+**Slow / fast STOP = below zero on 45 of the last 60 days** (was: 60 straight days). A single good
+day no longer resets the clock. Same test rig reproduced the v1.0 result exactly (15 STOPs, all
+1972-91, 0 since 1993) before anything was changed.
+
+| rule | first fire | % of 1972-91 in STOP | episodes | false since 1993 |
+|---|---|---|---|---|
+| 60 straight (v1.0) | 1972-01-27 | 71% | 15 | 0 |
+| 40 straight | 1971-12-30 | 77% | 16 | 0 |
+| **45 of last 60 (v1.1)** | **1972-01-06** | **88%** | **8** | **0** |
+| 25 straight | 1971-12-08 | 81% | 18 | 1 (2002-04-01) |
+
+Rejected, with the reason: a depth floor (−0.15%: coverage halves to 44%; −0.50%: first fire Apr
+1980, eight years late — the bad era was *mildly* negative for years, worst reading −0.96%);
+CUSUM (never releases — one episode 1971→1995); "fast lowers the bar to 15 days" (false STOP
+2002-03-15). Near-miss check: max negative-days-in-60 since 2000 = 33 (May 2002) vs 45.
+
+**Rip = above zero on 45 of the last 60 days** (was 60 straight): first fire 1972-03-17 vs
+1972-07-18, 7 episodes vs 9, 0 since 1993.
+
+**Machines — judged against each leg's OWN completed history** (`leg_health` now returns
+`worst_dd_prior_pct`, `longest_underwater_prior_months`, `days_before_peak`, `ret_window_pct`):
+- red: drawdown deeper than any that ever completed before the current peak; amber at 85% of it.
+- red: underwater longer than the longest completed stretch; amber at 75% (min 3 months).
+- records only judge once a leg has 250 days before its peak.
+- written lines (Main −40, C3 −54, C8-T −31) kept as red / amber within 10 pts. Only Main's line
+  sits inside its own record (−51.8%); C3 (−43.8%) and C8-T (−20.3%) hit their record first.
+- **retired:** m1-vs-C3 lag ≥ 2 months (a 2-month run happens ~25% of the time by chance) — still
+  computed and shown, never in the verdict. Flat "9 months underwater" replaced by the record rule.
+- **new (off until a hedges symphony id is pasted into SPEC):** hedges are not hedging = book
+  (68/20/12) down more than 10% over 20 days while the hedge sleeve did not rise. The −10% is the
+  one untested number here — backtest on the deep curves before trusting it.
+- Baselines on 2026-09-08: Main record −51.8% / 7 mo · C3 −43.8% / 5 mo · m1 −44.8% / 5 mo ·
+  C8-T −20.3% / 5 mo (Composer history since 2013-10 / 2016). The deep 1971→ proxies show −99%
+  for every leg — the machines would not have survived the 1970s; that is what the slow dial is for.
+
+**Blind spot unchanged:** no slow/rip variant catches 2001 or 2008 (dips kept paying next day
+while the market bled). The machines dial is the grinding-bear defence — hence the redesign.
+
+**Decision layer: `scripts/defensive_trigger.py`** (runs after the nightly, plus hourly `nag`
+via com.jalal.defensive-nag 08:20–22:20; state `~/.config/rubber-band/defensive.json`).
+INVESTED → PENDING_DEFENSIVE (slow or rip red on 1 close, or machines red on 5 consecutive
+closes) → DONE → DEFENSIVE (every algo on, 50% of the book parked as cash in Composer) →
+10 consecutive green closes with slow excess > +0.2% → PENDING_REENTRY → DONE → INVESTED.
+Closes counted by `asOf` (holiday re-runs never count twice). Alarm clears before action →
+stand down. Re-entry hysteresis test (fire = 45/60): exit at +0.0% = 5 round trips 1972-92,
++0.2% = 2 round trips, back in 1992-07-13, 0 days defensive after 1996; +0.5% re-enters 1997.
+DONE arrives by reply in the 📡 thread (getUpdates, hourly) or `defensive_trigger.py ack` from
+the concierge. Stale radar (> 4 business days without a close) → one warning a day.
+
+Follow-ups: dashboard labels (`red_days`/`hot_days` now mean "of the last 60", `stop_after`/
+`red_after` = 45; `lag_months` is info-only); paste the hedges id; commit this change.
+
+### Hedges leg armed — 2026-09-08 evening
+- Standalone symphony `TOnRRwxkXtdL0S3yXpNm` = "Hedge sleeve — GLD/BTAL 50/50 (radar leg) | NOT FUNDED": GLD 50 / BTAL 50, daily rebalance, the C6/C8 sleeve nodes copied verbatim (weights 15→50). Tree kept at `docs/hedge_sleeve_TOnRRwxkXtdL0S3yXpNm.json`. Curve 2011-09-13 → today (3,768 days). Favoriting has no API endpoint (`/watchlist`, `/favorites` → 404) — one tap in the app.
+- Hedge-failure rule backtest (Composer curves, common window 2016-02-25 → 2026-09-08, 2,629 days): `book20 ≤ −10% AND hedge20 ≤ 0` true on 16 days in 8 runs; runs ≥ 5 closes = **1** (2017-06-27 → 07-07, 8 closes, book −14.5%, hedge −4.4%) → the trigger would have fired once in 10.5 years, a false alarm costing ~2 weeks half in cash. Worst book20 ever = −20.6% (2025-04-08): hedges were UP, rule correctly silent. Of 68 days with book20 ≤ −10, hedges were up on 52. Thresholds −8/−12/−15 → 30/7/1 red days. Kept −10.
+
+### Dashboard v1.1 — 2026-09-08 late
+- `RubberBandRadar.js` rewritten for the v1.1 rules: tap / double-click / Enter on any dial opens its ELI5 panel (what it measures, today's numbers, red when, amber when, the record) — one panel at a time, drawn under the dial row so phones stay readable. Legs table now shows the hedges leg, "under water now / record" and the record drawdown (the self-referential baselines), colours drawdowns against both the written line and the record, and prints the hedge check + the lag as information-only.
+- New "What happens on red" strip = the decision layer: live mode badge (INVESTED / GO DEFENSIVE — waiting / DEFENSIVE — half in cash / RE-ENTER — waiting), red-close and green-run counters, and the rule in one breath on tap.
+- Plumbing: the snapshot now carries `defensive` (mode, since, streaks, pending, rules). `rubber_band.run` stamps the last-known trigger state; `defensive_trigger.py` re-stamps and re-publishes the gist (`gh gist edit`) after every evaluate/ack/set or any mode change from the hourly nag, so the dashboard is never more than one action behind. `rubber-band.json` in the state dir is the file that gets stamped.
+- Tests: `dashboard/__tests__/RubberBandRadar.test.js` (tap/double-click/one-at-a-time/hedges/trigger + a v1.0-snapshot fallback) alongside the older `components/__tests__` suite; Python 41 tests.
