@@ -6,6 +6,10 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+# Hermetic: the trigger reads the Tranche Map files from ~/concierge on the Mac mini; tests must never see them.
+os.environ["TRANCHE_MD"] = "/nonexistent/TRANCHE-EXECUTION.md"
+os.environ["TRANCHE_INSTRUMENTS"] = "/nonexistent/INSTRUMENTS.json"
+
 _spec = importlib.util.spec_from_file_location(
     "defensive_trigger", os.path.join(os.path.dirname(__file__), "..", "scripts", "defensive_trigger.py"))
 dt = importlib.util.module_from_spec(_spec)
@@ -172,3 +176,47 @@ def test_summary_shape_and_republish(tmp_path, monkeypatch):
     fake_gh.chmod(0o755)
     assert dt.republish(st, log=logs.append, gh_path=str(fake_gh)) is True
     assert "gist edit abc123 -f rubber-band.json" in (tmp_path / "gh.args").read_text()
+
+
+# --- Tranche Map wiring: the steps name the symphonies that hold money TODAY, never the radar's look-through book
+CTX_PRE_SWITCH = {"funded": [{"name": "Main", "login": "jalal", "account": "Composer · taxable · Jalal"},
+                             {"name": "Shartino", "login": "jalal", "account": "Composer · taxable · Jalal"}],
+                  "notes": ["Switch day while DEFENSIVE: HALF into C8-T."], "ticks": {}, "loaded": True}
+CTX_BOOK_B = {"funded": [{"name": "C8-T", "login": "jalal", "account": "Composer · taxable · Jalal"},
+                         {"name": "C3", "login": "nabila", "account": "Composer Roth IRA · Nabila"},
+                         {"name": "C9", "login": "nabila", "account": "Composer Roth IRA · Nabila"},
+                         {"name": "m1", "login": "nabila", "account": "Composer Roth IRA · Nabila"}],
+              "notes": [], "ticks": {"S2.1": True, "S2.6": True}, "loaded": True}
+
+
+def test_fire_names_the_funded_symphonies_and_the_collision_note_not_the_radar_book():
+    st, sent = dt.fresh_state(), []
+    st, _ = dt.evaluate(snap("2026-09-15", slow="red"), st, send=lambda t: sent.append(t) or True, now=T0,
+                        ctx=lambda mode: CTX_PRE_SWITCH)
+    msg = sent[0]
+    assert "Main" in msg and "Shartino" in msg and "Your Composer login" in msg
+    assert "hedges" not in msg and "C3" not in msg
+    assert "HALF into C8-T" in msg
+    assert "Main" in st["pending"]["steps"]              # the hourly reminder repeats the same names
+
+
+def test_fire_without_an_instrument_list_falls_back_to_the_book_and_says_so():
+    st, sent = dt.fresh_state(), []
+    dt.evaluate(snap("2026-09-15", slow="red"), st, send=lambda t: sent.append(t) or True, now=T0,
+                ctx=lambda mode: {"funded": [], "notes": [], "ticks": {}, "loaded": False})
+    assert "C3" in sent[0] and "hedges" in sent[0] and "Instrument list unavailable" in sent[0]
+
+
+def test_reenter_names_book_b_under_nabilas_login_and_c8t_under_jalals():
+    st, sent = dt.fresh_state(), []
+    st.update(mode="DEFENSIVE", green_streak=dt.REENTRY_CLOSES - 1, last_asof="2026-11-02")
+    dt.evaluate(snap("2026-11-03"), st, send=lambda t: sent.append(t) or True, now=T0, ctx=lambda mode: CTX_BOOK_B)
+    msg = sent[0]
+    assert "RE-ENTER" in msg and "C8-T" in msg and "C3" in msg and "C9" in msg and "m1" in msg
+    assert "Nabila's Composer login" in msg and "Your Composer login" in msg
+    assert "hedges" not in msg
+
+
+def test_default_context_with_no_files_is_the_empty_fallback():
+    ctx = dt.default_ctx("PENDING_DEFENSIVE")
+    assert ctx == {"funded": [], "notes": [], "ticks": {}, "loaded": False}
