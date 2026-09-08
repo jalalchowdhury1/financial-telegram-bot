@@ -50,7 +50,8 @@ SPEC = {
     "machines": {
         # written lines from the money-radar plan §3.2; None = no line written for that leg
         "legs": [
-            {"name": "Main", "id": "xL9KQGN5FWIPcA8WAop9", "line_pct": -40},
+            # Main (xL9KQGN5FWIPcA8WAop9, line -40) retired from the radar 2026-09-08: it is sold on switch day
+            # (23 Sep 2026, Tranche Map S2.1) and C3 — its slimmed cousin — is the leg that carries on.
             {"name": "C3",   "id": "oJF4TTzhjbS8YrfOEqvK", "line_pct": -54},
             {"name": "m1",   "id": "oYAwQVVRyUFHln4sWbFV", "line_pct": None},
             {"name": "C8-T", "id": "LyRMxIoIqQ4X1ywtf1az", "line_pct": -31},
