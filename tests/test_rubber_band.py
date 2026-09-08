@@ -109,11 +109,22 @@ def test_run_length_at_end_counts_consecutive_days_on_the_wrong_side():
 
 
 # --- colours (the tested thresholds; see docs/rubber-band.md) ---------------
+def test_count_at_end_counts_wrong_side_days_in_the_window():
+    s = [0.1, -0.1, None, -0.2, -0.3]
+    assert rb.count_at_end(s, 4, negative=True) == 3
+    assert rb.count_at_end(s, 10, negative=True) == 3          # window longer than the series is fine
+    assert rb.count_at_end(s, 4, negative=False) == 0
+    assert rb.count_at_end([None, None], 5) == 0
+
+
 def test_dip_colour_green_amber_red():
-    assert rb.colour_dip(0.005, red_days=0, stop_after=60) == "green"
-    assert rb.colour_dip(0.0, red_days=0, stop_after=60) == "green"
-    assert rb.colour_dip(-0.001, red_days=59, stop_after=60) == "amber"
-    assert rb.colour_dip(-0.001, red_days=60, stop_after=60) == "red"
+    assert rb.colour_dip(0.005, neg_days=0, stop_of=45) == "green"
+    assert rb.colour_dip(0.0, neg_days=0, stop_of=45) == "green"
+    assert rb.colour_dip(-0.001, neg_days=10, stop_of=45) == "amber"     # below water today
+    assert rb.colour_dip(0.002, neg_days=33, stop_of=45) == "green"      # the 2002 near-miss level
+    assert rb.colour_dip(0.002, neg_days=34, stop_of=45) == "amber"      # most of the window was bad
+    assert rb.colour_dip(-0.001, neg_days=45, stop_of=45) == "red"
+    assert rb.colour_dip(0.002, neg_days=45, stop_of=45) == "red"        # one good day does not reset STOP
 
 
 def test_age_colour_thresholds_in_years():
@@ -124,10 +135,11 @@ def test_age_colour_thresholds_in_years():
 
 
 def test_rip_colour_hot_only_when_rips_keep_going():
-    assert rb.colour_rip(-0.001, hot_days=0, red_after=60) == "green"
-    assert rb.colour_rip(0.0, hot_days=0, red_after=60) == "green"
-    assert rb.colour_rip(0.001, hot_days=10, red_after=60) == "amber"
-    assert rb.colour_rip(0.001, hot_days=60, red_after=60) == "red"
+    assert rb.colour_rip(-0.001, hot_days=0, hot_of=45) == "green"
+    assert rb.colour_rip(0.0, hot_days=0, hot_of=45) == "green"
+    assert rb.colour_rip(0.001, hot_days=10, hot_of=45) == "amber"
+    assert rb.colour_rip(0.001, hot_days=45, hot_of=45) == "red"
+    assert rb.colour_rip(-0.001, hot_days=45, hot_of=45) == "red"
 
 
 # --- machines ------------------------------------------------------------------
@@ -139,6 +151,17 @@ def test_drawdown_and_months_underwater():
     assert m["peak_date"] == "2026-02-02"
     assert m["months_underwater"] == 3     # Feb 2 -> May 1
     assert m["worst_dd_pct"] == -25.0
+    assert m["worst_dd_prior_pct"] == 0.0 and m["longest_underwater_prior_months"] == 0   # nothing completed before the Feb peak
+    assert m["days_before_peak"] == 1 and m["first_date"] == "2026-01-05" and m["ret_window_pct"] is None
+
+
+def test_leg_health_records_close_when_a_new_high_is_set():
+    dates = [f"2025-{m:02d}-01" for m in range(1, 13)] + ["2026-01-01", "2026-02-01"]
+    vals = [100, 80, 70, 90, 110, 100, 95, 120, 130, 125, 128, 135, 140, 120]    # -30% Jan->Mar completed; now -14%
+    m = rb.leg_health(dates, vals, window=3)
+    assert m["worst_dd_prior_pct"] == -30.0 and m["longest_underwater_prior_months"] == 3    # Jan 1 -> Apr 1
+    assert m["dd_pct"] == pytest.approx(-14.29, abs=0.01) and m["months_underwater"] == 1
+    assert m["ret_window_pct"] == pytest.approx(round((120 / 128 - 1) * 100, 2), abs=0.01)
 
 
 def test_leg_health_at_a_new_high_is_zero():
@@ -154,17 +177,45 @@ def test_monthly_lag_counts_full_months_where_a_trails_b():
     assert rb.lag_months(dates, b, dates, a) == 0
 
 
-def test_machine_colour_breach_is_red_near_is_amber():
-    legs = [{"name": "C3", "dd_pct": -55.0, "line_pct": -54, "months_underwater": 1},
-            {"name": "C8-T", "dd_pct": -5.0, "line_pct": -31, "months_underwater": 1}]
-    assert rb.colour_machines(legs, lag_months=0)["colour"] == "red"
-    legs[0]["dd_pct"] = -45.0                            # within 10 pts of the line
+def test_machine_colour_written_line_and_own_records():
+    base = {"months_underwater": 1, "worst_dd_prior_pct": -60.0, "longest_underwater_prior_months": 8, "days_before_peak": 400}
+    legs = [dict(base, name="C3", dd_pct=-55.0, line_pct=-54), dict(base, name="C8-T", dd_pct=-5.0, line_pct=-31)]
+    assert rb.colour_machines(legs, lag_months=0)["colour"] == "red"           # through the written line
+    legs[0]["dd_pct"] = -45.0                                                   # within 10 pts of the line
     assert rb.colour_machines(legs, lag_months=0)["colour"] == "amber"
     legs[0]["dd_pct"] = -20.0
     assert rb.colour_machines(legs, lag_months=0)["colour"] == "green"
-    assert rb.colour_machines(legs, lag_months=2)["colour"] == "red"       # exit-m1 rule
-    legs[1]["months_underwater"] = 9
-    assert rb.colour_machines(legs, lag_months=0)["colour"] == "red"
+    assert rb.colour_machines(legs, lag_months=2)["colour"] == "green"         # lag is shown, never judged (2026-09-08)
+    legs[0]["worst_dd_prior_pct"] = -30.0
+    legs[0]["dd_pct"] = -31.0                                                   # deeper than any completed drawdown
+    out = rb.colour_machines(legs)
+    assert out["colour"] == "red" and "deepest drawdown ever" in out["reasons"][0]
+    legs[0]["dd_pct"] = -26.0                                                   # 85% of the record
+    assert rb.colour_machines(legs)["colour"] == "amber"
+    legs[0]["dd_pct"] = -20.0
+    legs[1]["months_underwater"] = 9                                            # longer than its record (8)
+    assert rb.colour_machines(legs)["colour"] == "red"
+    legs[1]["months_underwater"] = 6                                            # 75% of the record
+    assert rb.colour_machines(legs)["colour"] == "amber"
+    legs[1]["days_before_peak"] = 100                                           # too little history: records do not judge
+    assert rb.colour_machines(legs)["colour"] == "green"
+
+
+def test_machine_hedge_failure_is_red_only_when_book_falls_and_hedges_do_not_rise():
+    base = {"months_underwater": 0, "worst_dd_prior_pct": -30.0, "longest_underwater_prior_months": 8,
+            "days_before_peak": 400, "line_pct": None, "dd_pct": -6.0}
+    legs = [dict(base, name="C3", ret_window_pct=-14.0), dict(base, name="m1", ret_window_pct=-6.0),
+            dict(base, name="hedges", role="hedge", ret_window_pct=-1.0)]
+    out = rb.colour_machines(legs)
+    assert out["colour"] == "red" and "not hedging" in out["reasons"][0]        # book -10.8%, hedges down too
+    legs[2]["ret_window_pct"] = 3.0                                             # hedges paid: fine
+    assert rb.colour_machines(legs)["colour"] == "green"
+    legs[2]["ret_window_pct"] = -1.0
+    legs[0]["ret_window_pct"] = -2.0                                            # book only -2.7%: not a fall
+    assert rb.colour_machines(legs)["colour"] == "green"
+    del legs[2]                                                                 # no hedges curve: the check is off, not red
+    out = rb.colour_machines(legs)
+    assert out["colour"] == "green" and out["hedge_check"].startswith("off")
 
 
 # --- snapshot & change detection --------------------------------------------------
@@ -246,7 +297,7 @@ def test_run_end_to_end_with_injected_sources_alerts_only_on_change(tmp_path, mo
     snap2 = rb.run(**args)                       # same data -> same colours -> no alert
     assert sent == []
     # now force a colour change in the stored state and rerun -> exactly one alert
-    st = rb.load_state(); st["last_snapshot"]["dials"]["slow"]["colour"] = "red"; rb.save_state(st)
+    st = rb.load_state(); st["last_snapshot"]["dials"]["slow"]["colour"] = "grey"; rb.save_state(st)   # grey never occurs with 6000 bars
     rb.run(**args)
     assert len(sent) == 1 and "slow" in sent[0]
 
@@ -259,3 +310,13 @@ def test_main_reports_a_failed_run_to_the_alert_thread(monkeypatch, tmp_path):
     monkeypatch.setattr(rb, "fetch_qqq_closes", boom)
     rc = rb.main(["rubber_band.py", "run", "--no-publish"])
     assert rc != 0 and len(sent) == 1 and "FAILED" in sent[0] and "yfinance" in sent[0]
+
+
+def test_defensive_summary_reads_trigger_state(tmp_path):
+    assert rb.defensive_summary(str(tmp_path / "missing.json")) is None
+    p = tmp_path / "defensive.json"
+    p.write_text(json.dumps({"mode": "DEFENSIVE", "last_asof": "2026-09-08", "streak": {"slow": 0, "rip": 0, "machines": 2},
+                             "green_streak": 3, "pending": None, "history": [], "defensive_since": "2026-09-01"}))
+    s = rb.defensive_summary(str(p))
+    assert s["mode"] == "DEFENSIVE" and s["streak"]["machines"] == 2 and s["defensive_since"] == "2026-09-01"
+    assert s["rules"]["reentry_closes"] == 10

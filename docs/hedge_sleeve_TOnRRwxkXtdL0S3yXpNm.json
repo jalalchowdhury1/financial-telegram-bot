@@ -1,0 +1,35 @@
+{
+ "rebalance": "daily",
+ "step": "root",
+ "id": "9d07cdbf-e26a-4cef-b740-903d1d6a1e62",
+ "name": "Hedge sleeve \u2014 GLD/BTAL 50/50 (radar leg) | NOT FUNDED",
+ "description": "The 12% hedge inside the 68/20/12 Roth book (C6/C8 carry GLD+BTAL in equal weight), written out on its own so the Rubber Band Radar can watch whether the hedges rise when the book falls. Created 2026-09-08 by the concierge. Do not fund.",
+ "children": [
+  {
+   "id": "ab294f20-37c6-4a13-8312-8f2b951a1199",
+   "step": "wt-cash-specified",
+   "children": [
+    {
+     "name": "GLD",
+     "ticker": "GLD",
+     "weight": {
+      "num": 50,
+      "den": 100
+     },
+     "id": "c073fcb2-0ba0-47d8-850f-74f9e2c65882",
+     "step": "asset"
+    },
+    {
+     "name": "BTAL",
+     "ticker": "BTAL",
+     "weight": {
+      "num": 50,
+      "den": 100
+     },
+     "id": "3df321a0-c8e8-4839-9338-fa39d9c75c81",
+     "step": "asset"
+    }
+   ]
+  }
+ ]
+}

@@ -12,5 +12,8 @@ cd "$REPO" || exit 1
 echo "=== $(date '+%Y-%m-%d %H:%M:%S %Z') rubber-band nightly ==="
 "$PY" scripts/rubber_band.py run
 rc=$?
+if [ $rc -eq 0 ]; then
+  "$PY" scripts/defensive_trigger.py evaluate        # decision layer: red streaks -> GO DEFENSIVE / RE-ENTER (2026-09-08)
+fi
 echo "=== exit $rc ==="
 exit $rc
