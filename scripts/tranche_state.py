@@ -38,11 +38,12 @@ def ticks(steps):
 
 
 def load_steps(path=None):
+    """The parsed rows, or None when the file cannot be read — callers must treat None as "no plan", never as "no ticks"."""
     try:
         with open(path or TRANCHE_MD, encoding="utf-8") as f:
             return parse_steps(f.read())
     except OSError:
-        return []
+        return None
 
 
 def load_instruments(path=None):
@@ -60,6 +61,9 @@ def is_funded(instrument, tk):
         return False
     if f.get("standing"):
         return True
+    for key in ("from", "until"):
+        if key in f and not f[key]:
+            return False  # a present-but-empty step id is a typo: fail closed, never "funded forever"
     if f.get("from") and not tk.get(f["from"], False):
         return False
     if f.get("until") and tk.get(f["until"], False):
@@ -92,6 +96,8 @@ def collision_notes(instruments, tk, mode):
     out = []
     for c in (instruments.get("defensive") or {}).get("collisions", []):
         w = c.get("when") or {}
+        if any(s not in tk for s in list(w.get("ticked", [])) + list(w.get("unticked", []))):
+            continue  # a rule naming a step the calendar does not have is a typo: skip it rather than fire it forever
         if not all(tk.get(s, False) for s in w.get("ticked", [])):
             continue
         if any(tk.get(s, False) for s in w.get("unticked", [])):
@@ -105,7 +111,10 @@ def collision_notes(instruments, tk, mode):
 def tranche_context(mode, md_path=None, instruments_path=None):
     """Everything the trigger needs for one message: funded symphonies, notes for `mode`, the ticks."""
     steps = load_steps(md_path)
-    tk = ticks(steps)
+    md_ok = bool(steps)  # None (unreadable) or [] (nothing parsed) both mean: we do not know where the plan is
+    tk = ticks(steps) if md_ok else {}
     ins = load_instruments(instruments_path)
-    return {"funded": funded_symphonies(ins, tk), "notes": collision_notes(ins, tk, mode),
-            "ticks": tk, "loaded": ins is not None}
+    loaded = md_ok and ins is not None
+    # without BOTH files nothing is named: an unreadable calendar must never read as "no step ticked yet"
+    return {"funded": funded_symphonies(ins, tk) if loaded else [], "notes": collision_notes(ins, tk, mode) if loaded else [],
+            "ticks": tk, "loaded": loaded, "md_loaded": md_ok}
