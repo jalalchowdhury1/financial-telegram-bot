@@ -26,6 +26,7 @@ CLI:
   defensive_trigger.py steps                             preview today's GO DEFENSIVE / RE-ENTER steps (no send)
   defensive_trigger.py status
 """
+import html
 import json
 import os
 import subprocess
@@ -152,7 +153,7 @@ def steps_defensive(snap, ctx=None):
             lines.append(f"<i>{heading}</i>")
             for f in mine:
                 n += 1
-                lines.append(f"{n}. Composer → <b>{f['name']}</b> ({f['account']}) → Withdraw → <b>50%</b> of its value → confirm")
+                lines.append(f"{n}. Composer → <b>{html.escape(f['name'])}</b> ({html.escape(f['account'])}) → Withdraw → <b>50%</b> of its value → confirm")
         return "\n".join(lines) + "\nCash stays parked in Composer. Fills at the next close (~3:50pm ET)."
     lines = [f"{i}. Composer → <b>{name}</b> → Withdraw → <b>50%</b> of its value → confirm"
              for i, name in enumerate(_book(snap), 1)]
@@ -164,7 +165,7 @@ def steps_defensive(snap, ctx=None):
 def steps_reentry(snap, ctx=None):
     funded = (ctx or {}).get("funded") or []
     if funded:
-        parts = [f"{heading}: " + ", ".join(f"<b>{f['name']}</b>" for f in mine) for heading, mine in _by_login(funded)]
+        parts = [f"{heading}: " + ", ".join(f"<b>{html.escape(f['name'])}</b>" for f in mine) for heading, mine in _by_login(funded)]
         return ("Composer → each of these → Invest the parked half back (same login you parked it from):\n"
                 + "\n".join(f"• {p}" for p in parts))
     book = _book(snap)
@@ -175,7 +176,7 @@ def steps_reentry(snap, ctx=None):
 
 def _notes(ctx):
     notes = (ctx or {}).get("notes") or []
-    return ("\n\n" + "\n".join(f"⚠️ {n}" for n in notes)) if notes else ""
+    return ("\n\n" + "\n".join(f"⚠️ {html.escape(n)}" for n in notes)) if notes else ""
 
 
 def fire_reasons(st, snap):

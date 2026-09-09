@@ -75,12 +75,27 @@ def test_book_b_appears_under_nabilas_login_once_s26_is_ticked():
     assert [(f["name"], f["login"]) for f in got] == [("C8-T", "jalal"), ("C3", "nabila"), ("C9", "nabila")]
 
 
+ALL_UNTICKED = {"S1.1": False, "S2.1": False, "S2.4": False, "S2.6": False}
+
+
 def test_collision_notes_are_gated_by_ticks_and_by_mode():
-    assert ts.collision_notes(INS, {}, "PENDING_DEFENSIVE") == ["HALF into C8-T"]
-    assert ts.collision_notes(INS, {}, "INVESTED") == []
-    assert ts.collision_notes(INS, {"S2.1": True}, "DEFENSIVE") == ["drain is not parked cash"]
-    assert ts.collision_notes(INS, {"S2.1": True}, "PENDING_DEFENSIVE") == []
-    assert ts.collision_notes(INS, {"S2.1": True, "S2.4": True}, "DEFENSIVE") == []
+    assert ts.collision_notes(INS, ALL_UNTICKED, "PENDING_DEFENSIVE") == ["HALF into C8-T"]
+    assert ts.collision_notes(INS, ALL_UNTICKED, "INVESTED") == []
+    assert ts.collision_notes(INS, {**ALL_UNTICKED, "S2.1": True}, "DEFENSIVE") == ["drain is not parked cash"]
+    assert ts.collision_notes(INS, {**ALL_UNTICKED, "S2.1": True}, "PENDING_DEFENSIVE") == []
+    assert ts.collision_notes(INS, {**ALL_UNTICKED, "S2.1": True, "S2.4": True}, "DEFENSIVE") == []
+
+
+def test_a_rule_naming_a_step_the_calendar_lacks_is_skipped_not_fired_forever():
+    assert ts.collision_notes(INS, {"S1.1": True}, "PENDING_DEFENSIVE") == []   # S2.1 unknown → the switch-day rule stays quiet
+    assert ts.collision_notes(INS, {}, "PENDING_DEFENSIVE") == []
+
+
+def test_a_present_but_empty_step_id_never_means_funded_forever():
+    assert ts.is_funded({"funded": {"until": None}}, {"S2.1": True}) is False
+    assert ts.is_funded({"funded": {"from": ""}}, {"S2.1": True}) is False
+    assert ts.is_funded({"funded": {"from": "S2.1", "until": "S9.9"}}, {"S2.1": True, "S9.9": False}) is True
+    assert ts.is_funded({"funded": {"from": "S2.1", "until": "S9.9"}}, {"S2.1": True, "S9.9": True}) is False
 
 
 def test_context_reads_both_files_and_degrades_to_empty_when_they_are_missing(tmp_path):
@@ -92,4 +107,17 @@ def test_context_reads_both_files_and_degrades_to_empty_when_they_are_missing(tm
     assert ctx["loaded"] is True and [f["name"] for f in ctx["funded"]] == ["Main"]
     assert ctx["notes"] == ["HALF into C8-T"] and ctx["ticks"]["S1.1"] is True
     empty = ts.tranche_context("INVESTED", md_path=str(tmp_path / "none.md"), instruments_path=str(tmp_path / "none.json"))
-    assert empty == {"funded": [], "notes": [], "ticks": {}, "loaded": False}
+    assert empty == {"funded": [], "notes": [], "ticks": {}, "loaded": False, "md_loaded": False}
+
+
+def test_an_unreadable_calendar_names_nothing_even_when_the_instrument_list_is_present(tmp_path):
+    """Red team 8 Sep: md missing → ticks {} used to read as 'nothing ticked yet' → Main + Shartino named after they were sold."""
+    ins = tmp_path / "i.json"
+    ins.write_text(json.dumps(INS))
+    ctx = ts.tranche_context("PENDING_DEFENSIVE", md_path=str(tmp_path / "renamed.md"), instruments_path=str(ins))
+    assert ctx["loaded"] is False and ctx["md_loaded"] is False
+    assert ctx["funded"] == [] and ctx["notes"] == [] and ctx["ticks"] == {}
+    empty_md = tmp_path / "empty.md"
+    empty_md.write_text("# no table yet\n")
+    ctx2 = ts.tranche_context("PENDING_DEFENSIVE", md_path=str(empty_md), instruments_path=str(ins))
+    assert ctx2["loaded"] is False and ctx2["funded"] == []
