@@ -478,8 +478,16 @@ def _body_is_degraded(text):
     usually transient source hiccups (a feed momentarily rate-limited) that clear on a
     re-fetch, so we retry them rather than alarm on the first blip."""
     try:
-        meta = (json.loads(text) or {}).get("_meta") or {}
-        return bool(meta.get("hasErrors") or meta.get("unavailable"))
+        body = json.loads(text) or {}
+        meta = body.get("_meta") or {}
+        if meta.get("hasErrors") or meta.get("unavailable"):
+            return True
+        # A Lambda-primary route served from a "(fallback)" source is ALSO degraded.
+        # Before 2026-09-09 this branch did not exist, so one 10 s Google Sheets stall
+        # at the exact second we sampled /api/spy-daily-move went straight to a WARN
+        # with no re-fetch — the only route the retry loop could not see.
+        source = _route_source(body) or ""
+        return FALLBACK_SOURCE_MARKER in source.lower()
     except Exception:
         return False
 

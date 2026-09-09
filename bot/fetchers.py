@@ -6,6 +6,7 @@ Handles FRED API, the SPY/market waterfalls, and Google Sheets integration.
 import csv
 import logging
 import requests
+import time
 from io import StringIO
 from typing import Dict, Any, List, Optional
 from bot.config import URLS, RSI_PERIOD
@@ -684,8 +685,7 @@ def fetch_spy_with_fallback(fred_api_key: Optional[str] = None,
                     return3y_val = parsed.get('Three-Year Return')
                     if return3y_val is None:
                         try:
-                            r2 = requests.get(URLS['SPY_DAILY_MOVE'], timeout=10, headers=_HEADERS)
-                            daily_rows = list(csv.reader(StringIO(r2.text)))
+                            daily_rows = list(csv.reader(StringIO(_get_sheet_csv(URLS['SPY_DAILY_MOVE']))))
                             raw = daily_rows[10][1].strip() if len(daily_rows) > 10 and len(daily_rows[10]) > 1 else None
                             if raw:
                                 return3y_val = float(raw.replace('%', '').strip())
@@ -811,14 +811,32 @@ def fetch_spy_with_fallback(fred_api_key: Optional[str] = None,
     }
 
 
+def _get_sheet_csv(url: str, tries: int = 2, timeout: float = 8.0) -> str:
+    """GET a Google Sheets CSV export with one retry. The export endpoint stalls for
+    >10 s a few times a day (2026-09-09: one read timeout at the exact second the
+    health check sampled /api/spy-daily-move paged the dashboard onto Finnhub).
+    Two 8 s tries + a 1 s pause stay well inside API Gateway's 30 s cap."""
+    last: Optional[Exception] = None
+    for i in range(tries):
+        try:
+            r = requests.get(url, timeout=timeout, headers=_HEADERS)
+            r.raise_for_status()
+            return r.text
+        except Exception as e:      # noqa: BLE001 — timeout / 5xx / reset: retry once
+            last = e
+            if i < tries - 1:
+                time.sleep(1)
+    assert last is not None
+    raise last
+
+
 def fetch_spy_daily_move() -> Dict[str, Any]:
     """
     Fetch the SPY daily move percentage from Google Sheets cell B12.
     Returns JSON matching the Next.js /api/spy-daily-move response shape.
     """
     try:
-        r = requests.get(URLS['SPY_DAILY_MOVE'], timeout=10, headers=_HEADERS)
-        rows = list(csv.reader(StringIO(r.text)))
+        rows = list(csv.reader(StringIO(_get_sheet_csv(URLS['SPY_DAILY_MOVE']))))
         value = rows[11][1].strip() if len(rows) > 11 and len(rows[11]) > 1 else None
         print(f'[spy-daily-move] B12 value: {value}')
         return {'value': value, 'source': 'Google Sheets'}

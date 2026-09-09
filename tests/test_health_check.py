@@ -561,3 +561,28 @@ def test_check_rubber_band_missing_dials_is_critical():
     f = hc.check_rubber_band({"asOf": None, "dials": None, "verdict": None, "_meta": {"source": "Unavailable"}})
     assert f["severity"] == "critical"
     assert hc.check_rubber_band(None)["severity"] == "critical"
+
+
+def test_fallback_source_counts_as_degraded_so_fetch_endpoint_retries():
+    """One Sheets stall at sample time must trigger a re-fetch, not a WARN."""
+    import json
+    from scripts.health_check import _body_is_degraded, fetch_endpoint
+    assert _body_is_degraded(json.dumps({"value": "+0.1%", "source": "Finnhub (fallback)"}))
+    assert not _body_is_degraded(json.dumps({"value": "+0.1%", "source": "Google Sheets"}))
+    assert _body_is_degraded(json.dumps({"_meta": {"source": "Polygon (fallback)"}}))
+
+    bodies = iter([json.dumps({"value": "0%", "source": "Finnhub (fallback)"}),
+                   json.dumps({"value": "-0.5%", "source": "Google Sheets"})])
+
+    class R:
+        status_code = 200
+        def __init__(self): self.text = next(bodies)
+    import scripts.health_check as hc
+    import requests
+    orig = requests.get
+    requests.get = lambda *a, **k: R()
+    try:
+        status, body = fetch_endpoint("https://x", "spy-daily-move", attempts=3, sleeper=lambda s: None)
+    finally:
+        requests.get = orig
+    assert status == 200 and "Google Sheets" in body
