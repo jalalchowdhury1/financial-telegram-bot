@@ -219,4 +219,4 @@ def test_reenter_names_book_b_under_nabilas_login_and_c8t_under_jalals():
 
 def test_default_context_with_no_files_is_the_empty_fallback():
     ctx = dt.default_ctx("PENDING_DEFENSIVE")
-    assert ctx == {"funded": [], "notes": [], "ticks": {}, "loaded": False}
+    assert ctx == {"funded": [], "notes": [], "ticks": {}, "loaded": False, "md_loaded": False}
