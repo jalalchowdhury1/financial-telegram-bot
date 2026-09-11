@@ -1068,3 +1068,11 @@ Each finding has an `id`. Map id → meaning → fix:
   code.**
 - **To fix anything here:** branch → fix + test → PR (CI gates it) → owner merges. Never push
   to `main`. Roll back via a PR's **Revert** button or a `known-good-*` git tag.
+
+## 11 Sep 2026 — nag review changes
+- The daily report (Lambda `handle_eventbridge` and the `bot.main report` backstop) is sent with
+  `disable_notification=True` (`send_to_telegram(..., silent=True)`): it lands ~04:15 ET, so no buzz.
+  Alerts (health check, failures) stay loud — `silent` defaults to False.
+- `health-check.yml` has a `gate` job: the 14:00 UTC cron backstop yields when a One Clock
+  `workflow_dispatch` run already succeeded in the last 20 h (both used to run at 10:00 EDT and
+  both alerted on a bad day). Manual runs are never gated.

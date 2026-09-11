@@ -51,15 +51,18 @@ def _split_message(text: str, limit: int = TELEGRAM_MAX_CHARS) -> list:
     return chunks
 
 
-def _post_telegram_text(token: str, chat_id: str, text: str) -> bool:
-    """Send one chunk. On a 400 (usually unbalanced Markdown) retry as plain text."""
+def _post_telegram_text(token: str, chat_id: str, text: str, silent: bool = False) -> bool:
+    """Send one chunk. On a 400 (usually unbalanced Markdown) retry as plain text.
+    silent=True → disable_notification (the ~04:15 ET daily report; alerts stay loud)."""
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     try:
         resp = requests.post(
-            url, data={'chat_id': chat_id, 'text': text, 'parse_mode': 'Markdown'}, timeout=30
+            url, data={'chat_id': chat_id, 'text': text, 'parse_mode': 'Markdown',
+                       'disable_notification': silent}, timeout=30
         )
         if resp.status_code == 400:
-            resp = requests.post(url, data={'chat_id': chat_id, 'text': text}, timeout=30)
+            resp = requests.post(url, data={'chat_id': chat_id, 'text': text,
+                                            'disable_notification': silent}, timeout=30)
         return resp.status_code == 200
     except Exception as e:
         print(f"ERROR: Telegram send failed: {e}")
@@ -83,14 +86,16 @@ def load_environment_variables() -> Dict[str, str]:
     # We can safely cast because we checked for missing vars
     return {k: str(v) for k, v in config.items()}
 
-def send_to_telegram(token: str, chat_id: str, image_path: Optional[str] = None, caption: str = "") -> bool:
-    """Send message or image to Telegram chat"""
+def send_to_telegram(token: str, chat_id: str, image_path: Optional[str] = None, caption: str = "",
+                     silent: bool = False) -> bool:
+    """Send message or image to Telegram chat. silent=True = no phone buzz (overnight report)."""
     if image_path:
         url = f"https://api.telegram.org/bot{token}/sendPhoto"
         try:
             with open(image_path, 'rb') as photo:
                 files = {'photo': photo}
-                data = {'chat_id': chat_id, 'caption': caption, 'parse_mode': 'Markdown'}
+                data = {'chat_id': chat_id, 'caption': caption, 'parse_mode': 'Markdown',
+                        'disable_notification': silent}
                 response = requests.post(url, files=files, data=data, timeout=30)
                 response.raise_for_status()
             print(f"✓ Sent image to Telegram: {image_path}")
@@ -102,7 +107,7 @@ def send_to_telegram(token: str, chat_id: str, image_path: Optional[str] = None,
         chunks = _split_message(caption)
         all_ok = True
         for chunk in chunks:
-            if not _post_telegram_text(token, chat_id, chunk):
+            if not _post_telegram_text(token, chat_id, chunk, silent):
                 all_ok = False
         if all_ok:
             print(f"✓ Sent text to Telegram ({len(chunks)} chunk(s))")

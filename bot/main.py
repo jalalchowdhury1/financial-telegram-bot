@@ -54,7 +54,7 @@ def run_report():
             print(report_marker(False, reason="empty_content"))
             return False
 
-        sent = send_to_telegram(env_vars['TELEGRAM_TOKEN'], env_vars['TELEGRAM_CHAT_ID'], caption=gs_text)
+        sent = send_to_telegram(env_vars['TELEGRAM_TOKEN'], env_vars['TELEGRAM_CHAT_ID'], caption=gs_text, silent=True)  # overnight report — no buzz (11 Sep 2026)
         if not sent:
             print(report_marker(False, sections=1, reason="telegram_delivery"))
             return False
