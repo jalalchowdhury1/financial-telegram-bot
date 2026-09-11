@@ -86,6 +86,23 @@ def load_environment_variables() -> Dict[str, str]:
     # We can safely cast because we checked for missing vars
     return {k: str(v) for k, v in config.items()}
 
+def digest_post(item_id, text, parse_mode="HTML", photo=None, caption=None) -> bool:
+    """Hand an overnight message to the health-hub Silent digest instead of the chat
+    (one 07:00 card, a button per item; a tap replays the full message — 11 Sep 2026).
+    True = stored; False = caller sends to Telegram as before. Needs DIGEST_URL + DIGEST_KEY."""
+    url, key = os.environ.get("DIGEST_URL"), os.environ.get("DIGEST_KEY")
+    if not url or not key:
+        return False
+    try:
+        r = requests.post(url, params={"k": key}, timeout=10,
+                          json={"id": item_id, "text": text, "parse_mode": parse_mode,
+                                "photo": photo, "caption": caption})
+        return r.status_code == 200 and r.json().get("ok") is True
+    except Exception as e:  # noqa: BLE001
+        print(f"digest hand-off failed ({e}); sending directly")
+        return False
+
+
 def send_to_telegram(token: str, chat_id: str, image_path: Optional[str] = None, caption: str = "",
                      silent: bool = False) -> bool:
     """Send message or image to Telegram chat. silent=True = no phone buzz (overnight report)."""

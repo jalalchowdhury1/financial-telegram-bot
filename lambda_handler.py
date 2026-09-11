@@ -38,7 +38,7 @@ from bot.fetchers import (
     fetch_market_extra,
     fetch_polymarket_trending,
 )
-from bot.utils import load_environment_variables, send_to_telegram, report_marker
+from bot.utils import load_environment_variables, send_to_telegram, report_marker, digest_post
 from bot.config import TIMEZONE
 
 logger = logging.getLogger()
@@ -191,7 +191,8 @@ def handle_eventbridge(env_vars: Dict[str, str], run_time: str) -> Dict[str, Any
     full_report = separator.join(report_sections)
 
     logger.info('Sending report to Telegram...')
-    success = send_to_telegram(telegram_token, telegram_chat_id, caption=full_report, silent=True)  # ~04:15 ET — no buzz (11 Sep 2026)
+    success = digest_post("report", full_report, "Markdown") or \
+        send_to_telegram(telegram_token, telegram_chat_id, caption=full_report, silent=True)  # ~04:15 ET — no buzz (11 Sep 2026)
 
     if success:
         summary = f'Report sent at {run_time}. Sections: {len(report_sections)}. Errors: {len(errors)}.'

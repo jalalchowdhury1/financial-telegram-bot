@@ -1104,3 +1104,7 @@ does `defensive_trigger.py ack` from the concierge. `--dry` never reads taps. Re
 `🔴 <b>ACT — what · still open</b>` + a blockquote meta line `sent Thu 14:20 · reminder #3`.
 
 Card anatomy (11 Sep 2026, house style): priority prefix + verb-first bold header (🔴 ACT — / 🔵 INFO —), an italic sub-line, a ≤3-line body (numbered Composer steps), buttons whose labels name the outcome, and the meta line LAST inside `<blockquote><i>…</i></blockquote>`. INFO cards go out with disable_notification.
+
+## Silent digest hand-off (11 Sep 2026)
+
+The overnight send calls `digest_post("report", text, parse_mode)` first (health-hub `api/digest.js`, env `DIGEST_URL` + `DIGEST_KEY` — Lambda environment, merged by hand with aws update-function-configuration on 11 Sep 2026; the push deploys via deploy-lambda.yml). Stored → no direct message; the 07:00 ⚪ Silent digest card carries a button that replays it in full (36 h). Collector down or env missing → the old silent direct send. Never make the direct send loud again.
