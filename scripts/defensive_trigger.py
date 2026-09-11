@@ -4,7 +4,7 @@ Defensive trigger — turns the Rubber Band Radar's colours into the ONE decisio
 
 The radar (rubber_band.py, nightly 18:30) measures. This script decides and nags. It never touches
 Composer: Jalal keeps the hands ("nothing moves without Jalal", "NEVER touch the live symphony").
-Alerts carry ✅ Done / ⏰ 2 h buttons; taps land in health-hub KV (api/defensive.js webhook) and are read
+Alerts carry ✅ Done / ⏰ Defer 1h buttons; taps land in health-hub KV (api/defensive.js webhook) and are read
 back here once an hour. This script no longer calls getUpdates, so the webhook can stay set on the bot.
 
 State machine (~/.config/rubber-band/defensive.json):
@@ -56,7 +56,7 @@ def BUTTONS(kind="PENDING_DEFENSIVE"):
     """Inline buttons whose labels say the OUTCOME (Jalal, 11 Sep 2026); taps land in health-hub KV."""
     done = "✅ Done — cash parked" if kind == "PENDING_DEFENSIVE" else "✅ Done — cash back in"
     return {"inline_keyboard": [[{"text": done, "callback_data": "dt:done"},
-                                 {"text": "⏰ Quiet 2 h", "callback_data": "dt:snooze"}]]}
+                                 {"text": "⏰ Defer 1h", "callback_data": "dt:snooze"}]]}
 _RANK = {"green": 0, "grey": 0, "amber": 1, "red": 2}
 
 
@@ -102,12 +102,12 @@ def _chat():
     return str(os.environ.get("RUBBER_BAND_ALERT_CHAT") or FALLBACK_CHAT)
 
 
-def send_telegram(text, buttons=None):
+def send_telegram(text, buttons=None, silent=False):
     tok = _token()
     if not tok:
         print("  no TELEGRAM_TOKEN — not sent")
         return False
-    payload = {"chat_id": _chat(), "text": text, "parse_mode": "HTML"}
+    payload = {"chat_id": _chat(), "text": text, "parse_mode": "HTML", "disable_notification": silent}
     if buttons:
         payload["reply_markup"] = json.dumps(buttons)
     body = urllib.parse.urlencode(payload).encode()
@@ -118,6 +118,14 @@ def send_telegram(text, buttons=None):
     except Exception as e:                       # noqa: BLE001 — a failed send is logged, never fatal
         print(f"  telegram send failed: {e}")
         return False
+
+
+def _send_quiet(send, text):
+    """INFO cards (stand down, hold, logged): delivered without a sound. Plain send for 1-arg callables."""
+    try:
+        return send(text, None, True)
+    except TypeError:
+        return send(text)
 
 
 def _send_with_buttons(send, text, kind="PENDING_DEFENSIVE"):
@@ -178,18 +186,19 @@ def _by_login(funded):
 def steps_defensive(snap, ctx=None):
     """Names the symphonies that hold money TODAY (Tranche Map ticks), grouped by whose Composer login."""
     funded = (ctx or {}).get("funded") or []
+    park = "Cash <b>stays parked</b> in Composer · fills at the next close (~3:50pm ET)"
     if funded:
         lines, n = [], 0
         for heading, mine in _by_login(funded):
             lines.append(f"<i>{heading}</i>")
             for f in mine:
                 n += 1
-                lines.append(f"{n}. Composer → <b>{html.escape(f['name'])}</b> ({html.escape(f['account'])}) → Withdraw → <b>50%</b> of its value → confirm")
-        return "\n".join(lines) + "\nCash stays parked in Composer. Fills at the next close (~3:50pm ET)."
-    lines = [f"{i}. Composer → <b>{name}</b> → Withdraw → <b>50%</b> of its value → confirm"
-             for i, name in enumerate(_book(snap), 1)]
-    return ("\n".join(lines) + "\nCash stays parked in Composer. Fills at the next close (~3:50pm ET)."
-            "\n⚠️ Instrument list unavailable — these are the radar's look-through names. Use the symphonies that "
+                lines.append(f"{n}. Composer → <b>{html.escape(f['name'])}</b> ({html.escape(f['account'])}) → Withdraw → <b>50%</b> → Confirm")
+        return "\n".join(lines) + f"\n{n + 1}. {park}"
+    names = list(_book(snap))
+    lines = [f"{i}. Composer → <b>{name}</b> → Withdraw → <b>50%</b> → Confirm" for i, name in enumerate(names, 1)]
+    return ("\n".join(lines) + f"\n{len(names) + 1}. {park}"
+            "\n⚠️ Instrument list unavailable — these are the radar look-through names. Use the symphonies that "
             "actually hold money (TRANCHE-EXECUTION.md / INSTRUMENTS.json).")
 
 
@@ -226,40 +235,45 @@ def fire_reasons(st, snap):
 
 def msg_fire(snap, reasons, ctx=None):
     why = "\n".join(f"• {r}" for r in reasons)
-    return (f"🛑 <b>GO DEFENSIVE — move 50% of the book to cash</b>\n"
-            f"Radar as of {snap['asOf']}:\n{why}\n\n"
-            f"Do this now — 2 minutes, every algo stays on:\n{steps_defensive(snap, ctx)}{_notes(ctx)}")
+    return (f"🔴 <b>ACT — GO DEFENSIVE · move 50% of the book to cash</b>\n"
+            f"<i>Radar · as of {snap['asOf']}</i>\n{why}\n\n"
+            f"{steps_defensive(snap, ctx)}{_notes(ctx)}\n\n"
+            f"<blockquote><i>~2 min · every algo stays on</i></blockquote>")
 
 
 def msg_reenter(snap, edge, ctx=None):
-    return (f"🟢 <b>RE-ENTER — put the parked cash back</b>\n"
-            f"Radar green {REENTRY_CLOSES} closes running; dip edge {edge:+.2f}% (as of {snap['asOf']}).\n"
-            f"{steps_reentry(snap, ctx)}{_notes(ctx)}")
+    return (f"🔴 <b>ACT — RE-ENTER · put the parked cash back</b>\n"
+            f"<i>Radar · green {REENTRY_CLOSES} closes running · dip edge {edge:+.2f}% · as of {snap['asOf']}</i>\n\n"
+            f"{steps_reentry(snap, ctx)}{_notes(ctx)}\n\n"
+            f"<blockquote><i>~2 min · same logins you parked from</i></blockquote>")
 
 
 def msg_stand_down(snap):
-    return (f"✅ <b>Stand down</b> — the alarm cleared before you acted. No action, the book stays as it is.\n"
-            f"Radar as of {snap['asOf']}: {snap['verdict']['text']}")
+    return (f"🔵 <b>INFO — Stand down · the alarm cleared before you acted</b>\n"
+            f"<i>Radar · as of {snap['asOf']} · {snap['verdict']['text']}</i>\n"
+            f"No action. The book stays as it is.")
 
 
 def msg_hold(snap):
-    return (f"⛔ <b>Hold — stay defensive.</b> The green streak broke before you re-entered.\n"
-            f"Radar as of {snap['asOf']}: {snap['verdict']['text']}\n"
-            f"Re-entry needs {REENTRY_CLOSES} green closes again.")
+    return (f"🔵 <b>INFO — Hold · stay defensive</b>\n"
+            f"<i>Radar · as of {snap['asOf']} · {snap['verdict']['text']}</i>\n"
+            f"The green streak broke before you re-entered. Re-entry needs {REENTRY_CLOSES} green closes again.")
 
 
 def msg_ack(mode, today):
     if mode == "DEFENSIVE":
-        return (f"📌 Logged: the book is <b>DEFENSIVE</b> (50% cash) from {today}. "
-                f"You'll get RE-ENTER after {REENTRY_CLOSES} green closes with the dip edge above +{REENTRY_EDGE_PCT}%.")
-    return f"📌 Logged: the book is <b>INVESTED</b> again from {today}. The trigger is re-armed."
+        return (f"🔵 <b>INFO — Logged · the book is DEFENSIVE (50% cash) from {today}</b>\n"
+                f"<blockquote><i>RE-ENTER comes after {REENTRY_CLOSES} green closes with the dip edge above +{REENTRY_EDGE_PCT}%</i></blockquote>")
+    return (f"🔵 <b>INFO — Logged · the book is INVESTED again from {today}</b>\n"
+            f"<blockquote><i>The trigger is re-armed</i></blockquote>")
 
 
 def msg_reminder(st, now_local):
     p = st["pending"]
-    what = "GO DEFENSIVE — 50% to cash" if p["kind"] == "PENDING_DEFENSIVE" else "RE-ENTER — cash back in"
+    what = "GO DEFENSIVE · 50% to cash" if p["kind"] == "PENDING_DEFENSIVE" else "RE-ENTER · cash back in"
     sent = datetime.fromisoformat(p["sent_at"]).astimezone(now_local.tzinfo).strftime("%a %H:%M")
-    text = (f"⏰ <b>{what}</b> still open · sent {sent} · #{p['reminders']}")
+    text = (f"🔴 <b>ACT — {what} · still open</b>\n"
+            f"<blockquote><i>sent {sent} · reminder #{p['reminders']}</i></blockquote>")
     if p["reminders"] % STEPS_EVERY_N_REMINDERS == 0 and p.get("steps"):
         text += "\n\n" + p["steps"]
     return text
@@ -300,7 +314,7 @@ def evaluate(snap, st, send=send_telegram, now=None, log=print, ctx=None):
         st["pending"] = ({"kind": mode, "sent_at": now.isoformat(), "asof": asof, "reminders": 0, "steps": steps}
                          if mode.startswith("PENDING") else None)
         _record(st, now, asof, mode, note)
-        if (_send_with_buttons(send, text, mode) if mode.startswith("PENDING") else send(text)):
+        if (_send_with_buttons(send, text, mode) if mode.startswith("PENDING") else _send_quiet(send, text)):
             sent.append(text)
         log(f"  → {mode}: {note}")
 
@@ -332,7 +346,7 @@ def ack(st, send=send_telegram, now=None, log=print):
         log(f"  nothing pending (mode {m})")
         return st, False
     _record(st, now, st.get("last_asof"), st["mode"], "Jalal said DONE")
-    send(msg_ack(st["mode"], today))
+    _send_quiet(send, msg_ack(st["mode"], today))
     log(f"  → {st['mode']} (acknowledged)")
     return st, True
 
@@ -371,7 +385,7 @@ def nag(st, send=send_telegram, taps=get_taps, now=None, log=print):
                     if ok:
                         sent.append("ack")
                 elif tap["kind"] == "snooze":
-                    p["snooze_until"] = (tap_at + timedelta(hours=2)).isoformat()
+                    p["snooze_until"] = (tap_at + timedelta(hours=1)).isoformat()
                     log(f"  snoozed until {p['snooze_until']}")
 
     p = st.get("pending")
