@@ -115,33 +115,45 @@ def test_nag_reminds_only_while_pending_and_repeats_steps_every_sixth_time():
     sent = []
     st, _ = run([snap(closes()[0], slow="red")], sent=sent)
     for i in range(6):
-        st, out = dt.nag(st, send=lambda t: sent.append(t) or True, updates=lambda o: [], now=T0 + timedelta(hours=i + 1), log=lambda *_: None)
-    assert st["pending"]["reminders"] == 6 and "Reminder 6" in sent[-1] and "Withdraw" in sent[-1]
+        st, out = dt.nag(st, send=lambda t: sent.append(t) or True, taps=lambda: {}, now=T0 + timedelta(hours=i + 1), log=lambda *_: None)
+    assert st["pending"]["reminders"] == 6 and "#6" in sent[-1] and "Withdraw" in sent[-1]
     assert "Withdraw" not in sent[-2]                                  # reminder 5 was the short form
-    st, out = dt.nag(dt.fresh_state(), send=lambda t: sent.append(t) or True, updates=lambda o: [], now=T0, log=lambda *_: None)
+    st, out = dt.nag(dt.fresh_state(), send=lambda t: sent.append(t) or True, taps=lambda: {}, now=T0, log=lambda *_: None)
     assert out == []
 
 
-def test_nag_picks_up_done_from_the_right_chat_after_the_alert_only(monkeypatch):
-    monkeypatch.setenv("RUBBER_BAND_ALERT_CHAT", "7956935476")
+def test_nag_picks_up_a_done_tap_only_when_it_came_after_the_alert():
     sent = []
     st, _ = run([snap(closes()[0], slow="red")], sent=sent)
-    t_sent = int(datetime.fromisoformat(st["pending"]["sent_at"]).timestamp())
-    upd = [{"update_id": 10, "message": {"chat": {"id": 7956935476}, "date": t_sent - 100, "text": "done"}},   # before the alert
-           {"update_id": 11, "message": {"chat": {"id": 1}, "date": t_sent + 100, "text": "done"}},            # wrong chat
-           {"update_id": 12, "message": {"chat": {"id": 7956935476}, "date": t_sent + 100, "text": "Done ✅"}}]
-    st, out = dt.nag(st, send=lambda t: sent.append(t) or True, updates=lambda o: upd, now=T0 + timedelta(hours=1), log=lambda *_: None)
-    assert st["mode"] == "DEFENSIVE" and st["tg_offset"] == 13 and "ack" in out and st["pending"] is None
-    assert not any("Still waiting" in s for s in sent)
+    sent_at = datetime.fromisoformat(st["pending"]["sent_at"])
+    old = {"kind": "done", "at": (sent_at - timedelta(minutes=5)).isoformat(), "via": "button"}   # before the alert
+    st, out = dt.nag(st, send=lambda t: sent.append(t) or True, taps=lambda: old, now=T0 + timedelta(hours=1), log=lambda *_: None)
+    assert st["mode"] == "PENDING_DEFENSIVE" and "ack" not in out and st["pending"]["reminders"] == 1
+    new = {"kind": "done", "at": (sent_at + timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%S.000Z"), "via": "text"}
+    st, out = dt.nag(st, send=lambda t: sent.append(t) or True, taps=lambda: new, now=T0 + timedelta(hours=2), log=lambda *_: None)
+    assert st["mode"] == "DEFENSIVE" and "ack" in out and st["pending"] is None and "still open" not in sent[-1]
 
 
-def test_nag_survives_a_poller_conflict_and_warns_once_a_day_when_the_radar_is_stale():
+def test_a_snooze_tap_quiets_the_next_reminder_and_reminders_carry_buttons():
+    sent, buttons = [], []
+    def send2(t, b=None):
+        sent.append(t); buttons.append(b); return True
+    st, _ = run([snap(closes()[0], slow="red")], sent=sent)
+    sent_at = datetime.fromisoformat(st["pending"]["sent_at"])
+    tap = {"kind": "snooze", "at": (sent_at + timedelta(minutes=30)).isoformat(), "via": "button"}
+    st, out = dt.nag(st, send=send2, taps=lambda: tap, now=sent_at + timedelta(hours=1), log=lambda *_: None)
+    assert out == [] and st["pending"]["reminders"] == 0                 # quiet for 2 h after the tap
+    st, out = dt.nag(st, send=send2, taps=lambda: {}, now=sent_at + timedelta(hours=3), log=lambda *_: None)
+    assert st["pending"]["reminders"] == 1 and "still open" in sent[-1] and buttons[-1] == dt.BUTTONS("PENDING_DEFENSIVE") and "cash parked" in buttons[-1]["inline_keyboard"][0][0]["text"]
+
+
+def test_nag_survives_a_dead_tap_endpoint_and_warns_once_a_day_when_the_radar_is_stale():
     sent = []
     st, _ = run([snap("2026-09-15")], sent=sent)
     later = datetime(2026, 9, 23, 14, 0, tzinfo=timezone.utc)        # 6 business days, no new close
-    st, out = dt.nag(st, send=lambda t: sent.append(t) or True, updates=lambda o: None, now=later, log=lambda *_: None)
+    st, out = dt.nag(st, send=lambda t: sent.append(t) or True, taps=lambda: None, now=later, log=lambda *_: None)
     assert out == ["stale"] and "blind" in sent[-1]
-    st, out = dt.nag(st, send=lambda t: sent.append(t) or True, updates=lambda o: None, now=later + timedelta(hours=1), log=lambda *_: None)
+    st, out = dt.nag(st, send=lambda t: sent.append(t) or True, taps=lambda: None, now=later + timedelta(hours=1), log=lambda *_: None)
     assert out == []
 
 

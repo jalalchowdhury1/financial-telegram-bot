@@ -4,6 +4,8 @@ Defensive trigger — turns the Rubber Band Radar's colours into the ONE decisio
 
 The radar (rubber_band.py, nightly 18:30) measures. This script decides and nags. It never touches
 Composer: Jalal keeps the hands ("nothing moves without Jalal", "NEVER touch the live symphony").
+Alerts carry ✅ Done / ⏰ 2 h buttons; taps land in health-hub KV (api/defensive.js webhook) and are read
+back here once an hour. This script no longer calls getUpdates, so the webhook can stay set on the bot.
 
 State machine (~/.config/rubber-band/defensive.json):
 
@@ -50,6 +52,11 @@ STALE_BUSINESS_DAYS = 4                              # no new close for this lon
 STEPS_EVERY_N_REMINDERS = 6                          # repeat the full steps every ~6 hours of nagging
 ACK_RE = re.compile(r"^\s*(done|✅|defensive done|re-?entered|back in|cash is in|cash is back)\b", re.I)
 MODES = ("INVESTED", "PENDING_DEFENSIVE", "DEFENSIVE", "PENDING_REENTRY")
+def BUTTONS(kind="PENDING_DEFENSIVE"):
+    """Inline buttons whose labels say the OUTCOME (Jalal, 11 Sep 2026); taps land in health-hub KV."""
+    done = "✅ Done — cash parked" if kind == "PENDING_DEFENSIVE" else "✅ Done — cash back in"
+    return {"inline_keyboard": [[{"text": done, "callback_data": "dt:done"},
+                                 {"text": "⏰ Quiet 2 h", "callback_data": "dt:snooze"}]]}
 _RANK = {"green": 0, "grey": 0, "amber": 1, "red": 2}
 
 
@@ -61,7 +68,7 @@ def _path(name):
 
 def fresh_state():
     return {"mode": "INVESTED", "last_asof": None, "streak": {"slow": 0, "rip": 0, "machines": 0},
-            "green_streak": 0, "pending": None, "history": [], "tg_offset": 0}
+            "green_streak": 0, "pending": None, "history": []}
 
 
 def load_state(path=None):
@@ -95,12 +102,15 @@ def _chat():
     return str(os.environ.get("RUBBER_BAND_ALERT_CHAT") or FALLBACK_CHAT)
 
 
-def send_telegram(text):
+def send_telegram(text, buttons=None):
     tok = _token()
     if not tok:
         print("  no TELEGRAM_TOKEN — not sent")
         return False
-    body = urllib.parse.urlencode({"chat_id": _chat(), "text": text, "parse_mode": "HTML"}).encode()
+    payload = {"chat_id": _chat(), "text": text, "parse_mode": "HTML"}
+    if buttons:
+        payload["reply_markup"] = json.dumps(buttons)
+    body = urllib.parse.urlencode(payload).encode()
     try:
         req = urllib.request.Request(f"https://api.telegram.org/bot{tok}/sendMessage", data=body)
         with urllib.request.urlopen(req, timeout=20) as r:
@@ -110,21 +120,42 @@ def send_telegram(text):
         return False
 
 
-def get_updates(offset):
-    """Messages since `offset`; None when Telegram is unreachable or another poller owns the bot (409)."""
-    tok = _token()
-    if not tok:
-        return None
-    q = urllib.parse.urlencode({"offset": offset, "timeout": 0, "allowed_updates": json.dumps(["message"])})
+def _send_with_buttons(send, text, kind="PENDING_DEFENSIVE"):
+    """Try sending with buttons; fall back to plain text if the callable only accepts one arg."""
     try:
-        with urllib.request.urlopen(f"https://api.telegram.org/bot{tok}/getUpdates?{q}", timeout=20) as r:
-            return json.load(r).get("result") or []
-    except Exception as e:                       # noqa: BLE001
-        print(f"  telegram getUpdates failed: {e}")
+        return send(text, BUTTONS(kind))
+    except TypeError:
+        return send(text)
+
+
+def _env_value(name):
+    """One value by NAME from the repo .env (launchd never sources it); a real env var wins."""
+    if os.environ.get(name):
+        return os.environ[name]
+    try:
+        for line in open(os.path.join(REPO, ".env")):
+            if line.startswith(name + "="):
+                return line.split("=", 1)[1].strip().strip("\"'")
+    except OSError:
+        pass
+    return None
+
+
+def get_taps():
+    """The latest button tap, read ONCE from the health-hub tap endpoint (api/defensive.js → KV).
+    {} when nothing was tapped, None when the endpoint is unconfigured or unreachable."""
+    url, key = _env_value("DEFENSIVE_TAP_URL"), _env_value("DEFENSIVE_TAP_KEY")
+    if not url or not key:
+        print("  no DEFENSIVE_TAP_URL/KEY in .env — taps unavailable")
+        return None
+    try:
+        with urllib.request.urlopen(f"{url}?{urllib.parse.urlencode({'k': key})}", timeout=20) as r:
+            return json.load(r).get("tap") or {}
+    except Exception as e:                       # noqa: BLE001 — the reminder still goes out without taps
+        print(f"  tap endpoint failed: {e}")
         return None
 
 
-# --- messages -------------------------------------------------------------------------------
 def _book(snap):
     return ((snap.get("spec") or {}).get("machines") or {}).get("book") or {"C3": 0.68, "m1": 0.20, "hedges": 0.12}
 
@@ -197,14 +228,13 @@ def msg_fire(snap, reasons, ctx=None):
     why = "\n".join(f"• {r}" for r in reasons)
     return (f"🛑 <b>GO DEFENSIVE — move 50% of the book to cash</b>\n"
             f"Radar as of {snap['asOf']}:\n{why}\n\n"
-            f"Do this now — 2 minutes, every algo stays on:\n{steps_defensive(snap, ctx)}{_notes(ctx)}\n\n"
-            f"Reply <b>DONE</b> here when it's in. I'll remind you every hour until then.")
+            f"Do this now — 2 minutes, every algo stays on:\n{steps_defensive(snap, ctx)}{_notes(ctx)}")
 
 
 def msg_reenter(snap, edge, ctx=None):
     return (f"🟢 <b>RE-ENTER — put the parked cash back</b>\n"
             f"Radar green {REENTRY_CLOSES} closes running; dip edge {edge:+.2f}% (as of {snap['asOf']}).\n"
-            f"{steps_reentry(snap, ctx)}{_notes(ctx)}\n\nReply <b>DONE</b> here when it's in.")
+            f"{steps_reentry(snap, ctx)}{_notes(ctx)}")
 
 
 def msg_stand_down(snap):
@@ -229,8 +259,7 @@ def msg_reminder(st, now_local):
     p = st["pending"]
     what = "GO DEFENSIVE — 50% to cash" if p["kind"] == "PENDING_DEFENSIVE" else "RE-ENTER — cash back in"
     sent = datetime.fromisoformat(p["sent_at"]).astimezone(now_local.tzinfo).strftime("%a %H:%M")
-    text = (f"⏰ Still waiting on <b>{what}</b> (sent {sent}). Reply <b>DONE</b> here when it's in. "
-            f"Reminder {p['reminders']}.")
+    text = (f"⏰ <b>{what}</b> still open · sent {sent} · #{p['reminders']}")
     if p["reminders"] % STEPS_EVERY_N_REMINDERS == 0 and p.get("steps"):
         text += "\n\n" + p["steps"]
     return text
@@ -271,7 +300,7 @@ def evaluate(snap, st, send=send_telegram, now=None, log=print, ctx=None):
         st["pending"] = ({"kind": mode, "sent_at": now.isoformat(), "asof": asof, "reminders": 0, "steps": steps}
                          if mode.startswith("PENDING") else None)
         _record(st, now, asof, mode, note)
-        if send(text):
+        if (_send_with_buttons(send, text, mode) if mode.startswith("PENDING") else send(text)):
             sent.append(text)
         log(f"  → {mode}: {note}")
 
@@ -318,8 +347,8 @@ def business_days_between(a, b):
     return n
 
 
-def nag(st, send=send_telegram, updates=get_updates, now=None, log=print):
-    """Hourly: pick DONE up from the thread, remind while something is pending, shout if the radar is stale."""
+def nag(st, send=send_telegram, taps=get_taps, now=None, log=print):
+    """Hourly: read taps from KV, remind while something is pending, shout if the radar is stale."""
     now = now or datetime.now(timezone.utc)
     try:
         from zoneinfo import ZoneInfo
@@ -327,27 +356,34 @@ def nag(st, send=send_telegram, updates=get_updates, now=None, log=print):
     except Exception:                            # noqa: BLE001
         now_local = now
     sent = []
-    res = updates(st.get("tg_offset", 0))
-    if res is None:
-        log("  telegram updates unavailable (another poller?) — DONE through the concierge still works")
+
+    tap = taps()
+    if tap is None:
+        log("  tap endpoint unavailable — DONE through the concierge still works")
     else:
-        for u in res:
-            st["tg_offset"] = max(st.get("tg_offset", 0), u["update_id"] + 1)
-            msg = u.get("message") or {}
-            if str((msg.get("chat") or {}).get("id")) != _chat():
-                continue
-            p = st.get("pending")
-            if p and ACK_RE.match(msg.get("text") or "") and \
-                    msg.get("date", 0) >= int(datetime.fromisoformat(p["sent_at"]).timestamp()):
-                st, ok = ack(st, send, now, log)
-                if ok:
-                    sent.append("ack")
+        p = st.get("pending")
+        if p and tap:
+            tap_at = datetime.fromisoformat(tap["at"].replace("Z", "+00:00"))
+            sent_at = datetime.fromisoformat(p["sent_at"])
+            if tap_at >= sent_at:
+                if tap["kind"] == "done":
+                    st, ok = ack(st, send, now, log)
+                    if ok:
+                        sent.append("ack")
+                elif tap["kind"] == "snooze":
+                    p["snooze_until"] = (tap_at + timedelta(hours=2)).isoformat()
+                    log(f"  snoozed until {p['snooze_until']}")
+
     p = st.get("pending")
     if p:
-        p["reminders"] = p.get("reminders", 0) + 1
-        text = msg_reminder(st, now_local)
-        if send(text):
-            sent.append(text)
+        snooze_until = p.get("snooze_until")
+        snoozed = bool(snooze_until) and now < datetime.fromisoformat(snooze_until.replace("Z", "+00:00"))
+        if not snoozed:                          # a ⏰ 2 h tap skips the reminder, never the stale check below
+            p["reminders"] = p.get("reminders", 0) + 1
+            text = msg_reminder(st, now_local)
+            if _send_with_buttons(send, text, p["kind"]):
+                sent.append(text)
+
     if st.get("last_asof"):
         days = business_days_between(date.fromisoformat(st["last_asof"]), now_local.date())
         today = now_local.date().isoformat()
@@ -409,7 +445,7 @@ def main(argv):
         path = args[args.index("--snapshot") + 1] if "--snapshot" in args else _path("rubber-band.json")
         st, _ = evaluate(json.load(open(path)), st, send=send, now=now)
     elif cmd == "nag":
-        st, _ = nag(st, send=send, updates=(lambda o: []) if dry else get_updates, now=now)
+        st, _ = nag(st, send=send, taps=(lambda: {}) if dry else get_taps, now=now)
     elif cmd == "ack":
         st, _ = ack(st, send=send, now=now)
     elif cmd == "set":

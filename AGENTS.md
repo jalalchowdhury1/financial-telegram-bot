@@ -1076,3 +1076,27 @@ Each finding has an `id`. Map id → meaning → fix:
 - `health-check.yml` has a `gate` job: the 14:00 UTC cron backstop yields when a One Clock
   `workflow_dispatch` run already succeeded in the last 20 h (both used to run at 10:00 EDT and
   both alerted on a bad day). Manual runs are never gated.
+
+## Defensive trigger: buttons instead of "Reply DONE" (11 Sep 2026)
+
+`scripts/defensive_trigger.py` alerts and hourly reminders carry inline buttons
+[✅ Done — cash parked / cash back in] [⏰ Quiet 2 h]. Taps are received by health-hub's
+`api/defensive.js` — this bot's Telegram WEBHOOK — so never call getUpdates on this token
+again (it would 409 against the webhook). The nag reads the tap back once an hour through
+`DEFENSIVE_TAP_URL` + `DEFENSIVE_TAP_KEY` in `.env` (pulled by name, launchd never sources
+the file). Done → ack; Quiet → no reminder for 2 h, the stale-radar warning still fires.
+A typed "done" in the chat still works (the webhook stores it as a text tap), and so does
+`defensive_trigger.py ack` from the concierge. `--dry` never reads taps. Reminder shape:
+`⏰ <b>what</b> still open · sent Thu 14:20 · #3`.
+
+## Defensive trigger: buttons instead of "Reply DONE" (11 Sep 2026)
+
+`scripts/defensive_trigger.py` alerts and hourly reminders carry inline buttons
+[✅ Done — cash parked / cash back in] [⏰ Quiet 2 h]. Taps are received by health-hub
+`api/defensive.js` — the Telegram WEBHOOK of this bot — so never call getUpdates on this
+token again (it would 409 against the webhook). The nag reads the tap back once an hour
+through `DEFENSIVE_TAP_URL` + `DEFENSIVE_TAP_KEY` in `.env` (pulled by name; launchd never
+sources the file). Done → ack; Quiet → no reminder for 2 h, the stale-radar warning still
+fires. A typed "done" in the chat still works (the webhook stores it as a text tap), and so
+does `defensive_trigger.py ack` from the concierge. `--dry` never reads taps. Reminder shape:
+`⏰ <b>what</b> still open · sent Thu 14:20 · #3`.
