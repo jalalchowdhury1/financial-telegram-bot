@@ -22,6 +22,7 @@ jobs:
     # alerted (found by the 11 Sep 2026 nag review). The backstop now yields when a
     # dispatched run already succeeded in the last 20 h. Manual runs are never gated.
     runs-on: ubuntu-latest
+    timeout-minutes: 10  # 2026-09-15: guard against a silent hang
     permissions:
       actions: read
     outputs:
@@ -44,6 +45,7 @@ jobs:
     needs: gate
     if: needs.gate.outputs.skip != 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10  # 2026-09-15: guard against a silent hang
     permissions:
       contents: read         # checkout only — history is kept as run artifacts, not committed
       actions: write         # re-dispatch daily_report.yml on a confirmed miss
@@ -109,7 +111,7 @@ jobs:
       - name: Secret scan (gitleaks)
         run: |
           set -uo pipefail
-          curl -sSL https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz | tar -xz gitleaks || true
+          curl -sSL -m 60 https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz | tar -xz gitleaks || true
           if [ -x ./gitleaks ]; then
             ./gitleaks detect --no-banner --report-format json --report-path gitleaks_report.json --redact || true
           fi

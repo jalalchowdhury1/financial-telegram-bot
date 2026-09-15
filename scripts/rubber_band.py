@@ -630,15 +630,18 @@ def publish_gist(snapshot_path, state):
     """Secret gist = the snapshot's home. Created once, edited every night. Returns raw URL."""
     gid = state.get("gist_id")
     if not gid:
+        # 2026-09-15: timeout=120 so a hung `gh` call raises TimeoutExpired instead of
+        # hanging the nightly job forever — main()'s broad except Exception catches it
+        # the same way it already catches CalledProcessError.
         out = subprocess.run(["gh", "gist", "create", "--filename", "rubber-band.json", snapshot_path],
-                             capture_output=True, text=True, check=True).stdout.strip()
+                             capture_output=True, text=True, check=True, timeout=120).stdout.strip()
         gid = out.rstrip("/").split("/")[-1]
         state["gist_id"] = gid
         save_state(state)
     else:
         subprocess.run(["gh", "gist", "edit", gid, "-f", "rubber-band.json", snapshot_path],
-                       capture_output=True, text=True, check=True)
-    user = subprocess.run(["gh", "api", "user", "--jq", ".login"], capture_output=True, text=True, check=True).stdout.strip()
+                       capture_output=True, text=True, check=True, timeout=120)
+    user = subprocess.run(["gh", "api", "user", "--jq", ".login"], capture_output=True, text=True, check=True, timeout=120).stdout.strip()
     return f"https://gist.githubusercontent.com/{user}/{gid}/raw/rubber-band.json"
 
 
