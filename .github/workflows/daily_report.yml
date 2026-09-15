@@ -21,7 +21,9 @@ on:
 jobs:
   generate-and-send-report:
     runs-on: ubuntu-latest
-    timeout-minutes: 15  # 2026-09-15: guard against a silent hang (see step-level timeout below)
+    # 2026-09-15: guard against a silent hang. Must exceed report step (8) + retry
+    # sleep (10) + setup, or the job cap cuts the retry dispatch off mid-sleep.
+    timeout-minutes: 30
     permissions:
       actions: write  # Allow triggering workflow_dispatch on retry
 
@@ -103,10 +105,10 @@ jobs:
         continue-on-error: true
 
       - name: Retry on failure
-        # 2026-09-15: also fire if the JOB itself got cancelled (e.g. a non-report step
-        # hung past the job timeout before the report step ever ran) — this step sends
-        # no Telegram message itself, so there is no double-send risk.
-        if: steps.report.outcome == 'failure' || cancelled()
+        # No cancelled() here: a run cancelled mid-report may already have sent, and the
+        # dispatched retry skips the Lambda guard, so it could message twice. A step hang
+        # already lands as failure (step timeout 8); health-check.yml catches the rest.
+        if: steps.report.outcome == 'failure'
         env:
           GITHUB_TOKEN: ${{ github.token }}
           RETRY_COUNT: ${{ github.event.inputs.retry_count || '0' }}
