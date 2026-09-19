@@ -722,56 +722,44 @@ describe('pillFactors', () => {
         expect(pf.regime.rows[2].effect).toBe('0');
     });
 
-    test('recession has 6 rows in chain order', () => {
+    test('recession has 4 rows, one per input, no repeated input', () => {
         const pf = pillFactors(data());
-        expect(pf.recession.rows.length).toBe(6);
-        expect(pf.recession.rows[0].label).toContain('Sahm');
-        expect(pf.recession.rows[2].label).toContain('Sahm');
-        expect(pf.recession.rows[3].label).toContain('Yield curve');
-        expect(pf.recession.rows[4].label).toContain('claims');
-        expect(pf.recession.rows[5].label).toContain('NFCI');
+        const labels = pf.recession.rows.map((r) => r.label);
+        expect(labels).toEqual(['Sahm rule', 'Yield curve (2s10s)', 'Jobless claims', 'NFCI']);
+        expect(new Set(labels).size).toBe(labels.length);
     });
 
     test('recession: low verdict summary', () => {
         const pf = pillFactors(data());
-        expect(pf.recession.summary).toContain('none fired → low');
+        expect(pf.recession.summary).toContain('none tripped → low');
+        expect(pf.recession.rows.every((r) => !r.hit)).toBe(true);
     });
 
-    test('recession: sahm >= 0.5 fires high row', () => {
-        const d = data({ overrides: { fred: { sahmRule: 0.5 } } });
-        const pf = pillFactors(d);
-        expect(pf.recession.rows[0].hit).toBe(true);
-        expect(pf.recession.rows[0].effect).toBe('high');
-        expect(pf.recession.summary).toContain('high');
+    test('recession: sahm >= 0.5 → Sahm row fires high', () => {
+        const pf = pillFactors(data({ overrides: { fred: { sahmRule: 0.5 } } }));
+        expect(pf.recession.rows[0]).toMatchObject({ hit: true, effect: 'high' });
+        expect(pf.recession.summary).toBe('Sahm rule tripped → high');
     });
 
-    test('recession: yieldCurve<0 + claims>=260 fires second row', () => {
-        const d = data({ overrides: { fred: { yieldCurve: -0.2, claims: 260 } } });
-        const pf = pillFactors(d);
-        expect(pf.recession.rows[1].hit).toBe(true);
-        expect(pf.recession.rows[1].effect).toBe('high');
-        expect(pf.recession.summary).toContain('high');
+    test('recession: sahm 0.2–0.49 → Sahm row fires rising', () => {
+        const pf = pillFactors(data({ overrides: { fred: { sahmRule: 0.2 } } }));
+        expect(pf.recession.rows[0]).toMatchObject({ hit: true, effect: 'rising' });
     });
 
-    test('recession: sahm >= 0.2 fires rising (only third row)', () => {
-        const d = data({ overrides: { fred: { sahmRule: 0.2, yieldCurve: 0.5, claims: 250 } } });
-        const pf = pillFactors(d);
-        expect(pf.recession.rows[0].hit).toBe(false);  // >=0.5 not reached
-        expect(pf.recession.rows[1].hit).toBe(false);
-        expect(pf.recession.rows[2].hit).toBe(true);
-        expect(pf.recession.rows[2].effect).toBe('rising');
+    test('recession: inverted curve + claims >= 260k → both rows fire high', () => {
+        const pf = pillFactors(data({ overrides: { fred: { yieldCurve: -0.2, claims: 260 } } }));
+        expect(pf.recession.rows[1]).toMatchObject({ hit: true, effect: 'high' });
+        expect(pf.recession.rows[2]).toMatchObject({ hit: true, effect: 'high' });
+        expect(pf.recession.summary).toContain('→ high');
     });
 
-    test('recession: claims >= 260 fires fourth row', () => {
-        const d = data({ overrides: { fred: { claims: 270, yieldCurve: 0.5, sahmRule: 0.15 } } });
-        const pf = pillFactors(d);
-        // First 3 rows don't fire (sahm<0.5 and <0.2, yc not <0)
-        expect(pf.recession.rows[0].hit).toBe(false);
-        expect(pf.recession.rows[1].hit).toBe(false);
-        expect(pf.recession.rows[2].hit).toBe(false);
-        expect(pf.recession.rows[3].hit).toBe(false); // yc not < 0
-        expect(pf.recession.rows[4].hit).toBe(true);   // claims >= 260
-        expect(pf.recession.rows[4].effect).toBe('rising');
+    test('recession: inverted curve alone → rising; claims alone → rising', () => {
+        const yc = pillFactors(data({ overrides: { fred: { yieldCurve: -0.1 } } }));
+        expect(yc.recession.rows[1]).toMatchObject({ hit: true, effect: 'rising' });
+        expect(yc.recession.rows[2].hit).toBe(false);
+        const cl = pillFactors(data({ overrides: { fred: { claims: 270 } } }));
+        expect(cl.recession.rows[2]).toMatchObject({ hit: true, effect: 'rising' });
+        expect(cl.recession.rows[1].hit).toBe(false);
     });
 
     test('breadth has 3 rows', () => {
@@ -902,7 +890,7 @@ describe('pillFactors', () => {
     test('formatting: claims as 203k', () => {
         const d = data({ overrides: { fred: { claims: 203 } } });
         const pf = pillFactors(d);
-        const claimsRow = pf.recession.rows[4];
+        const claimsRow = pf.recession.rows[2];
         expect(claimsRow.value).toBe('203k');
     });
 
@@ -949,12 +937,9 @@ describe('pillFactors — consistency with ruleVerdicts', () => {
     }
 
     function recessionVerdictFromHits(rows) {
-        for (const row of rows) {
-            if (row.hit && (row.effect === 'high' || row.effect === 'rising')) {
-                return row.effect;
-            }
-        }
-        return 'low';
+        const fired = rows.filter((r) => r.hit);
+        if (fired.some((r) => r.effect === 'high')) return 'high';
+        return fired.length ? 'rising' : 'low';
     }
 
     function breadthVerdictFromHits(rows) {

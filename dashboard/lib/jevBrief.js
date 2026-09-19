@@ -686,61 +686,42 @@ export function pillFactors(data) {
     }
 
     // ---- recession ----
+    // One row per INPUT (not per rule) so the popup never repeats an input; each row
+    // carries every threshold that input takes part in. Verdict = strongest effect
+    // among the rows that fired — identical to ruleVerdicts' first-match chain.
     {
         const rows = [];
+        const claimsHigh = claims != null && claims >= 260;
+        const ycInverted = yieldCurve != null && yieldCurve < 0;
 
-        // 1. Sahm rule >= 0.5 → high
-        const sahmHighHit = sahmRule != null && sahmRule >= 0.5;
+        const sahmEffect = sahmRule == null ? '' : sahmRule >= 0.5 ? 'high' : sahmRule >= 0.2 ? 'rising' : '';
         rows.push({
             label: 'Sahm rule',
             value: fmtNum(sahmRule),
-            test: '≥ 0.5 → high',
-            hit: sahmHighHit,
-            effect: sahmHighHit ? 'high' : '',
+            test: '≥ 0.2 → rising · ≥ 0.5 → high',
+            hit: sahmEffect !== '',
+            effect: sahmEffect,
         });
 
-        // 2. Yield curve < 0 and claims >= 260k → high
-        const ycClaimsHit = yieldCurve != null && claims != null && yieldCurve < 0 && claims >= 260;
-        rows.push({
-            label: 'Yield curve (2s10s) + claims',
-            value: `${fmtNum(yieldCurve)} · ${claims != null ? `${Math.round(claims)}k` : 'n/a'}`,
-            test: '< 0 and claims ≥ 260k → high',
-            hit: ycClaimsHit,
-            effect: ycClaimsHit ? 'high' : '',
-        });
-
-        // 3. Sahm rule >= 0.2 → rising
-        const sahmRisingHit = sahmRule != null && sahmRule >= 0.2 && !sahmHighHit;
-        rows.push({
-            label: 'Sahm rule',
-            value: fmtNum(sahmRule),
-            test: '≥ 0.2 → rising',
-            hit: sahmRisingHit,
-            effect: sahmRisingHit ? 'rising' : '',
-        });
-
-        // 4. Yield curve < 0 → rising
-        const ycRisingHit = yieldCurve != null && yieldCurve < 0 && !sahmHighHit && !ycClaimsHit;
+        const ycEffect = !ycInverted ? '' : claimsHigh ? 'high' : 'rising';
         rows.push({
             label: 'Yield curve (2s10s)',
             value: fmtNum(yieldCurve),
-            test: '< 0 → rising',
-            hit: ycRisingHit,
-            effect: ycRisingHit ? 'rising' : '',
+            test: '< 0 → rising · < 0 with claims ≥ 260k → high',
+            hit: ycEffect !== '',
+            effect: ycEffect,
         });
 
-        // 5. Claims >= 260k → rising
-        const claimsRisingHit = claims != null && claims >= 260 && !sahmHighHit && !ycClaimsHit && !ycRisingHit;
+        const claimsEffect = !claimsHigh ? '' : ycInverted ? 'high' : 'rising';
         rows.push({
             label: 'Jobless claims',
             value: claims != null ? `${Math.round(claims)}k` : 'n/a',
-            test: '≥ 260k → rising',
-            hit: claimsRisingHit,
-            effect: claimsRisingHit ? 'rising' : '',
+            test: '≥ 260k → rising · ≥ 260k with curve < 0 → high',
+            hit: claimsEffect !== '',
+            effect: claimsEffect,
         });
 
-        // 6. NFCI > 0 → rising
-        const nfciHit = nfci != null && nfci > 0 && !sahmHighHit && !ycClaimsHit && !ycRisingHit && !claimsRisingHit;
+        const nfciHit = nfci != null && nfci > 0;
         rows.push({
             label: 'NFCI',
             value: fmtNum(nfci),
@@ -749,21 +730,14 @@ export function pillFactors(data) {
             effect: nfciHit ? 'rising' : '',
         });
 
-        // Determine verdict by scanning chain
-        let recessionVerdict = 'low';
-        for (const row of rows) {
-            if (row.hit) {
-                if (row.effect === 'high' || row.effect === 'rising') {
-                    recessionVerdict = row.effect;
-                    break;
-                }
-            }
-        }
+        const fired = rows.filter((r) => r.hit);
+        const recessionVerdict = fired.some((r) => r.effect === 'high') ? 'high' : fired.length ? 'rising' : 'low';
+        const names = fired.map((r) => r.label).join(', ');
 
         factors.recession = {
             summary: recessionVerdict === 'low'
-                ? 'First rule that fires wins; none fired → low'
-                : `Rule that fired → ${recessionVerdict}`,
+                ? 'Strongest warning wins; none tripped → low'
+                : `${names} tripped → ${recessionVerdict}`,
             rows,
         };
     }
