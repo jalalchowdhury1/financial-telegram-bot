@@ -194,6 +194,31 @@ describe('assemblePills', () => {
         expect(result._meta.sources.fg).toBe('cnn');
         expect(result._meta.sources.breadth).toBe('RSP:polygon · SPY:polygon');
     });
+
+    test('inputSources carried into _meta', () => {
+        const inputSources = { t10y3m: 'fredcsv', nfci: 'fredcsv', claims: 'fred-route', sahm: 'fred-route' };
+        const result = assemblePills({
+            raw: sampleRaw,
+            jevAnswers: null,
+            yesterday: null,
+            mode: 'on',
+            inputSources,
+        });
+
+        expect(result._meta).toHaveProperty('inputSources');
+        expect(result._meta.inputSources).toEqual(inputSources);
+    });
+
+    test('inputSources defaults to empty object when not provided', () => {
+        const result = assemblePills({
+            raw: sampleRaw,
+            jevAnswers: null,
+            yesterday: null,
+            mode: 'on',
+        });
+
+        expect(result._meta.inputSources).toEqual({});
+    });
 });
 
 // ---------------------------------------------------------------------------
@@ -561,5 +586,146 @@ describe('breadth legs pass through toData into the regime row', () => {
         expect(row.value).toBe('-0.01%');
         expect(row.note).toBe('HYG -1.3% · LQD -1.3%');
         expect(out.pills.regime.reason).toContain('legs 20d: HYG -1.3% · LQD -1.3%');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// repairPillInputs — route glue
+// ---------------------------------------------------------------------------
+
+jest.mock('../../lib/sources', () => ({
+    fredObservations: jest.fn(),
+    fredGraphCsv: jest.fn(),
+}));
+jest.mock('../../lib/store', () => ({
+    loadLastGood: jest.fn(),
+    saveLastGood: jest.fn(),
+}));
+
+import { fredObservations, fredGraphCsv } from '../../lib/sources';
+import { loadLastGood, saveLastGood } from '../../lib/store';
+import { repairPillInputs } from '../../app/api/jev-pills/route';
+
+describe('repairPillInputs', () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+        // Default mock: return empty CSV for any series not explicitly set up;
+        // tests that need real data override this.
+        fredGraphCsv.mockImplementation((seriesId) => {
+            // Return a 3-row CSV with the series id as header, dates recent enough
+            // to be fresh (within 7 days of any reasonable test now).
+            const today = '2026-01-09';
+            const yesterday = '2026-01-08';
+            const twoDaysAgo = '2026-01-07';
+            return Promise.resolve(`observation_date,${seriesId}\n${twoDaysAgo},1.0\n${yesterday},1.1\n${today},1.2`);
+        });
+        fredObservations.mockResolvedValue([]);
+    });
+
+    test('sets t10y3m from fred when fredKey is present and API returns data', async () => {
+        // fredObservations returns DESCENDING (newest first)
+        fredObservations.mockResolvedValue([
+            { date: '2026-01-05', value: 0.87 },
+            { date: '2026-01-04', value: 0.85 },
+            { date: '2026-01-03', value: 0.83 },
+        ]);
+        const raw = {};
+        const inputSources = await repairPillInputs(raw, { fredKey: 'test-key', now: new Date('2026-01-07') });
+        expect(raw.t10y3m).toBe(0.87);
+        expect(inputSources.t10y3m).toBe('fred');
+    });
+
+    test('falls back to fredcsv when no fredKey', async () => {
+        fredGraphCsv.mockResolvedValue('observation_date,T10Y3M\n2026-01-04,0.80\n2026-01-05,0.87');
+        const raw = {};
+        const inputSources = await repairPillInputs(raw, { fredKey: null, now: new Date('2026-01-07') });
+        expect(raw.t10y3m).toBe(0.87);
+        expect(inputSources.t10y3m).toBe('fredcsv');
+    });
+
+    test('repairs NFCI when fred.checklist.nfci.value is missing', async () => {
+        fredGraphCsv.mockImplementation((seriesId) => {
+            if (seriesId === 'NFCI') {
+                return Promise.resolve('observation_date,NFCI\n2026-01-02,-0.5\n2026-01-09,-0.45');
+            }
+            // Default: return data fresh enough
+            return Promise.resolve('observation_date,T10Y3M\n2026-01-02,0.5\n2026-01-09,0.6');
+        });
+        const raw = { fred: { checklist: {} } };
+        const inputSources = await repairPillInputs(raw, { now: new Date('2026-01-12') });
+        expect(raw.fred.checklist.nfci.value).toBe(-0.45);
+        expect(raw.fred.checklist.nfci.source).toBe('fredcsv');
+        expect(inputSources.nfci).toBe('fredcsv');
+    });
+
+    test('does NOT repair NFCI when fred.checklist.nfci.value is already a finite number', async () => {
+        const raw = { fred: { checklist: { nfci: { value: -0.3 } } } };
+        const inputSources = await repairPillInputs(raw, {});
+        // fredGraphCsv should NOT be called for NFCI (but may be called for T10Y3M)
+        expect(inputSources.nfci).toBe('fred-route');
+    });
+
+    test('repairs claims from horsemen history when available', async () => {
+        const raw = {
+            fred: {
+                indicators: {},
+                horsemen: {
+                    claims: {
+                        history: [
+                            { date: '2026-01-01', value: 210000 },
+                            { date: '2026-01-08', value: 215000 },
+                            { date: '2026-01-15', value: 220000 },
+                            { date: '2026-01-22', value: 225000 },
+                        ],
+                    },
+                },
+            },
+        };
+        const inputSources = await repairPillInputs(raw, { now: new Date('2026-01-25') });
+        // 4-week avg = (210000+215000+220000+225000)/4000 = 217.5
+        expect(raw.fred.indicators.claims.value).toBe(217.5);
+        expect(raw.fred.indicators.claims.source).toBe('horsemen');
+        expect(inputSources.claims).toBe('horsemen');
+    });
+
+    test('repairs sahm from horsemen unemployment history when available', async () => {
+        // Need 12 months of data. Min of 12 = 3.5, last 3 mean = (4.0+4.1+4.2)/3 = 4.1
+        // Sahm = 4.1 - 3.5 = 0.6
+        const values = [3.5, 3.6, 3.7, 3.8, 3.9, 4.0, 3.9, 3.8, 3.9, 4.0, 4.1, 4.2];
+        const history = values.map((v, i) => ({ date: `2026-${String(i + 1).padStart(2, '0')}-01`, value: v }));
+        const raw = {
+            fred: {
+                indicators: {},
+                horsemen: {
+                    unemployment: { history },
+                },
+            },
+        };
+        const inputSources = await repairPillInputs(raw, { now: new Date('2027-01-15') });
+        expect(raw.fred.indicators.sahmRule.value).toBeCloseTo(0.6, 5);
+        expect(raw.fred.indicators.sahmRule.source).toBe('horsemen');
+        expect(inputSources.sahm).toBe('horsemen');
+    });
+
+    test('returns fred-route label when sibling already has the data', async () => {
+        const raw = {
+            fred: {
+                indicators: { claims: { value: 220 }, sahmRule: { value: 0.1 } },
+                checklist: { nfci: { value: -0.3 } },
+            },
+            t10y3m: null,
+        };
+        const inputSources = await repairPillInputs(raw, { fredKey: 'test-key', now: new Date('2026-01-07') });
+        // claims, sahm, nfci should stay at fred-route since their values are finite
+        expect(inputSources.claims).toBe('fred-route');
+        expect(inputSources.sahm).toBe('fred-route');
+        expect(inputSources.nfci).toBe('fred-route');
+        // t10y3m is always resolved, so it won't be fred-route if fred was used
+        // Since fredKey was provided, it will try fred first
+    });
+
+    test('never throws — returns inputSources even with null raw', async () => {
+        const result = await repairPillInputs(null, {});
+        expect(result).toEqual({ t10y3m: 'fred-route', nfci: 'fred-route', claims: 'fred-route', sahm: 'fred-route' });
     });
 });

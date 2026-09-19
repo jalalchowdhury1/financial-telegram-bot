@@ -282,4 +282,48 @@ describe('JevPills', () => {
         expect(dlg).toHaveTextContent(/Junk bonds \(HYG\) vs high-quality bonds/);
         expect(dlg).toHaveTextContent('Data through: ETF ratios 2026-09-18');
     });
+
+    // ── Backups in use ──
+
+    test('shows "Backups in use" line in Sources section when inputSources has non-default entries', () => {
+        const withBackups = {
+            ...sampleData,
+            _meta: {
+                ...sampleData._meta,
+                inputSources: {
+                    t10y3m: 'fredcsv',
+                    nfci: 'fredcsv',
+                    claims: 'horsemen',
+                    sahm: 'fred-route',
+                },
+            },
+        };
+        render(<JevPills data={withBackups} loading={false} />);
+        fireEvent.click(screen.getByText('Regime'));
+        expect(screen.getByRole('dialog')).toHaveTextContent('Backups in use: t10y3m fredcsv · nfci fredcsv · claims horsemen');
+    });
+
+    test('does NOT show "Backups in use" line when all inputSources are fred-route', () => {
+        const allDefault = {
+            ...sampleData,
+            _meta: {
+                ...sampleData._meta,
+                inputSources: {
+                    t10y3m: 'fred-route',
+                    nfci: 'fred-route',
+                    claims: 'fred-route',
+                    sahm: 'fred-route',
+                },
+            },
+        };
+        render(<JevPills data={allDefault} loading={false} />);
+        fireEvent.click(screen.getByText('Regime'));
+        expect(screen.getByRole('dialog')).not.toHaveTextContent('Backups in use');
+    });
+
+    test('does NOT show "Backups in use" when inputSources is missing', () => {
+        render(<JevPills data={sampleData} loading={false} />);
+        fireEvent.click(screen.getByText('Regime'));
+        expect(screen.getByRole('dialog')).not.toHaveTextContent('Backups in use');
+    });
 });

@@ -245,6 +245,16 @@ export default function JevPillModal({ pillKey, data, onClose }) {
                     {throughText && (
                         <p className="jev-modal-muted jev-modal-sources">Data through: {throughText}</p>
                     )}
+                    {(() => {
+                        const inputSources = data._meta?.inputSources || {};
+                        const backupEntries = Object.entries(inputSources)
+                            .filter(([, v]) => v && v !== 'fred-route' && v !== 'fred')
+                            .map(([k, v]) => `${k} ${v}`);
+                        if (backupEntries.length > 0) {
+                            return <p className="jev-modal-muted jev-modal-sources">Backups in use: {backupEntries.join(' · ')}</p>;
+                        }
+                        return null;
+                    })()}
                 </section>
             </div>
         </div>,

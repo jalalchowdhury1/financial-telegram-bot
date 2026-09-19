@@ -25,9 +25,10 @@ import {
  * @param {object|null} opts.jevAnswers — from judgeMany(), or null
  * @param {object|null} opts.yesterday — logged day payload (with .date), or null
  * @param {string} opts.mode — 'on' | 'rules'
+ * @param {object} [opts.inputSources] — per-input source labels from repairPillInputs, default {}
  * @returns {object} the full jev-pills payload (less _meta.logged, which the route appends)
  */
-export function assemblePills({ raw, jevAnswers, yesterday, mode }) {
+export function assemblePills({ raw, jevAnswers, yesterday, mode, inputSources = {} }) {
     const data = toData(raw);
     const state = buildState(data);
     const rule = ruleVerdicts(data);
@@ -81,6 +82,7 @@ export function assemblePills({ raw, jevAnswers, yesterday, mode }) {
             jev: jevStatus,
             sources,
             dataAsOf,
+            inputSources,
         },
     };
 }

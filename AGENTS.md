@@ -395,6 +395,16 @@ so `isGood` rejects an empty digest rather than letting it claim "nothing change
 - Telegram: `bot/jev_line.py` adds one optional 🧭 section ONLY when the Lambda env var
   `JEV_PILLS_URL` is set (hand-managed, §2 config drift). Unset = brief unchanged; any
   failure = line omitted, never a failed brief.
+- **Repair cascades** (2026-09-19, v3 backup chains): four pill inputs that `/api/fred`
+  could leave null now have a multi-source repair layer in `lib/jevInputs.js`. T10Y3M
+  (was `fetchT10y3m`) → fredObservations → fredGraphCsv → last-good. NFCI → fredGraphCsv
+  → last-good. Claims → horsemen.claims.history (4wk avg, source `horsemen`) → fredGraphCsv ICSA
+  → last-good. Sahm → horsemen.unemployment.history → fredGraphCsv UNRATE → last-good
+  (each tier reduced by `derive`, so last-good always holds the derived number). Inputs the sibling already serves are left alone. `_meta.inputSources` names
+  which source won per input; the popup shows a "Backups in use" line when any source is
+  not `fred-route`. Faults: `hm_fred`, `hm_horsemen`, `hm_fredcsv` / `lastgood` disable their respective tiers; `fred` kills the sibling's API tier.
+  Tests: `lib/__tests__/jevInputs.test.js` (20 tests), + repairPillInputs tests in
+  `jevPillsRoute.test.js`, + component tests in `JevPills.test.js`.
 
 ### FRED route specifics (`/api/fred`) — subtle, don't regress
 - The route uses `export const fetchCache = 'default-cache'` and stays dynamic by reading
