@@ -227,9 +227,11 @@ export default function Dashboard() {
             {/* MARKET PULSE - Quick summary at top */}
             <MarketPulse spy={spy} spyDailyMove={spyDailyMove} fg={fg} fred={fred} loading={loading} fgColor={fgColor} />
 
-            {/* JEV REGIME PILLS — hidden entirely when JEV_PILLS=off or the route is unreachable */}
+            {/* JEV REGIME PILLS — hidden entirely when JEV_PILLS=off or the route is unreachable.
+                No loading skeleton on purpose: with the kill switch on, a skeleton would flash
+                for a few seconds on every load and the page would NOT be exactly the old site. */}
             <ErrorBoundary>
-                <JevPills data={jevPills} loading={loading && !jevPills} />
+                <JevPills data={jevPills} />
             </ErrorBoundary>
 
             {/* MAIN GRID */}
