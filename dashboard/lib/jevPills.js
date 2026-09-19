@@ -55,6 +55,13 @@ export function assemblePills({ raw, jevAnswers, yesterday, mode }) {
         }
     }
 
+    // Freshness per feed, for the popup's "data through" line (null when a feed has no date)
+    const dataAsOf = {
+        breadth: raw?.breadth?.updated_at ?? null,
+        vol: raw?.vol?.updated_at ?? null,
+        fred: raw?.fred?.yieldCurve?.asOf ?? raw?.fred?.yieldCurve?.date ?? null,
+    };
+
     const jevStatus = mode === 'rules'
         ? 'rules'
         : (jevAnswers ? 'ok' : (process.env.TYPESAFE_API_KEY ? 'error: no answers' : 'off'));
@@ -73,6 +80,7 @@ export function assemblePills({ raw, jevAnswers, yesterday, mode }) {
         _meta: {
             jev: jevStatus,
             sources,
+            dataAsOf,
         },
     };
 }

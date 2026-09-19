@@ -1051,3 +1051,12 @@ describe('pillFactors — consistency with ruleVerdicts', () => {
         expect(implied.regime).toBe(rule.regime.verdict);
     });
 });
+
+describe('percent formatting never prints negative zero', () => {
+    test('HYG/LQD 20d of -0.012% shows as 0.0% in factors and in the regime reason', () => {
+        const d = data({ overrides: { breadth: { hygLqd: { chg20Pct: -0.012 } } } });
+        expect(pillFactors(d).regime.rows[2].value).toBe('0.0%');
+        expect(ruleVerdicts(d).regime.reason).toContain('hygLqd=0.0%');
+        expect(ruleVerdicts(d).regime.reason).not.toContain('-0.0%');
+    });
+});

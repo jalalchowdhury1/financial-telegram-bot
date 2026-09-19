@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { PILL_EXPLAIN, INPUT_EXPLAIN, FEED_NAMES, PILL_FEEDS } from './jevExplain';
 
 const FRIENDLY = {
     'risk-on': 'Risk-on',
@@ -120,6 +121,15 @@ export default function JevPillModal({ pillKey, data, onClose }) {
         .map(k => `${k}: ${trimSource(sources[k])}`);
     const sourcesText = sourceEntries.length > 0 ? sourceEntries.join(' · ') : '—';
 
+    // "Data through" — the last date each feed this pill reads was updated
+    const dataAsOf = data._meta?.dataAsOf || {};
+    const throughText = (PILL_FEEDS[pillKey] || [])
+        .filter(k => dataAsOf[k])
+        .map(k => `${FEED_NAMES[k] || k} ${dataAsOf[k]}`)
+        .join(' · ');
+
+    const explain = PILL_EXPLAIN[pillKey];
+
     // Portalled to <body>: .card sets backdrop-filter, which traps a position:fixed
     // descendant inside the card (see the .mark-pop note in globals.css).
     if (typeof document === 'undefined') return null;
@@ -153,6 +163,14 @@ export default function JevPillModal({ pillKey, data, onClose }) {
                         ×
                     </button>
                 </div>
+
+                {/* What this measures */}
+                {explain && (
+                    <section className="jev-modal-section">
+                        <h3 className="jev-modal-section-label">What this measures</h3>
+                        <p className="jev-modal-muted">{explain}</p>
+                    </section>
+                )}
 
                 {/* Why */}
                 <section className="jev-modal-section">
@@ -193,7 +211,12 @@ export default function JevPillModal({ pillKey, data, onClose }) {
                                 <tbody>
                                     {factorRows.map((row, i) => (
                                         <tr key={i} className={row.hit ? 'jev-hit' : ''}>
-                                            <td className="jev-col-input">{row.label}</td>
+                                            <td className="jev-col-input">
+                                                {row.label}
+                                                {INPUT_EXPLAIN[row.label] && (
+                                                    <div className="jev-input-explain">{INPUT_EXPLAIN[row.label]}</div>
+                                                )}
+                                            </td>
                                             <td className="jev-col-value">{row.value}</td>
                                             <td className="jev-col-rule">{row.test}</td>
                                             <td className="jev-col-fired">
@@ -218,6 +241,9 @@ export default function JevPillModal({ pillKey, data, onClose }) {
                                             <span className="jev-card-label">{row.label}</span>
                                             <span className="jev-card-value">{row.value}</span>
                                         </div>
+                                        {INPUT_EXPLAIN[row.label] && (
+                                            <div className="jev-input-explain">{INPUT_EXPLAIN[row.label]}</div>
+                                        )}
                                         <div className="jev-card-rule">{row.test}</div>
                                         <div className="jev-card-fired">
                                             {row.hit ? (
@@ -245,6 +271,9 @@ export default function JevPillModal({ pillKey, data, onClose }) {
                 <section className="jev-modal-section">
                     <h3 className="jev-modal-section-label">Sources</h3>
                     <p className="jev-modal-muted jev-modal-sources">{sourcesText}</p>
+                    {throughText && (
+                        <p className="jev-modal-muted jev-modal-sources">Data through: {throughText}</p>
+                    )}
                 </section>
             </div>
         </div>,

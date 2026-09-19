@@ -271,4 +271,15 @@ describe('JevPills', () => {
         expect(screen.getByText(/below the 0.6 confidence floor/)).toBeInTheDocument();
         expect(screen.getByText(/Jev said Narrow/)).toBeInTheDocument();
     });
+
+    test('modal explains what the pill measures, each input, and data freshness', () => {
+        const withMeta = { ...sampleData, _meta: { ...(sampleData._meta || {}), jev: 'ok', dataAsOf: { breadth: '2026-09-18' } } };
+        render(<JevPills data={withMeta} loading={false} />);
+        fireEvent.click(screen.getByRole('button', { name: /Regime/ }));
+        const dlg = screen.getByRole('dialog');
+        expect(dlg).toHaveTextContent('What this measures');
+        expect(dlg).toHaveTextContent(/risk-on\) or "no-go"/);
+        expect(dlg).toHaveTextContent(/Junk bonds \(HYG\) vs high-quality bonds/);
+        expect(dlg).toHaveTextContent('Data through: ETF ratios 2026-09-18');
+    });
 });

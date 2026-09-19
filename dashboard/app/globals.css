@@ -1748,3 +1748,15 @@ body::before {
     font-size: 0.58rem;
   }
 }
+
+/* Jev popup — plain-English note under each input label */
+.jev-input-explain {
+  font-weight: 400;
+  font-size: 0.7rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+  margin-top: 3px;
+}
+@media (max-width: 640px) {
+  .jev-input-explain { margin-bottom: 4px; }
+}
