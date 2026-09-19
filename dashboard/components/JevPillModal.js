@@ -203,12 +203,22 @@ export default function JevPillModal({ pillKey, data, onClose }) {
                                         )}
                                     </div>
                                     <div className="jev-input-side">
-                                        <div className="jev-input-value">{row.value}</div>
+                                        {String(row.value).includes(' · ') ? (
+                                            <div className="jev-input-value jev-input-multi">
+                                                {String(row.value).split(' · ').map((part, j) => (
+                                                    <div key={j}>{part}</div>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <div className="jev-input-value">{row.value}</div>
+                                        )}
                                         {row.note && <div className="jev-input-note">{row.note}</div>}
                                         <div className="jev-input-rule">{row.test}</div>
                                         <div className="jev-input-fired">
                                             {row.hit ? (
-                                                <span className="jev-hit-mark">✓ fired {row.effect}</span>
+                                                <span className="jev-hit-mark">
+                                                    {row.effect === 'divergence' ? '✓ diverges' : `✓ fired ${row.effect}`}
+                                                </span>
                                             ) : (
                                                 <span className="jev-no-hit">not fired</span>
                                             )}

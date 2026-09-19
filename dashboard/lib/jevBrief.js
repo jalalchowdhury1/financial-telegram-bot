@@ -196,8 +196,8 @@ export function conflictPairs(data) {
         if ((fgScore < 35 && ma200Pct > 3) || (fgScore > 65 && ma200Pct < -3)) {
             const detail =
                 fgScore < 35
-                    ? `Fear (${fgScore}) despite strong trend (+${ma200Pct.toFixed(1)}% above 200d MA)`
-                    : `Greed (${fgScore}) despite weak trend (${ma200Pct.toFixed(1)}% below 200d MA)`;
+                    ? `Fear (${Math.round(fgScore)}) despite strong trend (+${ma200Pct.toFixed(1)}% above 200d MA)`
+                    : `Greed (${Math.round(fgScore)}) despite weak trend (${ma200Pct.toFixed(1)}% below 200d MA)`;
             pairs.push({ pair: 'sentiment vs price', detail });
         }
     }
@@ -887,7 +887,7 @@ export function pillFactors(data) {
             },
             {
                 label: 'credit vs equities',
-                value: `SPY ${fmtPct(ma200Pct)} vs 200d · HYG/LQD ${fmtPct(hygChg20)}`,
+                value: `SPY ${fmtPct(ma200Pct)} vs 200d · HYG/LQD ${fmtPct(hygChg20, 2)}`,
                 test: 'SPY > 0% vs 200d with HYG/LQD 20d < −1.5%',
             },
             {

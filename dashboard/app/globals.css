@@ -1632,6 +1632,18 @@ body::before {
   overflow-wrap: anywhere;
 }
 
+.jev-input-label::first-letter {
+  text-transform: uppercase;
+}
+
+.jev-input-multi {
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+.jev-input-multi > div + div {
+  margin-top: 2px;
+}
+
 .jev-input-note {
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.72rem;
