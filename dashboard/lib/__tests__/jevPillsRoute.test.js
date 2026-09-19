@@ -558,7 +558,8 @@ describe('breadth legs pass through toData into the regime row', () => {
         raw.breadth.pairs.hygLqd = { ...raw.breadth.pairs.hygLqd, chg20Pct: -0.0125, legs: { HYG: -1.29, LQD: -1.28 } };
         const out = assemblePills({ raw, jevAnswers: null, yesterday: null, mode: 'rules' });
         const row = out.factors.regime.rows.find((r) => r.label === 'HYG/LQD 20d');
-        expect(row.value).toBe('-0.01% (HYG -1.3% · LQD -1.3%)');
+        expect(row.value).toBe('-0.01%');
+        expect(row.note).toBe('HYG -1.3% · LQD -1.3%');
         expect(out.pills.regime.reason).toContain('legs 20d: HYG -1.3% · LQD -1.3%');
     });
 });

@@ -1632,6 +1632,13 @@ body::before {
   overflow-wrap: anywhere;
 }
 
+.jev-input-note {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
 .jev-input-rule {
   font-size: 0.72rem;
   line-height: 1.45;
@@ -1708,6 +1715,7 @@ body::before {
   }
 
   .jev-input-value { font-size: 0.95rem; }
+  .jev-input-note { flex-basis: 100%; margin-top: 0; }
   .jev-input-rule { margin-top: 0; flex-basis: 100%; }
   .jev-input-fired { margin-top: 0; }
 }

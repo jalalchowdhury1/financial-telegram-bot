@@ -690,7 +690,8 @@ export function pillFactors(data) {
         const hygLegsTxt = fmtLegs(hyg.legs);
         rows.push({
             label: 'HYG/LQD 20d',
-            value: hygLegsTxt ? `${fmtPct(hygChg20, 2)} (${hygLegsTxt})` : fmtPct(hygChg20, 2),
+            value: fmtPct(hygChg20, 2),
+            ...(hygLegsTxt ? { note: hygLegsTxt } : {}),
             test: '> 0 → +1 · < −1 → −1 · else 0',
             hit: hygHit,
             effect: hygEffect,

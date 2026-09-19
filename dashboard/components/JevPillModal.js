@@ -204,6 +204,7 @@ export default function JevPillModal({ pillKey, data, onClose }) {
                                     </div>
                                     <div className="jev-input-side">
                                         <div className="jev-input-value">{row.value}</div>
+                                        {row.note && <div className="jev-input-note">{row.note}</div>}
                                         <div className="jev-input-rule">{row.test}</div>
                                         <div className="jev-input-fired">
                                             {row.hit ? (

@@ -1050,7 +1050,8 @@ describe('HYG/LQD display', () => {
     test('two decimals and the legs line when legs are present', () => {
         const d = data({ overrides: { breadth: { hygLqd: { ratio: 0.75, chg20Pct: -0.0125, chg60Pct: 2.77, vs50dPct: 0.26, legs: { HYG: -1.29, LQD: -1.28 } } } } });
         const row = pillFactors(d).regime.rows.find((r) => r.label === 'HYG/LQD 20d');
-        expect(row.value).toBe('-0.01% (HYG -1.3% · LQD -1.3%)');
+        expect(row.value).toBe('-0.01%');
+        expect(row.note).toBe('HYG -1.3% · LQD -1.3%');
         expect(row.hit).toBe(false);
         expect(ruleVerdicts(d).regime.reason).toContain('hygLqd=-0.01% (-1 to 0, 0)');
         expect(ruleVerdicts(d).regime.reason).toContain('legs 20d: HYG -1.3% · LQD -1.3%');
@@ -1059,6 +1060,7 @@ describe('HYG/LQD display', () => {
         const d = data({ overrides: { breadth: { hygLqd: { ratio: 0.75, chg20Pct: 0.2 } } } });
         const row = pillFactors(d).regime.rows.find((r) => r.label === 'HYG/LQD 20d');
         expect(row.value).toBe('+0.20%');
+        expect(row.note).toBeUndefined();
         expect(ruleVerdicts(d).regime.reason).not.toContain('legs 20d');
     });
 });
