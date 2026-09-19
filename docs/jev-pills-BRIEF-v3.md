@@ -143,5 +143,8 @@ Fix (this doc's contract, amended):
   the sibling on every healthy, fault-free call.
 - `fredGraphCsv`: 1 try × 5 s (was 2 × 8 s) so the sibling's outage path fits in 10 s.
 - `export const maxDuration = 30` on the pills route.
+- Fault names: `hm_<tier>` shared with the sibling; `jev_lastgood` for the pills' last-good;
+  the sibling's `lastgood`/`sheetlkg` are not applied to the pills, so a proof can empty the
+  sibling and still exercise the Sheet and KV tiers.
 
 ### v3.1 proofs (filled in after deploy)

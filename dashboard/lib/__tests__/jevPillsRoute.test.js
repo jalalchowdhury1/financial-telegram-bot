@@ -794,19 +794,23 @@ describe('repairPillInputs — v3.1 tiers', () => {
         expect(store.save).not.toHaveBeenCalled(); // fault mode never writes
     });
 
-    test("the sibling's own `sheetlkg` fault name also disables the Sheet tier", async () => {
-        const raw = { fred: null };
-        const diag = {};
-        await repairPillInputs(raw, { faults: new Set(['sheetlkg', 'lastgood']), now: new Date('2026-01-07'), store: mkStore(), diag });
-        expect(diag.tried.nfci[0]).toMatch(/^sheet:err\(\[injected fault: sheetlkg\]\)/);
-        expect(fetchSheetLkg).not.toHaveBeenCalled();
-    });
-
-    test('lastgood fault → null everywhere once live tiers are off', async () => {
+    test("the sibling's `sheetlkg` / `lastgood` faults do NOT switch off the pills' own tiers", async () => {
         const store = mkStore();
         store.load.mockResolvedValue({ data: { value: 1, asOf: '2026-01-03' }, savedAt: '2026-01-06T00:00:00Z' });
         const raw = { fred: null };
-        const faults = new Set(['hm_horsemen', 'hm_sheet', 'hm_fredcsv', 'hm_treasury', 'hm_fred', 'lastgood']);
+        const diag = {};
+        const src = await repairPillInputs(raw, { fredKey: 'k', faults: new Set(['fred', 'lastgood', 'sheetlkg', 'hm_bls', 'hm_treasury']), now: new Date('2026-01-07'), store, diag });
+        expect(src).toMatchObject({ nfci: 'sheet', claims: 'sheet', sahm: 'sheet' });
+        expect(fetchSheetLkg).toHaveBeenCalledTimes(1);
+        expect(diag.tried.t10y3m).toEqual(['fred:err(FRED API down)', 'treasury:off', 'fredcsv:err(Fetch timed out for fredgraph after 4000ms)', 'lastgood:ok(2026-01-06T00:00:00Z)']);
+        expect(store.save).not.toHaveBeenCalled(); // any fault → no writes
+    });
+
+    test('jev_lastgood fault → null everywhere once live tiers are off', async () => {
+        const store = mkStore();
+        store.load.mockResolvedValue({ data: { value: 1, asOf: '2026-01-03' }, savedAt: '2026-01-06T00:00:00Z' });
+        const raw = { fred: null };
+        const faults = new Set(['hm_horsemen', 'hm_sheet', 'hm_fredcsv', 'hm_treasury', 'hm_fred', 'jev_lastgood']);
         const src = await repairPillInputs(raw, { fredKey: 'k', faults, now: new Date('2026-01-07'), store });
         expect(src).toEqual({ t10y3m: null, nfci: null, claims: null, sahm: null });
         expect(store.load).not.toHaveBeenCalled();
@@ -835,7 +839,7 @@ describe('repairPillInputs — v3.1 tiers', () => {
     test('seeding is skipped in fault mode', async () => {
         const store = mkStore();
         const raw = { fred: { indicators: { claims: { value: 1, asOf: 'x' }, sahmRule: { value: 1, asOf: 'x' } }, checklist: { nfci: { value: 1, asOf: 'x' } } } };
-        await repairPillInputs(raw, { faults: new Set(['hm_fred', 'hm_treasury', 'hm_fredcsv', 'lastgood']), now: new Date('2026-01-07'), store });
+        await repairPillInputs(raw, { faults: new Set(['hm_fred', 'hm_treasury', 'hm_fredcsv', 'jev_lastgood']), now: new Date('2026-01-07'), store });
         expect(store.save).not.toHaveBeenCalled();
     });
 });

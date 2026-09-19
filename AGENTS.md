@@ -414,9 +414,11 @@ so `isGood` rejects an empty digest rather than letting it claim "nothing change
   healthy day, so the tier was empty exactly when needed. Inputs the sibling serves are
   left alone (`fred-route`). `_meta.inputSources` names the winner per input,
   `_meta.inputTried` shows every tier tried with the error text; the popup shows a
-  "Backups in use" line when any source is not `fred-route`/`fred`. Faults: `hm_fred`,
-  `hm_treasury`, `hm_sheet` (or the sibling's `sheetlkg`), `hm_horsemen`, `hm_fredcsv`,
-  `lastgood`; `fred` kills the sibling's API tier. `export const maxDuration = 30` on the
+  "Backups in use" line when any source is not `fred-route`/`fred`. Faults: `hm_<tier>` (`hm_fred`, `hm_treasury`, `hm_sheet`,
+  `hm_horsemen`, `hm_fredcsv`) apply here AND in the sibling; `jev_lastgood` switches the
+  pills' last-good off; the sibling's `lastgood` / `sheetlkg` are NOT applied here on purpose,
+  so `?_fail=fred,lastgood,sheetlkg,hm_bls,hm_treasury` empties the sibling and shows these
+  tiers carrying the pills. `fred` kills the sibling's API tier. `export const maxDuration = 30` on the
   route (outage path ≈ 10 s sibling + ≤ 15 s tiers). Prod proofs 2026-09-19: see
   `docs/jev-pills-BRIEF-v3.md` §"v3.1 proofs". Tests: `jevInputs.test.js`,
   `jevInputsTiers.test.js`, `jevStore.test.js`, + repairPillInputs tests in

@@ -73,8 +73,9 @@ async function fetchSibling(baseOrigin, path, faults) {
  * `fredcsv` is FRED's keyless CSV — a documented phantom on Vercel (AGENTS.md),
  * kept as a harmless 5 s last attempt. Last-good = /tmp + KV (lib/jevStore.js),
  * SEEDED from the sibling's own value on every healthy call, so the tier exists
- * before the outage that needs it. Faults: `hm_fred`, `hm_treasury`, `hm_sheet`
- * (or the sibling's `sheetlkg`), `hm_horsemen`, `hm_fredcsv`, `lastgood`.
+ * before the outage that needs it. Faults: `hm_fred`, `hm_treasury`, `hm_sheet`,
+ * `hm_horsemen`, `hm_fredcsv`, `jev_lastgood` (the sibling's `lastgood` / `sheetlkg`
+ * are NOT applied here — see pillFaults below).
  *
  * Never throws. Returns inputSources for _meta; `opts.diag` (if given) receives
  * `{ tried: { input: [...] }, seeded: [...] }` for `_meta.inputTried`.
@@ -87,10 +88,18 @@ export async function repairPillInputs(raw, { fredKey, faults = new Set(), now =
     const seeded = [];
     const LG_MAX_MS = 14 * 864e5; // weekly / monthly series: a two-week-old copy is still the print
 
+    // Fault names: `hm_<tier>` apply HERE and in the sibling (shared upstreams). `lastgood` /
+    // `sheetlkg` are the sibling's own switches and are deliberately NOT applied here, so a
+    // prod proof can empty the sibling (`?_fail=fred,lastgood,sheetlkg,hm_bls,hm_treasury`)
+    // and still watch these tiers carry the pills. `jev_lastgood` switches THIS last-good off.
+    // Any fault at all → never write last-good (same rule as serve()).
+    const pillFaults = new Set([...faults].filter((f) => f.startsWith('hm_')));
+    if (faults.has('jev_lastgood')) pillFaults.add('lastgood');
+    if (faults.size > 0) pillFaults.add('test');
+
     // One Sheet snapshot shared by every tier that wants it (lazy: only fetched on a miss).
     let sheetPromise = null;
     const sheet = () => {
-        if (faults.has('sheetlkg')) throw new Error('[injected fault: sheetlkg]');
         if (!sheetPromise) sheetPromise = fetchSheetLkg(now).catch(() => null);
         return sheetPromise;
     };
@@ -145,7 +154,7 @@ export async function repairPillInputs(raw, { fredKey, faults = new Set(), now =
             },
         });
         sources.push(fredcsv('T10Y3M', FRESH.T10Y3M));
-        const r = await resolvePillInput({ sources, faults, now, lastGoodKey: 'jev-t10y3m', maxStaleMs: LG_MAX_MS, store: lg });
+        const r = await resolvePillInput({ sources, faults: pillFaults, now, lastGoodKey: 'jev-t10y3m', maxStaleMs: LG_MAX_MS, store: lg });
         raw.t10y3m = r.value; // number or null — the contract toData expects
         inputSources.t10y3m = r.source; // 'fred' is this input's primary
         tried.t10y3m = r.tried;
@@ -160,7 +169,7 @@ export async function repairPillInputs(raw, { fredKey, faults = new Set(), now =
                 { name: 'sheet', freshnessDays: FRESH.NFCI, read: readSheet((s) => s.checklist?.nfci) },
                 fredcsv('NFCI', FRESH.NFCI),
             ],
-            faults, now, lastGoodKey: 'jev-nfci', maxStaleMs: LG_MAX_MS, store: lg,
+            faults: pillFaults, now, lastGoodKey: 'jev-nfci', maxStaleMs: LG_MAX_MS, store: lg,
         });
         if (r.value != null) setFredField('fred.checklist.nfci', { value: r.value, asOf: r.asOf, stale: false, unavailable: false, source: r.source });
         inputSources.nfci = r.source;
@@ -183,7 +192,7 @@ export async function repairPillInputs(raw, { fredKey, faults = new Set(), now =
                     }) },
                 fredcsv('ICSA', FRESH.ICSA, claims4wkFromHistory),
             ],
-            faults, now, lastGoodKey: 'jev-claims', maxStaleMs: LG_MAX_MS, store: lg,
+            faults: pillFaults, now, lastGoodKey: 'jev-claims', maxStaleMs: LG_MAX_MS, store: lg,
         });
         if (r.value != null) setFredField('fred.indicators.claims', { value: r.value, asOf: r.asOf, stale: false, unavailable: false, source: r.source });
         inputSources.claims = r.source;
@@ -206,7 +215,7 @@ export async function repairPillInputs(raw, { fredKey, faults = new Set(), now =
                     }) },
                 fredcsv('UNRATE', FRESH.UNRATE, sahmFromHistory),
             ],
-            faults, now, lastGoodKey: 'jev-sahm', maxStaleMs: LG_MAX_MS, store: lg,
+            faults: pillFaults, now, lastGoodKey: 'jev-sahm', maxStaleMs: LG_MAX_MS, store: lg,
         });
         if (r.value != null) setFredField('fred.indicators.sahmRule', { value: r.value, asOf: r.asOf, stale: false, unavailable: false, source: r.source });
         inputSources.sahm = r.source;
