@@ -8,6 +8,7 @@ import Skeleton from '../components/Skeleton';
 import SpyChart from '../components/SpyChart';
 import MiniChart from '../components/MiniChart';
 import MarketPulse from '../components/MarketPulse';
+import JevPills from '../components/JevPills';
 import CustomIndicatorBar from '../components/CustomIndicatorBar';
 import EconomicIndicatorGrid from '../components/EconomicIndicatorGrid';
 import FourHorsemen from '../components/FourHorsemen';
@@ -48,6 +49,9 @@ export default function Dashboard() {
     const [apiErrors, setApiErrors] = useState([]);
     const [refreshing, setRefreshing] = useState(false);
     const [history, setHistory] = useState(null);
+    // Jev regime pills (2026-09-19). Null = the route failed or JEV_PILLS=off, and the
+    // component renders nothing — the page then reads exactly as it did before.
+    const [jevPills, setJevPills] = useState(null);
     // Refresh behaviour: `loading` (skeletons) is for the FIRST load only. Every
     // later fetch is a background refresh — the page keeps showing what it has,
     // and only the header spinner moves. Before this, the 5-minute auto-refresh
@@ -62,7 +66,7 @@ export default function Dashboard() {
         lastFetchRef.current = Date.now();
         try {
             const timestamp = Date.now();
-            const [sheetsRes, spyRes, spyDailyMoveRes, fgRes, fredRes, extraRes, historyRes] = await Promise.all([
+            const [sheetsRes, spyRes, spyDailyMoveRes, fgRes, fredRes, extraRes, historyRes, jevRes] = await Promise.all([
                 fetch(`/api/sheets?_t=${timestamp}`, { cache: 'no-store' }).then(r => r.json()).catch(() => null),
                 fetch(`/api/spy?_t=${timestamp}`, { cache: 'no-store' }).then(r => r.json()).catch(() => null),
                 fetch(`/api/spy-daily-move?_t=${timestamp}`, { cache: 'no-store' }).then(r => r.json()).catch(() => null),
@@ -73,6 +77,8 @@ export default function Dashboard() {
                 // swallowed: if it fails the digest is null, no marks render, and every
                 // number reads exactly as it does today.
                 fetch(`/api/history?_t=${timestamp}`, { cache: 'no-store' }).then(r => r.json()).catch(() => null),
+                // Jev pills — swallowed the same way: a failure hides the row, nothing else.
+                fetch(`/api/jev-pills?_t=${timestamp}`, { cache: 'no-store' }).then(r => r.json()).catch(() => null),
             ]);
 
             // A null here means the fetch itself failed (the routes never 500).
@@ -84,6 +90,7 @@ export default function Dashboard() {
             setFred(prev => fredRes ?? prev);
             setExtraMarkets(prev => extraRes ?? prev);
             setHistory(prev => historyRes ?? prev);
+            setJevPills(prev => jevRes ?? prev);
             hasLoadedRef.current = true;
 
             setSystemStatus({
@@ -219,6 +226,11 @@ export default function Dashboard() {
 
             {/* MARKET PULSE - Quick summary at top */}
             <MarketPulse spy={spy} spyDailyMove={spyDailyMove} fg={fg} fred={fred} loading={loading} fgColor={fgColor} />
+
+            {/* JEV REGIME PILLS — hidden entirely when JEV_PILLS=off or the route is unreachable */}
+            <ErrorBoundary>
+                <JevPills data={jevPills} loading={loading && !jevPills} />
+            </ErrorBoundary>
 
             {/* MAIN GRID */}
             <div className="dashboard-grid">

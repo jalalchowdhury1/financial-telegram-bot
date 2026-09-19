@@ -366,6 +366,30 @@ so `isGood` rejects an empty digest rather than letting it claim "nothing change
 - Alerts (colour change or failed run) go to the owner's alert thread from the Mac mini,
   chat id via the launchd env — never in the repo.
 
+### 🧭 Jev regime pills (`/api/jev-pills` + `/api/breadth` + `JevPills.js`) — added 2026-09-19
+- Five pills under Market Pulse — regime, recession, breadth, hedges, conflict — plus a
+  "since yesterday" chip. Full contract + exact rule thresholds: `docs/jev-pills-BRIEF.md`.
+  Written by the DeepSeek Harness from that brief; reviewed by Claude.
+- **Rules ALWAYS decide first** (`lib/jevBrief.js: ruleVerdicts`). Jev (TypeSafe, one REST
+  call per refresh, `lib/jev.js`) may override a pill only with confidence ≥ 0.6; every
+  failure (no `TYPESAFE_API_KEY`, timeout, HTTP error, unknown verdict) = the rule verdict,
+  shown as `rule`. Jev has NOT been calibrated on market regimes (its proven strengths are
+  page-state and yes/no facts) — the daily log + `scripts/jev-score.mjs` exist to score it
+  after ~30 days; until then treat `Jev` pills as an experiment running beside the rules.
+- **Kill switch:** Vercel env `JEV_PILLS=off` → route answers `{ enabled: false }`, the
+  component renders nothing, the page is exactly the pre-feature site. `rules` = no Jev
+  call. Git tag `pre-jev-pills` marks the last commit before the feature.
+- Data to Jev = public market numbers only (FRED, CNN F&G, CBOE vol, SPY, ETF ratios,
+  AAII spread). NEVER the sheet's custom indicators (`NotSoBoring`, `FrontRunner`) or
+  anything from `/api/rubber-band` — `buildState` has a test for this.
+- `/api/breadth`: RSP/SPY, IWM/SPY, XLK/XLU, HYG/LQD ratios, Polygon (`POLYGON_KEY`) →
+  CNBC keyless backup → last-good; fault gates `breadth_polygon`, `breadth_cnbc`.
+- Daily log + yesterday baseline live in Upstash (`KV_REST_API_URL`/`KV_REST_API_TOKEN`,
+  keys `ftb:jev:*`); missing KV = no baseline chip, `logged:false`, nothing breaks.
+- Telegram: `bot/jev_line.py` adds one optional 🧭 section ONLY when the Lambda env var
+  `JEV_PILLS_URL` is set (hand-managed, §2 config drift). Unset = brief unchanged; any
+  failure = line omitted, never a failed brief.
+
 ### FRED route specifics (`/api/fred`) — subtle, don't regress
 - The route uses `export const fetchCache = 'default-cache'` and stays dynamic by reading
   the request, so Next's Data Cache via per-fetch `revalidate` works (don't switch it to
