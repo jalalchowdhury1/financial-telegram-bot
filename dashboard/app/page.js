@@ -509,7 +509,10 @@ export default function Dashboard() {
                 <p>Jalal's Financial Dashboard v7.0 — Data from FRED, CNN, Polygon, ExchangeRate-API, Yahoo Finance &amp; Google Sheets</p>
                 {process.env.NEXT_PUBLIC_BUILD_TIME && (
                     <p style={{ fontSize: '0.7rem', opacity: 0.6, marginTop: '4px' }}>
-                        Deployed: {new Date(process.env.NEXT_PUBLIC_BUILD_TIME).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        {/* Pinned to New York time: the server renders in UTC and the browser in local
+                            time, so an unpinned format never matched and every load threw React #425
+                            (hydration text mismatch) from Feb to Sep 2026. */}
+                        Deployed: {new Date(process.env.NEXT_PUBLIC_BUILD_TIME).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'America/New_York' })} ET
                     </p>
                 )}
             </footer>
