@@ -244,3 +244,22 @@ describe('pairStats', () => {
         expect(s.vs50dPct).toBeLessThan(0);
     });
 });
+describe('legStats', () => {
+    const { legStats, ratioSeries } = require('../breadth');
+    const mk = (start, step, n) => Array.from({ length: n }, (_, i) => ({
+        date: `2026-01-${String(i + 1).padStart(2, '0')}`, price: start + step * i,
+    }));
+    test('per-leg 20d change over the same window as pairStats', () => {
+        const a = mk(100, 1, 25);   // 100 → 124
+        const b = mk(200, 2, 25);   // 200 → 248
+        const series = ratioSeries(a, b);
+        const legs = legStats(a, b, series, ['HYG', 'LQD']);
+        // window = rows -21 → -1: a 104→124 (+19.23%), b 208→248 (+19.23%)
+        expect(legs.HYG).toBeCloseTo(19.23, 1);
+        expect(legs.LQD).toBeCloseTo(19.23, 1);
+    });
+    test('nulls when fewer than 21 rows', () => {
+        const a = mk(100, 1, 10), b = mk(200, 2, 10);
+        expect(legStats(a, b, ratioSeries(a, b), ['HYG', 'LQD'])).toEqual({ HYG: null, LQD: null });
+    });
+});

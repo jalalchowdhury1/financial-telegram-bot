@@ -1038,10 +1038,27 @@ describe('pillFactors — consistency with ruleVerdicts', () => {
 });
 
 describe('percent formatting never prints negative zero', () => {
-    test('HYG/LQD 20d of -0.012% shows as 0.0% in factors and in the regime reason', () => {
-        const d = data({ overrides: { breadth: { hygLqd: { chg20Pct: -0.012 } } } });
-        expect(pillFactors(d).regime.rows[2].value).toBe('0.0%');
-        expect(ruleVerdicts(d).regime.reason).toContain('hygLqd=0.0%');
-        expect(ruleVerdicts(d).regime.reason).not.toContain('-0.0%');
+    test('HYG/LQD 20d of -0.004% shows as 0.00% in factors and in the regime reason', () => {
+        const d = data({ overrides: { breadth: { hygLqd: { chg20Pct: -0.004 } } } });
+        expect(pillFactors(d).regime.rows[2].value).toBe('0.00%');
+        expect(ruleVerdicts(d).regime.reason).toContain('hygLqd=0.00%');
+        expect(ruleVerdicts(d).regime.reason).not.toContain('-0.00%');
+    });
+});
+
+describe('HYG/LQD display', () => {
+    test('two decimals and the legs line when legs are present', () => {
+        const d = data({ overrides: { breadth: { hygLqd: { ratio: 0.75, chg20Pct: -0.0125, chg60Pct: 2.77, vs50dPct: 0.26, legs: { HYG: -1.29, LQD: -1.28 } } } } });
+        const row = pillFactors(d).regime.rows.find((r) => r.label === 'HYG/LQD 20d');
+        expect(row.value).toBe('-0.01% (HYG -1.3% · LQD -1.3%)');
+        expect(row.hit).toBe(false);
+        expect(ruleVerdicts(d).regime.reason).toContain('hygLqd=-0.01% (-1 to 0, 0)');
+        expect(ruleVerdicts(d).regime.reason).toContain('legs 20d: HYG -1.3% · LQD -1.3%');
+    });
+    test('no legs → plain two-decimal value, no legs line', () => {
+        const d = data({ overrides: { breadth: { hygLqd: { ratio: 0.75, chg20Pct: 0.2 } } } });
+        const row = pillFactors(d).regime.rows.find((r) => r.label === 'HYG/LQD 20d');
+        expect(row.value).toBe('+0.20%');
+        expect(ruleVerdicts(d).regime.reason).not.toContain('legs 20d');
     });
 });

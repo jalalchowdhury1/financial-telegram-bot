@@ -79,10 +79,20 @@ export const JEV_QUESTIONS = {
 // ---------------------------------------------------------------------------
 
 // Round BEFORE choosing the sign so -0.012 prints "0.0%", never "-0.0%".
-const fmtPct = (n) => {
+const fmtPct = (n, digits = 1) => {
     if (!Number.isFinite(n)) return 'n/a';
-    const r = Math.round(n * 10) / 10 || 0;
-    return `${r > 0 ? '+' : ''}${r.toFixed(1)}%`;
+    const k = 10 ** digits;
+    const r = Math.round(n * k) / k || 0;
+    return `${r > 0 ? '+' : ''}${r.toFixed(digits)}%`;
+};
+
+/** "HYG −1.3% · LQD −1.3%" from a pair's legs block; '' when unavailable. */
+const fmtLegs = (legs) => {
+    if (!legs || typeof legs !== 'object') return '';
+    const parts = Object.entries(legs)
+        .filter(([, v]) => Number.isFinite(v))
+        .map(([t, v]) => `${t} ${fmtPct(v)}`);
+    return parts.join(' · ');
 };
 const fmtNum = (n) => (Number.isFinite(n) ? n.toFixed(2) : 'n/a');
 const fmtInt = (n) => (Number.isFinite(n) ? String(Math.round(n)) : 'n/a');
@@ -294,16 +304,18 @@ export function ruleVerdicts(data) {
     if (hygChg20 != null) {
         if (hygChg20 > 0) {
             regimeScore += 1;
-            regimeParts.push(`hygLqd=${fmtPct(hygChg20)} (>0, +1)`);
+            regimeParts.push(`hygLqd=${fmtPct(hygChg20, 2)} (>0, +1)`);
         } else if (hygChg20 < -1) {
             regimeScore -= 1;
-            regimeParts.push(`hygLqd=${fmtPct(hygChg20)} (<-1, -1)`);
+            regimeParts.push(`hygLqd=${fmtPct(hygChg20, 2)} (<-1, -1)`);
         } else {
-            regimeParts.push(`hygLqd=${fmtPct(hygChg20)} (-1 to 0, 0)`);
+            regimeParts.push(`hygLqd=${fmtPct(hygChg20, 2)} (-1 to 0, 0)`);
         }
     } else {
         regimeParts.push('hygLqd=mv (0)');
     }
+    const hygLegs = fmtLegs(hyg.legs);
+    if (hygLegs) regimeParts.push(`legs 20d: ${hygLegs}`);
 
     let regimeVerdict;
     if (regimeScore >= 2) regimeVerdict = 'risk-on';
@@ -666,9 +678,10 @@ export function pillFactors(data) {
             else if (hygChg20 < -1) { hygEffect = '−1'; hygHit = true; score -= 1; }
             // else between -1 and 0: no hit, score unchanged
         }
+        const hygLegsTxt = fmtLegs(hyg.legs);
         rows.push({
             label: 'HYG/LQD 20d',
-            value: fmtPct(hygChg20),
+            value: hygLegsTxt ? `${fmtPct(hygChg20, 2)} (${hygLegsTxt})` : fmtPct(hygChg20, 2),
             test: '> 0 → +1 · < −1 → −1 · else 0',
             hit: hygHit,
             effect: hygEffect,

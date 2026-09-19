@@ -15,7 +15,7 @@
 import { polygonDaily, cnbcHistory } from '../../../lib/sources';
 import { serve } from '../../../lib/store';
 import { faultsFrom, gate } from '../../../lib/faults';
-import { PAIRS, ratioSeries, pairStats } from '../../../lib/breadth';
+import { PAIRS, ratioSeries, pairStats, legStats } from '../../../lib/breadth';
 
 export const fetchCache = 'default-cache';
 
@@ -98,7 +98,7 @@ export async function GET(request) {
                 continue;
             }
 
-            pairs[key] = pairStats(series);
+            pairs[key] = { ...pairStats(series), legs: legStats(histA, histB, series, [tickerA, tickerB]) };
         }
 
         // updated_at = most recent asOf across all computed pairs

@@ -96,3 +96,32 @@ export function pairStats(series) {
 
     return { ratio, chg20Pct, chg60Pct, vs50dPct, asOf };
 }
+/**
+ * Per-leg change over the same 20-row window pairStats uses, so a flat ratio
+ * can be explained ("both legs fell 1.3%"). Keyed by ticker; null when the
+ * window is not available.
+ *
+ * @param {Array<{date:string, price:number}>} histA ascending
+ * @param {Array<{date:string, price:number}>} histB ascending
+ * @param {Array<{date:string, ratio:number}>} series from ratioSeries(histA, histB)
+ * @param {[string, string]} tickers [tickerA, tickerB]
+ * @returns {Object<string, number|null>} e.g. { HYG: -1.3, LQD: -1.28 }
+ */
+export function legStats(histA, histB, series, [tickerA, tickerB]) {
+    const out = { [tickerA]: null, [tickerB]: null };
+    if (!Array.isArray(series) || series.length < 21) return out;
+    const from = series[series.length - 21].date;
+    const to = series[series.length - 1].date;
+    const chg = (hist) => {
+        if (!Array.isArray(hist)) return null;
+        const byDate = {};
+        for (const e of hist) if (e && Number.isFinite(e.price)) byDate[e.date] = e.price;
+        const a = byDate[from];
+        const b = byDate[to];
+        if (!Number.isFinite(a) || !Number.isFinite(b) || a === 0) return null;
+        return ((b / a) - 1) * 100;
+    };
+    out[tickerA] = chg(histA);
+    out[tickerB] = chg(histB);
+    return out;
+}
