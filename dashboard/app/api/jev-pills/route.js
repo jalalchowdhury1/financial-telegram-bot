@@ -10,15 +10,19 @@
  */
 import { serve } from '../../../lib/store';
 import { faultsFrom } from '../../../lib/faults';
-import { fredObservations, fredGraphCsv } from '../../../lib/sources';
+import { fredObservations, fredGraphCsv, treasuryYieldCurveCsv } from '../../../lib/sources';
 import { judgeMany } from '../../../lib/jev';
 import { JEV_QUESTIONS, toData, buildState } from '../../../lib/jevBrief';
 import { assemblePills } from '../../../lib/jevPills';
 import { logVerdicts, yesterday as loadYesterday } from '../../../lib/jevLog';
-import { FRESH, claims4wkFromHistory, sahmFromHistory, resolvePillInput } from '../../../lib/jevInputs';
+import { FRESH, claims4wkFromHistory, sahmFromHistory, parseTreasurySpreadCsv, resolvePillInput } from '../../../lib/jevInputs';
+import { makePillStore } from '../../../lib/jevStore';
+import { fetchSheetLkg } from '../../../lib/sheetLkg';
 import { parseFredGraphCsv } from '../../../lib/horsemen';
 
 export const fetchCache = 'default-cache';
+// Outage path: sibling wait (10 s) + backup tiers with their own timeouts. Valid on every Vercel plan.
+export const maxDuration = 30;
 
 const SIBLING_ROUTES = ['/api/spy', '/api/fear-greed', '/api/vol', '/api/fred', '/api/breadth', '/api/sheets'];
 const FETCH_TIMEOUT_MS = 10_000;
@@ -57,119 +61,168 @@ async function fetchSibling(baseOrigin, path, faults) {
 /**
  * repairPillInputs — run AFTER sibling fetches, BEFORE toData.
  *
- * Mutates `raw` to repair four pill inputs that the sibling /api/fred route
- * may have served as null (no data available from its own cascade). Each only
- * fires when the sibling's value is absent. Never throws.
+ * Mutates `raw` to repair four pill inputs the sibling /api/fred route may
+ * have served as null (or not at all — a FRED outage makes that route slow and
+ * fetchSibling gives up at 10 s). Tiers, in order, per input:
  *
- * Returns inputSources for _meta: a map of input name → source label.
+ *   t10y3m  fred API → treasury (10 Yr − 3 Mo, origin publisher) → fredcsv → last-good
+ *   nfci    sheet (dashboard_lkg snapshot)                        → fredcsv → last-good
+ *   claims  horsemen (sibling's repaired ICSA history, 4-wk avg) → sheet → fredcsv → last-good
+ *   sahm    horsemen (sibling's repaired UNRATE history, Sahm)    → sheet → fredcsv → last-good
+ *
+ * `fredcsv` is FRED's keyless CSV — a documented phantom on Vercel (AGENTS.md),
+ * kept as a harmless 5 s last attempt. Last-good = /tmp + KV (lib/jevStore.js),
+ * SEEDED from the sibling's own value on every healthy call, so the tier exists
+ * before the outage that needs it. Faults: `hm_fred`, `hm_treasury`, `hm_sheet`
+ * (or the sibling's `sheetlkg`), `hm_horsemen`, `hm_fredcsv`, `lastgood`.
+ *
+ * Never throws. Returns inputSources for _meta; `opts.diag` (if given) receives
+ * `{ tried: { input: [...] }, seeded: [...] }` for `_meta.inputTried`.
  */
-export async function repairPillInputs(raw, { fredKey, faults = new Set(), now = new Date() }) {
+export async function repairPillInputs(raw, { fredKey, faults = new Set(), now = new Date(), store = null, diag = null } = {}) {
     const inputSources = { t10y3m: 'fred-route', nfci: 'fred-route', claims: 'fred-route', sahm: 'fred-route' };
     if (!raw) return inputSources;
+    const lg = store || makePillStore();
+    const tried = {};
+    const seeded = [];
+    const LG_MAX_MS = 14 * 864e5; // weekly / monthly series: a two-week-old copy is still the print
 
-    // -- 1. T10Y3M (always resolved here, replaces fetchT10y3m) --
-    const t10y3mSources = [];
-    if (fredKey) {
-        t10y3mSources.push({
-            name: 'fred',
-            freshnessDays: FRESH.T10Y3M,
-            fetch: async () => {
-                const obs = await fredObservations('T10Y3M', fredKey, { limit: 30 });
-                // fredObservations returns DESCENDING (newest first); reverse for resolvePillInput
-                return (obs || []).slice().reverse();
-            },
-        });
-    }
-    t10y3mSources.push({
-        name: 'fredcsv',
-        freshnessDays: FRESH.T10Y3M,
-        fetch: async () => parseFredGraphCsv(await fredGraphCsv('T10Y3M')),
+    // One Sheet snapshot shared by every tier that wants it (lazy: only fetched on a miss).
+    let sheetPromise = null;
+    const sheet = () => {
+        if (faults.has('sheetlkg')) throw new Error('[injected fault: sheetlkg]');
+        if (!sheetPromise) sheetPromise = fetchSheetLkg(now).catch(() => null);
+        return sheetPromise;
+    };
+    const readSheet = (pick) => async () => {
+        const snap = await sheet();
+        const v = snap ? pick(snap) : null;
+        return v && Number.isFinite(v.value) ? { value: v.value, asOf: v.asOf ?? null } : null;
+    };
+    const lastDate = (hist) => (Array.isArray(hist) && hist.length ? hist[hist.length - 1]?.date ?? null : null);
+
+    const fredcsv = (id, freshnessDays, derive) => ({
+        name: 'fredcsv', freshnessDays, ...(derive ? { derive } : {}),
+        fetch: async () => parseFredGraphCsv(await fredGraphCsv(id, { timeout: 4000 })),
     });
-    const t10y3mResult = await resolvePillInput({ sources: t10y3mSources, faults, now, lastGoodKey: 'jev-t10y3m' });
-    raw.t10y3m = t10y3mResult.value; // number or null — same contract fetchT10y3m had
-    inputSources.t10y3m = t10y3mResult.source; // 'fred' is this input's primary
 
     // Helper to set a fred.checklist or fred.indicators value
     const setFredField = (path, valueObj) => {
         const parts = path.split('.');
-        let obj = raw;
-        if (!obj.fred) obj.fred = {};
+        if (!raw.fred || typeof raw.fred !== 'object') raw.fred = {};
         if (parts[0] === 'fred') parts.shift();
-        // Start from raw.fred (the stripped path is e.g. ['checklist', 'nfci'])
-        obj = obj.fred;
+        let obj = raw.fred;
         for (let i = 0; i < parts.length - 1; i++) {
             if (!obj[parts[i]] || typeof obj[parts[i]] !== 'object') obj[parts[i]] = {};
             obj = obj[parts[i]];
         }
         obj[parts[parts.length - 1]] = valueObj;
     };
+    const isFinite_ = (v) => v != null && Number.isFinite(v);
 
-    // -- 2. NFCI (C) — only when raw.fred?.checklist?.nfci?.value is not a finite number --
-    const nfciValue = raw?.fred?.checklist?.nfci?.value;
-    if (!(nfciValue != null && Number.isFinite(nfciValue))) {
-        const nfciResult = await resolvePillInput({
-            sources: [{ name: 'fredcsv', freshnessDays: FRESH.NFCI, fetch: async () => parseFredGraphCsv(await fredGraphCsv('NFCI')) }],
-            faults, now, lastGoodKey: 'jev-nfci',
-        });
-        if (nfciResult.value != null) {
-            setFredField('fred.checklist.nfci', {
-                value: nfciResult.value,
-                asOf: nfciResult.asOf,
-                stale: false,
-                unavailable: false,
-                source: nfciResult.source,
+    // -- 1. T10Y3M — always resolved here (the sibling never carries it) --
+    const t10y3m = async () => {
+        const sources = [];
+        if (fredKey) {
+            sources.push({
+                name: 'fred', freshnessDays: FRESH.T10Y3M,
+                fetch: async () => {
+                    const obs = await fredObservations('T10Y3M', fredKey, { limit: 30 });
+                    return (obs || []).slice().reverse(); // fredObservations is DESCENDING
+                },
             });
         }
-        inputSources.nfci = nfciResult.source;
-    }
+        sources.push({
+            name: 'treasury', freshnessDays: FRESH.T10Y3M,
+            fetch: async () => {
+                const year = now.getUTCFullYear();
+                let rows = parseTreasurySpreadCsv(await treasuryYieldCurveCsv(year, { timeout: 5000 }), '3 mo', '10 yr');
+                if (rows.length < 2) { // first days of January: the current-year file is near-empty
+                    const prior = parseTreasurySpreadCsv(await treasuryYieldCurveCsv(year - 1, { timeout: 5000 }), '3 mo', '10 yr');
+                    rows = [...prior, ...rows];
+                }
+                return rows;
+            },
+        });
+        sources.push(fredcsv('T10Y3M', FRESH.T10Y3M));
+        const r = await resolvePillInput({ sources, faults, now, lastGoodKey: 'jev-t10y3m', maxStaleMs: LG_MAX_MS, store: lg });
+        raw.t10y3m = r.value; // number or null — the contract toData expects
+        inputSources.t10y3m = r.source; // 'fred' is this input's primary
+        tried.t10y3m = r.tried;
+    };
 
-    // -- 3. Claims (A) — only when raw.fred?.indicators?.claims?.value is not finite --
-    // Tier 1: the sibling's already-repaired horsemen.claims history (bls/fredcsv
-    // inside /api/fred). Tier 2: keyless FRED CSV. Tier 3: last-good. Every tier
-    // is reduced to the 4-week average in thousands, exactly like indicators.claims.
-    const claimsValue = raw?.fred?.indicators?.claims?.value;
-    if (!(claimsValue != null && Number.isFinite(claimsValue))) {
+    // -- 2. NFCI — only when the sibling has no finite value --
+    const nfci = async () => {
+        const cur = raw?.fred?.checklist?.nfci;
+        if (isFinite_(cur?.value)) { seeded.push('nfci'); await seed('jev-nfci', cur); return; }
+        const r = await resolvePillInput({
+            sources: [
+                { name: 'sheet', freshnessDays: FRESH.NFCI, read: readSheet((s) => s.checklist?.nfci) },
+                fredcsv('NFCI', FRESH.NFCI),
+            ],
+            faults, now, lastGoodKey: 'jev-nfci', maxStaleMs: LG_MAX_MS, store: lg,
+        });
+        if (r.value != null) setFredField('fred.checklist.nfci', { value: r.value, asOf: r.asOf, stale: false, unavailable: false, source: r.source });
+        inputSources.nfci = r.source;
+        tried.nfci = r.tried;
+    };
+
+    // -- 3. Claims — 4-week average in thousands, exactly like indicators.claims --
+    const claims = async () => {
+        const cur = raw?.fred?.indicators?.claims;
+        if (isFinite_(cur?.value)) { seeded.push('claims'); await seed('jev-claims', cur); return; }
         const horsemenHist = raw?.fred?.horsemen?.claims?.history;
-        const claimsResult = await resolvePillInput({
+        const r = await resolvePillInput({
             sources: [
                 { name: 'horsemen', freshnessDays: FRESH.ICSA, derive: claims4wkFromHistory,
                     fetch: async () => (Array.isArray(horsemenHist) ? horsemenHist : []) },
-                { name: 'fredcsv', freshnessDays: FRESH.ICSA, derive: claims4wkFromHistory,
-                    fetch: async () => parseFredGraphCsv(await fredGraphCsv('ICSA')) },
+                { name: 'sheet', freshnessDays: FRESH.ICSA,
+                    read: readSheet((s) => {
+                        const v = s.indicators?.claims;
+                        return v ? { value: v.value, asOf: v.asOf ?? lastDate(s.horsemen?.claims?.history) } : null;
+                    }) },
+                fredcsv('ICSA', FRESH.ICSA, claims4wkFromHistory),
             ],
-            faults, now, lastGoodKey: 'jev-claims',
+            faults, now, lastGoodKey: 'jev-claims', maxStaleMs: LG_MAX_MS, store: lg,
         });
-        if (claimsResult.value != null) {
-            setFredField('fred.indicators.claims', {
-                value: claimsResult.value, asOf: claimsResult.asOf,
-                stale: false, unavailable: false, source: claimsResult.source,
-            });
-        }
-        inputSources.claims = claimsResult.source;
-    }
+        if (r.value != null) setFredField('fred.indicators.claims', { value: r.value, asOf: r.asOf, stale: false, unavailable: false, source: r.source });
+        inputSources.claims = r.source;
+        tried.claims = r.tried;
+    };
 
-    // -- 4. Sahm (B) — same shape over monthly UNRATE --
-    const sahmValue = raw?.fred?.indicators?.sahmRule?.value;
-    if (!(sahmValue != null && Number.isFinite(sahmValue))) {
+    // -- 4. Sahm — same shape over monthly UNRATE --
+    const sahm = async () => {
+        const cur = raw?.fred?.indicators?.sahmRule;
+        if (isFinite_(cur?.value)) { seeded.push('sahm'); await seed('jev-sahm', cur); return; }
         const unHist = raw?.fred?.horsemen?.unemployment?.history;
-        const sahmResult = await resolvePillInput({
+        const r = await resolvePillInput({
             sources: [
                 { name: 'horsemen', freshnessDays: FRESH.UNRATE, derive: sahmFromHistory,
                     fetch: async () => (Array.isArray(unHist) ? unHist : []) },
-                { name: 'fredcsv', freshnessDays: FRESH.UNRATE, derive: sahmFromHistory,
-                    fetch: async () => parseFredGraphCsv(await fredGraphCsv('UNRATE')) },
+                { name: 'sheet', freshnessDays: FRESH.UNRATE,
+                    read: readSheet((s) => {
+                        const v = s.indicators?.sahmRule;
+                        return v ? { value: v.value, asOf: v.asOf ?? lastDate(s.horsemen?.unemployment?.history) } : null;
+                    }) },
+                fredcsv('UNRATE', FRESH.UNRATE, sahmFromHistory),
             ],
-            faults, now, lastGoodKey: 'jev-sahm',
+            faults, now, lastGoodKey: 'jev-sahm', maxStaleMs: LG_MAX_MS, store: lg,
         });
-        if (sahmResult.value != null) {
-            setFredField('fred.indicators.sahmRule', {
-                value: sahmResult.value, asOf: sahmResult.asOf,
-                stale: false, unavailable: false, source: sahmResult.source,
-            });
-        }
-        inputSources.sahm = sahmResult.source;
+        if (r.value != null) setFredField('fred.indicators.sahmRule', { value: r.value, asOf: r.asOf, stale: false, unavailable: false, source: r.source });
+        inputSources.sahm = r.source;
+        tried.sahm = r.tried;
+    };
+
+    // Seed the last-good tier from the sibling's own healthy value (never in fault mode).
+    async function seed(key, cur) {
+        if (faults.size > 0) return;
+        try { await lg.save(key, { value: cur.value, asOf: cur.asOf ?? null, source: 'fred-route' }); } catch { /* best effort */ }
     }
 
+    // Independent inputs → run together so the worst outage path is the slowest chain, not their sum.
+    await Promise.all([t10y3m, nfci, claims, sahm].map((fn) => fn().catch(() => {})));
+
+    if (diag && typeof diag === 'object') { diag.tried = tried; diag.seeded = seeded; }
     return inputSources;
 }
 
@@ -207,9 +260,11 @@ export async function GET(request) {
         };
 
         // Repair pill inputs that sibling routes couldn't serve
+        const diag = {};
         const inputSources = await repairPillInputs(raw, {
             fredKey: process.env.FRED_API_KEY,
             faults,
+            diag,
         });
 
         // Build state text for Jev
@@ -227,6 +282,7 @@ export async function GET(request) {
 
         // Assemble the payload
         const payload = assemblePills({ raw, jevAnswers, yesterday: yesterdayData, mode, inputSources });
+        payload._meta.inputTried = diag.tried || {};
 
         // Log today's verdicts (best effort, never throw)
         const todayStr = new Date().toISOString().slice(0, 10);

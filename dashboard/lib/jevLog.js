@@ -26,7 +26,7 @@ function canLog() {
 /**
  * GET /get/<key> — returns the decoded value or null.
  */
-async function kvGet(key) {
+export async function kvGet(key) {
     if (!canLog()) return null;
     try {
         const url = `${BASE()}/get/${encodeURIComponent(key)}`;
@@ -47,7 +47,7 @@ async function kvGet(key) {
  * POST /set/<key> — body is JSON.stringify(value) (the RAW value, no wrapper).
  * Returns true on success, false on failure.
  */
-async function kvSet(key, value) {
+export async function kvSet(key, value) {
     if (!canLog()) return false;
     try {
         const url = `${BASE()}/set/${encodeURIComponent(key)}`;

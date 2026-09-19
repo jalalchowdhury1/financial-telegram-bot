@@ -154,7 +154,7 @@ describe('resolvePillInput', () => {
         const result = await resolvePillInput({ sources, now });
         expect(result.value).toBe(30);
         expect(result.source).toBe('beta');
-        expect(result.tried).toContain('alpha:err');
+        expect(result.tried.some((t) => t.startsWith('alpha:err'))).toBe(true);
         expect(result.tried).toContain('beta:ok');
     });
 
@@ -229,7 +229,7 @@ describe('resolvePillInput', () => {
         ];
         const now = new Date('2026-01-05');
         await resolvePillInput({ sources, now, lastGoodKey: 'jev-test' });
-        expect(saveLastGood).toHaveBeenCalledWith('jev-test', { value: 30, asOf: '2026-01-03', source: 'alpha', tried: ['alpha:ok'] });
+        expect(saveLastGood).toHaveBeenCalledWith('jev-test', { value: 30, asOf: '2026-01-03', source: 'alpha' });
     });
 
     test('returns null for value when every source fails and no last-good', async () => {
@@ -240,7 +240,7 @@ describe('resolvePillInput', () => {
         const result = await resolvePillInput({ sources, lastGoodKey: 'jev-test' });
         expect(result.value).toBeNull();
         expect(result.source).toBeNull();
-        expect(result.tried).toContain('alpha:err');
+        expect(result.tried.some((t) => t.startsWith('alpha:err'))).toBe(true);
         expect(result.tried).toContain('lastgood:none');
     });
 });

@@ -33,15 +33,16 @@ export const INPUT_EXPLAIN = {
     'sentiment vs price': 'Crowd mood vs the price trend: a fearful crowd in an uptrend, or a greedy crowd in a downtrend.',
     '2s10s vs 3m10y': 'Two yield-curve measures disagreeing on whether the curve is inverted.',
     'credit vs equities': 'Stocks in an uptrend while junk bonds sell off. Credit often sees trouble first.',
-    'breadth vs index': 'Index near its high while the average stock falls behind. A rally getting thin.',
+    'breadth vs index': 'Index near its 52-week closing high while the average stock falls behind. A rally getting thin.',
 };
 
 /** Friendly names + which feeds each pill depends on, for the "data through" line. */
-export const FEED_NAMES = { breadth: 'ETF ratios', vol: 'volatility', fred: 'FRED' };
+export const FEED_NAMES = { spy: 'SPY', fg: 'Fear & Greed', breadth: 'ETF ratios', vol: 'volatility', fred: 'FRED' };
+// Every feed a pill's rule actually reads (keep in sync with ruleVerdicts / conflictPairs).
 export const PILL_FEEDS = {
-    regime: ['breadth'],
+    regime: ['spy', 'fg', 'breadth'],
     recession: ['fred'],
     breadth: ['breadth'],
     hedging: ['vol'],
-    conflict: ['fred', 'breadth'],
+    conflict: ['spy', 'fg', 'fred', 'breadth'],
 };

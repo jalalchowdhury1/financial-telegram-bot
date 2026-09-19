@@ -57,7 +57,11 @@ export function assemblePills({ raw, jevAnswers, yesterday, mode, inputSources =
     }
 
     // Freshness per feed, for the popup's "data through" line (null when a feed has no date)
+    const spyHist = Array.isArray(raw?.spy?.chartHistory) ? raw.spy.chartHistory : [];
     const dataAsOf = {
+        spy: spyHist.length ? (spyHist[spyHist.length - 1]?.date ?? null) : null,
+        // CNN's gauge is read live at call time, so its data is "through" today
+        fg: Number.isFinite(raw?.fg?.score) ? asOf.slice(0, 10) : null,
         breadth: raw?.breadth?.updated_at ?? null,
         vol: raw?.vol?.updated_at ?? null,
         fred: raw?.fred?.yieldCurve?.asOf ?? raw?.fred?.yieldCurve?.date ?? null,

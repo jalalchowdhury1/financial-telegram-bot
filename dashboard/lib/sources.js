@@ -278,9 +278,13 @@ export async function blsSeries(seriesId, { startYear, endYear, key = '', revali
  * DOES survive a revoked/exhausted/misconfigured api key, which is the far more
  * likely failure. Hence its position as the last tier in every cascade.
  */
-export async function fredGraphCsv(seriesId, { revalidate = 1800, timeout = 8000 } = {}) {
+export async function fredGraphCsv(seriesId, { revalidate = 1800, timeout = 5000, tries = 1 } = {}) {
+    // PHANTOM on Vercel (see AGENTS.md): works from a browser / local dev, hangs
+    // from a server until the timeout. One short attempt, so an outage path that
+    // reaches this tier costs ~5 s, not ~17 s (2 tries × 8 s + backoff) — which
+    // used to push /api/fred past the 10 s the pills route waits for a sibling.
     const url = `https://fred.stlouisfed.org/graph/fredgraph.csv?id=${encodeURIComponent(seriesId)}`;
-    return withRetry(() => fetchText(url, { revalidate, timeout }), { tries: 2 });
+    return withRetry(() => fetchText(url, { revalidate, timeout }), { tries });
 }
 
 /** Build a {value,pct} daily-change object from current + previous close. */

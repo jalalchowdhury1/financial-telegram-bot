@@ -327,3 +327,14 @@ describe('JevPills', () => {
         expect(screen.getByRole('dialog')).not.toHaveTextContent('Backups in use');
     });
 });
+
+describe('PILL_FEEDS lists every feed a pill reads', () => {
+    const { PILL_FEEDS, FEED_NAMES } = require('../jevExplain');
+    test('regime and conflict include SPY and Fear & Greed', () => {
+        expect(PILL_FEEDS.regime).toEqual(expect.arrayContaining(['spy', 'fg', 'breadth']));
+        expect(PILL_FEEDS.conflict).toEqual(expect.arrayContaining(['spy', 'fg', 'fred', 'breadth']));
+    });
+    test('every feed key has a friendly name', () => {
+        for (const feeds of Object.values(PILL_FEEDS)) for (const f of feeds) expect(FEED_NAMES[f]).toBeTruthy();
+    });
+});

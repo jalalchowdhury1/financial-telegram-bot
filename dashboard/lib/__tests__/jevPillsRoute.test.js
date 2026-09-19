@@ -596,13 +596,18 @@ describe('breadth legs pass through toData into the regime row', () => {
 jest.mock('../../lib/sources', () => ({
     fredObservations: jest.fn(),
     fredGraphCsv: jest.fn(),
+    treasuryYieldCurveCsv: jest.fn(),
+}));
+jest.mock('../../lib/sheetLkg', () => ({
+    fetchSheetLkg: jest.fn(),
 }));
 jest.mock('../../lib/store', () => ({
     loadLastGood: jest.fn(),
     saveLastGood: jest.fn(),
 }));
 
-import { fredObservations, fredGraphCsv } from '../../lib/sources';
+import { fredObservations, fredGraphCsv, treasuryYieldCurveCsv } from '../../lib/sources';
+import { fetchSheetLkg } from '../../lib/sheetLkg';
 import { loadLastGood, saveLastGood } from '../../lib/store';
 import { repairPillInputs } from '../../app/api/jev-pills/route';
 
@@ -620,6 +625,8 @@ describe('repairPillInputs', () => {
             return Promise.resolve(`observation_date,${seriesId}\n${twoDaysAgo},1.0\n${yesterday},1.1\n${today},1.2`);
         });
         fredObservations.mockResolvedValue([]);
+        treasuryYieldCurveCsv.mockRejectedValue(new Error('treasury down'));
+        fetchSheetLkg.mockResolvedValue(null);
     });
 
     test('sets t10y3m from fred when fredKey is present and API returns data', async () => {
@@ -727,5 +734,127 @@ describe('repairPillInputs', () => {
     test('never throws — returns inputSources even with null raw', async () => {
         const result = await repairPillInputs(null, {});
         expect(result).toEqual({ t10y3m: 'fred-route', nfci: 'fred-route', claims: 'fred-route', sahm: 'fred-route' });
+    });
+});
+
+// ---------------------------------------------------------------------------
+// repairPillInputs — v3.1 tiers (treasury, sheet, seeded last-good, faults, diag)
+// ---------------------------------------------------------------------------
+
+describe('repairPillInputs — v3.1 tiers', () => {
+    const TREASURY = 'Date,"1 Mo","3 Mo","2 Yr","10 Yr"\n01/06/2026,4.00,4.14,4.76,5.01\n01/05/2026,4.00,4.15,4.77,5.03';
+    const mkStore = () => ({ load: jest.fn(async () => null), save: jest.fn(async () => true) });
+
+    beforeEach(() => {
+        jest.clearAllMocks();
+        fredGraphCsv.mockRejectedValue(new Error('Fetch timed out for fredgraph after 4000ms'));
+        fredObservations.mockRejectedValue(new Error('FRED API down'));
+        treasuryYieldCurveCsv.mockResolvedValue(TREASURY);
+        fetchSheetLkg.mockResolvedValue({
+            indicators: { claims: { value: 203.25, asOf: '2026-01-03' }, sahmRule: { value: 0.03, asOf: '2025-12-01' } },
+            checklist: { nfci: { value: -0.56, asOf: '2026-01-02' } },
+            horsemen: { claims: { history: [{ date: '2026-01-03', value: 196000 }] } },
+        });
+    });
+
+    test('t10y3m: FRED API dead → Treasury 10 Yr − 3 Mo (0.87), source treasury', async () => {
+        const raw = {};
+        const diag = {};
+        const store = mkStore();
+        const src = await repairPillInputs(raw, { fredKey: 'k', now: new Date('2026-01-07'), store, diag });
+        expect(raw.t10y3m).toBe(0.87);
+        expect(src.t10y3m).toBe('treasury');
+        expect(diag.tried.t10y3m[0]).toMatch(/^fred:err\(FRED API down\)/);
+        expect(treasuryYieldCurveCsv).toHaveBeenCalledWith(2026, expect.objectContaining({ timeout: 5000 }));
+    });
+
+    test('sibling missing entirely (timed out) → nfci/claims/sahm from the Sheet snapshot, fredcsv never reached', async () => {
+        const raw = { fred: null };
+        const diag = {};
+        const src = await repairPillInputs(raw, { now: new Date('2026-01-07'), store: mkStore(), diag });
+        expect(src).toMatchObject({ nfci: 'sheet', claims: 'sheet', sahm: 'sheet', t10y3m: 'treasury' });
+        expect(raw.fred.checklist.nfci).toMatchObject({ value: -0.56, asOf: '2026-01-02', source: 'sheet' });
+        expect(raw.fred.indicators.claims).toMatchObject({ value: 203.25, source: 'sheet' });
+        expect(raw.fred.indicators.sahmRule).toMatchObject({ value: 0.03, source: 'sheet' });
+        expect(fetchSheetLkg).toHaveBeenCalledTimes(1); // one snapshot shared by all three
+        expect(diag.tried.claims).toEqual(['horsemen:empty', 'sheet:ok']);
+    });
+
+    test('hm_horsemen + hm_sheet faults skip those tiers; hm_fredcsv skips the phantom; lastgood serves', async () => {
+        const store = mkStore();
+        store.load.mockResolvedValue({ data: { value: 210, asOf: '2026-01-03', source: 'fred-route' }, savedAt: '2026-01-06T00:00:00Z' });
+        const raw = { fred: { indicators: {}, horsemen: { claims: { history: [] } } } };
+        const diag = {};
+        const faults = new Set(['fred', 'hm_horsemen', 'hm_sheet', 'hm_fredcsv', 'hm_treasury', 'hm_fred']);
+        const src = await repairPillInputs(raw, { fredKey: 'k', faults, now: new Date('2026-01-07'), store, diag });
+        expect(diag.tried.claims).toEqual(['horsemen:off', 'sheet:off', 'fredcsv:off', 'lastgood:ok(2026-01-06T00:00:00Z)']);
+        expect(src.claims).toBe('lastgood');
+        expect(raw.fred.indicators.claims.value).toBe(210);
+        expect(src.t10y3m).toBe('lastgood');
+        expect(store.save).not.toHaveBeenCalled(); // fault mode never writes
+    });
+
+    test("the sibling's own `sheetlkg` fault name also disables the Sheet tier", async () => {
+        const raw = { fred: null };
+        const diag = {};
+        await repairPillInputs(raw, { faults: new Set(['sheetlkg', 'lastgood']), now: new Date('2026-01-07'), store: mkStore(), diag });
+        expect(diag.tried.nfci[0]).toMatch(/^sheet:err\(\[injected fault: sheetlkg\]\)/);
+        expect(fetchSheetLkg).not.toHaveBeenCalled();
+    });
+
+    test('lastgood fault → null everywhere once live tiers are off', async () => {
+        const store = mkStore();
+        store.load.mockResolvedValue({ data: { value: 1, asOf: '2026-01-03' }, savedAt: '2026-01-06T00:00:00Z' });
+        const raw = { fred: null };
+        const faults = new Set(['hm_horsemen', 'hm_sheet', 'hm_fredcsv', 'hm_treasury', 'hm_fred', 'lastgood']);
+        const src = await repairPillInputs(raw, { fredKey: 'k', faults, now: new Date('2026-01-07'), store });
+        expect(src).toEqual({ t10y3m: null, nfci: null, claims: null, sahm: null });
+        expect(store.load).not.toHaveBeenCalled();
+    });
+
+    test('healthy sibling → last-good SEEDED from its values (value + asOf, source fred-route)', async () => {
+        const store = mkStore();
+        fredObservations.mockResolvedValue([{ date: '2026-01-06', value: 0.9 }, { date: '2026-01-05', value: 0.85 }]);
+        const raw = {
+            fred: {
+                indicators: { claims: { value: 203.25, asOf: '2026-01-03' }, sahmRule: { value: 0.03, asOf: '2025-12-01' } },
+                checklist: { nfci: { value: -0.56, asOf: '2026-01-02' } },
+            },
+        };
+        const diag = {};
+        const src = await repairPillInputs(raw, { fredKey: 'k', now: new Date('2026-01-07'), store, diag });
+        expect(src).toEqual({ t10y3m: 'fred', nfci: 'fred-route', claims: 'fred-route', sahm: 'fred-route' });
+        expect(store.save).toHaveBeenCalledWith('jev-claims', { value: 203.25, asOf: '2026-01-03', source: 'fred-route' });
+        expect(store.save).toHaveBeenCalledWith('jev-sahm', { value: 0.03, asOf: '2025-12-01', source: 'fred-route' });
+        expect(store.save).toHaveBeenCalledWith('jev-nfci', { value: -0.56, asOf: '2026-01-02', source: 'fred-route' });
+        expect(store.save).toHaveBeenCalledWith('jev-t10y3m', { value: 0.9, asOf: '2026-01-06', source: 'fred' });
+        expect(diag.seeded.sort()).toEqual(['claims', 'nfci', 'sahm']);
+        expect(fetchSheetLkg).not.toHaveBeenCalled(); // no miss → no Sheet fetch
+    });
+
+    test('seeding is skipped in fault mode', async () => {
+        const store = mkStore();
+        const raw = { fred: { indicators: { claims: { value: 1, asOf: 'x' }, sahmRule: { value: 1, asOf: 'x' } }, checklist: { nfci: { value: 1, asOf: 'x' } } } };
+        await repairPillInputs(raw, { faults: new Set(['hm_fred', 'hm_treasury', 'hm_fredcsv', 'lastgood']), now: new Date('2026-01-07'), store });
+        expect(store.save).not.toHaveBeenCalled();
+    });
+});
+
+describe('assemblePills — dataAsOf covers every feed a pill reads', () => {
+    test('spy through = last chartHistory date; fg through = today', () => {
+        const raw = {
+            ...sampleRaw,
+            spy: { ...sampleRaw.spy, chartHistory: [{ date: '2026-09-17', price: 1 }, { date: '2026-09-18', price: 2 }] },
+        };
+        const p = assemblePills({ raw, jevAnswers: null, yesterday: null, mode: 'rules' });
+        expect(p._meta.dataAsOf.spy).toBe('2026-09-18');
+        expect(p._meta.dataAsOf.fg).toBe(p.asOf.slice(0, 10));
+    });
+
+    test('no chartHistory / no score → null, never a made-up date', () => {
+        const raw = { ...sampleRaw, spy: { current: 1 }, fg: {} };
+        const p = assemblePills({ raw, jevAnswers: null, yesterday: null, mode: 'rules' });
+        expect(p._meta.dataAsOf.spy).toBeNull();
+        expect(p._meta.dataAsOf.fg).toBeNull();
     });
 });

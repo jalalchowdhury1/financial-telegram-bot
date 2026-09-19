@@ -1064,3 +1064,24 @@ describe('HYG/LQD display', () => {
         expect(ruleVerdicts(d).regime.reason).not.toContain('legs 20d');
     });
 });
+
+// ---------------------------------------------------------------------------
+// Null-input edges flagged by the 2026-09-19 review
+// ---------------------------------------------------------------------------
+
+describe('null-input edges', () => {
+    test('hedging: ivPctile>70 with vrp=null is still expensive', () => {
+        const d = data({ overrides: { vol: { spy: { ivPctile1y: 75, vrp: null } } } });
+        expect(ruleVerdicts(d).hedging.verdict).toBe('expensive');
+    });
+
+    test('hedging: ivPctile=null with vrp>10 is still expensive', () => {
+        const d = data({ overrides: { vol: { spy: { ivPctile1y: null, vrp: 12 } } } });
+        expect(ruleVerdicts(d).hedging.verdict).toBe('expensive');
+    });
+
+    test('2s10s vs 3m10y: t10y3m=null never fires, even with an inverted 2s10s', () => {
+        const d = data({ overrides: { fred: { yieldCurve: -0.5 }, t10y3m: null } });
+        expect(conflictPairs(d).some((p) => p.pair === '2s10s vs 3m10y')).toBe(false);
+    });
+});

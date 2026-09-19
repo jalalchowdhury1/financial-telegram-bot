@@ -395,15 +395,31 @@ so `isGood` rejects an empty digest rather than letting it claim "nothing change
 - Telegram: `bot/jev_line.py` adds one optional 🧭 section ONLY when the Lambda env var
   `JEV_PILLS_URL` is set (hand-managed, §2 config drift). Unset = brief unchanged; any
   failure = line omitted, never a failed brief.
-- **Repair cascades** (2026-09-19, v3 backup chains): four pill inputs that `/api/fred`
-  could leave null now have a multi-source repair layer in `lib/jevInputs.js`. T10Y3M
-  (was `fetchT10y3m`) → fredObservations → fredGraphCsv → last-good. NFCI → fredGraphCsv
-  → last-good. Claims → horsemen.claims.history (4wk avg, source `horsemen`) → fredGraphCsv ICSA
-  → last-good. Sahm → horsemen.unemployment.history → fredGraphCsv UNRATE → last-good
-  (each tier reduced by `derive`, so last-good always holds the derived number). Inputs the sibling already serves are left alone. `_meta.inputSources` names
-  which source won per input; the popup shows a "Backups in use" line when any source is
-  not `fred-route`. Faults: `hm_fred`, `hm_horsemen`, `hm_fredcsv` / `lastgood` disable their respective tiers; `fred` kills the sibling's API tier.
-  Tests: `lib/__tests__/jevInputs.test.js` (20 tests), + repairPillInputs tests in
+- **Repair cascades** (2026-09-19, v3.1): four pill inputs that `/api/fred` can leave
+  null — or not deliver at all (a FRED outage made that route ~18 s and the pills route
+  waits 10 s for a sibling) — have a repair layer: `lib/jevInputs.js` (pure cascade) +
+  `repairPillInputs()` in the route + `lib/jevStore.js` (last-good). Tiers, in order:
+  T10Y3M → FRED API → **Treasury** daily-yield CSV (`10 Yr − 3 Mo`, by header name,
+  = FRED's number to 2dp) → fredcsv → last-good. NFCI → **Sheet** (`dashboard_lkg` snapshot,
+  `checklist.nfci`) → fredcsv → last-good. Claims → horsemen.claims.history (4-wk avg,
+  `horsemen`) → Sheet (`indicators.claims`) → fredcsv → last-good. Sahm →
+  horsemen.unemployment.history → Sheet (`indicators.sahmRule`) → fredcsv → last-good.
+  The four run in parallel; one Sheet fetch is shared. **`fredcsv` is the documented
+  phantom** (works locally, hangs on Vercel) — v3 shipped 2026-09-19 morning relying on it
+  and `?_fail=fred` on prod returned n/a for all three (`fredcsv:err`); `fredGraphCsv` is now
+  1 try × 5 s so an outage path stays inside the sibling timeout. Chicago Fed's own NFCI
+  CSV was probed and REJECTED (file ends 2026-04-24 at every URL). **Last-good = /tmp + KV**
+  (`ftb:jev:lg:<key>`, 14-day max age, rewritten only on change or every 6 h) and is SEEDED
+  from the sibling's value on every healthy call — before v3.1 it was never written on a
+  healthy day, so the tier was empty exactly when needed. Inputs the sibling serves are
+  left alone (`fred-route`). `_meta.inputSources` names the winner per input,
+  `_meta.inputTried` shows every tier tried with the error text; the popup shows a
+  "Backups in use" line when any source is not `fred-route`/`fred`. Faults: `hm_fred`,
+  `hm_treasury`, `hm_sheet` (or the sibling's `sheetlkg`), `hm_horsemen`, `hm_fredcsv`,
+  `lastgood`; `fred` kills the sibling's API tier. `export const maxDuration = 30` on the
+  route (outage path ≈ 10 s sibling + ≤ 15 s tiers). Prod proofs 2026-09-19: see
+  `docs/jev-pills-BRIEF-v3.md` §"v3.1 proofs". Tests: `jevInputs.test.js`,
+  `jevInputsTiers.test.js`, `jevStore.test.js`, + repairPillInputs tests in
   `jevPillsRoute.test.js`, + component tests in `JevPills.test.js`.
 
 ### FRED route specifics (`/api/fred`) — subtle, don't regress

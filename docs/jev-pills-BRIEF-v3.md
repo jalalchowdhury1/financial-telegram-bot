@@ -115,3 +115,33 @@ In the Sources section, when `_meta.inputSources` has any entry that is not
   `?_fail=fred,hm_fredcsv,hm_bls,hm_treasury` → `lastgood` entries.
 - AGENTS.md: one bullet under the Jev pills section naming the four repairs and the
   fault names.
+
+## v3.1 (same day) — what the live proof found and the fix
+
+Prod `?_fail=fred` after the v3 deploy returned **n/a for NFCI, claims and Sahm**
+(`inputSources` null) and `?_fail=…hm_fredcsv…` left t10y3m null. Three root causes:
+
+1. **`fredgraph.csv` is a phantom on Vercel** (AGENTS.md already said so: works in local
+   dev, hangs from a server). v3 leaned on it for every input. Local success was the trap.
+2. **The sibling `/api/fred` takes ~18 s under a FRED outage** (two 8 s CSV tries per
+   series) and the pills route stops waiting at 10 s → `raw.fred` was null, so even the
+   `horsemen` tier had nothing to derive from.
+3. **Last-good was never seeded.** It was written only when a repair succeeded, i.e. only
+   during an outage — on a healthy day the tier stayed empty. And /tmp is per instance.
+
+Fix (this doc's contract, amended):
+
+- t10y3m: fred API → **treasury** (`parseTreasurySpreadCsv(csv, '3 mo', '10 yr')`,
+  origin publisher, already prod-proven for 2s10s) → fredcsv → last-good.
+- nfci: **sheet** (`fetchSheetLkg().checklist.nfci`) → fredcsv → last-good.
+  Chicago Fed's own CSV was probed and rejected: the file ends 2026-04-24 at every URL.
+- claims / sahm: horsemen → **sheet** (`indicators.claims` / `indicators.sahmRule`) →
+  fredcsv → last-good.
+- `resolvePillInput` gains `read()` single-value sources, an injectable `store`, and
+  error text in `tried` (surfaced as `_meta.inputTried`).
+- `lib/jevStore.js`: /tmp + Upstash KV (`ftb:jev:lg:<key>`), 14-day max age, seeded from
+  the sibling on every healthy, fault-free call.
+- `fredGraphCsv`: 1 try × 5 s (was 2 × 8 s) so the sibling's outage path fits in 10 s.
+- `export const maxDuration = 30` on the pills route.
+
+### v3.1 proofs (filled in after deploy)
