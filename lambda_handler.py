@@ -39,6 +39,7 @@ from bot.fetchers import (
     fetch_polymarket_trending,
 )
 from bot.utils import load_environment_variables, send_to_telegram, report_marker, digest_post
+from bot.jev_line import fetch_jev_line
 from bot.config import TIMEZONE
 
 logger = logging.getLogger()
@@ -180,6 +181,19 @@ def handle_eventbridge(env_vars: Dict[str, str], run_time: str) -> Dict[str, Any
         err = f'SPY fetch failed: {e}'
         logger.error(err)
         errors.append(err)
+
+    # 3. Jev regime line — OPTIONAL. Only when JEV_PILLS_URL is set on the Lambda
+    # (hand-managed env var, see AGENTS.md §2 config drift). Unset ⇒ nothing
+    # fetched, brief unchanged. Any failure ⇒ the line is simply omitted.
+    jev_url = os.getenv('JEV_PILLS_URL', '')
+    if jev_url:
+        logger.info('Step 3 – Fetching Jev regime line...')
+        jev_line = fetch_jev_line(jev_url)
+        if jev_line:
+            report_sections.append(jev_line)
+            logger.info('✓ Jev regime line added.')
+        else:
+            logger.warning('⚠ Jev regime line skipped (unavailable).')
 
     if not report_sections:
         msg = 'No data could be fetched — all sources failed.'
