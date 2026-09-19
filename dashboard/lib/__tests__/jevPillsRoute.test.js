@@ -552,3 +552,13 @@ describe('assemblePills — jev field on pills', () => {
         expect(result.pills.regime.by).toBe('rule');
     });
 });
+describe('breadth legs pass through toData into the regime row', () => {
+    test('HYG/LQD row carries both legs from the raw breadth payload', () => {
+        const raw = JSON.parse(JSON.stringify(sampleRaw));
+        raw.breadth.pairs.hygLqd = { ...raw.breadth.pairs.hygLqd, chg20Pct: -0.0125, legs: { HYG: -1.29, LQD: -1.28 } };
+        const out = assemblePills({ raw, jevAnswers: null, yesterday: null, mode: 'rules' });
+        const row = out.factors.regime.rows.find((r) => r.label === 'HYG/LQD 20d');
+        expect(row.value).toBe('-0.01% (HYG -1.3% · LQD -1.3%)');
+        expect(out.pills.regime.reason).toContain('legs 20d: HYG -1.3% · LQD -1.3%');
+    });
+});

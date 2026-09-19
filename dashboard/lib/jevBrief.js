@@ -583,6 +583,15 @@ export function toData(raw) {
             chg60Pct: num(pair.chg60Pct ?? null),
             vs50dPct: num(pair.vs50dPct ?? null),
         };
+        // Per-ticker 20d change (route ≥ 19 Sep); older payloads have none
+        if (pair.legs && typeof pair.legs === 'object') {
+            const legs = {};
+            for (const [t, v] of Object.entries(pair.legs)) {
+                const n = num(v ?? null);
+                if (n != null) legs[t] = n;
+            }
+            if (Object.keys(legs).length) breadth[key].legs = legs;
+        }
     }
 
     // /api/sheets — AAII bull-bear spread (may be "24.50%" or "N/A")
