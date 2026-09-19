@@ -289,12 +289,12 @@ export function ruleVerdicts(data) {
     if (fgScore != null) {
         if (fgScore >= 50) {
             regimeScore += 1;
-            regimeParts.push(`fg=${fgScore} (>=50, +1)`);
+            regimeParts.push(`fg=${Math.round(fgScore)} (>=50, +1)`);
         } else if (fgScore < 30) {
             regimeScore -= 1;
-            regimeParts.push(`fg=${fgScore} (<30, -1)`);
+            regimeParts.push(`fg=${Math.round(fgScore)} (<30, -1)`);
         } else {
-            regimeParts.push(`fg=${fgScore} (30-49, 0)`);
+            regimeParts.push(`fg=${Math.round(fgScore)} (30-49, 0)`);
         }
     } else {
         regimeParts.push('fg=mv (0)');

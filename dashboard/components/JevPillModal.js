@@ -172,10 +172,10 @@ export default function JevPillModal({ pillKey, data, onClose }) {
                     </section>
                 )}
 
-                {/* Why */}
-                <section className="jev-modal-section">
-                    <h3 className="jev-modal-section-label">Why</h3>
-                    {pillKey === 'conflict' && conflictPairs.length > 0 ? (
+                {/* Why — only the conflict pill has content the inputs list does not already show */}
+                {pillKey === 'conflict' && conflictPairs.length > 0 && (
+                    <section className="jev-modal-section">
+                        <h3 className="jev-modal-section-label">Why</h3>
                         <div className="jev-modal-muted">
                             {conflictPairs.map((cp, i) => (
                                 <p key={i} style={{ marginBottom: i < conflictPairs.length - 1 ? 6 : 0 }}>
@@ -183,79 +183,39 @@ export default function JevPillModal({ pillKey, data, onClose }) {
                                 </p>
                             ))}
                         </div>
-                    ) : (
-                        <p className="jev-modal-muted">{pill.reason}</p>
-                    )}
-                </section>
+                    </section>
+                )}
 
                 {/* Inputs the rule checks */}
                 <section className="jev-modal-section">
                     <h3 className="jev-modal-section-label">Inputs the rule checks</h3>
                     {factorSummary && (
-                        <p className="jev-modal-muted" style={{ marginBottom: 12, fontSize: '0.78rem' }}>
-                            {factorSummary}
-                        </p>
+                        <p className="jev-modal-muted jev-inputs-summary">{factorSummary}</p>
                     )}
                     {factorRows.length > 0 ? (
-                        <>
-                            {/* Desktop table */}
-                            <table className="jev-modal-table">
-                                <thead>
-                                    <tr>
-                                        <th>Input</th>
-                                        <th>Value</th>
-                                        <th>Rule</th>
-                                        <th>Fired?</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {factorRows.map((row, i) => (
-                                        <tr key={i} className={row.hit ? 'jev-hit' : ''}>
-                                            <td className="jev-col-input">
-                                                {row.label}
-                                                {INPUT_EXPLAIN[row.label] && (
-                                                    <div className="jev-input-explain">{INPUT_EXPLAIN[row.label]}</div>
-                                                )}
-                                            </td>
-                                            <td className="jev-col-value">{row.value}</td>
-                                            <td className="jev-col-rule">{row.test}</td>
-                                            <td className="jev-col-fired">
-                                                {row.hit ? (
-                                                    <span className="jev-hit-mark">
-                                                        ✓ {row.effect}
-                                                    </span>
-                                                ) : (
-                                                    <span className="jev-no-hit">—</span>
-                                                )}
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-
-                            {/* Mobile stacked cards */}
-                            <div className="jev-modal-cards">
-                                {factorRows.map((row, i) => (
-                                    <div key={i} className={`jev-card ${row.hit ? 'jev-card-hit' : ''}`}>
-                                        <div className="jev-card-top">
-                                            <span className="jev-card-label">{row.label}</span>
-                                            <span className="jev-card-value">{row.value}</span>
-                                        </div>
+                        <div className="jev-inputs">
+                            {factorRows.map((row, i) => (
+                                <div key={i} className={`jev-input ${row.hit ? 'jev-input-hit' : ''}`}>
+                                    <div className="jev-input-main">
+                                        <div className="jev-input-label">{row.label}</div>
                                         {INPUT_EXPLAIN[row.label] && (
                                             <div className="jev-input-explain">{INPUT_EXPLAIN[row.label]}</div>
                                         )}
-                                        <div className="jev-card-rule">{row.test}</div>
-                                        <div className="jev-card-fired">
+                                    </div>
+                                    <div className="jev-input-side">
+                                        <div className="jev-input-value">{row.value}</div>
+                                        <div className="jev-input-rule">{row.test}</div>
+                                        <div className="jev-input-fired">
                                             {row.hit ? (
-                                                <span className="jev-hit-mark">✓ {row.effect}</span>
+                                                <span className="jev-hit-mark">✓ fired {row.effect}</span>
                                             ) : (
-                                                <span className="jev-no-hit">—</span>
+                                                <span className="jev-no-hit">not fired</span>
                                             )}
                                         </div>
                                     </div>
-                                ))}
-                            </div>
-                        </>
+                                </div>
+                            ))}
+                        </div>
                     ) : (
                         <p className="jev-modal-muted">Inputs unavailable</p>
                     )}
