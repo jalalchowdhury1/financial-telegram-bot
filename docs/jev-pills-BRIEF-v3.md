@@ -147,4 +147,17 @@ Fix (this doc's contract, amended):
   the sibling's `lastgood`/`sheetlkg` are not applied to the pills, so a proof can empty the
   sibling and still exercise the Sheet and KV tiers.
 
-### v3.1 proofs (filled in after deploy)
+- `FRESH.UNRATE` 45 → 75 days: the series is dated by observation month, so its newest
+  point is ~65 days old just before the next print; at 45 every Sahm tier read as stale for
+  the last three weeks of each month (prod proof P2 showed `sheet:stale(2026-08-01)`).
+
+### v3.1 proofs (production, 2026-09-19, commit 5ec297e + freshness fix)
+
+| Call | inputSources | time |
+|---|---|---|
+| baseline | t10y3m `fred`, rest `fred-route`; popup shows no "Backups in use" line | 1.3 s |
+| `?_fail=fred` | sibling answers in ~6 s (was ~18 s), serves its own cache → all `fred-route` | 6.6 s |
+| `?_fail=hm_fred` | t10y3m `treasury` (`fred:off`, `treasury:ok`), value 0.87 = FRED | 1.1 s |
+| `?_fail=fred,lastgood,sheetlkg,hm_bls,hm_treasury,hm_fredcsv` (sibling emptied) | nfci `sheet`, claims `sheet`, sahm `sheet`; popup "Backups in use: nfci sheet · claims sheet · sahm sheet" | 2.0 s |
+| … + `hm_sheet,hm_fred` | all four `lastgood` from KV (`lastgood:ok(<savedAt>)`), verdicts unchanged | 2.0 s |
+| … + `jev_lastgood` | all four null → rows show n/a, verdicts still computed | 2.2 s |

@@ -22,7 +22,7 @@ describe('FRESH', () => {
         expect(FRESH.T10Y3M).toBe(7);
         expect(FRESH.NFCI).toBe(14);
         expect(FRESH.ICSA).toBe(14);
-        expect(FRESH.UNRATE).toBe(45);
+        expect(FRESH.UNRATE).toBe(75); // observation-dated monthly: ~65 days old just before the next print
     });
 });
 

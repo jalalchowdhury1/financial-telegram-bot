@@ -16,7 +16,11 @@ import { isStale } from './freshness';
 import { loadLastGood, saveLastGood } from './store';
 import { splitCsvLine } from './horsemen';
 
-export const FRESH = { T10Y3M: 7, NFCI: 14, ICSA: 14, UNRATE: 45 };
+// Days before a source's NEWEST point counts as stale. Dated by OBSERVATION, not release:
+// UNRATE for August is dated 08-01 and published ~Sep 4, and the next print lands ~Oct 3 —
+// so the newest point is legitimately up to ~65 days old. 45 rejected every Sahm tier for
+// the last three weeks of each month (prod, 2026-09-19: `sheet:stale(2026-08-01)`).
+export const FRESH = { T10Y3M: 7, NFCI: 14, ICSA: 14, UNRATE: 75 };
 
 const finite = (n) => typeof n === 'number' && Number.isFinite(n);
 
