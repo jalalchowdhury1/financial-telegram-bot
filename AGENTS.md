@@ -386,6 +386,12 @@ so `isGood` rejects an empty digest rather than letting it claim "nothing change
   CNBC keyless backup → last-good; fault gates `breadth_polygon`, `breadth_cnbc`.
 - Daily log + yesterday baseline live in Upstash (`KV_REST_API_URL`/`KV_REST_API_TOKEN`,
   keys `ftb:jev:*`); missing KV = no baseline chip, `logged:false`, nothing breaks.
+- Tap-to-detail (2026-09-19, `docs/jev-pills-BRIEF-v2.md`): every pill is a button; the
+  popup (`JevPillModal.js`, portalled to `<body>` because `.card`'s backdrop-filter traps
+  `position:fixed`) lists the payload's `factors[pill].rows` — one row per input with its
+  value, threshold, fired flag — plus `pills[pill].jev` (Jev's raw answer, even when the
+  rule won). `pillFactors` mirrors `ruleVerdicts` and a consistency test keeps them equal;
+  change a threshold in BOTH or that test fails. ≤640px = one-column tappable rows.
 - Telegram: `bot/jev_line.py` adds one optional 🧭 section ONLY when the Lambda env var
   `JEV_PILLS_URL` is set (hand-managed, §2 config drift). Unset = brief unchanged; any
   failure = line omitted, never a failed brief.

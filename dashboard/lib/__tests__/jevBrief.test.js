@@ -8,6 +8,7 @@ import {
     mergeVerdicts,
     diffSinceYesterday,
     toData,
+    pillFactors,
 } from '../jevBrief';
 
 // ---------------------------------------------------------------------------
@@ -631,5 +632,422 @@ describe('toData', () => {
     test('num helper: AAIIDiff "24.50%" still gives 24.5', () => {
         const raw = { sheets: { AAIIDiff: '24.50%' } };
         expect(toData(raw).aaiiDiff).toBe(24.5);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// pillFactors — shape and content
+// ---------------------------------------------------------------------------
+
+describe('pillFactors', () => {
+    test('returns all five pills with rows and summary', () => {
+        const d = data();
+        const pf = pillFactors(d);
+
+        for (const pill of PILLS) {
+            expect(pf[pill]).toBeDefined();
+            expect(pf[pill]).toHaveProperty('summary');
+            expect(pf[pill]).toHaveProperty('rows');
+            expect(Array.isArray(pf[pill].rows)).toBe(true);
+        }
+    });
+
+    test('each row has the correct shape', () => {
+        const pf = pillFactors(data());
+        for (const pill of PILLS) {
+            for (const row of pf[pill].rows) {
+                expect(row).toHaveProperty('label');
+                expect(row).toHaveProperty('value');
+                expect(row).toHaveProperty('test');
+                expect(row).toHaveProperty('hit');
+                expect(row).toHaveProperty('effect');
+                expect(typeof row.label).toBe('string');
+                expect(typeof row.value).toBe('string');
+                expect(typeof row.test).toBe('string');
+                expect(typeof row.hit).toBe('boolean');
+                expect(typeof row.effect).toBe('string');
+            }
+        }
+    });
+
+    test('regime rows in order: SPY vs 200d, F&G, HYG/LQD', () => {
+        const pf = pillFactors(data());
+        const rows = pf.regime.rows;
+        expect(rows.length).toBe(3);
+        expect(rows[0].label).toContain('SPY vs 200-day');
+        expect(rows[1].label).toContain('Fear & Greed');
+        expect(rows[2].label).toContain('HYG/LQD');
+    });
+
+    test('regime summary quotes score', () => {
+        const pf = pillFactors(data());
+        expect(pf.regime.summary).toMatch(/Score \d/);
+    });
+
+    test('regime hit flags on risk-on data', () => {
+        // Default data: ma200=+5%>0, fg=50≥50, hyg=0.2>0 → all three hit → score 3 → risk-on
+        const pf = pillFactors(data());
+        const rows = pf.regime.rows;
+        expect(rows[0].hit).toBe(true);
+        expect(rows[1].hit).toBe(true);
+        expect(rows[2].hit).toBe(true);
+        expect(pf.regime.summary).toContain('risk-on');
+    });
+
+    test('regime hit flags on risk-off data', () => {
+        // ma200=-3%<0, fg=25<30, hyg=-2<-1 → all hit → score -3 → risk-off
+        const d = data({ overrides: { spy: { ma200Pct: -3 }, fg: { score: 25 }, breadth: { hygLqd: { chg20Pct: -2 } } } });
+        const pf = pillFactors(d);
+        const rows = pf.regime.rows;
+        expect(rows[0].hit).toBe(true);
+        expect(rows[0].effect).toBe('−1');
+        expect(rows[1].hit).toBe(true);
+        expect(rows[1].effect).toBe('−1');
+        expect(rows[2].hit).toBe(true);
+        expect(rows[2].effect).toBe('−1');
+        expect(pf.regime.summary).toContain('risk-off');
+    });
+
+    test('regime: fg=40 (30-49) does not hit', () => {
+        const d = data({ overrides: { fg: { score: 40 } } });
+        const pf = pillFactors(d);
+        expect(pf.regime.rows[1].hit).toBe(false);
+        expect(pf.regime.rows[1].effect).toBe('0');
+    });
+
+    test('regime: hygChg20 between -1 and 0 does not hit', () => {
+        const d = data({ overrides: { breadth: { hygLqd: { chg20Pct: -0.5 } } } });
+        const pf = pillFactors(d);
+        expect(pf.regime.rows[2].hit).toBe(false);
+        expect(pf.regime.rows[2].effect).toBe('0');
+    });
+
+    test('recession has 6 rows in chain order', () => {
+        const pf = pillFactors(data());
+        expect(pf.recession.rows.length).toBe(6);
+        expect(pf.recession.rows[0].label).toContain('Sahm');
+        expect(pf.recession.rows[2].label).toContain('Sahm');
+        expect(pf.recession.rows[3].label).toContain('Yield curve');
+        expect(pf.recession.rows[4].label).toContain('claims');
+        expect(pf.recession.rows[5].label).toContain('NFCI');
+    });
+
+    test('recession: low verdict summary', () => {
+        const pf = pillFactors(data());
+        expect(pf.recession.summary).toContain('none fired → low');
+    });
+
+    test('recession: sahm >= 0.5 fires high row', () => {
+        const d = data({ overrides: { fred: { sahmRule: 0.5 } } });
+        const pf = pillFactors(d);
+        expect(pf.recession.rows[0].hit).toBe(true);
+        expect(pf.recession.rows[0].effect).toBe('high');
+        expect(pf.recession.summary).toContain('high');
+    });
+
+    test('recession: yieldCurve<0 + claims>=260 fires second row', () => {
+        const d = data({ overrides: { fred: { yieldCurve: -0.2, claims: 260 } } });
+        const pf = pillFactors(d);
+        expect(pf.recession.rows[1].hit).toBe(true);
+        expect(pf.recession.rows[1].effect).toBe('high');
+        expect(pf.recession.summary).toContain('high');
+    });
+
+    test('recession: sahm >= 0.2 fires rising (only third row)', () => {
+        const d = data({ overrides: { fred: { sahmRule: 0.2, yieldCurve: 0.5, claims: 250 } } });
+        const pf = pillFactors(d);
+        expect(pf.recession.rows[0].hit).toBe(false);  // >=0.5 not reached
+        expect(pf.recession.rows[1].hit).toBe(false);
+        expect(pf.recession.rows[2].hit).toBe(true);
+        expect(pf.recession.rows[2].effect).toBe('rising');
+    });
+
+    test('recession: claims >= 260 fires fourth row', () => {
+        const d = data({ overrides: { fred: { claims: 270, yieldCurve: 0.5, sahmRule: 0.15 } } });
+        const pf = pillFactors(d);
+        // First 3 rows don't fire (sahm<0.5 and <0.2, yc not <0)
+        expect(pf.recession.rows[0].hit).toBe(false);
+        expect(pf.recession.rows[1].hit).toBe(false);
+        expect(pf.recession.rows[2].hit).toBe(false);
+        expect(pf.recession.rows[3].hit).toBe(false); // yc not < 0
+        expect(pf.recession.rows[4].hit).toBe(true);   // claims >= 260
+        expect(pf.recession.rows[4].effect).toBe('rising');
+    });
+
+    test('breadth has 3 rows', () => {
+        const pf = pillFactors(data());
+        expect(pf.breadth.rows.length).toBe(3);
+        expect(pf.breadth.rows[0].label).toContain('RSP/SPY 20d');
+        expect(pf.breadth.rows[1].label).toContain('RSP/SPY vs 50d');
+        expect(pf.breadth.rows[2].label).toContain('IWM/SPY 20d');
+    });
+
+    test('breadth: rolling-over data', () => {
+        const d = data({ overrides: { breadth: { rspSpy: { chg20Pct: -2, vs50dPct: -1 } } } });
+        const pf = pillFactors(d);
+        expect(pf.breadth.rows[0].hit).toBe(true);
+        expect(pf.breadth.rows[0].effect).toBe('rolling-over');
+        expect(pf.breadth.rows[1].hit).toBe(true);
+        expect(pf.breadth.rows[2].hit).toBe(false);
+        expect(pf.breadth.summary).toContain('Rolling over');
+    });
+
+    test('breadth: broad data', () => {
+        const d = data();  // default: rsp=1.5>0, iwm=2>0
+        const pf = pillFactors(d);
+        expect(pf.breadth.rows[0].hit).toBe(true);
+        expect(pf.breadth.rows[0].effect).toBe('broad');
+        expect(pf.breadth.rows[1].hit).toBe(false);
+        expect(pf.breadth.rows[2].hit).toBe(true);
+        expect(pf.breadth.rows[2].effect).toBe('broad');
+        expect(pf.breadth.summary).toContain('Broad');
+    });
+
+    test('breadth: narrow data', () => {
+        const d = data({ overrides: { breadth: { rspSpy: { chg20Pct: -1 } } } });
+        const pf = pillFactors(d);
+        expect(pf.breadth.rows[0].hit).toBe(false);
+        expect(pf.breadth.rows[1].hit).toBe(false);
+        expect(pf.breadth.rows[2].hit).toBe(false);
+        expect(pf.breadth.summary).toContain('Narrow');
+    });
+
+    test('hedging has 2 rows', () => {
+        const pf = pillFactors(data());
+        expect(pf.hedging.rows.length).toBe(2);
+        expect(pf.hedging.rows[0].label).toContain('IV percentile');
+        expect(pf.hedging.rows[1].label).toBe('VRP');
+    });
+
+    test('hedging: cheap data', () => {
+        const d = data({ overrides: { vol: { spy: { ivPctile1y: 15, vrp: 4 } } } });
+        const pf = pillFactors(d);
+        expect(pf.hedging.rows[0].hit).toBe(true);
+        expect(pf.hedging.rows[0].effect).toBe('cheap');
+        expect(pf.hedging.rows[1].hit).toBe(true);
+        expect(pf.hedging.rows[1].effect).toBe('cheap');
+        expect(pf.hedging.summary).toContain('cheap');
+    });
+
+    test('hedging: expensive via ivPctile only', () => {
+        const d = data({ overrides: { vol: { spy: { ivPctile1y: 75, vrp: 4 } } } });
+        const pf = pillFactors(d);
+        expect(pf.hedging.rows[0].hit).toBe(true);
+        expect(pf.hedging.rows[0].effect).toBe('expensive');
+        expect(pf.hedging.rows[1].hit).toBe(false);  // vrp=4 NOT >10, NOT <6 with iv<20 (iv=75)
+        expect(pf.hedging.rows[1].effect).toBe('');
+        expect(pf.hedging.summary).toContain('expensive');
+    });
+
+    test('hedging: expensive via vrp only', () => {
+        const d = data({ overrides: { vol: { spy: { ivPctile1y: 30, vrp: 12 } } } });
+        const pf = pillFactors(d);
+        expect(pf.hedging.rows[0].hit).toBe(false);  // iv 30 not >70 and not <20
+        expect(pf.hedging.rows[1].hit).toBe(true);
+        expect(pf.hedging.rows[1].effect).toBe('expensive');
+        expect(pf.hedging.summary).toContain('expensive');
+    });
+
+    test('conflict has exactly 4 rows', () => {
+        const pf = pillFactors(data());
+        expect(pf.conflict.rows.length).toBe(4);
+        expect(pf.conflict.rows[0].label).toBe('sentiment vs price');
+        expect(pf.conflict.rows[1].label).toBe('2s10s vs 3m10y');
+        expect(pf.conflict.rows[2].label).toBe('credit vs equities');
+        expect(pf.conflict.rows[3].label).toBe('breadth vs index');
+    });
+
+    test('conflict effect is divergence when hit', () => {
+        // Force sentiment vs price
+        const d = data({ overrides: { fg: { score: 30 }, spy: { ma200Pct: 5 } } });
+        const pf = pillFactors(d);
+        const sRow = pf.conflict.rows.find((r) => r.label === 'sentiment vs price');
+        expect(sRow.hit).toBe(true);
+        expect(sRow.effect).toBe('divergence');
+    });
+
+    test('conflict effect is empty when not hit', () => {
+        const pf = pillFactors(data());
+        for (const row of pf.conflict.rows) {
+            expect(row.hit).toBe(false);
+            expect(row.effect).toBe('');
+        }
+        expect(pf.conflict.summary).toContain('0 of 4');
+        expect(pf.conflict.summary).toContain('aligned');
+    });
+
+    test('null data returns all pills with no-data summary', () => {
+        const pf = pillFactors(null);
+        for (const pill of PILLS) {
+            expect(pf[pill]).toBeDefined();
+            expect(pf[pill].summary).toBe('no data');
+            expect(pf[pill].rows).toEqual([]);
+        }
+    });
+
+    test('formatting: percentages with sign and one decimal', () => {
+        const pf = pillFactors(data());
+        // Default spy ma200Pct=5 → "+5.0%" 
+        const spyRow = pf.regime.rows[0];
+        expect(spyRow.value).toMatch(/^[+-]\d+\.\d%/);
+    });
+
+    test('formatting: Sahm with two decimals', () => {
+        const d = data({ overrides: { fred: { sahmRule: 0.5 } } });
+        const pf = pillFactors(d);
+        // Sahm row is first in recession
+        expect(pf.recession.rows[0].value).toBe('0.50');
+    });
+
+    test('formatting: claims as 203k', () => {
+        const d = data({ overrides: { fred: { claims: 203 } } });
+        const pf = pillFactors(d);
+        const claimsRow = pf.recession.rows[4];
+        expect(claimsRow.value).toBe('203k');
+    });
+
+    test('formatting: F&G as integer', () => {
+        const pf = pillFactors(data());
+        expect(pf.regime.rows[1].value).toBe('50');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Consistency test — rule verdicts match implied verdict from factor hits
+// ---------------------------------------------------------------------------
+
+describe('pillFactors — consistency with ruleVerdicts', () => {
+    function impliedVerdict(factorRows) {
+        // Scan rows in order; first hit determines verdict via its effect
+        for (const row of factorRows) {
+            if (row.hit) {
+                const e = row.effect;
+                if (e === 'high' || e === 'rising' || e === 'rolling-over' ||
+                    e === 'broad' || e === 'expensive' || e === 'cheap' ||
+                    e === '+1' || e === '−1' || e === 'divergence') {
+                    // For regime, effect is '+1' or '−1' — need score approach
+                    // For non-regime pills, effect IS the verdict
+                    // Return effect and let the caller interpret
+                }
+            }
+        }
+        return 'unknown';
+    }
+
+    function regimeVerdictFromHits(rows) {
+        // Score from hits: +1 if hit and effect='+1', -1 if hit and effect='−1'
+        let score = 0;
+        for (const row of rows) {
+            if (row.hit) {
+                if (row.effect === '+1') score += 1;
+                else if (row.effect === '−1') score -= 1;
+            }
+        }
+        if (score >= 2) return 'risk-on';
+        if (score <= -1) return 'risk-off';
+        return 'neutral';
+    }
+
+    function recessionVerdictFromHits(rows) {
+        for (const row of rows) {
+            if (row.hit && (row.effect === 'high' || row.effect === 'rising')) {
+                return row.effect;
+            }
+        }
+        return 'low';
+    }
+
+    function breadthVerdictFromHits(rows) {
+        for (const row of rows) {
+            if (row.hit && (row.effect === 'rolling-over' || row.effect === 'broad')) {
+                return row.effect;
+            }
+        }
+        return 'narrow';
+    }
+
+    function hedgingVerdictFromHits(rows) {
+        // expensive if EITHER row says expensive, cheap if any says cheap and none says expensive
+        let hasExpensive = false;
+        let hasCheap = false;
+        for (const row of rows) {
+            if (row.hit) {
+                if (row.effect === 'expensive') hasExpensive = true;
+                if (row.effect === 'cheap') hasCheap = true;
+            }
+        }
+        if (hasExpensive) return 'expensive';
+        if (hasCheap) return 'cheap';
+        return 'fair';
+    }
+
+    function conflictVerdictFromHits(rows) {
+        const numDivergence = rows.filter((r) => r.hit && r.effect === 'divergence').length;
+        if (numDivergence === 0) return 'aligned';
+        if (numDivergence === 1) return 'mild-divergence';
+        return 'major-divergence';
+    }
+
+    function verdictFromFactors(pf) {
+        return {
+            regime: regimeVerdictFromHits(pf.regime.rows),
+            recession: recessionVerdictFromHits(pf.recession.rows),
+            breadth: breadthVerdictFromHits(pf.breadth.rows),
+            hedging: hedgingVerdictFromHits(pf.hedging.rows),
+            conflict: conflictVerdictFromHits(pf.conflict.rows),
+        };
+    }
+
+    // Battery of data objects
+    const fixtures = [
+        { name: 'default data', data: data() },
+        { name: 'regime risk-off', data: data({ overrides: { spy: { ma200Pct: -3 }, fg: { score: 25 }, breadth: { hygLqd: { chg20Pct: -2 } } } }) },
+        { name: 'recession high via sahm', data: data({ overrides: { fred: { sahmRule: 0.5 } } }) },
+        { name: 'recession high via yc+claims', data: data({ overrides: { fred: { yieldCurve: -0.2, claims: 260 } } }) },
+        { name: 'recession rising via sahm', data: data({ overrides: { fred: { sahmRule: 0.2 } } }) },
+        { name: 'recession rising via yc', data: data({ overrides: { fred: { yieldCurve: -0.1, sahmRule: 0.15 } } }) },
+        { name: 'recession rising via nfci', data: data({ overrides: { fred: { nfci: 0.1, sahmRule: 0.15, yieldCurve: 0.5, claims: 250 } } }) },
+        { name: 'broad breadth', data: data() },
+        { name: 'rolling-over breadth', data: data({ overrides: { breadth: { rspSpy: { chg20Pct: -2, vs50dPct: -1 } } } }) },
+        { name: 'narrow breadth', data: data({ overrides: { breadth: { rspSpy: { chg20Pct: -1 } } } }) },
+        { name: 'cheap hedging', data: data({ overrides: { vol: { spy: { ivPctile1y: 15, vrp: 4 } } } }) },
+        { name: 'expensive hedging via iv', data: data({ overrides: { vol: { spy: { ivPctile1y: 75, vrp: 4 } } } }) },
+        { name: 'expensive hedging via vrp', data: data({ overrides: { vol: { spy: { ivPctile1y: 30, vrp: 12 } } } }) },
+        { name: 'fair hedging thresholds', data: data({ overrides: { vol: { spy: { ivPctile1y: 70, vrp: 10 } } } }) },
+        { name: 'conflict 1 pair', data: data({ overrides: { fg: { score: 30 }, spy: { ma200Pct: 5 } } }) },
+        { name: 'conflict 2+ pairs', data: data({ overrides: { fg: { score: 30 }, spy: { ma200Pct: 5 }, breadth: { hygLqd: { chg20Pct: -2 } } } }) },
+        { name: 'all null', data: data({ overrides: {
+            spy: { ma200Pct: null, high52Pct: null },
+            fg: { score: null },
+            fred: { sahmRule: null, yieldCurve: null, claims: null, nfci: null },
+            vol: { spy: { ivPctile1y: null, vrp: null } },
+            breadth: { rspSpy: { chg20Pct: null, vs50dPct: null }, iwmSpy: { chg20Pct: null }, hygLqd: { chg20Pct: null } },
+        } }) },
+    ];
+
+    for (const { name, data: d } of fixtures) {
+        test(`consistency: ${name}`, () => {
+            const rule = ruleVerdicts(d);
+            const pf = pillFactors(d);
+            const implied = verdictFromFactors(pf);
+
+            for (const pill of PILLS) {
+                if (rule[pill] && rule[pill].verdict && rule[pill].verdict !== 'n/a') {
+                    expect(implied[pill]).toBe(rule[pill].verdict);
+                }
+            }
+        });
+    }
+
+    test('consistency: all-null regime is neutral (score 0)', () => {
+        const d = data({ overrides: {
+            spy: { ma200Pct: null },
+            fg: { score: null },
+            breadth: { hygLqd: { chg20Pct: null } },
+        } });
+        const rule = ruleVerdicts(d);
+        const pf = pillFactors(d);
+        const implied = verdictFromFactors(pf);
+        expect(implied.regime).toBe(rule.regime.verdict);
     });
 });

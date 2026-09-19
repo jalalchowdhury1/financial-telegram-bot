@@ -411,3 +411,144 @@ describe('assemblePills — edge cases', () => {
         expect(result.conflictPairs[0].pair).toMatch(/sentiment vs price/);
     });
 });
+
+// ---------------------------------------------------------------------------
+// factors in the payload
+// ---------------------------------------------------------------------------
+
+describe('assemblePills — factors', () => {
+    test('payload includes factors key with all five pills', () => {
+        const result = assemblePills({
+            raw: sampleRaw,
+            jevAnswers: null,
+            yesterday: null,
+            mode: 'rules',
+        });
+
+        expect(result).toHaveProperty('factors');
+        expect(result.factors).toHaveProperty('regime');
+        expect(result.factors).toHaveProperty('recession');
+        expect(result.factors).toHaveProperty('breadth');
+        expect(result.factors).toHaveProperty('hedging');
+        expect(result.factors).toHaveProperty('conflict');
+    });
+
+    test('each factor has summary and rows', () => {
+        const result = assemblePills({
+            raw: sampleRaw,
+            jevAnswers: null,
+            yesterday: null,
+            mode: 'on',
+        });
+
+        for (const pill of ['regime', 'recession', 'breadth', 'hedging', 'conflict']) {
+            expect(result.factors[pill]).toHaveProperty('summary');
+            expect(result.factors[pill]).toHaveProperty('rows');
+            expect(Array.isArray(result.factors[pill].rows)).toBe(true);
+            for (const row of result.factors[pill].rows) {
+                expect(row).toHaveProperty('label');
+                expect(row).toHaveProperty('value');
+                expect(row).toHaveProperty('test');
+                expect(row).toHaveProperty('hit');
+                expect(row).toHaveProperty('effect');
+            }
+        }
+    });
+
+    test('null raw data yields factors with no-data summaries', () => {
+        const result = assemblePills({
+            raw: null,
+            jevAnswers: null,
+            yesterday: null,
+            mode: 'rules',
+        });
+
+        expect(result.factors).toBeDefined();
+        for (const pill of ['regime', 'recession', 'breadth', 'hedging', 'conflict']) {
+            expect(result.factors[pill].summary).toBe('no data');
+        }
+    });
+});
+
+// ---------------------------------------------------------------------------
+// jev field on each pill
+// ---------------------------------------------------------------------------
+
+describe('assemblePills — jev field on pills', () => {
+    test('jev answers present yield jev field on each pill', () => {
+        const jevAnswers = {
+            regime: { verdict: 'risk-off', p: 0.82 },
+            recession: { verdict: 'rising', p: 0.71 },
+            breadth: { verdict: 'narrow', p: 0.65 },
+            hedging: { verdict: 'expensive', p: 0.73 },
+            conflict: { verdict: 'mild-divergence', p: 0.68 },
+        };
+
+        const result = assemblePills({
+            raw: sampleRaw,
+            jevAnswers,
+            yesterday: null,
+            mode: 'on',
+        });
+
+        for (const pill of ['regime', 'recession', 'breadth', 'hedging', 'conflict']) {
+            expect(result.pills[pill]).toHaveProperty('jev');
+            expect(result.pills[pill].jev).toEqual({
+                verdict: jevAnswers[pill].verdict,
+                p: jevAnswers[pill].p,
+            });
+        }
+    });
+
+    test('partial jev answers: missing pills get null jev', () => {
+        const jevAnswers = {
+            regime: { verdict: 'risk-off', p: 0.82 },
+            // recession, breadth, hedging, conflict NOT provided
+        };
+
+        const result = assemblePills({
+            raw: sampleRaw,
+            jevAnswers,
+            yesterday: null,
+            mode: 'on',
+        });
+
+        expect(result.pills.regime.jev).toEqual({ verdict: 'risk-off', p: 0.82 });
+        expect(result.pills.recession.jev).toBeNull();
+        expect(result.pills.breadth.jev).toBeNull();
+        expect(result.pills.hedging.jev).toBeNull();
+        expect(result.pills.conflict.jev).toBeNull();
+    });
+
+    test('null jevAnswers gives null jev on every pill', () => {
+        const result = assemblePills({
+            raw: sampleRaw,
+            jevAnswers: null,
+            yesterday: null,
+            mode: 'rules',
+        });
+
+        for (const pill of ['regime', 'recession', 'breadth', 'hedging', 'conflict']) {
+            expect(result.pills[pill].jev).toBeNull();
+        }
+    });
+
+    test('jev below floor (p < 0.6) still stores jev field (does NOT change mergeVerdicts)', () => {
+        const jevAnswers = {
+            regime: { verdict: 'risk-off', p: 0.45 },
+        };
+
+        const result = assemblePills({
+            raw: sampleRaw,
+            jevAnswers,
+            yesterday: null,
+            mode: 'on',
+        });
+
+        // jev field stores the raw answer even when below floor
+        expect(result.pills.regime.jev).toEqual({ verdict: 'risk-off', p: 0.45 });
+        // But verdict is still rule's (risk-on) since p < 0.6
+        expect(result.pills.regime.verdict).toBe('risk-on');
+        expect(result.pills.regime.by).toBe('rule');
+    });
+});

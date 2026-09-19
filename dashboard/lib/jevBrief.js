@@ -2,7 +2,7 @@
  * Pure functions for Jev regime pills — NO fetch, no side effects.
  *
  * Contains: PILLS, JEV_QUESTIONS, buildState, ruleVerdicts, conflictPairs,
- * mergeVerdicts, diffSinceYesterday, toData.
+ * mergeVerdicts, diffSinceYesterday, toData, pillFactors.
  *
  * Every function accepts possibly-null/undefined values and returns a safe
  * shape with no thrown exceptions.
@@ -576,4 +576,347 @@ export function toData(raw) {
     const t10y3m = num(raw.t10y3m ?? null);
 
     return { spy, fg, vol, fred, t10y3m, breadth, aaiiDiff };
+}
+
+// ---------------------------------------------------------------------------
+// pillFactors — per-pill input details for the detail modal
+// ---------------------------------------------------------------------------
+
+export function pillFactors(data) {
+    if (!data) {
+        const empty = {};
+        for (const pill of PILLS) {
+            empty[pill] = { summary: 'no data', rows: [] };
+        }
+        return empty;
+    }
+
+    const s = data.spy || {};
+    const fg = data.fg || {};
+    const fred = data.fred || {};
+    const brd = data.breadth || {};
+    const rsp = brd.rspSpy || {};
+    const iwm = brd.iwmSpy || {};
+    const hyg = brd.hygLqd || {};
+    const volSpy = (data.vol || {}).spy || {};
+
+    const ma200Pct = safeNum(s.ma200Pct);
+    const fgScore = safeNum(fg.score);
+    const hygChg20 = safeNum(hyg.chg20Pct);
+    const yieldCurve = safeNum(fred.yieldCurve);
+    const sahmRule = safeNum(fred.sahmRule);
+    const claims = safeNum(fred.claims);
+    const nfci = safeNum(fred.nfci);
+    const rspChg20 = safeNum(rsp.chg20Pct);
+    const rspVs50d = safeNum(rsp.vs50dPct);
+    const iwmChg20 = safeNum(iwm.chg20Pct);
+    const high52Pct = safeNum(s.high52Pct);
+    const ivPctile = safeNum(volSpy.ivPctile1y);
+    const vrp = safeNum(volSpy.vrp);
+    const t10y3m = safeNum(data.t10y3m);
+
+    const factors = {};
+
+    // ---- regime ----
+    {
+        let score = 0;
+        const rows = [];
+
+        // SPY vs 200-day avg
+        let ma200Effect = '0';
+        let ma200Hit = false;
+        if (ma200Pct != null) {
+            if (ma200Pct > 0) { ma200Effect = '+1'; ma200Hit = true; score += 1; }
+            else { ma200Effect = '−1'; ma200Hit = true; score -= 1; }
+        }
+        rows.push({
+            label: 'SPY vs 200-day avg',
+            value: fmtPct(ma200Pct),
+            test: '> 0 → +1, else −1',
+            hit: ma200Hit,
+            effect: ma200Effect,
+        });
+
+        // Fear & Greed
+        let fgEffect = '0';
+        let fgHit = false;
+        if (fgScore != null) {
+            if (fgScore >= 50) { fgEffect = '+1'; fgHit = true; score += 1; }
+            else if (fgScore < 30) { fgEffect = '−1'; fgHit = true; score -= 1; }
+            // else 30-49: no hit, no score change
+        }
+        rows.push({
+            label: 'Fear & Greed',
+            value: fmtInt(fgScore),
+            test: '≥ 50 → +1 · < 30 → −1 · else 0',
+            hit: fgHit,
+            effect: fgEffect,
+        });
+
+        // HYG/LQD 20d
+        let hygEffect = '0';
+        let hygHit = false;
+        if (hygChg20 != null) {
+            if (hygChg20 > 0) { hygEffect = '+1'; hygHit = true; score += 1; }
+            else if (hygChg20 < -1) { hygEffect = '−1'; hygHit = true; score -= 1; }
+            // else between -1 and 0: no hit, score unchanged
+        }
+        rows.push({
+            label: 'HYG/LQD 20d',
+            value: fmtPct(hygChg20),
+            test: '> 0 → +1 · < −1 → −1 · else 0',
+            hit: hygHit,
+            effect: hygEffect,
+        });
+
+        let regimeVerdict;
+        if (score >= 2) regimeVerdict = 'risk-on';
+        else if (score <= -1) regimeVerdict = 'risk-off';
+        else regimeVerdict = 'neutral';
+
+        factors.regime = {
+            summary: `Score ${score} → ${regimeVerdict} (risk-on needs ≥ 2, risk-off ≤ −1)`,
+            rows,
+        };
+    }
+
+    // ---- recession ----
+    {
+        const rows = [];
+
+        // 1. Sahm rule >= 0.5 → high
+        const sahmHighHit = sahmRule != null && sahmRule >= 0.5;
+        rows.push({
+            label: 'Sahm rule',
+            value: fmtNum(sahmRule),
+            test: '≥ 0.5 → high',
+            hit: sahmHighHit,
+            effect: sahmHighHit ? 'high' : '',
+        });
+
+        // 2. Yield curve < 0 and claims >= 260k → high
+        const ycClaimsHit = yieldCurve != null && claims != null && yieldCurve < 0 && claims >= 260;
+        rows.push({
+            label: 'Yield curve (2s10s) + claims',
+            value: `${fmtNum(yieldCurve)} · ${claims != null ? `${Math.round(claims)}k` : 'n/a'}`,
+            test: '< 0 and claims ≥ 260k → high',
+            hit: ycClaimsHit,
+            effect: ycClaimsHit ? 'high' : '',
+        });
+
+        // 3. Sahm rule >= 0.2 → rising
+        const sahmRisingHit = sahmRule != null && sahmRule >= 0.2 && !sahmHighHit;
+        rows.push({
+            label: 'Sahm rule',
+            value: fmtNum(sahmRule),
+            test: '≥ 0.2 → rising',
+            hit: sahmRisingHit,
+            effect: sahmRisingHit ? 'rising' : '',
+        });
+
+        // 4. Yield curve < 0 → rising
+        const ycRisingHit = yieldCurve != null && yieldCurve < 0 && !sahmHighHit && !ycClaimsHit;
+        rows.push({
+            label: 'Yield curve (2s10s)',
+            value: fmtNum(yieldCurve),
+            test: '< 0 → rising',
+            hit: ycRisingHit,
+            effect: ycRisingHit ? 'rising' : '',
+        });
+
+        // 5. Claims >= 260k → rising
+        const claimsRisingHit = claims != null && claims >= 260 && !sahmHighHit && !ycClaimsHit && !ycRisingHit;
+        rows.push({
+            label: 'Jobless claims',
+            value: claims != null ? `${Math.round(claims)}k` : 'n/a',
+            test: '≥ 260k → rising',
+            hit: claimsRisingHit,
+            effect: claimsRisingHit ? 'rising' : '',
+        });
+
+        // 6. NFCI > 0 → rising
+        const nfciHit = nfci != null && nfci > 0 && !sahmHighHit && !ycClaimsHit && !ycRisingHit && !claimsRisingHit;
+        rows.push({
+            label: 'NFCI',
+            value: fmtNum(nfci),
+            test: '> 0 → rising',
+            hit: nfciHit,
+            effect: nfciHit ? 'rising' : '',
+        });
+
+        // Determine verdict by scanning chain
+        let recessionVerdict = 'low';
+        for (const row of rows) {
+            if (row.hit) {
+                if (row.effect === 'high' || row.effect === 'rising') {
+                    recessionVerdict = row.effect;
+                    break;
+                }
+            }
+        }
+
+        factors.recession = {
+            summary: recessionVerdict === 'low'
+                ? 'First rule that fires wins; none fired → low'
+                : `Rule that fired → ${recessionVerdict}`,
+            rows,
+        };
+    }
+
+    // ---- breadth ----
+    {
+        const rows = [];
+
+        // Determine verdict
+        const rollingOver = rspChg20 != null && rspVs50d != null && rspChg20 < -1.5 && rspVs50d < 0;
+        const broadRsp = rspChg20 != null && rspChg20 > 0 && iwmChg20 != null && iwmChg20 > 0;
+
+        let breadthVerdict = 'narrow';
+        if (rollingOver) breadthVerdict = 'rolling-over';
+        else if (broadRsp) breadthVerdict = 'broad';
+
+        // 1. RSP/SPY 20d
+        let rsp20Effect = '';
+        let rsp20Hit = false;
+        if (rollingOver) { rsp20Effect = 'rolling-over'; rsp20Hit = true; }
+        else if (broadRsp) { rsp20Effect = 'broad'; rsp20Hit = true; }
+        rows.push({
+            label: 'RSP/SPY 20d',
+            value: fmtPct(rspChg20),
+            test: '< −1.5% with RSP vs 50d < 0 → rolling-over · > 0 with IWM > 0 → broad',
+            hit: rsp20Hit,
+            effect: rsp20Effect,
+        });
+
+        // 2. RSP/SPY vs 50d avg
+        const vs50dHit = rollingOver;
+        rows.push({
+            label: 'RSP/SPY vs 50d avg',
+            value: fmtPct(rspVs50d),
+            test: '< 0 (with 20d < −1.5%) → rolling-over',
+            hit: vs50dHit,
+            effect: vs50dHit ? 'rolling-over' : '',
+        });
+
+        // 3. IWM/SPY 20d
+        const iwmHit = broadRsp;
+        rows.push({
+            label: 'IWM/SPY 20d',
+            value: fmtPct(iwmChg20),
+            test: '> 0 (with RSP 20d > 0) → broad',
+            hit: iwmHit,
+            effect: iwmHit ? 'broad' : '',
+        });
+
+        let summary;
+        if (breadthVerdict === 'broad') {
+            summary = 'Broad participation: RSP and IWM both positive over 20d';
+        } else if (breadthVerdict === 'rolling-over') {
+            summary = 'Rolling over: RSP/SPY declining below 50d avg';
+        } else {
+            summary = 'Narrow participation: not meeting broad or rolling-over thresholds';
+        }
+
+        factors.breadth = { summary, rows };
+    }
+
+    // ---- hedging ----
+    {
+        const rows = [];
+
+        // Determine verdict
+        const cheap = ivPctile != null && ivPctile < 20 && vrp != null && vrp < 6;
+        const expensive = (ivPctile != null && ivPctile > 70) || (vrp != null && vrp > 10);
+        let hedgingVerdict;
+        if (expensive) hedgingVerdict = 'expensive';
+        else if (cheap) hedgingVerdict = 'cheap';
+        else hedgingVerdict = 'fair';
+
+        // 1. IV percentile (1y)
+        const ivExpensive = ivPctile != null && ivPctile > 70;
+        const ivCheap = ivPctile != null && ivPctile < 20 && vrp != null && vrp < 6;
+        const ivHit = ivExpensive || ivCheap;
+        let ivEffect = '';
+        if (ivExpensive) ivEffect = 'expensive';
+        else if (ivCheap) ivEffect = 'cheap';
+        rows.push({
+            label: 'IV percentile (1y)',
+            value: fmtInt(ivPctile),
+            test: '> 70 → expensive · < 20 (with VRP < 6) → cheap',
+            hit: ivHit,
+            effect: ivEffect,
+        });
+
+        // 2. VRP
+        const vrpExpensive = vrp != null && vrp > 10;
+        const vrpCheap = vrp != null && vrp < 6 && ivPctile != null && ivPctile < 20;
+        const vrpHit = vrpExpensive || vrpCheap;
+        let vrpEffect = '';
+        if (vrpExpensive) vrpEffect = 'expensive';
+        else if (vrpCheap) vrpEffect = 'cheap';
+        rows.push({
+            label: 'VRP',
+            value: fmtNum(vrp),
+            test: '> 10 → expensive · < 6 (with IV pct < 20) → cheap',
+            hit: vrpHit,
+            effect: vrpEffect,
+        });
+
+        factors.hedging = {
+            summary: `Hedging is ${hedgingVerdict}`,
+            rows,
+        };
+    }
+
+    // ---- conflict ----
+    {
+        const cps = conflictPairs(data);
+
+        const pairDefs = [
+            {
+                label: 'sentiment vs price',
+                value: `F&G ${fmtInt(fgScore)} · SPY ${fmtPct(ma200Pct)} vs 200d`,
+                test: 'F&G < 35 with SPY > +3% · or F&G > 65 with SPY < −3%',
+            },
+            {
+                label: '2s10s vs 3m10y',
+                value: `2s10s ${fmtNum(yieldCurve)} · 3m10y ${fmtNum(t10y3m)}`,
+                test: 'Opposite signs between 2s10s and 3m10y',
+            },
+            {
+                label: 'credit vs equities',
+                value: `SPY ${fmtPct(ma200Pct)} vs 200d · HYG/LQD ${fmtPct(hygChg20)}`,
+                test: 'SPY > 0% vs 200d with HYG/LQD 20d < −1.5%',
+            },
+            {
+                label: 'breadth vs index',
+                value: `SPY ${fmtPct(high52Pct)} from 52w high · RSP/SPY ${fmtPct(rspChg20)}`,
+                test: 'SPY within 2% of high with RSP/SPY 20d < −1.5%',
+            },
+        ];
+
+        const rows = pairDefs.map((def) => {
+            const firing = cps.find((cp) => cp.pair === def.label);
+            return {
+                label: def.label,
+                value: def.value,
+                test: def.test,
+                hit: !!firing,
+                effect: firing ? 'divergence' : '',
+            };
+        });
+
+        const numFiring = cps.length;
+        let conflictVerdict;
+        if (numFiring === 0) conflictVerdict = 'aligned';
+        else if (numFiring === 1) conflictVerdict = 'mild-divergence';
+        else conflictVerdict = 'major-divergence';
+
+        factors.conflict = {
+            summary: `${numFiring} of 4 pairs diverge → ${conflictVerdict}`,
+            rows,
+        };
+    }
+
+    return factors;
 }

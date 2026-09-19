@@ -15,6 +15,8 @@ import {
     conflictPairs,
     mergeVerdicts,
     diffSinceYesterday,
+    pillFactors,
+    PILLS,
 } from './jevBrief';
 
 /**
@@ -30,6 +32,15 @@ export function assemblePills({ raw, jevAnswers, yesterday, mode }) {
     const state = buildState(data);
     const rule = ruleVerdicts(data);
     const merged = mergeVerdicts(rule, jevAnswers, JEV_P_FLOOR);
+
+    // Attach raw Jev answer to every pill (null when Jev gave no answer)
+    for (const pill of PILLS) {
+        merged[pill].jev = jevAnswers?.[pill]
+            ? { verdict: jevAnswers[pill].verdict, p: jevAnswers[pill].p }
+            : null;
+    }
+
+    const factors = pillFactors(data);
     const cps = conflictPairs(data);
     const since = diffSinceYesterday(merged, yesterday ? yesterday.pills || yesterday : null);
 
@@ -54,6 +65,7 @@ export function assemblePills({ raw, jevAnswers, yesterday, mode }) {
         asOf,
         state,
         pills: merged,
+        factors,
         conflictPairs: cps,
         since: since.noBaseline
             ? { ...since, date: null }
