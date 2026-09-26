@@ -9,7 +9,7 @@ import requests
 import time
 from io import StringIO
 from typing import Dict, Any, List, Optional
-from bot.config import URLS, RSI_PERIOD
+from bot.config import URLS, RSI_PERIOD, RETURN_3Y_DAYS
 
 # Optional heavy dependencies (for fetchers that need them)
 try:
@@ -626,6 +626,48 @@ def _fetch_coinbase_candles() -> Optional[Dict[str, Any]]:
     return _rows_to_metric(rows[-HISTORY_ROWS:])
 
 
+def _pct_cell(raw: Any) -> Optional[float]:
+    """'81.19%' / '81.19' -> 81.19; anything else -> None."""
+    try:
+        return float(str(raw).replace('%', '').replace(',', '').strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _return_3y_from_rows(rows: List[Dict], current: float) -> Optional[float]:
+    """3-year price return from daily rows, or None when they span less than 3 years.
+
+    Polygon's free tier serves only ~2 years (~500 rows) however many days are asked
+    for. The old `min(756, len(rows))` quietly turned that into a 2-YEAR return shown
+    as "3Y Return" (2026-09-26: +34.8% on the dashboard vs the true ~+81%)."""
+    if len(rows) < RETURN_3Y_DAYS:
+        return None
+    base = rows[-RETURN_3Y_DAYS].get('close')
+    return _calc_pct(current, base) if base else None
+
+
+def _sheet_return_3y() -> Optional[float]:
+    """The Google Sheet's own 3-year return, for when the price history is too short.
+    One quick try per sheet (this runs inside API Gateway's 30 s budget); None if both
+    fail, which the dashboard shows as N/A rather than a wrong number."""
+    try:
+        for line in _get_sheet_csv(URLS['SPY_INDICATORS'], tries=1, timeout=5).strip().split('\n'):
+            parts = line.split(',')
+            if len(parts) >= 2 and parts[0].strip() == 'Three-Year Return':
+                val = _pct_cell(parts[1])
+                if val is not None:
+                    return val
+    except Exception as e:  # noqa: BLE001
+        print(f'[SPY] sheet 3y return (indicators) failed: {e}')
+    try:
+        daily_rows = list(csv.reader(StringIO(_get_sheet_csv(URLS['SPY_DAILY_MOVE'], tries=1, timeout=5))))
+        if len(daily_rows) > 10 and len(daily_rows[10]) > 1 and '3' in daily_rows[10][0]:
+            return _pct_cell(daily_rows[10][1])
+    except Exception as e:  # noqa: BLE001
+        print(f'[SPY] sheet 3y return (daily move) failed: {e}')
+    return None
+
+
 def fetch_spy_with_fallback(fred_api_key: Optional[str] = None,
                             polygon_api_key: Optional[str] = None,
                             finnhub_api_key: Optional[str] = None) -> Dict[str, Any]:
@@ -786,8 +828,9 @@ def fetch_spy_with_fallback(fred_api_key: Optional[str] = None,
 
         rsi = float(calculate_rsi(closes, period=9))
 
-        days3y = min(756, len(rows))
-        return3y = _calc_pct(current, rows[-days3y]['close'])
+        return3y = _return_3y_from_rows(rows, current)
+        if return3y is None:
+            return3y = _sheet_return_3y()
 
         ma200_arr = closes.rolling(200).mean()
         ma50_arr = closes.rolling(50).mean()

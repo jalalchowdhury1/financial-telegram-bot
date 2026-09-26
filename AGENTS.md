@@ -451,6 +451,14 @@ for all 5 factors matched to the cent.
   (verified 105/105) → shifted +5 days. The newest weekly bar is a moving snapshot and can
   stay WRONG after the week ends (IWM read 285.58 on Sat 2026-09-26 vs a 281.97 Friday
   close) → `weeklyToFriday` drops every bar from the last 7 days.
+- **Timing + quota guards (review 2026-09-26).** New tiers stop starting at 18 s; tiers
+  already in flight are capped at 23 s (then produce() throws → /tmp → KV → baked), because
+  a Vercel 504 at 30 s would skip serve() entirely. CNBC runs `tries:1` here. Polygon's key
+  is SHARED (5 req/min) with spy / spy-daily-move / market-extra / vol / breadth, so this
+  route spends at most 2 Polygon calls per invocation, one reserved for SPY. A STALE live
+  payload is not a live win (`isFreshGoodPayload`): a fresher /tmp or KV copy beats it,
+  and it is still served when no cache exists. The long/recent seam is checked: a jump
+  beyond `MAX_BAR_MOVE` (a split the bake predates) drops the long part.
 - **Fault gates:** `fx_cnbc`, `fx_cnbcw`, `fx_nasdaq`, `fx_polygon`, `fx_yahoo`, `fx_baked`,
   `fx_kv`, plus serve()'s `lastgood` and `sheetlkg` (= skip KV here). `_meta.fallback` is
   true whenever any non-primary tier served; `_meta.source` names the tier per ticker.
@@ -458,6 +466,24 @@ for all 5 factors matched to the cent.
   stale / baked and is critical when the row would be hidden.
 - **Bake refresh:** `node scripts/bake-factors.mjs` (from `dashboard/`). While any live
   daily tier works a bake stays useful for ~2 years; it refuses to write a smaller bake.
+
+### 📉 Chart helpers (`lib/chartAxis.js`, MiniChart + SpyChart) — 2026-09-26
+- Year labels go through `yearTicks`: round steps (1/2/5/10/20 years, max 8 labels) and a
+  crowded partial first year is dropped. Before this the Profit Margin ALL view printed all
+  80 years 1947→2026 on one axis.
+- Tap (phone) or hover (mouse) a chart: the date + value of that point replace the change
+  label, with a cursor line. `touch-action: pan-y` keeps vertical scrolling working.
+- Each chart remembers its timeframe per device (`ftb:tf:<gradientId>`, `ftb:tf:spy`).
+- A tab the history can't cover (<90% of its points) is disabled. The Lambda's Polygon SPY
+  path carries ~14 months, so "5Y" there used to be 14 months under a 5Y label.
+- The Sheet SPY path charts FRED's S&P 500 INDEX (~10x SPY). SpyChart gets `current` and,
+  when the chart is ~index scale, labels index points (no `$`) with a one-line note.
+
+### 3Y return needs 3 years of bars (fixed 2026-09-26)
+Polygon's free tier returns ~2 years however many days are asked for. Both the Lambda
+(`bot/fetchers.py` `_return_3y_from_rows`) and the dashboard's own `/api/spy` backup used to
+clamp the lookback to what they had, showing a 2-YEAR return as "3Y" (+34.8% vs a true ~+81%).
+Now: fewer than 756 bars → the Sheet's own 3Y return (`_sheet_return_3y`) → else null (N/A).
 
 ### FRED route specifics (`/api/fred`) — subtle, don't regress
 - The route uses `export const fetchCache = 'default-cache'` and stays dynamic by reading

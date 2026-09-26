@@ -21,7 +21,9 @@ function buildSpy(history, current, prevClose, source) {
     const dc = dailyChange(current, prevClose);
     const last252 = prices.slice(-252);
     const wkHigh = Math.max(...last252);
-    const px3y = prices[Math.max(0, n - 756)];
+    // A 3Y return needs 3Y of bars. Polygon's free tier serves ~2y, and clamping the
+    // index to 0 used to show that 2-YEAR return as "3Y" (2026-09-26). null = N/A.
+    const px3y = n >= 756 ? prices[n - 756] : null;
     const return3y = px3y ? ((current - px3y) / px3y) * 100 : null;
     const rsi = calculateRSI(history, 9);
 
