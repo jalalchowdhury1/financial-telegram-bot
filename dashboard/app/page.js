@@ -525,7 +525,7 @@ export default function Dashboard() {
                 </div>
 
                 {/* VOLATILITY METRICS (IV rank / percentile / VRP) */}
-                <div data-jump="Volatility" style={{ display: 'contents' }}><ErrorBoundary resetKey={refreshTick}><VolMetricsTable /></ErrorBoundary></div>
+                <div data-jump="Volatility" style={{ display: 'contents' }}><ErrorBoundary resetKey={refreshTick}><VolMetricsTable refreshKey={refreshTick} bust={bustKey} /></ErrorBoundary></div>
 
                 {/* BULL MARKET CHECKLIST */}
                 <div data-jump="Bull checklist" style={{ display: 'contents' }}><ErrorBoundary resetKey={refreshTick}><BullChecklist fred={fred} loading={pending.fred} /></ErrorBoundary></div>

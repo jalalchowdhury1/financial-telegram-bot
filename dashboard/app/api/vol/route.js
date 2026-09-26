@@ -20,17 +20,29 @@
  *                close — see lib/vol.js. Sources show it as e.g. 'VIX:cboe+live'.
  * Fault gates (one per SOURCE, tripping it everywhere it's used, like cg_*):
  * vol_cboe, vol_cnbc, vol_fred, vol_polygon, vol_yahoo.
+ *
+ * VIX CURVE + regime block (added 2026-09-26, lib/volRegime.js). Per curve point:
+ *   VIX9D / VIX3M / VIX6M: CBOE CSV → CNBC daily bars → FRED (VIX3M only: VXVCLS)
+ *                → Yahoo → the CNBC live quote alone (one point, no history).
+ *   VIX (1M): the table's own VIX cascade above.
+ * When the fresh curve can't make a call (no VIX or no VIX3M): the /tmp last-good
+ * payload's curve → Upstash KV `ftb:vol:curve:lg` → "unavailable" (the table is
+ * unaffected either way). Anything but four fresh CBOE points sets _meta.fallback.
+ * Extra gates: vol_curve (kill every curve-only source, to reach the backups),
+ * vol_curvelg (skip the /tmp tier), vol_curvekv (skip the KV tier).
  */
 import { cnbcHistory, cnbcQuotes, polygonDaily, fredObservations, yahooChart } from '../../../lib/sources';
-import { serve } from '../../../lib/store';
+import { serve, loadLastGood } from '../../../lib/store';
 import { faultsFrom, gate } from '../../../lib/faults';
 import { parseCboeCsv, buildVolMetrics, VOL_PROXIES, resolveVolSeries, volIncompleteTickers } from '../../../lib/vol';
+import { buildTermStructure, buildRegime, curveDegraded, saveCurveKV, loadCurveKV, staleCurve, CURVE_MAX_AGE_MS } from '../../../lib/volRegime';
 
 export const fetchCache = 'default-cache';
 
 const CBOE_URL = (name) => `https://cdn.cboe.com/api/global/us_indices/daily_prices/${name}_History.csv`;
-const FRED_FALLBACK = { VIX: 'VIXCLS', VXN: 'VXNCLS' }; // no VVIX series on FRED
+const FRED_FALLBACK = { VIX: 'VIXCLS', VXN: 'VXNCLS', VIX3M: 'VXVCLS' }; // no VVIX / VIX9D / VIX6M series on FRED
 const INDICES = ['VIX', 'VXN', 'VVIX'];
+const CURVE_ONLY = ['VIX9D', 'VIX3M', 'VIX6M']; // VIX itself comes from INDICES
 const TICKERS = Object.keys(VOL_PROXIES);
 
 async function fetchCboe(name) {
@@ -90,8 +102,8 @@ async function fetchEtfCloses(ticker, polygonKey, faults, notes) {
 }
 
 /**
- * Live intraday index levels — ONE keyless CNBC quote call for all three
- * indices, 5-min revalidate (vs 30-min for the daily histories). Gated by
+ * Live intraday index levels — ONE keyless CNBC quote call for the three table
+ * indices + the three curve-only ones, 5-min revalidate (vs 30-min for the daily histories). Gated by
  * vol_cnbc (per-SOURCE semantics, same gate as the CNBC daily bars). Any
  * failure returns {} — buildVolMetrics then serves EOD closes exactly as
  * before this tier existed. Same live-overrides-stale pattern as SPY's
@@ -99,9 +111,10 @@ async function fetchEtfCloses(ticker, polygonKey, faults, notes) {
  */
 async function fetchLiveQuotes(faults, notes) {
     try {
-        const quotes = await gate('vol_cnbc', faults, () => cnbcQuotes(INDICES.map((n) => `.${n}`), { revalidate: 300 }));
+        const names = [...INDICES, ...CURVE_ONLY];
+        const quotes = await gate('vol_cnbc', faults, () => cnbcQuotes(names.map((n) => `.${n}`), { revalidate: 300 }));
         const out = {};
-        for (const n of INDICES) {
+        for (const n of names) {
             const q = quotes[`.${n}`];
             if (q) out[n] = { value: q.price, date: q.asOf, lastTime: q.lastTime };
         }
@@ -110,6 +123,39 @@ async function fetchLiveQuotes(faults, notes) {
         notes.push(`live quotes: ${String(e?.message).slice(0, 80)}`);
         return {};
     }
+}
+
+/**
+ * The VIX curve, never throws. Fresh first (each point already went through its own
+ * source cascade); when that can't make a call, the /tmp last-good payload's curve,
+ * then the KV copy. A good fresh curve is saved to KV once per close date.
+ */
+async function resolveCurve(indexResults, curveResults, liveQuotes, faults, notes) {
+    const lastPoint = (r) => (r && r.series && r.series.length
+        ? { ...r.series[r.series.length - 1], source: r.source } : null);
+    const eod = { VIX: lastPoint(indexResults[INDICES.indexOf('VIX')]) };
+    CURVE_ONLY.forEach((n, i) => { eod[n] = lastPoint(curveResults[i]); });
+    const live = faults.has('vol_curve')
+        ? Object.fromEntries(Object.entries(liveQuotes || {}).filter(([k]) => !CURVE_ONLY.includes(k)))
+        : liveQuotes;
+    const fresh = buildTermStructure(eod, live);
+    if (fresh.state) {
+        if (faults.size === 0) await saveCurveKV(fresh);
+        return fresh;
+    }
+    notes.push(`VIX curve: no call from live sources (${fresh.points.length}/4 points)`);
+    if (!faults.has('vol_curvelg')) {
+        const lg = loadLastGood('vol', CURVE_MAX_AGE_MS);
+        const c = lg?.data?.regime?.curve;
+        const fromTmp = c && !c.stale ? staleCurve(c, lg.savedAt) : null;
+        if (fromTmp) { notes.push('VIX curve: served from /tmp last-good'); return fromTmp; }
+    }
+    if (!faults.has('vol_curvekv')) {
+        const fromKv = await loadCurveKV();
+        if (fromKv) { notes.push('VIX curve: served from KV last-good'); return fromKv; }
+    }
+    notes.push('VIX curve: unavailable (live, /tmp and KV all empty)');
+    return fresh; // state null — the card says so; the table is unaffected
 }
 
 export async function GET(request) {
@@ -126,8 +172,11 @@ export async function GET(request) {
 
     return serve('vol', async () => {
         const notes = [];
-        const [indexResults, etfResults, liveQuotes] = await Promise.all([
+        const [indexResults, curveResults, etfResults, liveQuotes] = await Promise.all([
             Promise.all(INDICES.map((n) => fetchIndex(n, fredKey, faults, notes))),
+            Promise.all(CURVE_ONLY.map((n) => (faults.has('vol_curve')
+                ? { series: null, source: null, tried: ['vol_curve:off'] }
+                : fetchIndex(n, fredKey, faults, notes)))),
             Promise.all(TICKERS.map((t) => fetchEtfCloses(t, polygonKey, faults, notes))),
             fetchLiveQuotes(faults, notes),
         ]);
@@ -160,13 +209,23 @@ export async function GET(request) {
         // the health check gets; it has to tell the truth.
         const incomplete = volIncompleteTickers(payload.tickers);
         if (incomplete.length) notes.push(`incomplete rows: ${incomplete.join(', ')}`);
+        const curve = await resolveCurve(indexResults, curveResults, liveQuotes, faults, notes);
         const tried = INDICES.map((n, i) => `${n}[${indexResults[i].tried.join(' ')}]`)
+            .concat(CURVE_ONLY.map((n, i) => `${n}[${curveResults[i].tried.join(' ')}]`))
             .concat(TICKERS.map((t, i) => `${t}[${etfResults[i].tried.join(' ')}]`));
         return {
             ...payload,
+            regime: buildRegime(payload.tickers, curve),
             _meta: {
                 source: indexSources.concat(etfSources).join(' · ') || 'none',
+                curveSource: curve.backup
+                    ? `${curve.backup}`
+                    : curve.points.map((p) => `${p.index}:${p.source}`).join(' · ') || 'none',
                 hasErrors: incomplete.length > 0,
+                // The table is fine; the curve is on a backup tier (or short a point).
+                // Keeps the answer out of the edge cache (lib/cdn.js); the health check
+                // names the tier (check_vol_curve).
+                fallback: curveDegraded(curve),
                 incomplete,
                 tried,
                 messages: notes,

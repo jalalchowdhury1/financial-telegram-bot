@@ -2004,3 +2004,53 @@ body::before {
 .jump-item:hover { background: rgba(255, 255, 255, 0.05); color: var(--text-primary); }
 .jump-top { color: var(--text-accent); }
 @media print { .jump-fab, .jump-menu, .jump-backdrop { display: none; } }
+
+/* === 🌡️ Volatility card, lower half (VolMetricsTable.js · lib/volRegime.js) ===
+   VIX curve bars + Calm/Watch/Stress pill, then two one-line facts (TQQQ decay,
+   5-day ±1σ). Bars are widths, not a chart library: 4 values don't need one. */
+.vol-regime {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-card);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.vol-curve-head, .vol-fact-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.vol-fact-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+.vol-pill {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 1px 8px;
+  border: 1px solid;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.vol-bars { display: flex; flex-direction: column; gap: 4px; margin: 6px 0 4px; }
+.vol-bar-row {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) 38px;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.72rem;
+}
+.vol-bar-tenor { color: var(--text-muted); font-family: 'JetBrains Mono', monospace; }
+.vol-bar-track { height: 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.05); overflow: hidden; }
+.vol-bar-fill { display: block; height: 100%; border-radius: 4px; opacity: 0.75; }
+.vol-bar-value { text-align: right; font-variant-numeric: tabular-nums; }
+.vol-fact-value { font-size: 0.8rem; font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
+.vol-fact-sub { font-weight: 400; color: var(--text-muted); font-size: 0.72rem; }
+.vol-note { font-size: 0.68rem; line-height: 1.45; color: var(--text-muted); margin-top: 2px; }
+.vol-asof { opacity: 0.7; }

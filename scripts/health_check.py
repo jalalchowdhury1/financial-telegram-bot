@@ -159,6 +159,40 @@ def check_factors_long(payload, today=None):
     return _finding(fid, "ok", f"20Y+ factor windows live (Ken French, through {through})")
 
 
+def check_vol_curve(payload):
+    """🌡️ VIX curve on the Volatility card (dashboard/lib/volRegime.js). Each point has its
+    own source cascade (CBOE → CNBC → FRED for VIX3M → Yahoo → CNBC quote), then a /tmp and
+    a KV saved copy. Anything but four fresh CBOE points is a warn — the card still shows
+    something, so this is the only place a silent fallback shows up."""
+    fid = "vol_curve"
+    if not isinstance(payload, dict) or not payload.get("tickers"):
+        return _finding(fid, "warn", "VIX curve not checked (no vol payload)", remediation="manual")
+    curve = (payload.get("regime") or {}).get("curve") or {}
+    points = curve.get("points") or []
+    sources = sorted({str(p.get("source") or "") for p in points})
+    ev = {"state": curve.get("state"), "ratio": curve.get("ratio"), "asOf": curve.get("asOf"),
+          "sources": sources, "backup": curve.get("backup"), "points": len(points)}
+    if not curve.get("state"):
+        return _finding(fid, "warn", "VIX curve unavailable (no VIX or VIX3M from any source or saved copy)",
+                        detail="Probe /api/vol?_t=1 and read _meta.tried / _meta.messages. Tiers: CBOE CDN → CNBC "
+                               "bars → FRED VXVCLS (VIX3M only) → Yahoo → CNBC quote → /tmp → KV ftb:vol:curve:lg.",
+                        remediation="manual", evidence=ev)
+    if curve.get("stale"):
+        return _finding(fid, "warn", f"VIX curve on a saved copy ({curve.get('backup')})",
+                        detail="Every live source failed for VIX or VIX3M; the card shows the saved call with a "
+                               "🕐 note.", remediation="manual", evidence=ev)
+    if not curve.get("complete"):
+        return _finding(fid, "warn", f"VIX curve incomplete ({len(points)}/4 points)",
+                        detail="The call still works (VIX + VIX3M present); 9D or 6M has no fresh source.",
+                        remediation="manual", evidence=ev)
+    backup = [s for s in sources if not s.startswith("cboe")]
+    if backup:
+        return _finding(fid, "warn", f"VIX curve on a backup source ({', '.join(backup)})",
+                        detail="CBOE's CDN missed at least one index; a lower tier is serving.",
+                        remediation="manual", evidence=ev)
+    return _finding(fid, "ok", f"VIX curve live (CBOE, {curve.get('state')}, VIX/VIX3M {curve.get('ratio')})")
+
+
 # Indicators that are N/A ON PURPOSE — their upstream series is dead/frozen, so they are
 # NEVER alarmed (alarming them is the "crying wolf" we must avoid). Keyed by the field name
 # in /api/fred's `indicators`. NOTE: `lei` is here only until it's replaced by a live,
@@ -637,6 +671,9 @@ def run_all_checks(generated_at):
         if name == "rubber-band" and status == 200:
             findings.append(check_rubber_band(route_payloads.get(name)))
         # /api/factors degrades silently through 7 layers — name the one serving.
+        # /api/vol's VIX curve falls back through 7 tiers; name the one serving.
+        if name == "vol" and status == 200:
+            findings.append(check_vol_curve(route_payloads.get(name)))
         if name == "factors" and status == 200:
             findings.append(check_factors(route_payloads.get(name)))
             findings.append(check_factors_long(route_payloads.get(name)))

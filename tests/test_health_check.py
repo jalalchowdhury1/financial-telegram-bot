@@ -666,3 +666,34 @@ def test_check_factors_long_bake_stale_or_missing_is_warn():
     assert "unavailable" in hc.check_factors_long(_fl(None), today=d)["title"]
     for f in (hc.check_factors_long(_fl(None), today=d), hc.check_factors_long({"factors": []}, today=d)):
         assert f["severity"] == "warn"
+
+
+def _vc(**over):
+    pts = [{"tenor": t, "index": i, "value": v, "asOf": "2026-09-25", "source": "cboe"}
+           for t, i, v in (("9D", "VIX9D", 12.76), ("1M", "VIX", 14.87), ("3M", "VIX3M", 17.93), ("6M", "VIX6M", 20.01))]
+    curve = {"points": pts, "ratio": 0.829, "state": "calm", "complete": True, "stale": False, "asOf": "2026-09-25"}
+    curve.update(over)
+    return {"tickers": [{"ticker": "SPY"}], "regime": {"curve": curve}}
+
+
+def test_check_vol_curve_four_cboe_points_is_ok():
+    f = hc.check_vol_curve(_vc())
+    assert f["severity"] == "ok" and "calm" in f["title"] and "0.829" in f["title"]
+    live = _vc(points=[dict(p, source="cboe+live") for p in _vc()["regime"]["curve"]["points"]])
+    assert hc.check_vol_curve(live)["severity"] == "ok"
+
+
+def test_check_vol_curve_every_fallback_is_warn():
+    pts = _vc()["regime"]["curve"]["points"]
+    cases = {
+        "unavailable": _vc(state=None, ratio=None),
+        "saved copy": _vc(stale=True, backup="KV 2026-09-25T21:00Z"),
+        "incomplete": _vc(complete=False, points=pts[1:]),
+        "backup source (fred)": _vc(points=[dict(p, source="fred") if p["index"] == "VIX3M" else p for p in pts]),
+        "not checked": {"tickers": []},
+    }
+    for needle, payload in cases.items():
+        f = hc.check_vol_curve(payload)
+        assert f["severity"] == "warn", needle
+        assert needle in f["title"], (needle, f["title"])
+    assert hc.check_vol_curve({"tickers": [{"ticker": "SPY"}]})["severity"] == "warn"  # old payload, no regime

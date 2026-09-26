@@ -700,7 +700,10 @@ Now: fewer than 756 bars → the Sheet's own 3Y return (`_sheet_return_3y`) → 
   `dashboard_lkg` sheet tab — in total-outage last-resort mode the card shows N/A.)
 - **Volatility metrics** (`/api/vol` + `VolMetricsTable.js`, added 2026-07-05) — IV, IV
   rank (1y), IV percentile (1y), 21-day realized vol, and VRP (IV − RV) for **SPY, QQQ,
-  TQQQ, SQQQ, UVXY**, rendered as the "🌡️ Volatility Metrics" card after SPY Historical.
+  TQQQ, SQQQ, UVXY**, rendered as the "🌡️ Volatility" card after SPY Historical. **Since
+  2026-09-26 the card shows only the SPY + QQQ rows** (the owner reads nothing else); the
+  route still computes all five because `lib/jevBrief.js` (Jev pills) reads them — do not
+  drop rows from the payload. The card's lower half is the regime block below.
   Dashboard-only, `serve('vol', …)`-wrapped, 30-min cached. **IV is an index PROXY, not
   chain-derived** (Yahoo chains are unreachable from Vercel; same method as the owner's
   hedgelab tool): SPY→VIX, QQQ→VXN, TQQQ/SQQQ→**3×VXN** (leverage scales IV ~linearly),
@@ -754,6 +757,37 @@ Now: fewer than 756 bars → the Sheet's own 3Y return (`_sheet_return_3y`) → 
     (the full per-series cascade trail).
   UI thresholds (hedgelab convention): percentile/rank ≤10 green (cheap), ≥70 orange,
   ≥90 red (panic); negative VRP orange (realized above implied = stress).
+  - **Regime block (`payload.regime`, `lib/volRegime.js`, added 2026-09-26)** — the lower
+    half of the card, three numbers the owner can act on:
+    1. **VIX curve**: VIX9D / VIX / VIX3M / VIX6M (9D / 1M / 3M / 6M) as bars, plus a call
+       from **VIX ÷ VIX3M: calm < 0.90 · watch 0.90–1.00 · stress ≥ 1.00**. Cut-offs
+       measured on CBOE closes 2009-09-18 → 2026-09-25 (4,281 days): calm 59%, watch 33.5%,
+       stress 7.6% (Feb 2018, Feb–Mar 2020; peaks 1.32–1.34); median 0.884. `frontInverted`
+       (9D > 1M, ≈26% of days since 2011) is a note, not an alarm.
+    2. **TQQQ decay**: if QQQ ends a year flat, a daily-rebalanced 3× fund ends
+       `1 − e^(−3σ²)` lower (general: `(L²−L)/2 · σ²`), before fees. Shown at QQQ's RV 21d
+       (`decay.realized`) and at VXN (`decay.implied`).
+    3. **5-day ±1σ**: `IV × √(5/252)` for SPY (VIX) and QQQ (VXN); ~2 weeks in 3 stay inside.
+    **Backups — every curve point has its own cascade**, then two saved copies:
+    CBOE CDN CSV → CNBC `.VIX9D/.VIX3M/.VIX6M` 3M bars → FRED (`VXVCLS`, **VIX3M only**; no
+    FRED series for 9D/6M) → Yahoo `^VIX9D/^VIX3M/^VIX6M` → the CNBC live quote alone
+    (source `cnbc-quote`) → **/tmp last-good** (`loadLastGood('vol')`'s `regime.curve`) →
+    **Upstash KV `ftb:vol:curve:lg`** (written once per close date per warm instance, only a
+    complete all-CBOE curve, only with no `?_fail=`; max age 5 days) → "VIX curve
+    unavailable" (table unaffected). VIX itself comes from the table's cascade. Live
+    intraday levels come from the SAME single CNBC quote call as the table and apply only
+    when BOTH VIX and VIX3M have a quote newer than their close (the ratio never divides
+    an intraday VIX by yesterday's VIX3M). A saved copy carries `stale:true` +
+    `backup:'KV 2026-09-25T21:00Z'` and the card shows "🕐 Saved copy from …"; the as-of
+    line names the real sources (`CBOE · FRED`). `_meta.curveSource` names the tier,
+    `_meta.fallback = curveDegraded(curve)` keeps any non-CBOE / stale / incomplete curve
+    **out of the edge cache** (lib/cdn.js). Fault gates: **`vol_curve`** (all three
+    curve-only indices + their quotes), **`vol_curvelg`** (/tmp tier), **`vol_curvekv`**
+    (KV tier); the per-source `vol_cboe`/`vol_cnbc`/`vol_fred`/`vol_yahoo` gates cover the
+    curve points too. Health check: `check_vol_curve` → finding `vol_curve`, warn on no call,
+    a saved copy, < 4 points, or any non-CBOE point.
+    The card refetches on the page's refresh tick (60 s floor; manual refresh busts the
+    edge cache) and keeps what it shows when a refresh fails.
 - **Four Horsemen — Recession Watch** (`FourHorsemen.js`, full-width card after the
   Economic Indicators grid, added 2026-07-23) — the classic "Four Horsemen of the
   Apocalypse" chart as ONE overlay (owner explicitly wanted the overlay, not small
