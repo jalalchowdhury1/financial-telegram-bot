@@ -173,7 +173,7 @@ function Regime({ regime }) {
             </div>
             <div className="vol-fact">
                 <div className="vol-fact-head">
-                    <span className="vol-fact-label">Next 5 days ±1σ</span>
+                    <span className="vol-fact-label">Next 5 days <span style={{ textTransform: 'none' }}>±1σ</span></span>
                     <span className="vol-fact-value">SPY ±{fmt(moves?.SPY)}% · QQQ ±{fmt(moves?.QQQ)}%</span>
                 </div>
                 <div className="vol-note">About 2 weeks in 3 stay inside this range (from VIX and VXN).</div>
