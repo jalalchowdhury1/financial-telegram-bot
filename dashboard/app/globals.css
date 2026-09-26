@@ -1847,6 +1847,7 @@ body::before {
   transition: border-color 0.2s ease, background 0.2s ease;
 }
 
+a.factor-chip { text-decoration: none; } /* chips link to Yahoo Finance */
 .factor-chip:hover { background: var(--bg-card-hover); border-color: var(--border-glow); }
 .factor-chip.is-selected { border-color: rgba(129, 140, 248, 0.6); background: var(--bg-card-hover); }
 /* The window's leader gets a thin top accent — the one-glance answer to "what is working". */
@@ -2054,3 +2055,131 @@ body::before {
 .vol-fact-sub { font-weight: 400; color: var(--text-muted); font-size: 0.72rem; }
 .vol-note { font-size: 0.68rem; line-height: 1.45; color: var(--text-muted); margin-top: 2px; }
 .vol-asof { opacity: 0.7; }
+
+/* ============ QoL 2026-09-26: instant open · what moved · phone polish ============ */
+
+/* ⚡ Instant open — a saved copy never passes for live (lib/snapshot.js). Cards showing
+   one get a dashed outline and a "🕐 10:42" tag until their live answer lands. Outline,
+   not border or opacity: .card's fadeInUp animation owns opacity. */
+.card[data-cached],
+.factor-row[data-cached],
+.moved-strip[data-cached],
+.saved-wrap[data-cached] > * {
+  position: relative;
+  outline: 1px dashed var(--text-muted);
+  outline-offset: 2px;
+}
+.card[data-cached]::before,
+.factor-row[data-cached]::before { content: "🕐 " attr(data-cached); }
+/* a display:contents wrapper cannot draw — it hands the label to its card as a variable */
+.saved-wrap[data-cached] > *::before { content: "🕐 " var(--saved); }
+.card[data-cached]::before,
+.factor-row[data-cached]::before,
+.saved-wrap[data-cached] > *::before {
+  position: absolute;
+  top: -10px;
+  right: 14px;
+  z-index: 2;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px dashed var(--text-muted);
+  background: var(--bg-primary);
+  color: var(--text-muted);
+  font-size: 0.62rem;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+}
+
+/* 📈 What moved */
+.moved-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 14px;
+  padding: 2px;
+  overflow-x: auto;
+  white-space: nowrap;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  border-radius: 999px;
+}
+.moved-strip::-webkit-scrollbar { display: none; }
+.moved-title {
+  flex: none;
+  margin-right: 2px;
+  color: var(--text-muted);
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+.moved-saved { flex: none; color: var(--text-muted); font-size: 0.64rem; font-weight: 600; }
+.moved-chip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border-card);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.74rem;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+.moved-chip:hover { background: var(--bg-card-hover); border-color: rgba(255, 255, 255, 0.14); }
+.moved-chip:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.moved-chip.is-big { border-color: var(--orange); background: var(--orange-bg); }
+.moved-label { color: var(--text-muted); font-weight: 600; }
+.moved-val { font-weight: 700; }
+.moved-day { font-size: 0.7em; color: var(--text-muted); }
+/* tap target: the card the chip jumped to glows for a moment (transition, not animation —
+   an animation would replace .card's fadeInUp and drop it back to opacity 0) */
+.jump-flash { box-shadow: 0 0 0 2px var(--orange), var(--shadow-card) !important; }
+
+/* 📱 Phone polish */
+html { overscroll-behavior-y: contain; } /* Android's own pull = full reload; ours is softer */
+.upd-ago.is-old { color: var(--orange); }
+.offline-banner {
+  position: sticky;
+  top: 0;
+  z-index: 940;
+  margin-bottom: 10px;
+  padding: 9px 14px;
+  border-radius: 0 0 12px 12px;
+  background: #7c2d12;
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.4;
+  text-align: center;
+}
+.ptr {
+  position: fixed;
+  top: 0;
+  left: 50%;
+  z-index: 950;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border-card);
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+.ptr.is-ready { color: var(--text-primary); border-color: var(--green); }
+.header-status .live-badge.is-saved {
+  color: var(--orange);
+  background: var(--orange-bg);
+  border-color: rgba(245, 158, 11, 0.35);
+}
+.header-status .live-badge.is-saved .live-dot { background: var(--orange); box-shadow: none; animation: none; }

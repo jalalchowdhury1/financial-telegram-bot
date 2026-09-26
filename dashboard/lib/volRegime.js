@@ -15,6 +15,7 @@
  * every curve point has its own 4–5 source cascade there.
  */
 import { defaultKv } from './factorStore';
+import { sigmaOf, SIGMA_WINDOW } from './whatMoved';
 
 export const CURVE_TENORS = [
     { tenor: '9D', index: 'VIX9D' },
@@ -104,6 +105,33 @@ export function leveragedDecayPct(volPct, leverage = 3) {
 export function expectedMovePct(ivPct, days = 5) {
     if (!goodValue(ivPct) || !goodValue(days)) return null;
     return ivPct * Math.sqrt(days / 252);
+}
+
+/**
+ * VIX since its last close, for the "What moved" strip (lib/whatMoved.js): today's level —
+ * the live intraday quote when it is newer than the last close — against the last daily
+ * close BEFORE it. Same cascaded series as the table (CBOE → CNBC → FRED → Yahoo), so it
+ * inherits every backup. σ = the series' own daily % moves (last 60). null when there is
+ * no earlier close to compare with.
+ */
+export function vixDay(series, live) {
+    const s = (Array.isArray(series) ? series : []).filter((p) => p && goodValue(p.value) && ISO.test(p.date || ''));
+    const last = s[s.length - 1];
+    if (!last) return null;
+    const cur = liveNewer(live, last)
+        ? { value: live.value, asOf: live.date, live: true }
+        : { value: last.value, asOf: last.date, live: false };
+    const prior = s.filter((p) => p.date < cur.asOf);
+    const prev = prior[prior.length - 1];
+    if (!prev) return null;
+    return {
+        value: round(cur.value, 2),
+        asOf: cur.asOf,
+        live: cur.live,
+        prev: round(prev.value, 2),
+        prevDate: prev.date,
+        sigma: sigmaOf(s.slice(-(SIGMA_WINDOW + 1)).map((p) => p.value), 'pct'),
+    };
 }
 
 /**

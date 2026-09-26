@@ -160,3 +160,26 @@ it('formats decay and source labels', () => {
     expect(curveSources([{ source: 'cboe' }, { source: 'cboe+live' }, { source: 'cnbc-quote' }])).toBe('CBOE · CNBC quote');
     expect(curveSources(null)).toBe('');
 });
+
+describe('instant open (saved copy)', () => {
+    const { writeSnap } = require('../../lib/snapshot');
+    test('paints the saved copy tagged 🕐, then the live answer drops the tag', async () => {
+        writeSnap('vol', payload, Date.now() - 60e3);
+        let resolve;
+        global.fetch = jest.fn(() => new Promise((r) => { resolve = r; }));
+        const { container } = render(<VolMetricsTable />);
+        const card = container.querySelector('.card');
+        expect(card).toHaveAttribute('data-cached');
+        expect(screen.getByText('SPY')).toBeInTheDocument(); // no skeleton
+        resolve({ status: 200, json: async () => payload });
+        await waitFor(() => expect(card).not.toHaveAttribute('data-cached'));
+    });
+    test('a failed live fetch keeps the saved copy, still tagged', async () => {
+        writeSnap('vol', payload, Date.now() - 60e3);
+        global.fetch = jest.fn().mockRejectedValue(new Error('offline'));
+        const { container } = render(<VolMetricsTable />);
+        await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(2), { timeout: 3000 });
+        expect(container.querySelector('.card')).toHaveAttribute('data-cached');
+        expect(screen.getByText('SPY')).toBeInTheDocument();
+    });
+});

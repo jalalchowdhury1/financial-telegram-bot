@@ -197,3 +197,26 @@ describe('KV last-good', () => {
         expect(staleCurve(good, '2026-09-26T14:00:00Z', now, 'last-good').backup).toBe('last-good 2026-09-26T14:00Z');
     });
 });
+
+describe('vixDay (What moved strip)', () => {
+    const { vixDay } = require('../volRegime');
+    const ser = (pairs) => pairs.map(([date, value]) => ({ date, value }));
+    const s = ser([['2026-09-23', 14.29], ['2026-09-24', 15.67], ['2026-09-25', 14.87]]);
+
+    test('last close vs the close before it', () => {
+        expect(vixDay(s, null)).toEqual({ value: 14.87, asOf: '2026-09-25', live: false, prev: 15.67, prevDate: '2026-09-24', sigma: null });
+    });
+    test('a newer live quote is compared with the last close', () => {
+        expect(vixDay(s, { value: 16.2, date: '2026-09-28' })).toMatchObject({ value: 16.2, asOf: '2026-09-28', live: true, prev: 14.87, prevDate: '2026-09-25' });
+        // same-day or bad quotes are ignored
+        expect(vixDay(s, { value: 16.2, date: '2026-09-25' }).live).toBe(false);
+        expect(vixDay(s, { value: -1, date: '2026-09-28' }).live).toBe(false);
+    });
+    test('σ from the series once it has 20 moves; null with nothing to compare', () => {
+        const long = ser(Array.from({ length: 30 }, (_, i) => [`2026-08-${String(i + 1).padStart(2, '0')}`, i % 2 ? 22 : 20]));
+        expect(vixDay(long, null).sigma).toBeCloseTo(9.54, 1);
+        expect(vixDay(ser([['2026-09-25', 14.87]]), null)).toBeNull();
+        expect(vixDay(null, null)).toBeNull();
+        expect(vixDay(ser([['2026-09-25', 14.87]]), { value: 15, date: '2026-09-28' })).toMatchObject({ value: 15, prev: 14.87 });
+    });
+});

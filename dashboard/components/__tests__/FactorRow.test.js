@@ -72,16 +72,28 @@ it('falls back to the nearest shorter window when the remembered one has no data
     expect(screen.getByRole('radio', { name: '5Y' })).toHaveAttribute('aria-checked', 'true');
 });
 
-it('tapping a chip explains it in the caption; tapping again returns to the summary', async () => {
+it('focusing a chip explains it in the caption; leaving returns to the summary', async () => {
     render(<FactorRow />);
     await ready();
-    const chip = screen.getByRole('button', { name: /Value: −3\.1% versus the S&P 500 over 6M/ });
-    fireEvent.click(chip);
+    const chip = screen.getByRole('link', { name: /Value: −3\.1% versus the S&P 500 over 6M/ });
+    fireEvent.focus(chip);
     const caption = document.querySelector('.factor-caption');
     expect(caption.textContent).toMatch(/Value \(VLUE\) lagged the S&P by 3\.1% since Mar 25, 2026: VLUE \+1\.9% vs SPY \+5\.0%\. Value explained\./);
-    expect(chip).toHaveAttribute('aria-pressed', 'true');
-    fireEvent.click(chip);
+    expect(chip).toHaveClass('is-selected');
+    fireEvent.blur(chip);
     expect(caption.textContent).toMatch(/leader Momentum/);
+});
+
+it('every chip opens its ETF on Yahoo Finance in a new tab, even before data lands', async () => {
+    global.fetch = jest.fn(() => new Promise(() => {})); // never answers
+    render(<FactorRow />);
+    const links = screen.getAllByRole('link');
+    expect(links.map((a) => a.getAttribute('href'))).toEqual(['VLUE', 'MTUM', 'QUAL', 'IWM', 'USMV']
+        .map((t) => `https://finance.yahoo.com/quote/${t}/`));
+    for (const a of links) {
+        expect(a).toHaveAttribute('target', '_blank');
+        expect(a).toHaveAttribute('rel', 'noopener noreferrer');
+    }
 });
 
 it('marks a stale payload in the caption', async () => {
@@ -165,7 +177,7 @@ describe('20Y / 30Y / 40Y (research portfolios)', () => {
         render(<FactorRow />);
         await ready();
         fireEvent.click(screen.getByRole('radio', { name: '40Y' }));
-        fireEvent.click(document.querySelector('.factor-chip'));
+        fireEvent.focus(document.querySelector('.factor-chip'));
         const caption = document.querySelector('.factor-caption').textContent;
         expect(caption).toMatch(/Value \(Value proxy\) beat the whole US market by 34\.6%/);
         expect(caption).toMatch(/≈\+0\.7%\/yr/);
@@ -249,5 +261,22 @@ describe('long helpers', () => {
         expect(isLongStale({ long: { through: '2026-05' } }, new Date('2026-09-26T12:00:00Z'))).toBe(false);
         expect(isLongStale({ long: { through: '2026-04' } }, new Date('2026-09-26T12:00:00Z'))).toBe(true);
         expect(isLongStale({})).toBe(false);
+    });
+});
+
+describe('instant open (saved copy)', () => {
+    const { writeSnap, readSnap } = require('../../lib/snapshot');
+    it('paints the saved copy tagged 🕐, then live replaces it and is saved', async () => {
+        const older = { ...payload, updated_at: '2026-09-24T20:00:00Z' };
+        writeSnap('factors', older, Date.now() - 3600e3);
+        let resolve;
+        global.fetch = jest.fn(() => new Promise((r) => { resolve = r; }));
+        render(<FactorRow />);
+        const row = document.querySelector('.factor-row');
+        expect(row).toHaveAttribute('data-cached');
+        expect(vals()).toEqual(SIX_M);
+        await act(async () => { resolve({ json: async () => payload }); });
+        await waitFor(() => expect(document.querySelector('.factor-row')).not.toHaveAttribute('data-cached'));
+        expect(readSnap('factors').data.updated_at).toBe(payload.updated_at);
     });
 });

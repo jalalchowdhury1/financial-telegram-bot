@@ -270,6 +270,66 @@ answered. Three fixes, each safe on its own:
   the ends; one roving tab stop. On phones the timeline scrolls sideways under a fade
   mask; the active window scrolls itself into view.
 
+### ⚡ Instant open · 📈 What moved · 📱 phone polish — 2026-09-26
+- **Instant open (`lib/snapshot.js`).** Every page feed (plus `/api/factors`, and
+  `/api/vol` for the vol card) saves its last good answer in this device's localStorage
+  (`fd:snap:v1:<build>:<feed>`, ~1 MB total, 3-day max age). The key carries the deploy's
+  commit (`NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA`, 'dev' locally) so an old-shape copy never meets
+  new code; `purgeOldSnaps()` drops other deploys' copies on open. The next
+  visit paints those numbers before the first frame (a layout effect), then each feed swaps
+  to live as it lands. **A saved copy never passes for live:** each card showing one has a
+  dashed outline and a "🕐 10:42" tag (`[data-cached]` in globals.css), the header reads
+  "🕐 Saved 10:42 · loading live…", and fresh-print marks stay off while any of
+  history/fred/extra/sheets is a saved copy. Blocked storage = the old skeleton load.
+  - **A failure answer never replaces or overwrites a saved copy.** Every route answers
+    200 with its own fallback body, often with no `error` field (`{fx:{}…}`, `tickers:[]`,
+    `value:null`, all 'N/A'). `isLiveAnswer(feed, body)` in `lib/snapshot.js` holds one
+    test per feed — add one when you add a feed.
+  - "Updated … ago" is stamped only when at least one feed returned a live answer: an
+    all-failed cycle (offline, a phone waking up) leaves "🕐 Saved 10:42 · no live data
+    yet". A refresh asked for mid-fetch (reconnect, pull) is queued, not dropped.
+  - To tag a new card: put `data-cached={saved('feedKey')}` on its `.card`. A component
+    behind a `display:contents` wrapper gets `className="saved-wrap"`, the same
+    `data-cached`, and `...savedVar('feedKey')` in the wrapper's style (the wrapper has no
+    box, so it hands the label to its card as the `--saved` CSS variable).
+  - Tests: `jest.setup.js` clears localStorage before every test, or one test's saved
+    copy hydrates the next.
+- **What moved (`components/WhatMoved.js` + `lib/whatMoved.js`).** One line under the
+  header: the 5 biggest moves since the last close, ranked by **move ÷ that series' own σ
+  of daily changes (last 60)** so units compare fairly ("× a normal day"; ⚡ at ≥ 2×). Tap
+  a chip → scrolls to its card (`data-jump` label) and flashes it. Sources:
+  - SPY, 10Y, Oil, Gold, BTC: the payload's own `dailyChange`, σ from its own `history`.
+  - VIX: `/api/vol` `vixDay` (`lib/volRegime.js`) — today's level (live quote if newer)
+    vs the last close before it, from the same CBOE → CNBC → FRED → Yahoo series as the
+    table. F&G: CNN `previousClose` — only when `_meta.source` is CNN or RapidAPI (the
+    route's VIX proxy would repeat the VIX chip; its stale cache is an old move).
+  - **Market date** = newest of VIX's as-of and SPY's last chart date. A slower feed
+    (FRED DGS10 is a business day behind) may trail it by ONE business day and then shows
+    its weekday on the chip ("10Y +7bp Thu"); further behind, it is dropped.
+  - Backup σ for VIX and F&G: `/api/history` `moves` (history sheet cols AK, BO); F&G
+    falls back to `FG_SIGMA_BAKED` = 4.78 (measured from CNN graphdata, 268 days to
+    2026-09-25) until col BO has 20 changes.
+  - **Never use the history sheet as a "last close" baseline.** Its Date column is the
+    GitHub runner's UTC date, so the 22:00 ET run is stamped the NEXT day and a date's
+    last row is the 10:00 ET intraday snapshot. Using it made Friday's VIX move −6.6%
+    instead of −5.1% (caught 2026-09-26). σ from it is fine (same scale).
+  - Dollar and USD/BDT are not ranked: their live payload has no history, so there is no
+    trustworthy last close. Unrankable series, stale quotes (> 5 days) and moves that
+    round to zero are left out, never guessed. The strip holds its line (`is-waiting`)
+    while its feeds load, then renders nothing if nothing moved.
+- **Phone polish (`components/PhonePolish.js`).**
+  - `UpdatedAgo`: "Updated 3 min ago" ticks every 15 s in its own component (the cards do
+    not re-render) and turns amber past 10 min. Desktop also shows the clock time.
+  - `OfflineBanner`: a sticky bar while `navigator.onLine` is false ("numbers are from
+    16:42"); the `online` event runs the same refresh as ↻. The 5-min auto-refresh skips
+    its tick while offline.
+  - `PullToRefresh`: pull ≥ 70 px (after 0.5× damping) at scrollY 0 → the ↻ refresh
+    (edge cache skipped). Sideways swipes, upward drags, a scrolled page, and touches in
+    a fixed overlay (modal, jump menu) or a scrolled inner box are ignored. The label
+    shows "Refreshing…" until `busy` drops (15 s cap). A second finger (pinch) or a
+    zoomed-in page (`visualViewport.scale > 1`) cancels the pull. `html { overscroll-behavior-y:
+    contain }` stops Android Chrome's own pull-to-reload from firing too.
+
 ### VIX pill fear/greed tag (`/api/sheets` + `lib/vixFearGreed.js`)
 The VIX pill in `CustomIndicatorBar.js` shows a `current | threeMonth | fearGreed` triple
 (e.g. "14.43 | 17.48 | GREED13"). `current`/`threeMonth` still come straight from the
@@ -488,8 +548,10 @@ Small caps (IWM), Low vol (USMV)**, each as a **price ratio vs SPY** — the num
 $1 in the factor ETF is ahead of/behind $1 in SPY over the window; the sparkline is that
 ratio over time, 0 (dashed) = window start. One timeline control (1M 3M 6M YTD 1Y 3Y 5Y 10Y
 │ 20Y 30Y 40Y, remembered per device in localStorage) drives every chip; the window's leader gets a green
-top accent; tap/hover a chip → the caption line explains it (no tooltips: they bleed off
-68px phone chips). Self-fetching, refetches on the page refresh tick, hides itself if the
+top accent; mouse hover / keyboard focus on a chip → the caption line explains it (no
+tooltips: they bleed off 68px phone chips). **Click / tap a chip → that ETF's Yahoo Finance
+page in a new tab** (`yahooUrl`, 2026-09-26; the placeholders carry tickers so it works
+before data lands). Self-fetching, refetches on the page refresh tick, hides itself if the
 route has no factors. Math cross-checked 2026-09-26 against Nasdaq raw closes: every window
 for all 5 factors matched to the cent.
 - **Price basis, on purpose.** No keyless datacenter source serves dividends (Yahoo adjclose
@@ -765,6 +827,9 @@ Now: fewer than 756 bars → the Sheet's own 3Y return (`_sheet_return_3y`) → 
     (the full per-series cascade trail).
   UI thresholds (hedgelab convention): percentile/rank ≤10 green (cheap), ≥70 orange,
   ≥90 red (panic); negative VRP orange (realized above implied = stress).
+  - **`payload.vixDay` (added 2026-09-26)** — `{value, asOf, live, prev, prevDate, sigma}`: VIX
+    vs its last close, for the "What moved" strip (see "⚡ Instant open · 📈 What moved" above).
+    Built from the same cascaded VIX series as the table; null when there is no earlier close.
   - **Regime block (`payload.regime`, `lib/volRegime.js`, added 2026-09-26)** — the lower
     half of the card, three numbers the owner can act on:
     1. **VIX curve**: VIX9D / VIX / VIX3M / VIX6M (9D / 1M / 3M / 6M) as bars, plus a call
@@ -1128,11 +1193,14 @@ Now: fewer than 756 bars → the Sheet's own 3Y return (`_sheet_return_3y`) → 
   tiers, the Ken French 20Y/30Y/40Y reader, and the factor KV last-good. Bakes:
   `lib/data/factorsBaked.json` (weekly ETF closes), `lib/data/factorsLong.json` (monthly
   Ken French), refreshed by `scripts/bake-factors.mjs` / `scripts/bake-factors-long.mjs`.
+- `dashboard/lib/{snapshot,whatMoved}.js` — instant-open saved copies (localStorage) and
+  the "What moved" ranking (σ-normalised moves + the history sheet's backup σ).
 - `dashboard/app/page.js` — dashboard page + the `.system-status-bar` footer.
 - `dashboard/components/*.js` — UI (MarketModal, PolymarketTable, SpyChart, Gauge,
   EconomicIndicatorGrid, BullChecklist, ExtraMarketsGrid, MarketPulse, MiniChart,
   FourHorsemen, CustomIndicatorBar, Skeleton, ErrorBoundary (with `resetKey`), FactorRow,
-  JumpNav, MarketModal.example).
+  JumpNav, WhatMoved, PhonePolish (UpdatedAgo / OfflineBanner / PullToRefresh),
+  MarketModal.example).
 - `dashboard/{jest.config.js,jest.setup.js,next.config.js,package.json}` — build/test config.
 
 **Self-healing / ops (scripts + workflows)**

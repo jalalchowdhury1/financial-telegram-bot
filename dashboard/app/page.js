@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import ErrorBoundary from '../components/ErrorBoundary';
 import { freshnessNote, formatAsOf } from '../lib/freshness';
 
@@ -22,6 +22,12 @@ import Delta from '../components/Delta';
 import MarkChip from '../components/MarkChip';
 import { MarkProvider, useMark, collectLiveValues } from '../components/MarkProvider';
 import JumpNav from '../components/JumpNav';
+import WhatMoved from '../components/WhatMoved';
+import { UpdatedAgo, OfflineBanner, PullToRefresh } from '../components/PhonePolish';
+import { readSnap, writeSnap, savedLabel, purgeOldSnaps, isLiveAnswer } from '../lib/snapshot';
+
+// useLayoutEffect warns during the static prerender; on the server nothing runs anyway.
+const useIsoLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
 import { getJson } from '../lib/loadJson';
 
 // The page's own feeds (self-fetching cards — factors, vol, rubber band, polymarket —
@@ -38,7 +44,14 @@ const FEEDS = [
     { key: 'history', path: '/api/history' },
     // Jev pills: a failure hides the row, nothing else.
     { key: 'jev', path: '/api/jev-pills' },
+    // VIX since its last close, for the "What moved" strip. The vol card fetches its own
+    // copy; automatic loads of both are answered by the edge cache.
+    { key: 'vol', path: '/api/vol' },
 ];
+
+// Fresh-print marks compare live numbers with the history sheet; while any of these
+// is a saved copy, a mark would dress up an old number as news — marks stay off.
+const MARK_INPUTS = ['history', 'fred', 'extra', 'sheets'];
 
 /**
  * A hero number that can carry a fresh-print mark. Lives here rather than in the JSX
@@ -74,6 +87,12 @@ export default function Dashboard() {
     // Jev regime pills (2026-09-19). Null = the route failed or JEV_PILLS=off, and the
     // component renders nothing — the page then reads exactly as it did before.
     const [jevPills, setJevPills] = useState(null);
+    const [vol, setVol] = useState(null);
+    // ⚡ Instant open: feed key → savedAt (ms) while that feed is showing this device's
+    // saved copy (lib/snapshot.js). A key leaves the map when its live answer lands.
+    const [savedAt, setSavedAt] = useState({});
+    const savedRef = useRef({});
+    const [updatedAt, setUpdatedAt] = useState(null); // ms, drives "3 min ago"
     // Refresh behaviour: `loading` is the FIRST load only (the header badge reads
     // "Loading live data..." until every feed has answered once); cards key off their
     // own feed via `pending` below. Every
@@ -83,6 +102,9 @@ export default function Dashboard() {
     const hasLoadedRef = useRef(false);
     const lastFetchRef = useRef(0);
     const inFlightRef = useRef(false);
+    // A refresh asked for while one is in flight (the reconnect after a dropped signal, a
+    // pull) runs once when it finishes, instead of being dropped until the 5-min tick.
+    const queuedRef = useRef(false);
     // Which feeds have not answered even once yet. Each card waits only for ITS OWN
     // feed: before this, one Promise.all held every card on skeletons until the
     // slowest route (market-extra, ~5 s cold) answered — the SPY price took 5.6–9.6 s
@@ -91,19 +113,42 @@ export default function Dashboard() {
     // A manual refresh skips the edge cache; the factor row follows the same choice.
     const [bustKey, setBustKey] = useState(false);
 
+    const setters = {
+        sheets: setSheets, spy: setSpy, spyDailyMove: setSpyDailyMove, fg: setFg, fred: setFred,
+        extra: setExtraMarkets, history: setHistory, jev: setJevPills, vol: setVol,
+    };
+    const dropSaved = (key) => {
+        if (!(key in savedRef.current)) return;
+        const next = { ...savedRef.current };
+        delete next[key];
+        savedRef.current = next;
+        setSavedAt(next);
+    };
+
+    // Paint the last visit's numbers before the first frame; live ones replace them feed
+    // by feed. Runs before fetchAll (a layout effect precedes every plain effect).
+    useIsoLayoutEffect(() => {
+        purgeOldSnaps();
+        const got = {};
+        for (const { key } of FEEDS) {
+            const snap = readSnap(key);
+            if (!snap) continue;
+            setters[key](snap.data);
+            got[key] = snap.savedAt;
+        }
+        if (Object.keys(got).length) { savedRef.current = got; setSavedAt(got); }
+    }, []);
+
     async function fetchAll({ bust = false } = {}) {
-        if (inFlightRef.current) return;
+        if (inFlightRef.current) { if (bust) queuedRef.current = true; return; }
         inFlightRef.current = true;
         if (!hasLoadedRef.current) setLoading(true);
         setRefreshing(true);
         setApiErrors([]);
         setBustKey(bust);
         lastFetchRef.current = Date.now();
-        const setters = {
-            sheets: setSheets, spy: setSpy, spyDailyMove: setSpyDailyMove, fg: setFg, fred: setFred,
-            extra: setExtraMarkets, history: setHistory, jev: setJevPills,
-        };
         const got = {};
+        let live = 0;
         try {
             // Every feed lands on its own. null = the fetch itself failed (the routes
             // answer 200 even when degraded): keep the previous payload rather than
@@ -112,7 +157,16 @@ export default function Dashboard() {
             await Promise.all(FEEDS.map(async ({ key, path }) => {
                 const res = await getJson(path, { bust });
                 got[key] = res;
-                if (res != null) setters[key](res);
+                // A failure answer (an error, or a route's 200 fallback body) never replaces
+                // a saved copy on screen — it stays, tagged 🕐 — and is never saved.
+                if (isLiveAnswer(key, res)) {
+                    live++;
+                    setters[key](res);
+                    dropSaved(key);
+                    setTimeout(() => writeSnap(key, res), 0); // off the render path
+                } else if (res != null && !(key in savedRef.current)) {
+                    setters[key](res); // no saved copy: the card shows the route's own degraded state
+                }
                 setPending((p) => (p[key] ? { ...p, [key]: false } : p));
             }));
             hasLoadedRef.current = true;
@@ -134,13 +188,18 @@ export default function Dashboard() {
             if (extraRes?.error) errors.push(`[EXTRA] ${extraRes.error}`);
             setApiErrors(errors);
 
+            // "Updated …" only when something live actually landed: a cycle where every feed
+            // failed (offline, a phone waking up) must not make saved numbers look fresh.
             const now = new Date();
-            const year = now.getFullYear();
-            const month = String(now.getMonth() + 1).padStart(2, '0');
-            const day = String(now.getDate()).padStart(2, '0');
-            const hours = String(now.getHours()).padStart(2, '0');
-            const minutes = String(now.getMinutes()).padStart(2, '0');
-            setLastUpdated(`${year}-${month}-${day} ${hours}:${minutes}`);
+            if (live) {
+                const year = now.getFullYear();
+                const month = String(now.getMonth() + 1).padStart(2, '0');
+                const day = String(now.getDate()).padStart(2, '0');
+                const hours = String(now.getHours()).padStart(2, '0');
+                const minutes = String(now.getMinutes()).padStart(2, '0');
+                setLastUpdated(`${year}-${month}-${day} ${hours}:${minutes}`);
+                setUpdatedAt(now.getTime());
+            }
             setRefreshTick((t) => t + 1);
         } catch (e) {
             console.error('Dashboard fetch error:', e);
@@ -149,6 +208,7 @@ export default function Dashboard() {
         setLoading(false);
         setRefreshing(false);
         inFlightRef.current = false;
+        if (queuedRef.current) { queuedRef.current = false; setTimeout(() => fetchAll({ bust: true }), 0); }
     }
     const refreshNow = () => fetchAll({ bust: true });
 
@@ -192,11 +252,12 @@ export default function Dashboard() {
         // Auto-refresh every 5 minutes — but not while the tab is hidden. /api/fred
         // alone is ~650KB, so an idle background tab was pulling ~8MB/hour. On
         // returning to the tab, refresh immediately if the data has gone stale.
+        // Offline: skip the tick — the offline banner refreshes on reconnect.
         const interval = setInterval(() => {
-            if (!document.hidden) fetchAll();
+            if (!document.hidden && navigator.onLine !== false) fetchAll();
         }, REFRESH_MS);
         const onVisible = () => {
-            if (!document.hidden && Date.now() - lastFetchRef.current > REFRESH_MS) fetchAll();
+            if (!document.hidden && navigator.onLine !== false && Date.now() - lastFetchRef.current > REFRESH_MS) fetchAll();
         };
         document.addEventListener('visibilitychange', onVisible);
         return () => {
@@ -223,8 +284,23 @@ export default function Dashboard() {
 
     const fgColor = (score) => score < 25 ? 'var(--red)' : score < 45 ? '#f97316' : score < 55 ? 'var(--text-muted)' : score < 75 ? 'var(--green)' : '#15803d';
 
+    // "10:42" label for the OLDEST saved copy among `keys` (undefined = all live).
+    const saved = (...keys) => {
+        const ts = keys.map((k) => savedAt[k]).filter(Number.isFinite);
+        return ts.length ? savedLabel(Math.min(...ts)) : undefined;
+    };
+    // Same, as the CSS variable a `display: contents` wrapper hands to its card.
+    const savedVar = (...keys) => {
+        const l = saved(...keys);
+        return l ? { '--saved': JSON.stringify(l) } : null;
+    };
+    const anySaved = saved(...Object.keys(savedAt));
+    const marksOff = MARK_INPUTS.some((k) => k in savedAt);
+
     return (
-        <MarkProvider history={history}>
+        <MarkProvider history={marksOff ? null : history}>
+        <OfflineBanner onBack={refreshNow} since={anySaved || lastUpdated?.slice(11)} />
+        <PullToRefresh onRefresh={refreshNow} busy={refreshing} />
         <div className="dashboard">
             {/* Auto-Refresh Visualizer */}
             {lastUpdated && <div key={lastUpdated} className="auto-refresh-bar" style={{ animation: 'progress-fill 300s linear forwards' }}></div>}
@@ -234,15 +310,18 @@ export default function Dashboard() {
                 <h1>Jalal's Financial Dashboard</h1>
                 <p className="subtitle">Live market data, economic indicators & AI-powered assessment</p>
                 <div className="header-status">
-                    <div className="live-badge">
+                    {/* amber, not live-green, while the page shows a saved copy */}
+                    <div className={`live-badge${anySaved && (loading || !updatedAt) ? ' is-saved' : ''}`}>
                         <span className="live-dot" />
-                        {loading ? 'Loading live data...' : (
+                        {loading ? (anySaved ? `🕐 Saved ${anySaved} · loading live…` : 'Loading live data...') : !updatedAt ? (
+                            anySaved ? `🕐 Saved ${anySaved} · no live data yet` : 'No live data yet'
+                        ) : (
                             <>
-                                Updated{' '}
-                                {/* the date is hidden on phones — it is always today, and the
-                                    full string pushed this badge into the refresh button */}
-                                <span className="upd-date">{lastUpdated?.slice(0, 10)} </span>
-                                {lastUpdated?.slice(11)}
+                                Updated
+                                {/* the clock is hidden on phones — "3 min ago" says it in less
+                                    room; the full string pushed this badge into the refresh button */}
+                                <span className="upd-date">{lastUpdated} · </span>
+                                <UpdatedAgo at={updatedAt} />
                             </>
                         )}
                     </div>
@@ -262,8 +341,19 @@ export default function Dashboard() {
                 )}
             </header>
 
+            {/* 📈 WHAT MOVED — the 5 most unusual moves since the last close; tap → card */}
+            <ErrorBoundary resetKey={refreshTick}>
+                <WhatMoved
+                    spy={spy} fg={fg} extra={extraMarkets} vol={vol} history={history}
+                    saved={saved('spy', 'fg', 'extra', 'vol', 'history')}
+                    waiting={['spy', 'fg', 'extra', 'vol', 'history'].some((k) => pending[k])}
+                />
+            </ErrorBoundary>
+
             {/* CUSTOM INDICATOR BAR */}
-            <ErrorBoundary resetKey={refreshTick}><CustomIndicatorBar sheets={sheets} loading={pending.sheets} /></ErrorBoundary>
+            <div className="saved-wrap" data-cached={saved('sheets')} style={{ display: 'contents', ...savedVar('sheets') }}>
+                <ErrorBoundary resetKey={refreshTick}><CustomIndicatorBar sheets={sheets} loading={pending.sheets && !sheets} /></ErrorBoundary>
+            </div>
 
             {/* 🧬 FACTOR ROW — style factors vs the S&P 500 with one shared timeline.
                 Self-fetching (/api/factors); renders nothing if the route has no data. */}
@@ -272,20 +362,24 @@ export default function Dashboard() {
             </ErrorBoundary>
 
             {/* MARKET PULSE - Quick summary at top */}
-            <ErrorBoundary resetKey={refreshTick}><MarketPulse spy={spy} spyDailyMove={spyDailyMove} fg={fg} fred={fred} loading={pending.spy || pending.fg} fgColor={fgColor} /></ErrorBoundary>
+            <div className="saved-wrap" data-cached={saved('spy', 'spyDailyMove', 'fg', 'fred')} style={{ display: 'contents', ...savedVar('spy', 'spyDailyMove', 'fg', 'fred') }}>
+                <ErrorBoundary resetKey={refreshTick}><MarketPulse spy={spy} spyDailyMove={spyDailyMove} fg={fg} fred={fred} loading={(pending.spy && !spy) || (pending.fg && !fg)} fgColor={fgColor} /></ErrorBoundary>
+            </div>
 
             {/* JEV REGIME PILLS — hidden entirely when JEV_PILLS=off or the route is unreachable.
                 No loading skeleton on purpose: with the kill switch on, a skeleton would flash
                 for a few seconds on every load and the page would NOT be exactly the old site. */}
             <ErrorBoundary resetKey={refreshTick}>
-                <JevPills data={jevPills} />
+                <div className="saved-wrap" data-cached={saved('jev')} style={{ display: 'contents', ...savedVar('jev') }}>
+                    <JevPills data={jevPills} />
+                </div>
             </ErrorBoundary>
 
             {/* MAIN GRID */}
             <div className="dashboard-grid">
 
                 {/* ========== REDESIGNED SPY CARD ========== */}
-                <div className={`card${spy && !spy.error && (spy.rsi < 30 || spy.rsi > 70) ? ' card-alert' : ''}`} style={{ animationDelay: '0.2s' }} data-jump="SPY overview">
+                <div className={`card${spy && !spy.error && (spy.rsi < 30 || spy.rsi > 70) ? ' card-alert' : ''}`} style={{ animationDelay: '0.2s' }} data-jump="SPY overview" data-cached={saved('spy', 'spyDailyMove')}>
                     <div className="card-header">
                         <h2>📊 SPY Market Overview</h2>
                         {spy && !spy.error && <span className={`badge ${spy.rsi > 70 ? 'badge-red' : spy.rsi < 30 ? 'badge-green' : 'badge-blue'}`}>{spy.rsi > 70 ? 'Overbought' : spy.rsi < 30 ? 'Oversold' : 'Neutral'}</span>}
@@ -349,7 +443,7 @@ export default function Dashboard() {
                 </div>
 
                 {/* ========== REDESIGNED FEAR & GREED CARD ========== */}
-                <div className="card" style={{ animationDelay: '0.3s' }} data-jump="Fear & Greed">
+                <div className="card" style={{ animationDelay: '0.3s' }} data-jump="Fear & Greed" data-cached={saved('fg')}>
                     <div className="card-header">
                         <h2>😨 Fear & Greed Index</h2>
                         {fg && !fg.error && <span className={`badge ${fg.score < 45 ? 'badge-red' : fg.score > 55 ? 'badge-green' : 'badge-yellow'}`}>{fg.rating}</span>}
@@ -399,7 +493,7 @@ export default function Dashboard() {
                 </div>
 
                 {/* YIELD CURVE */}
-                <div className="card" style={{ animationDelay: '0.4s' }} data-jump="Yield curve">
+                <div className="card" style={{ animationDelay: '0.4s' }} data-jump="Yield curve" data-cached={saved('fred')}>
                     <div className="card-header">
                         <h2><span className="tooltip-trigger" data-tooltip={`When the 2-year yield is higher than the 10-year, it is a classic recession warning.${freshnessNote({ value: fred?.yieldCurve?.current, asOf: fred?.yieldCurve?.asOf, stale: fred?.yieldCurve?.stale }).suffix}`}>📈 Yield Curve (10Y-2Y)</span></h2>
                         {fred?.yieldCurve?.current != null && <span className={`badge ${fred.yieldCurve.current >= 0 ? 'badge-green' : 'badge-red'}`}>{fred.yieldCurve.current >= 0 ? 'Positive' : 'Inverted'}</span>}
@@ -434,7 +528,7 @@ export default function Dashboard() {
                 </div>
 
                 {/* PROFIT MARGIN */}
-                <div className="card" style={{ animationDelay: '0.45s' }} data-jump="Profit margin">
+                <div className="card" style={{ animationDelay: '0.45s' }} data-jump="Profit margin" data-cached={saved('fred')}>
                     <div className="card-header">
                         <h2><span className="tooltip-trigger" data-tooltip={`Corporate Profits / GDP: High margins indicate strong corporate pricing power.${freshnessNote({ value: fred?.profitMargin?.current, asOf: fred?.profitMargin?.asOf, stale: fred?.profitMargin?.stale }).suffix}`}>💰 Profit Margin</span></h2>
                         {fred?.profitMargin?.current != null && <span className="badge badge-blue">Corp Profits / GDP</span>}
@@ -468,7 +562,7 @@ export default function Dashboard() {
                 </div>
 
                 {/* S&P 500 EPS */}
-                <div className="card" style={{ animationDelay: '0.5s' }} data-jump="S&P 500 EPS">
+                <div className="card" style={{ animationDelay: '0.5s' }} data-jump="S&P 500 EPS" data-cached={saved('fred')}>
                     <div className="card-header">
                         <h2><span className="tooltip-trigger" data-tooltip={`S&P 500 earnings per share, trailing 12 months (as-reported) — the E in P/E. Rising EPS means corporate America is earning more. History is inflation-adjusted (today's dollars).${freshnessNote({ value: fred?.spEps?.current, asOf: fred?.spEps?.asOf, stale: fred?.spEps?.stale }).suffix}`}>🧾 S&P 500 EPS</span></h2>
                         {fred?.spEps?.current != null && <span className="badge badge-blue">Trailing 12M</span>}
@@ -503,16 +597,16 @@ export default function Dashboard() {
                 </div>
 
                 {/* ECONOMIC INDICATORS */}
-                <div data-jump="Economy" style={{ display: 'contents' }}><ErrorBoundary resetKey={refreshTick}><EconomicIndicatorGrid fred={fred} loading={pending.fred} statusColor={statusColor} /></ErrorBoundary></div>
+                <div className="saved-wrap" data-jump="Economy" data-cached={saved('fred')} style={{ display: 'contents', ...savedVar('fred') }}><ErrorBoundary resetKey={refreshTick}><EconomicIndicatorGrid fred={fred} loading={pending.fred && !fred} statusColor={statusColor} /></ErrorBoundary></div>
 
                 {/* FOUR HORSEMEN — RECESSION WATCH (full width) */}
-                <div data-jump="Recession watch" style={{ display: 'contents' }}><ErrorBoundary resetKey={refreshTick}><FourHorsemen fred={fred} loading={pending.fred} /></ErrorBoundary></div>
+                <div className="saved-wrap" data-jump="Recession watch" data-cached={saved('fred')} style={{ display: 'contents', ...savedVar('fred') }}><ErrorBoundary resetKey={refreshTick}><FourHorsemen fred={fred} loading={pending.fred && !fred} /></ErrorBoundary></div>
 
                 {/* RUBBER BAND RADAR — is the dip-buying regime alive? (full width, nightly from the Mac mini) */}
                 <div data-jump="Rubber band" style={{ display: 'contents' }}><ErrorBoundary resetKey={refreshTick}><RubberBandRadar /></ErrorBoundary></div>
 
                 {/* SPY HISTORICAL CHART */}
-                <div className="card" style={{ animationDelay: '0.55s' }} data-jump="SPY chart">
+                <div className="card" style={{ animationDelay: '0.55s' }} data-jump="SPY chart" data-cached={saved('spy')}>
                     <div className="card-header">
                         <h2>📈 SPY Historical</h2>
                         <span className="badge badge-blue">Price + 200d MA</span>
@@ -528,10 +622,10 @@ export default function Dashboard() {
                 <div data-jump="Volatility" style={{ display: 'contents' }}><ErrorBoundary resetKey={refreshTick}><VolMetricsTable refreshKey={refreshTick} bust={bustKey} /></ErrorBoundary></div>
 
                 {/* BULL MARKET CHECKLIST */}
-                <div data-jump="Bull checklist" style={{ display: 'contents' }}><ErrorBoundary resetKey={refreshTick}><BullChecklist fred={fred} loading={pending.fred} /></ErrorBoundary></div>
+                <div className="saved-wrap" data-jump="Bull checklist" data-cached={saved('fred')} style={{ display: 'contents', ...savedVar('fred') }}><ErrorBoundary resetKey={refreshTick}><BullChecklist fred={fred} loading={pending.fred && !fred} /></ErrorBoundary></div>
 
                 {/* EXTRA MARKETS GRID */}
-                <div data-jump="Markets" style={{ display: 'contents' }}><ErrorBoundary resetKey={refreshTick}><ExtraMarketsGrid data={extraMarkets} loading={pending.extra} /></ErrorBoundary></div>
+                <div className="saved-wrap" data-jump="Markets" data-cached={saved('extra')} style={{ display: 'contents', ...savedVar('extra') }}><ErrorBoundary resetKey={refreshTick}><ExtraMarketsGrid data={extraMarkets} loading={pending.extra && !extraMarkets} /></ErrorBoundary></div>
 
                 {/* POLYMARKET TABLE - Integrated in grid naturally */}
                 <div style={{ gridColumn: '1 / -1' }} data-jump="Polymarket">

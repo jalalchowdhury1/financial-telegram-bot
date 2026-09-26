@@ -1,8 +1,12 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import ErrorBoundary from './ErrorBoundary';
 import Skeleton from './Skeleton';
 import { getJson } from '../lib/loadJson';
+import { readSnap, savedLabel } from '../lib/snapshot';
+
+const useIsoLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
+const hasRows = (j) => !!(j && Array.isArray(j.tickers) && j.tickers.length);
 
 /**
  * 🌡️ Volatility card. Data: /api/vol.
@@ -62,11 +66,19 @@ const cellRight = { textAlign: 'right', fontVariantNumeric: 'tabular-nums' };
 export default function VolMetricsTable({ refreshKey = null, bust = false }) {
     const [data, setData] = useState(null);
     const [status, setStatus] = useState('loading'); // loading | ready | error
+    // ⚡ Instant open: this device's saved copy (the page saves /api/vol under 'vol'),
+    // tagged 🕐 until the live answer lands. See lib/snapshot.js.
+    const [savedAt, setSavedAt] = useState(null);
     const lastFetch = useRef(0);
     const mounted = useRef(true);
     useEffect(() => {
         mounted.current = true;
         return () => { mounted.current = false; };
+    }, []);
+
+    useIsoLayoutEffect(() => {
+        const snap = readSnap('vol');
+        if (snap && hasRows(snap.data)) { setData(snap.data); setStatus('ready'); setSavedAt(snap.savedAt); }
     }, []);
 
     // Refetch on the page's refresh tick. The floor stops the first-load double fetch
@@ -77,7 +89,7 @@ export default function VolMetricsTable({ refreshKey = null, bust = false }) {
         lastFetch.current = Date.now();
         getJson('/api/vol', { bust }).then((json) => {
             if (!mounted.current) return;
-            if (json && Array.isArray(json.tickers) && json.tickers.length) { setData(json); setStatus('ready'); }
+            if (hasRows(json)) { setData(json); setStatus('ready'); setSavedAt(null); }
             else setStatus((s) => (s === 'ready' ? 'ready' : 'error'));
         });
     }, [refreshKey]); // `bust` changes together with each tick
@@ -85,7 +97,7 @@ export default function VolMetricsTable({ refreshKey = null, bust = false }) {
     const rows = data ? SHOWN.map((t) => data.tickers.find((x) => x && x.ticker === t)).filter(Boolean) : [];
 
     return (
-        <div className="card" style={{ animationDelay: '0.6s' }}>
+        <div className="card" style={{ animationDelay: '0.6s' }} data-cached={savedAt ? savedLabel(savedAt) : undefined}>
             <div className="card-header">
                 <h2>🌡️ Volatility</h2>
                 <span className="badge badge-blue">IV · VIX curve · decay</span>

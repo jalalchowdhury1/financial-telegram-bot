@@ -35,7 +35,7 @@ import { cnbcHistory, cnbcQuotes, polygonDaily, fredObservations, yahooChart } f
 import { serve, loadLastGood } from '../../../lib/store';
 import { faultsFrom, gate } from '../../../lib/faults';
 import { parseCboeCsv, buildVolMetrics, VOL_PROXIES, resolveVolSeries, volIncompleteTickers } from '../../../lib/vol';
-import { buildTermStructure, buildRegime, curveDegraded, saveCurveKV, loadCurveKV, staleCurve, CURVE_MAX_AGE_MS } from '../../../lib/volRegime';
+import { buildTermStructure, buildRegime, vixDay, curveDegraded, saveCurveKV, loadCurveKV, staleCurve, CURVE_MAX_AGE_MS } from '../../../lib/volRegime';
 
 export const fetchCache = 'default-cache';
 
@@ -216,6 +216,8 @@ export async function GET(request) {
         return {
             ...payload,
             regime: buildRegime(payload.tickers, curve),
+            // "What moved" strip: VIX vs its last close (lib/volRegime.js vixDay).
+            vixDay: vixDay(indexSeries.VIX, liveQuotes?.VIX),
             _meta: {
                 source: indexSources.concat(etfSources).join(' · ') || 'none',
                 curveSource: curve.backup

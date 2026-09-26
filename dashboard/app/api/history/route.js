@@ -16,12 +16,15 @@
  * back empty, which renders NO marks and leaves every number exactly as it is today. This
  * feature must fail invisible — a wrong mark is far worse than a missing one.
  *
+ * Also serves `moves` — recent snapshots + σ for the "What moved" strip (lib/whatMoved.js).
+ *
  * Fault gate: `?_fail=history_sheet`.
  */
 import { serve } from '../../../lib/store';
 import { faultsFrom, trip } from '../../../lib/faults';
 import { parseCsvLine } from '../../../lib/sheetLkg';
 import { buildDigest } from '../../../lib/marks';
+import { buildMoveDigest } from '../../../lib/whatMoved';
 
 const SHEET_CSV =
     'https://docs.google.com/spreadsheets/d/1lA-_yjLMc3qDTt9sogSPQrCohNULIk5wwJYfb5wIHfc/export?format=csv&gid=0';
@@ -78,6 +81,8 @@ export async function GET(request) {
         const count = Object.keys(digest.metrics).length;
         return {
             ...digest,
+            // "What moved" strip: recent snapshots + σ for VIX, Dollar, USD/BDT, F&G.
+            moves: buildMoveDigest(rows),
             _meta: {
                 source: 'Google Sheet (financial-dashboard-history, Sheet1)',
                 hasErrors: false,

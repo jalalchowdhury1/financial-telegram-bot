@@ -1,6 +1,10 @@
 'use client';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { getJson } from '../lib/loadJson';
+import { readSnap, writeSnap, savedLabel } from '../lib/snapshot';
+
+const useIsoLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
+const hasFactors = (d) => !!(d && Array.isArray(d.factors) && d.factors.length);
 
 /**
  * 🧬 Factor row — a thin strip under the top indicator bar. Five style factors,
@@ -9,8 +13,9 @@ import { getJson } from '../lib/loadJson';
  * that gap over time (0 = the window start, dashed). One timeline control drives
  * every chip; the choice is remembered on this device.
  *
- * Details live in ONE caption line under the chips (hover or tap a chip) rather
- * than in tooltips — tooltips anchored to 68px-wide phone chips bleed off-screen.
+ * Details live in ONE caption line under the chips (mouse hover or keyboard focus)
+ * rather than in tooltips — tooltips anchored to 68px-wide phone chips bleed off-screen.
+ * Clicking / tapping a chip opens that ETF on Yahoo Finance in a new tab (2026-09-26).
  *
  * 20Y / 30Y / 40Y use a different basis (the ETFs are too young): Ken French
  * research portfolios vs the whole US market, total return, monthly. The caption
@@ -107,8 +112,14 @@ export function Sparkline({ values, toneClass }) {
 export default function FactorRow({ initialData = null, refreshKey = null, bust = false }) {
     const [data, setData] = useState(initialData);
     const [status, setStatus] = useState(initialData ? 'ready' : 'loading');
+    // ⚡ Instant open: this device's saved copy, tagged 🕐 until the live answer lands.
+    const [savedAt, setSavedAt] = useState(null);
+    useIsoLayoutEffect(() => {
+        if (initialData) return;
+        const snap = readSnap('factors');
+        if (snap && hasFactors(snap.data)) { setData(snap.data); setStatus('ready'); setSavedAt(snap.savedAt); }
+    }, []);
     const [win, setWin] = useState(DEFAULT_WINDOW);
-    const [selected, setSelected] = useState(null);
     const [hovered, setHovered] = useState(null);
     const lastFetch = useRef(initialData ? Date.now() : 0);
     // A mounted flag instead of a per-effect `alive`: under React StrictMode (dev) the
@@ -138,7 +149,10 @@ export default function FactorRow({ initialData = null, refreshKey = null, bust 
         getJson('/api/factors', { bust }).then((d) => {
             if (!mounted.current) return;
             // Keep what we had if a refresh comes back empty.
-            if (d && Array.isArray(d.factors) && d.factors.length) { setData(d); setStatus('ready'); }
+            if (hasFactors(d)) {
+                setData(d); setStatus('ready'); setSavedAt(null);
+                writeSnap('factors', d); // small payload: synchronous is fine
+            }
             else setStatus((s) => (s === 'ready' ? 'ready' : 'empty'));
         });
         return undefined;
@@ -190,7 +204,7 @@ export default function FactorRow({ initialData = null, refreshKey = null, bust 
         tfRef.current?.querySelector(`[data-win="${next}"]`)?.focus();
     };
 
-    const focusKey = hovered || selected;
+    const focusKey = hovered;
     const focus = factors.find((f) => f.key === focusKey);
     const asOfText = data?.asOf ? `through ${fmtDate(data.asOf)}` : '';
 
@@ -227,7 +241,7 @@ export default function FactorRow({ initialData = null, refreshKey = null, bust 
                         <span className={`factor-${tone(laggard.windows[activeWin].rel)}`}>{fmtPct(laggard.windows[activeWin].rel)}</span>
                     </>
                 )}
-                <span className="hide-sm"> · tap a chip for details</span>
+                <span className="hide-sm"> · hover a chip for details, click for Yahoo Finance</span>
             </>
         );
     } else {
@@ -235,7 +249,7 @@ export default function FactorRow({ initialData = null, refreshKey = null, bust 
     }
 
     return (
-        <section className="factor-row" aria-label="Factor performance versus the S&P 500" data-jump="Factors">
+        <section className="factor-row" aria-label="Factor performance versus the S&P 500" data-jump="Factors" data-cached={savedAt ? savedLabel(savedAt) : undefined}>
             <div className="factor-head">
                 <div className="factor-title">
                     <span className="emoji">🧬</span>Factors<span className="factor-sub"> vs S&amp;P 500</span>
@@ -267,17 +281,20 @@ export default function FactorRow({ initialData = null, refreshKey = null, bust 
                     const t = tone(w?.rel);
                     const isLeader = leader && leader.key === f.key && factors.length > 1;
                     return (
-                        <button
+                        <a
                             key={f.key}
-                            type="button"
-                            className={`factor-chip${selected === f.key ? ' is-selected' : ''}${isLeader ? ' is-leader' : ''}`}
-                            aria-pressed={selected === f.key}
-                            aria-label={w ? `${f.label}: ${fmtPct(w.rel)} versus the S&P 500 over ${activeWin}` : `${f.label}: no data for ${activeWin}`}
-                            onClick={() => setSelected((s) => (s === f.key ? null : f.key))}
-                            // Hover preview for a real mouse only: a touch "hover" sticks after the
-                            // tap, so tapping a chip again could never clear its caption.
+                            href={yahooUrl(f.ticker)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className={`factor-chip${focusKey === f.key ? ' is-selected' : ''}${isLeader ? ' is-leader' : ''}`}
+                            title={`${f.ticker} on Yahoo Finance`}
+                            aria-label={`${w ? `${f.label}: ${fmtPct(w.rel)} versus the S&P 500 over ${activeWin}` : `${f.label}: no data for ${activeWin}`}. Opens ${f.ticker} on Yahoo Finance`}
+                            // Caption preview for a real mouse or the keyboard only: a touch
+                            // "hover" would stick after the tap that opens Yahoo.
                             onPointerEnter={(e) => { if (e.pointerType === 'mouse') setHovered(f.key); }}
                             onPointerLeave={(e) => { if (e.pointerType === 'mouse') setHovered(null); }}
+                            onFocus={() => setHovered(f.key)}
+                            onBlur={() => setHovered(null)}
                         >
                             <span className="factor-label">
                                 <span className="factor-name-long">{f.label}</span>
@@ -288,7 +305,7 @@ export default function FactorRow({ initialData = null, refreshKey = null, bust 
                                 <span className={`factor-val factor-${status === 'loading' ? 'muted' : t}`}>{status === 'loading' ? '…' : fmtPct(w?.rel)}</span>
                                 <Sparkline values={w?.spark} toneClass={`factor-${t}`} />
                             </span>
-                        </button>
+                        </a>
                     );
                 })}
             </div>
@@ -307,10 +324,14 @@ export default function FactorRow({ initialData = null, refreshKey = null, bust 
     );
 }
 
+/** The ETF's Yahoo Finance quote page. */
+export const yahooUrl = (ticker) => `https://finance.yahoo.com/quote/${encodeURIComponent(ticker || 'SPY')}/`;
+
+// Same tickers as lib/factors.js FACTORS, so a chip links correctly before the data lands.
 const PLACEHOLDERS = [
-    { key: 'value', label: 'Value', short: 'Value' },
-    { key: 'momentum', label: 'Momentum', short: 'Mom.' },
-    { key: 'quality', label: 'Quality', short: 'Quality' },
-    { key: 'size', label: 'Small caps', short: 'Size' },
-    { key: 'lowvol', label: 'Low vol', short: 'Low vol' },
+    { key: 'value', label: 'Value', short: 'Value', ticker: 'VLUE' },
+    { key: 'momentum', label: 'Momentum', short: 'Mom.', ticker: 'MTUM' },
+    { key: 'quality', label: 'Quality', short: 'Quality', ticker: 'QUAL' },
+    { key: 'size', label: 'Small caps', short: 'Size', ticker: 'IWM' },
+    { key: 'lowvol', label: 'Low vol', short: 'Low vol', ticker: 'USMV' },
 ];
