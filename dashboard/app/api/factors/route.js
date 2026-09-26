@@ -1,7 +1,9 @@
 /**
- * /api/factors — 🧬 the factor row: Value / Momentum / Quality / Small caps / Low vol,
- * each as a price ratio against the S&P 500 (SPY), over 8 windows (1M … 10Y).
- * Math + cascade logic live in lib/factors.js (pure, unit-tested).
+ * /api/factors — 🧬 the factor row: Value / Momentum / Quality / Small caps / Low vol.
+ *   1M … 10Y   each ETF as a price ratio against SPY (lib/factors.js)
+ *   20Y … 40Y  Ken French research portfolios vs the whole US market, total return,
+ *              monthly (lib/factorsLong.js) — the ETFs are too young for 20+ years
+ * Math + cascade logic live in those two files (pure, unit-tested).
  *
  * Dashboard-only (no Lambda hop). Never-throw via serve(). Layers, deepest last:
  *
@@ -21,10 +23,14 @@
  *     5. /tmp last-known-good            (serve(); also beats a STALE live payload)
  *     6. Upstash KV last-known-good      (lib/factorStore.js; survives cold starts)
  *     7. the all-baked payload           (stale-flagged; never blank)
+ *   20Y / 30Y / 40Y (attached to whichever payload above wins, incl. KV and the floor):
+ *     1. live Ken French zips from Dartmouth (Next data cache, 7 days)
+ *     2. baked lib/data/factorsLong.json  (scripts/bake-factors-long.mjs)
+ *     3. none → those three buttons disable; the short windows are untouched
  *
  * Fault gates (?_fail=…): fx_cnbc, fx_cnbcw, fx_nasdaq, fx_polygon, fx_yahoo,
- * fx_baked, fx_kv — plus serve()'s `lastgood` (skip /tmp) and `sheetlkg` (skip
- * the last-resort hook, i.e. KV here).
+ * fx_baked, fx_kv, fx_kf (live Ken French), fx_kfbaked (its bake) — plus serve()'s
+ * `lastgood` (skip /tmp) and `sheetlkg` (skip the last-resort hook, i.e. KV here).
  */
 import { cnbcHistory, nasdaqHistory, polygonDaily, yahooChart } from '../../../lib/sources';
 import { serve } from '../../../lib/store';
@@ -34,7 +40,10 @@ import {
     weeklyToFriday, todayET,
 } from '../../../lib/factors';
 import { loadFactorsKV, saveFactorsKV } from '../../../lib/factorStore';
+import { KF_BASE, LONG_KEYS, LONG_SOURCES, attachLong, longFromZips, validLong } from '../../../lib/factorsLong';
+import { proxyFetch } from '../../../lib/fetcher';
 import baked from '../../../lib/data/factorsBaked.json';
+import bakedLong from '../../../lib/data/factorsLong.json';
 
 export const fetchCache = 'default-cache';
 export const maxDuration = 30;
@@ -51,6 +60,33 @@ const KV_SAVE_BY_MS = 25000; // saveFactorsKV aborts after 3 s → done by 28 s
 // would starve those cards' own fallbacks, so the factor row may spend at most 2 per
 // invocation, one reserved for SPY (without SPY nothing is computable).
 const POLYGON_BUDGET = 2;
+
+// 20Y/30Y/40Y (lib/factorsLong.js): Ken French publishes monthly, so a week-old copy
+// in Next's data cache is as good as a fresh download.
+const KF_REVALIDATE_S = 7 * 86400;
+const KF_TIMEOUT_MS = 8000;
+
+/**
+ * The 20Y+ history: live Dartmouth zips → the bake → null (long buttons disable).
+ * Never throws. The newer of live/bake wins, so a stale data-cache copy can't regress it.
+ */
+async function loadLong(faults) {
+    let live = null;
+    try {
+        live = await gate('fx_kf', faults, async () => {
+            const bufs = await Promise.all(LONG_KEYS.map((k) =>
+                proxyFetch(`${KF_BASE}/${LONG_SOURCES[k].file}_CSV.zip`, { revalidate: KF_REVALIDATE_S, timeout: KF_TIMEOUT_MS })
+                    .then((r) => r.arrayBuffer())));
+            return longFromZips(Object.fromEntries(LONG_KEYS.map((k, i) => [k, bufs[i]])));
+        });
+    } catch { /* fall through to the bake */ }
+    const bake = !faults.has('fx_kfbaked') && validLong(bakedLong) ? bakedLong : null;
+    if (live && (!bake || live.through >= bake.through)) return { long: live, source: 'live' };
+    if (bake) return { long: bake, source: `baked ${bakedLong.bakedAt}` };
+    return null;
+}
+
+const withLong = (payload, L) => (L ? attachLong(payload, L.long, L.source) : payload);
 
 function capped(promise, ms) {
     return new Promise((resolve, reject) => {
@@ -90,7 +126,12 @@ export async function GET(request) {
     const faults = faultsFrom(request);
     const polygonKey = process.env.POLYGON_KEY;
     const today = todayET();
-    const fallback = await bakedPayload(faults, today);
+    // Started now, awaited later: runs in parallel with the ETF tiers.
+    const longP = loadLong(faults);
+    // The floor carries the BAKED long history (no network), so even a total outage
+    // still shows 20Y/30Y/40Y.
+    const bakedOnlyLong = !faults.has('fx_kfbaked') && validLong(bakedLong) ? { long: bakedLong, source: `baked ${bakedLong.bakedAt}` } : null;
+    const fallback = withLong(await bakedPayload(faults, today), bakedOnlyLong);
 
     let produced = null;
     return serve('factors', async () => {
@@ -128,10 +169,14 @@ export async function GET(request) {
             { name: 'yahoo', fn: yahoo },
         ];
 
-        const results = await capped(Promise.all(TICKERS.map((t) =>
-            resolveTicker(t, { recent, long, baked: bakedSeries(faults), today, deadline }))), HARD_CAP_MS);
+        const [results, L] = await Promise.all([
+            capped(Promise.all(TICKERS.map((t) =>
+                resolveTicker(t, { recent, long, baked: bakedSeries(faults), today, deadline }))), HARD_CAP_MS),
+            longP,
+        ]);
         const resolved = Object.fromEntries(results.map((r) => [r.ticker, r]));
-        const payload = buildPayload(resolved, { bakedAt: baked?.bakedAt || null });
+        const payload = withLong(buildPayload(resolved, { bakedAt: baked?.bakedAt || null }), L);
+        if (!L) payload._meta.messages.push('20Y+ history unavailable (Ken French live + bake both failed)');
         produced = payload;
 
         // Durable copy for cold instances. Skipped under fault injection (never let a
@@ -149,7 +194,7 @@ export async function GET(request) {
             if (faults.has('fx_kv')) return null;
             const kv = await loadFactorsKV();
             if (kv && produced?.asOf && (kv.asOf || '') < produced.asOf) return null;
-            return kv;
+            return kv ? withLong(kv, await longP) : kv;
         },
         fallback,
     });

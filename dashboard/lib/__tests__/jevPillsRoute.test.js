@@ -5,7 +5,7 @@
  * lib/jevPills.js.
  */
 
-import { assemblePills } from '../jevPills';
+import { assemblePills, pillsDegraded } from '../jevPills';
 
 // ---------------------------------------------------------------------------
 // Sample raw payloads (realistic shapes matching the /api/* routes)
@@ -860,5 +860,19 @@ describe('assemblePills — dataAsOf covers every feed a pill reads', () => {
         const p = assemblePills({ raw, jevAnswers: null, yesterday: null, mode: 'rules' });
         expect(p._meta.dataAsOf.spy).toBeNull();
         expect(p._meta.dataAsOf.fg).toBeNull();
+    });
+});
+
+describe('pillsDegraded — what keeps a pills answer out of the edge cache', () => {
+    const ok = { _meta: { source: 'x' } };
+    test('healthy: Jev answered and every sibling answered cleanly', () => {
+        expect(pillsDegraded('ok', [ok, ok])).toBe(false);
+        expect(pillsDegraded('rules', [ok])).toBe(false);
+    });
+    test('Jev error, a missing sibling, or a stale / hasErrors sibling → degraded', () => {
+        expect(pillsDegraded('error: no answers', [ok])).toBe(true);
+        expect(pillsDegraded('ok', [ok, null])).toBe(true);
+        expect(pillsDegraded('ok', [{ _meta: { stale: true } }])).toBe(true);
+        expect(pillsDegraded('ok', [{ _meta: { hasErrors: true } }])).toBe(true);
     });
 });

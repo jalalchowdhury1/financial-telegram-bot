@@ -6,8 +6,9 @@ A personal market intelligence tool:
   market brief (Google-Sheet indicators + SPY snapshot) and sends it to Telegram every
   morning via an EventBridge schedule.
 - **Live dashboard** — a Next.js app (in [`/dashboard`](./dashboard)) showing SPY, FX,
-  commodities, rates, FRED economic indicators, CNN Fear & Greed, and trending Polymarket
-  markets. Deployed on Vercel: <https://financial-telegram-bot-beryl.vercel.app/>
+  commodities, rates, FRED economic indicators, CNN Fear & Greed, trending Polymarket
+  markets, and a factor row (value, momentum, quality, small caps, low vol vs the market,
+  1 month to 40 years). Deployed on Vercel: <https://financial-telegram-bot-beryl.vercel.app/>
 
 Data comes from a resilient multi-source waterfall (yfinance, Polygon, Finnhub, Stooq,
 FRED, Google Sheets, and more), so the dashboard never goes blank when a source fails.

@@ -203,6 +203,10 @@ The repo is **public** — keys NEVER go in code; they live in **Vercel env vars
   their own hand-rolled try/catch layer cascades + `/tmp` cache instead of `serve()`;
   `assessment` is POST-only and returns its own error JSON. Same never-blank goal, older
   pattern — match `serve()` for any new route.)*
+- **Edge cache = one row in `lib/cdn.js`.** A route served through `serve(key, …)` is
+  edge-cached only if `key` has a row in `CDN_POLICY`; no row → `no-store` as before. Only a
+  healthy live answer is ever cached (see "⚡ Loading speed" below). Never put
+  `cache-control: max-age` on a data route — the browser must keep `no-store`.
 - **Extract** new features into standalone components in `dashboard/components/`; add
   `'use client'` to any component with client-side state/interactivity.
 - **External links** must use `target="_blank" rel="noopener noreferrer"`.
@@ -211,6 +215,60 @@ The repo is **public** — keys NEVER go in code; they live in **Vercel env vars
   decimal 0–1, rendered as a %) — not `bet.probability`. The modal links to the bare
   `https://polymarket.com` homepage; per-market deep links were deliberately avoided as
   unreliable (the API doesn't surface a usable slug).
+
+### ⚡ Loading speed + robustness (`lib/cdn.js`, `lib/loadJson.js`, `app/page.js`) — 2026-09-26
+Before: every route ran cold on every visit (all `no-store`), and the page waited on ONE
+`Promise.all` of 8 feeds, so nothing showed until the slowest (`market-extra`, ~5 s cold)
+answered. Three fixes, each safe on its own:
+1. **Edge cache for healthy answers (`lib/cdn.js`).** `serve()` (and the hand-rolled
+   `sheets` + `fear-greed` Layer 1) add `Vercel-CDN-Cache-Control: max-age=X,
+   stale-while-revalidate=Y` from `CDN_POLICY` (prices ≤5 min total, sentiment ≤10 min,
+   Polymarket ≤20, rubber band ≤30, daily data ≤1 h — a test pins these caps). Vercel
+   strips that header at the edge; the browser still sees `cache-control: no-store`.
+   **Never cached:** anything with `_meta.stale` / `hasErrors` / `fallback`; a source
+   label containing `(fallback)` (the Lambda-primary routes' direct-source answers — the
+   same marker `health_check.py` reads); every last-good / last-resort / fallback tier;
+   `jev-pills` when Jev or a sibling route failed; `sheets` when the VIX tag fell back to
+   the sheet's own value; every `?_fail=` request (on routes that parse faults); and
+   every route without a policy row (`last-run`, `assessment`). So a degraded answer is retried by the
+   very next request, never pinned. Check it: repeat `curl -sI <url>/api/spy` → the
+   second shows `x-vercel-cache: HIT`.
+2. **Cache busting.** The edge key includes the query string. The page's refresh button
+   and the **R** key send `?_t=<now>` (always live); the automatic 5-min refresh and the
+   first load don't (fast). `scripts/health_check.py` always sends `?_t=` — a health probe
+   must test the live route, never the edge copy. `FactorRow` busts on the same signal.
+3. **Progressive feeds (`app/page.js` `FEEDS` + `pending`).** Each of the 8 feeds sets its
+   own state the moment it answers; each card shows its skeleton only while ITS feed is
+   pending. The status footer + "Updated" badge still wait for all 8.
+- **`getJson` (`lib/loadJson.js`) never throws:** 60 s timeout (abort), one retry after
+  1.5 s on a network error / unreadable JSON / 5xx (a final 5xx body is still parsed — the
+  legacy routes send error JSON), no retry after a timeout (a hung route would just hang
+  twice). `null` → the card keeps what it had. `FactorRow` reads through it too.
+- **An error boundary around every card** (`ErrorBoundary resetKey={refreshTick}`). A
+  malformed payload crashing a card's own render used to blank the WHOLE page (a card's
+  internal boundary can't catch its own JSX). Now only that card shows a small "⚠️
+  Component Error" box, and it retries on the next refresh. `refreshTick` counts finished
+  refreshes (`lastUpdated` is per-minute, so two refreshes in one minute looked the same);
+  it also drives `FactorRow`'s `refreshKey`, and a manual refresh skips the row's 60 s
+  refetch floor. `app/__tests__/page.test.js` pins this with `{}` payloads.
+- **Fonts:** a `<link>` + `preconnect` in `app/layout.js` `<head>`, not a CSS `@import`
+  (that chained 3 round trips before any text painted). Not `next/font`: 41 literal
+  `'JetBrains Mono'` references in CSS/inline styles would all need rewriting.
+- **Measure, don't guess:** time `spy_price` visible (the `$` price in the SPY card),
+  first contentful paint, and each `/api/*` time + `x-vercel-cache`, headless, 3+ runs
+  (medians — cold starts vary 5–10 s).
+
+### 🧭 Page QoL: jump menu, keyboard, phone timeline — 2026-09-26
+- **Jump menu (`components/JumpNav.js`).** A round button bottom-right, shown after 500 px of
+  scroll. It lists every section on the page that actually rendered (`[data-jump="Label"]`),
+  plus "↑ Top". Esc or the backdrop closes it; reduced-motion users get an instant jump. A
+  `display:contents` wrapper has no box, so the jump target is its first child. **To add a
+  section:** put `data-jump="Name"` on its outermost element. That's all.
+- **R = refresh everything, live** (skips the edge cache). Ignored while typing and with
+  Cmd/Ctrl/Alt (Cmd+R stays the browser's reload).
+- **Factor timeline keys:** ←/→ (↑/↓) step through the enabled windows, Home/End jump to
+  the ends; one roving tab stop. On phones the timeline scrolls sideways under a fade
+  mask; the active window scrolls itself into view.
 
 ### VIX pill fear/greed tag (`/api/sheets` + `lib/vixFearGreed.js`)
 The VIX pill in `CustomIndicatorBar.js` shows a `current | threeMonth | fearGreed` triple
@@ -428,8 +486,8 @@ so `isGood` rejects an empty digest rather than letting it claim "nothing change
 A thin strip under the top indicator bar: **Value (VLUE), Momentum (MTUM), Quality (QUAL),
 Small caps (IWM), Low vol (USMV)**, each as a **price ratio vs SPY** — the number is how far
 $1 in the factor ETF is ahead of/behind $1 in SPY over the window; the sparkline is that
-ratio over time, 0 (dashed) = window start. One timeline control (1M 3M 6M YTD 1Y 3Y 5Y 10Y,
-remembered per device in localStorage) drives every chip; the window's leader gets a green
+ratio over time, 0 (dashed) = window start. One timeline control (1M 3M 6M YTD 1Y 3Y 5Y 10Y
+│ 20Y 30Y 40Y, remembered per device in localStorage) drives every chip; the window's leader gets a green
 top accent; tap/hover a chip → the caption line explains it (no tooltips: they bleed off
 68px phone chips). Self-fetching, refetches on the page refresh tick, hides itself if the
 route has no factors. Math cross-checked 2026-09-26 against Nasdaq raw closes: every window
@@ -466,6 +524,49 @@ for all 5 factors matched to the cent.
   stale / baked and is critical when the row would be hidden.
 - **Bake refresh:** `node scripts/bake-factors.mjs` (from `dashboard/`). While any live
   daily tier works a bake stays useful for ~2 years; it refuses to write a smaller bake.
+
+**20Y / 30Y / 40Y (`lib/factorsLong.js`) — added 2026-09-26.** The ETFs only start in
+2011–2013, so the long windows use the **Ken French Data Library** (Dartmouth, free, no key)
+research portfolios instead, monthly back to 1963-07:
+
+| Chip | Research proxy (value-weighted, monthly %) | File |
+|---|---|---|
+| benchmark | whole US market = `Mkt-RF` + `RF` | `F-F_Research_Data_Factors` |
+| Value | large-cap value `BIG HiBM` | `6_Portfolios_2x3` |
+| Momentum | large-cap momentum `BIG HiPRIOR` | `6_Portfolios_ME_Prior_12_2` |
+| Quality | large-cap high profitability `BIG HiOP` | `6_Portfolios_ME_OP_2x3` |
+| Small caps | smallest 30% of stocks `Lo 30` | `Portfolios_Formed_on_ME` |
+| Low vol | calmest 20% of stocks `Lo 20` | `Portfolios_Formed_on_VAR` |
+
+- **Different basis, said out loud.** Long windows are TOTAL return (dividends in) vs the
+  whole market, not price vs SPY; they lag ~1–2 months (the library updates monthly). The
+  summary line says "research portfolios vs whole market, total return, through <month>",
+  and the focus caption names the proxy and adds a per-year figure (`(1+rel)^(1/yrs) − 1`).
+  More than 4 months behind → the caption gets the same orange "🕐 stale ·" prefix as
+  any stale window.
+- **Math:** compound exactly `12 × years` monthly returns, from the END of the base month to
+  the end of `through`; `rel = F/B − 1`. Cross-checked 2026-09-26 against an independent
+  Python run on the raw CSVs (Value 20Y: 240 months, +641.05% vs +772.74%, rel −15.09%);
+  `factorsLong.test.js` pins those numbers while the bake is through 2026-08.
+- **Parsing traps:** each zip holds ONE CSV with several tables — the FIRST monthly table is
+  value-weighted (the parser refuses an equal-weighted first table); `-99.99` = missing
+  (throws); the annual table's 4-digit years are ignored (monthly rows are 6-digit
+  `YYYYMM`). `unzipFirst` is a tiny zip reader (EOCD → central dir → local header, stored or
+  deflate); a non-zip body (e.g. an HTML error page) throws.
+- **Layers:** live zips via `proxyFetch` with Next's data cache (`revalidate` 7 days, 8 s
+  timeout, all 6 in parallel, started before the ETF tiers so they add no wall time) →
+  the committed bake `lib/data/factorsLong.json` → no long windows (the 8 short windows
+  still show; `_meta.messages` says why). The newer of live/bake wins. `validLong` gates
+  both (≥481 months, no gaps, finite, > −100%). `attachLong` never throws and runs on every
+  tier, including the all-baked fallback and a KV last-resort copy.
+  `payload.long = {through, start, source: 'live' | 'baked <date>', provider, basis, benchmark}`.
+- **Fault gates:** `fx_kf` (skip live Ken French), `fx_kfbaked` (skip the bake). Both →
+  8 windows, no `long`.
+- **Health check:** `check_factors_long` → finding `factors_long`: warn when `long` is
+  missing, >4 months behind, or served from the bake (Dartmouth unreachable from Vercel).
+- **Bake refresh:** `node scripts/bake-factors-long.mjs` (from `dashboard/`, ~5 s). Refuses
+  to write a bake older than the committed one. Re-bake a few times a year so the fallback
+  stays close.
 
 ### 📉 Chart helpers (`lib/chartAxis.js`, MiniChart + SpyChart) — 2026-09-26
 - Year labels go through `yearTicks`: round steps (1/2/5/10/20 years, max 8 labels) and a
@@ -925,6 +1026,9 @@ Now: fewer than 756 bars → the Sheet's own 3Y return (`_sheet_return_3y`) → 
 8. For backend changes: did the **Deploy to AWS Lambda** run go green (incl. the API
    Gateway smoke test)? For dashboard changes: does `npm test` + `npm run build` pass? For
    any change: does `ci.yml` (pytest + jest + build) pass — that's the merge gate.
+9. Does every degraded answer set `_meta.stale` / `hasErrors` / `fallback`? Those flags
+   are what keep a bad answer OUT of the edge cache (`lib/cdn.js`). A route that hides
+   its degradation gets that bad answer pinned for up to its `CDN_POLICY` total.
 
 ## 6. Map / quick reference
 
@@ -977,10 +1081,16 @@ Now: fewer than 756 bars → the Sheet's own 3Y return (`_sheet_return_3y`) → 
   S&P 500 EPS parsers + cascade, the AOUSC bankruptcies resolver (mini ZIP/XLSX reader +
   live→baked cascade; baked history in `dashboard/lib/data/bankruptciesBaked.json`),
   and shared constants (FRED IDs, freshness deadlines, URLs).
+- `dashboard/lib/{cdn,loadJson,factors,factorsLong,factorStore}.js` — the edge-cache policy
+  table, the page's never-throw route reader (timeout + one retry), the factor-ETF math +
+  tiers, the Ken French 20Y/30Y/40Y reader, and the factor KV last-good. Bakes:
+  `lib/data/factorsBaked.json` (weekly ETF closes), `lib/data/factorsLong.json` (monthly
+  Ken French), refreshed by `scripts/bake-factors.mjs` / `scripts/bake-factors-long.mjs`.
 - `dashboard/app/page.js` — dashboard page + the `.system-status-bar` footer.
 - `dashboard/components/*.js` — UI (MarketModal, PolymarketTable, SpyChart, Gauge,
   EconomicIndicatorGrid, BullChecklist, ExtraMarketsGrid, MarketPulse, MiniChart,
-  FourHorsemen, CustomIndicatorBar, Skeleton, ErrorBoundary, MarketModal.example).
+  FourHorsemen, CustomIndicatorBar, Skeleton, ErrorBoundary (with `resetKey`), FactorRow,
+  JumpNav, MarketModal.example).
 - `dashboard/{jest.config.js,jest.setup.js,next.config.js,package.json}` — build/test config.
 
 **Self-healing / ops (scripts + workflows)**
@@ -1074,7 +1184,8 @@ severity. It is **never-throw** — a broken probe becomes a finding, not a cras
   It **warms up** the stack once, then retries each probe with backoff
   (`PROBE_ATTEMPTS=3`, `PROBE_BACKOFF=(3,10,20)`, `PROBE_TIMEOUT=45`), and **retries a
   self-reported-degraded 200** too — so a cold start / slow first load / momentary blip is
-  never mistaken for an outage.
+  never mistaken for an outage. Every probe URL carries `?_t=<now>` so it reaches the live route,
+  never Vercel's edge-cache copy (see §3 "⚡ Loading speed").
 - **`indicators_na`** — inspects `/api/fred`'s `indicators` + `checklist` + `horsemen` +
   the top-level `yieldCurve`/`profitMargin`/`spEps` cards
   (via `fred_metrics_for_na_check`); an unexpected `null`/`unavailable`/overdue metric

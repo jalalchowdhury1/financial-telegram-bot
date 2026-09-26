@@ -2,6 +2,7 @@ import fs from 'fs';
 import { GOOGLE_SHEETS } from '../../../lib/constants';
 import { fetchText, fetchJson } from '../../../lib/fetcher';
 import { faultsFrom } from '../../../lib/faults';
+import { cacheHeaders } from '../../../lib/cdn';
 import { resolveVixFearGreedTag } from '../../../lib/vixFearGreed';
 
 export const dynamic = 'force-dynamic';
@@ -165,7 +166,7 @@ export async function GET(request) {
     // 'N/A' is the last resort. Which source actually won is always recorded
     // in `messages` so a silent fall-back to the sheet is never invisible.
     const sheetFearGreed = results?.VIX?.fearGreed ?? 'N/A';
-    const { tag: vixFearGreed, message: fearGreedMessage } = await resolveVixFearGreedTag({
+    const { tag: vixFearGreed, message: fearGreedMessage, fallback: tagFallback = false } = await resolveVixFearGreedTag({
         fredApiKey: process.env.FRED_API_KEY,
         fetchJson,
         fetchText,
@@ -178,8 +179,8 @@ export async function GET(request) {
         ? { ...results, VIX: { ...results.VIX, fearGreed: vixFearGreed } }
         : results;
 
-    return Response.json({
-        ...finalResults,
-        _meta: { source, hasErrors, messages }
-    });
+    const body = { ...finalResults, _meta: { source, hasErrors, messages } };
+    // Edge-cached only when healthy and not a fault test (lib/cdn.js). A VIX tag that
+    // fell back to the sheet's own value is not healthy, though hasErrors stays false.
+    return Response.json(body, { headers: cacheHeaders('sheets', { payload: body, testMode: faults.size > 0, degraded: tagFallback }) });
 }

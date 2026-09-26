@@ -631,3 +631,38 @@ def test_fallback_source_counts_as_degraded_so_fetch_endpoint_retries():
     finally:
         requests.get = orig
     assert status == 200 and "Google Sheets" in body
+
+
+def test_fetch_endpoint_busts_the_edge_cache(monkeypatch):
+    """The probe must reach the LIVE route, never a copy Vercel's edge cached
+    (dashboard/lib/cdn.js), so every request carries a fresh `_t`."""
+    import requests
+    seen = []
+
+    def fake_get(url, timeout=0):
+        seen.append(url)
+        return _Resp(200, '{"ok": true}')
+
+    monkeypatch.setattr(requests, "get", fake_get)
+    hc.fetch_endpoint("http://x", "fred", attempts=1, sleeper=lambda s: None)
+    assert seen and seen[0].startswith("http://x/api/fred?_t=")
+
+
+def _fl(long):
+    return {"factors": [{"key": "value"}], "long": long, "_meta": {}}
+
+
+def test_check_factors_long_live_and_current_is_ok():
+    import datetime
+    f = hc.check_factors_long(_fl({"through": "2026-08", "source": "live"}), today=datetime.date(2026, 9, 26))
+    assert f["severity"] == "ok" and "2026-08" in f["title"]
+
+
+def test_check_factors_long_bake_stale_or_missing_is_warn():
+    import datetime
+    d = datetime.date(2026, 9, 26)
+    assert "bake" in hc.check_factors_long(_fl({"through": "2026-08", "source": "baked 2026-09-26"}), today=d)["title"]
+    assert "stale" in hc.check_factors_long(_fl({"through": "2026-04", "source": "live"}), today=d)["title"]
+    assert "unavailable" in hc.check_factors_long(_fl(None), today=d)["title"]
+    for f in (hc.check_factors_long(_fl(None), today=d), hc.check_factors_long({"factors": []}, today=d)):
+        assert f["severity"] == "warn"

@@ -90,3 +90,13 @@ export function assemblePills({ raw, jevAnswers, yesterday, mode, inputSources =
         },
     };
 }
+
+/**
+ * True when a pills answer is degraded: Jev errored, or a sibling route gave no answer
+ * or a degraded one. The route sets `_meta.hasErrors` from this so lib/cdn.js never
+ * edge-caches a degraded answer (the next request rebuilds it instead).
+ */
+export function pillsDegraded(jevStatus, siblings) {
+    if (String(jevStatus || '').startsWith('error')) return true;
+    return (siblings || []).some((r) => !r || !!r._meta?.stale || !!r._meta?.hasErrors);
+}

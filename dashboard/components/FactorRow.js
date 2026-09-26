@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { getJson } from '../lib/loadJson';
 
 /**
  * 🧬 Factor row — a thin strip under the top indicator bar. Five style factors,
@@ -11,18 +12,41 @@ import { useEffect, useMemo, useRef, useState } from 'react';
  * Details live in ONE caption line under the chips (hover or tap a chip) rather
  * than in tooltips — tooltips anchored to 68px-wide phone chips bleed off-screen.
  *
+ * 20Y / 30Y / 40Y use a different basis (the ETFs are too young): Ken French
+ * research portfolios vs the whole US market, total return, monthly. The caption
+ * says so whenever one of those windows is on screen (lib/factorsLong.js).
+ *
  * Self-fetching (like the vol table) so a factor outage can never touch the rest
- * of the page; re-fetches when the page's refresh cycle ticks (`refreshKey`).
+ * of the page; re-fetches when the page's refresh cycle ticks (`refreshKey`; a
+ * manual refresh also passes `bust` to skip the edge cache).
  * Renders nothing if the route has no factors at all.
+ *
+ * Keyboard: the timeline is a radio group — ←/→ (and Home/End) move the choice.
  */
 
-export const WINDOWS = ['1M', '3M', '6M', 'YTD', '1Y', '3Y', '5Y', '10Y'];
+export const WINDOWS = ['1M', '3M', '6M', 'YTD', '1Y', '3Y', '5Y', '10Y', '20Y', '30Y', '40Y'];
+export const LONG_WINDOWS = new Set(['20Y', '30Y', '40Y']);
+const LONG_YEARS = { '20Y': 20, '30Y': 30, '40Y': 40 };
 export const DEFAULT_WINDOW = '6M';
+const LONG_STALE_MONTHS = 4; // Ken French is normally 1–2 months behind
 const LS_KEY = 'ftb:factorWindow';
 const STALE_DAYS = 5;
 const MIN_REFETCH_MS = 60e3;
 
-const fmtPct = (v) => (v == null || !Number.isFinite(v) ? '—' : `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v).toFixed(1)}%`);
+// 40-year totals run to five digits (+12,887%) — drop the decimal once it is noise.
+export const fmtPct = (v) => {
+    if (v == null || !Number.isFinite(v)) return '—';
+    const a = Math.abs(v);
+    const body = a >= 1000 ? Math.round(a).toLocaleString('en-US') : a >= 100 ? a.toFixed(0) : a.toFixed(1);
+    return `${v > 0 ? '+' : v < 0 ? '−' : ''}${body}%`;
+};
+/** Relative return over `years` → the same gap per year, compounded (e.g. −15% over 20Y ≈ −0.8%/yr). */
+export const perYear = (rel, years) => (Number.isFinite(rel) && years > 0 && rel > -100 ? (Math.pow(1 + rel / 100, 1 / years) - 1) * 100 : null);
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const fmtMonth = (ym) => {
+    const m = /^(\d{4})-(\d{2})/.exec(ym || '');
+    return m ? `${MONTHS[Number(m[2]) - 1]} ${m[1]}` : '';
+};
 const fmtDate = (iso) => {
     if (!iso) return '';
     const d = new Date(`${iso}T12:00:00Z`);
@@ -34,6 +58,14 @@ const fmtDateY = (iso) => {
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 };
 const tone = (v) => (v == null ? 'muted' : v > 0.05 ? 'up' : v < -0.05 ? 'down' : 'flat');
+
+/** The 20Y+ history is monthly and normally 1–2 months behind; stale only past LONG_STALE_MONTHS. */
+export function isLongStale(data, now = new Date()) {
+    const m = /^(\d{4})-(\d{2})$/.exec(data?.long?.through || '');
+    if (!m) return false;
+    const behind = (now.getUTCFullYear() - Number(m[1])) * 12 + (now.getUTCMonth() + 1 - Number(m[2]));
+    return behind > LONG_STALE_MONTHS;
+}
 
 export function isStale(data, now = new Date()) {
     if (!data) return false;
@@ -72,7 +104,7 @@ export function Sparkline({ values, toneClass }) {
     );
 }
 
-export default function FactorRow({ initialData = null, refreshKey = null }) {
+export default function FactorRow({ initialData = null, refreshKey = null, bust = false }) {
     const [data, setData] = useState(initialData);
     const [status, setStatus] = useState(initialData ? 'ready' : 'loading');
     const [win, setWin] = useState(DEFAULT_WINDOW);
@@ -97,32 +129,65 @@ export default function FactorRow({ initialData = null, refreshKey = null }) {
     }, []);
 
     useEffect(() => {
-        if (Date.now() - lastFetch.current < MIN_REFETCH_MS) return undefined;
+        // The floor stops the first-load double fetch (mount, then the page's first tick);
+        // a manual refresh (`bust`) always goes through.
+        if (!bust && Date.now() - lastFetch.current < MIN_REFETCH_MS) return undefined;
         lastFetch.current = Date.now();
-        fetch(`/api/factors?_t=${Date.now()}`, { cache: 'no-store' })
-            .then((r) => r.json())
-            .then((d) => {
-                if (!mounted.current) return;
-                // Keep what we had if a refresh comes back empty.
-                if (d && Array.isArray(d.factors) && d.factors.length) { setData(d); setStatus('ready'); }
-                else setStatus((s) => (s === 'ready' ? 'ready' : 'empty'));
-            })
-            .catch(() => { if (mounted.current) setStatus((s) => (s === 'ready' ? 'ready' : 'empty')); });
+        // Automatic loads may be answered by the edge cache (lib/cdn.js); a manual refresh
+        // busts it. getJson never throws: null = no answer (timeout / network / bad JSON).
+        getJson('/api/factors', { bust }).then((d) => {
+            if (!mounted.current) return;
+            // Keep what we had if a refresh comes back empty.
+            if (d && Array.isArray(d.factors) && d.factors.length) { setData(d); setStatus('ready'); }
+            else setStatus((s) => (s === 'ready' ? 'ready' : 'empty'));
+        });
         return undefined;
-    }, [refreshKey]);
+    }, [refreshKey]); // `bust` changes together with each tick
 
     const factors = data?.factors || [];
     const available = useMemo(() => new Set(WINDOWS.filter((w) => factors.some((f) => f.windows?.[w]))), [factors]);
     // If the remembered window has no data (e.g. only 2y of history survived an outage), show the nearest one that does.
     const activeWin = available.has(win) ? win : (WINDOWS.slice().reverse().find((w) => available.has(w) && WINDOWS.indexOf(w) < WINDOWS.indexOf(win)) || [...available][0] || win);
     const { leader, laggard } = rankFactors(factors, activeWin);
-    const stale = isStale(data);
+    const isLong = LONG_WINDOWS.has(activeWin);
+    const stale = isLong ? isLongStale(data) : isStale(data);
+
+    // Phones scroll the 11-button timeline sideways: keep the active one in view
+    // (scrollLeft only — scrollIntoView would also yank the PAGE up to this row).
+    const tfRef = useRef(null);
+    const markEnd = () => {
+        const box = tfRef.current;
+        if (box) box.classList.toggle('at-end', box.scrollLeft + box.clientWidth >= box.scrollWidth - 2);
+    };
+    useEffect(() => {
+        const box = tfRef.current;
+        const btn = box?.querySelector('[aria-checked="true"]');
+        if (box && btn && box.scrollWidth > box.clientWidth) {
+            box.scrollLeft = btn.offsetLeft - (box.clientWidth - btn.offsetWidth) / 2;
+        }
+        markEnd();
+    }, [activeWin, status]);
 
     if (status === 'empty' || (status === 'ready' && !factors.length)) return null;
 
     const pick = (w) => {
         setWin(w);
         try { window.localStorage.setItem(LS_KEY, w); } catch { /* ignore */ }
+    };
+    const enabled = (w) => status !== 'ready' || available.has(w);
+    // Radio-group keys: ←/→ step through the ENABLED windows, Home/End jump to the ends.
+    const onTfKey = (e) => {
+        const list = WINDOWS.filter(enabled);
+        const i = list.indexOf(activeWin);
+        let next = null;
+        if (e.key === 'ArrowRight' || e.key === 'ArrowDown') next = list[Math.min(list.length - 1, i + 1)];
+        else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') next = list[Math.max(0, i - 1)];
+        else if (e.key === 'Home') next = list[0];
+        else if (e.key === 'End') next = list[list.length - 1];
+        if (!next) return;
+        e.preventDefault();
+        pick(next);
+        tfRef.current?.querySelector(`[data-win="${next}"]`)?.focus();
     };
 
     const focusKey = hovered || selected;
@@ -134,7 +199,15 @@ export default function FactorRow({ initialData = null, refreshKey = null }) {
         caption = 'Loading factor data…';
     } else if (focus) {
         const w = focus.windows?.[activeWin];
-        caption = w ? (
+        const py = isLong ? perYear(w?.rel, LONG_YEARS[activeWin]) : null;
+        caption = w && isLong ? (
+            <>
+                <strong>{focus.label}</strong> ({focus.longProxy || 'research portfolio'}) {w.rel >= 0 ? 'beat' : 'lagged'} the whole US market by{' '}
+                <span className={`factor-${tone(w.rel)}`}>{fmtPct(Math.abs(w.rel)).replace(/^\+/, '')}</span>
+                {py != null && <> (≈{fmtPct(py)}/yr)</>} since {fmtDateY(w.from)}: {fmtPct(w.f)} vs {fmtPct(w.b)}, dividends included.{' '}
+                <span className="factor-what">{focus.what}.</span>
+            </>
+        ) : w ? (
             <>
                 <strong>{focus.label}</strong> ({focus.ticker}) {w.rel >= 0 ? 'beat' : 'lagged'} the S&amp;P by{' '}
                 <span className={`factor-${tone(w.rel)}`}>{Math.abs(w.rel).toFixed(1)}%</span> since {fmtDateY(w.from)}:{' '}
@@ -162,21 +235,24 @@ export default function FactorRow({ initialData = null, refreshKey = null }) {
     }
 
     return (
-        <section className="factor-row" aria-label="Factor performance versus the S&P 500">
+        <section className="factor-row" aria-label="Factor performance versus the S&P 500" data-jump="Factors">
             <div className="factor-head">
                 <div className="factor-title">
                     <span className="emoji">🧬</span>Factors<span className="factor-sub"> vs S&amp;P 500</span>
                 </div>
-                <div className="factor-tf" role="radiogroup" aria-label="Timeline">
+                <div className="factor-tf" role="radiogroup" aria-label="Timeline" ref={tfRef} onKeyDown={onTfKey} onScroll={markEnd}>
                     {WINDOWS.map((w) => (
                         <button
                             key={w}
                             type="button"
                             role="radio"
+                            data-win={w}
                             aria-checked={activeWin === w}
-                            className={`factor-tf-btn${activeWin === w ? ' active' : ''}`}
-                            disabled={status === 'ready' && !available.has(w)}
-                            title={status === 'ready' && !available.has(w) ? `${w}: history unavailable right now` : `Show ${w}`}
+                            tabIndex={activeWin === w ? 0 : -1}
+                            className={`factor-tf-btn${activeWin === w ? ' active' : ''}${LONG_WINDOWS.has(w) ? ' is-long' : ''}`}
+                            disabled={!enabled(w)}
+                            title={!enabled(w) ? `${w}: history unavailable right now`
+                                : LONG_WINDOWS.has(w) ? `Show ${w} (research portfolios, total return, monthly)` : `Show ${w}`}
                             onClick={() => pick(w)}
                         >
                             {w}
@@ -220,7 +296,10 @@ export default function FactorRow({ initialData = null, refreshKey = null }) {
             <div className="factor-caption" aria-live="polite">
                 {stale && <span className="factor-stale">🕐 stale · </span>}
                 {caption}
-                {status === 'ready' && !focus && asOfText && (
+                {status === 'ready' && !focus && isLong && data?.long?.through && (
+                    <span className="factor-asof"> · research portfolios vs whole market, total return, through {fmtMonth(data.long.through)}</span>
+                )}
+                {status === 'ready' && !focus && !isLong && asOfText && (
                     <span className="factor-asof"> · price ratio, {asOfText}</span>
                 )}
             </div>

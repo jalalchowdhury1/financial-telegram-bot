@@ -17,6 +17,15 @@ export default class ErrorBoundary extends React.Component {
         this.setState({ errorInfo });
     }
 
+    // `resetKey` (the page passes its last-refresh time): a card that crashed on one
+    // bad payload gets another try when fresh data arrives, instead of staying broken
+    // until a full page reload.
+    componentDidUpdate(prevProps) {
+        if (this.state.hasError && prevProps.resetKey !== this.props.resetKey) {
+            this.setState({ hasError: false, error: null, errorInfo: null });
+        }
+    }
+
     render() {
         if (this.state.hasError) {
             return (

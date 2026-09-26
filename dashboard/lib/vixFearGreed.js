@@ -166,5 +166,6 @@ export async function resolveVixFearGreedTag({ fredApiKey, fetchJson, fetchText,
     return {
         tag: sheetValue,
         message: `VIX fear/greed: ${trail.join('; ')} — using sheet value (${sheetValue})`,
+        fallback: true,
     };
 }

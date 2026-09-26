@@ -122,6 +122,43 @@ def check_factors(payload):
     return _finding(fid, "ok", f"factor row on CNBC primary (5/5, as of {payload.get('asOf')})")
 
 
+FACTORS_LONG_STALE_MONTHS = 4  # Ken French is normally 1-2 months behind
+
+
+def check_factors_long(payload, today=None):
+    """🧬 20Y/30Y/40Y factor windows (dashboard/lib/factorsLong.js): Ken French research
+    portfolios, live from Dartmouth with a baked copy behind it. Kept apart from
+    factors_primary so a Dartmouth hiccup never masks (or fakes) the ETF path's status.
+    Warn only — the short windows are unaffected either way."""
+    import datetime as _dt
+    fid = "factors_long"
+    if not isinstance(payload, dict) or not payload.get("factors"):
+        return _finding(fid, "warn", "20Y+ factor windows not checked (no factor payload)", remediation="manual")
+    long = payload.get("long") or {}
+    through, source = long.get("through") or "", long.get("source") or ""
+    ev = {"through": through, "source": source}
+    if not through:
+        return _finding(fid, "warn", "20Y/30Y/40Y factor windows unavailable",
+                        detail="Live Ken French download AND the bake both failed — the three long buttons are "
+                               "disabled. Probe with ?_fail=fx_kf on /api/factors; re-bake with "
+                               "`node scripts/bake-factors-long.mjs`.", remediation="manual", evidence=ev)
+    today = today or _dt.date.today()
+    try:
+        y, m = (int(x) for x in through.split("-"))
+        behind = (today.year - y) * 12 + (today.month - m)
+    except ValueError:
+        behind = 999
+    if behind > FACTORS_LONG_STALE_MONTHS:
+        return _finding(fid, "warn", f"20Y+ factor data stale (through {through}, source {source})",
+                        detail="Ken French normally lags 1-2 months. If the source is the bake, Dartmouth is "
+                               "unreachable from Vercel; re-bake locally.", remediation="manual", evidence=ev)
+    if source != "live":
+        return _finding(fid, "warn", f"20Y+ factor windows on the bake ({source}, through {through})",
+                        detail="The live Dartmouth download failed; the bake is current enough to serve.",
+                        remediation="manual", evidence=ev)
+    return _finding(fid, "ok", f"20Y+ factor windows live (Ken French, through {through})")
+
+
 # Indicators that are N/A ON PURPOSE — their upstream series is dead/frozen, so they are
 # NEVER alarmed (alarming them is the "crying wolf" we must avoid). Keyed by the field name
 # in /api/fred's `indicators`. NOTE: `lei` is here only until it's replaced by a live,
@@ -547,7 +584,9 @@ def fetch_endpoint(base, name, attempts=None, sleeper=None):
     last = (0, "")
     for i in range(attempts):
         try:
-            r = requests.get(f"{base}/api/{name}", timeout=PROBE_TIMEOUT)
+            # `_t` busts Vercel's edge cache (dashboard/lib/cdn.js): the probe must test
+            # the live route, not a copy the edge answered with up to an hour ago.
+            r = requests.get(f"{base}/api/{name}?_t={time.time():.3f}", timeout=PROBE_TIMEOUT)
             last = (r.status_code, r.text)
             if r.status_code == 200 and not _body_is_degraded(r.text):
                 return last
@@ -600,6 +639,7 @@ def run_all_checks(generated_at):
         # /api/factors degrades silently through 7 layers — name the one serving.
         if name == "factors" and status == 200:
             findings.append(check_factors(route_payloads.get(name)))
+            findings.append(check_factors_long(route_payloads.get(name)))
 
     # The four Lambda-primary routes all degrade SILENTLY to direct sources, so the
     # only way to see the Lambda's HTTP path die is to read which source won.

@@ -13,6 +13,7 @@
  */
 
 import fs from 'fs';
+import { cacheHeaders } from './cdn';
 
 const tmpPath = (key) => `/tmp/lg-${key.replace(/[^a-z0-9_-]/gi, '_')}.json`;
 
@@ -37,7 +38,9 @@ export function loadLastGood(key, maxAgeMs) {
     } catch { return null; }
 }
 
-const json = (body, status = 200) => Response.json(body, { status, headers: { 'cache-control': 'no-store' } });
+// Every answer is `no-store` for the browser. Only serve()'s healthy live path adds an
+// edge-cache policy (lib/cdn.js) — degraded / cached / fallback answers never do.
+const json = (body, status = 200, headers = { 'cache-control': 'no-store' }) => Response.json(body, { status, headers });
 
 /**
  * Wrap a route producer so it can never throw.
@@ -73,7 +76,7 @@ export async function serve(key, produce, opts = {}) {
         const payload = await produce();
         if (isGood(payload)) {
             if (shouldStore(payload)) writeLG(key, payload);
-            return json(payload);
+            return json(payload, 200, cacheHeaders(key, { payload, testMode }));
         }
         const lg = readLG(key, maxStaleMs);
         if (lg) return json(withStale(lg, 'produced empty; serving last-known-good'));

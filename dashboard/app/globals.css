@@ -3,7 +3,9 @@
    Dark theme with glassmorphism & micro-animations
    ======================================== */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap');
+/* Fonts (Inter + JetBrains Mono) load from a <link> in app/layout.js, not an @import
+   here: an @import is only discovered AFTER this file downloads, which chained two
+   extra round trips (fonts.googleapis.com, then fonts.gstatic.com) in front of first paint. */
 
 :root {
   /* Core palette */
@@ -1805,6 +1807,18 @@ body::before {
   transition: color 0.2s ease, background 0.2s ease;
 }
 
+/* 20Y+ switch to a different basis (research portfolios, total return) — a hairline
+   divider before 20Y marks the change; the caption spells it out. */
+.factor-tf-btn[data-win="20Y"] { position: relative; margin-left: 5px; }
+.factor-tf-btn[data-win="20Y"]::before {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: 22%;
+  bottom: 22%;
+  width: 1px;
+  background: var(--border-card);
+}
 .factor-tf-btn:hover:not(:disabled) { color: var(--text-primary); }
 .factor-tf-btn.active { background: var(--purple-bg); color: var(--text-primary); }
 .factor-tf-btn:disabled { opacity: 0.3; cursor: not-allowed; }
@@ -1907,7 +1921,19 @@ body::before {
   .factor-row { margin: -4px 0 16px; }
   .factor-title { font-size: 0.62rem; }
   .factor-sub { display: none; }
-  .factor-tf-btn { font-size: 0.6rem; padding: 0 6px; min-height: 30px; min-width: 30px; }
+  .factor-tf-btn { font-size: 0.6rem; padding: 0 6px; min-height: 30px; min-width: 30px; flex: none; }
+  /* 11 windows don't fit beside the title on a phone: scroll sideways (the active one
+     is kept in view by FactorRow), with a fade on the right hinting there is more. */
+  .factor-tf {
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    -webkit-mask-image: linear-gradient(to right, #000 88%, transparent);
+    mask-image: linear-gradient(to right, #000 88%, transparent);
+  }
+  .factor-tf::-webkit-scrollbar { display: none; }
+  .factor-tf.at-end { -webkit-mask-image: none; mask-image: none; }
   .factor-grid { gap: 5px; }
   .factor-chip { padding: 7px 6px 6px; gap: 3px; border-radius: var(--radius-sm); }
   .factor-label { font-size: 0.56rem; letter-spacing: 0.03em; }
@@ -1918,3 +1944,63 @@ body::before {
   .factor-spark, .factor-spark-empty { height: 18px; width: 100%; }
   .factor-caption { font-size: 0.66rem; min-height: 2.9em; }
 }
+
+/* ========== 🧭 JUMP MENU (components/JumpNav.js) ==========
+   Floating bottom-right, above the safe area. z-index sits under the modals
+   (9998+) and the mark popover, over the cards. */
+[data-jump], [data-jump] > * { scroll-margin-top: 12px; }
+
+.jump-fab {
+  position: fixed;
+  right: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  z-index: 900;
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  border: 1px solid var(--border-glow);
+  background: rgba(17, 24, 39, 0.92);
+  color: var(--text-primary);
+  font-size: 1.05rem;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+.jump-fab:focus-visible, .jump-item:focus-visible { outline: 2px solid var(--purple); outline-offset: 2px; }
+.jump-fab.is-open { background: var(--purple-bg); }
+
+.jump-backdrop { position: fixed; inset: 0; z-index: 898; background: rgba(0, 0, 0, 0.35); }
+
+.jump-menu {
+  position: fixed;
+  right: 16px;
+  bottom: calc(70px + env(safe-area-inset-bottom, 0px));
+  z-index: 899;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 200px;
+  max-height: calc(100vh - 110px);
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-md);
+  background: rgba(17, 24, 39, 0.97);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+}
+.jump-item {
+  text-align: left;
+  padding: 10px 12px;
+  min-height: 40px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-secondary);
+  font: 500 0.82rem 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  cursor: pointer;
+}
+.jump-item:hover { background: rgba(255, 255, 255, 0.05); color: var(--text-primary); }
+.jump-top { color: var(--text-accent); }
+@media print { .jump-fab, .jump-menu, .jump-backdrop { display: none; } }

@@ -1,6 +1,7 @@
 import fs from 'fs';
 import { EXTERNAL_URLS, DEFAULT_HEADERS } from '../../../lib/constants';
 import { proxyFetch, fetchJson } from '../../../lib/fetcher';
+import { cacheHeaders } from '../../../lib/cdn';
 
 export const dynamic = 'force-dynamic';
 
@@ -52,7 +53,8 @@ export async function GET() {
             _meta: { source: 'CNN', hasErrors: false, messages: ['CNN parsed successfully'] }
         };
         saveCache(result);
-        return Response.json(result);
+        // Only the healthy CNN answer is edge-cached (lib/cdn.js); every fallback layer is no-store.
+        return Response.json(result, { headers: cacheHeaders('fear-greed', { payload: result }) });
     } catch (e) { messages.push(`Layer 1 (CNN) failed: ${e.message}`); }
 
     // Layer 2: RapidAPI

@@ -91,5 +91,6 @@ export async function GET(request) {
         // cannot actually make when the sheet did not load.
         isGood: (p) => !!p && !!p.metrics && Object.keys(p.metrics).length > 0,
         fallback: { today: null, metrics: {} },
+        faults,
     });
 }

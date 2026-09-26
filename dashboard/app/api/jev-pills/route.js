@@ -13,7 +13,7 @@ import { faultsFrom } from '../../../lib/faults';
 import { fredObservations, fredGraphCsv, treasuryYieldCurveCsv } from '../../../lib/sources';
 import { judgeMany } from '../../../lib/jev';
 import { JEV_QUESTIONS, toData, buildState } from '../../../lib/jevBrief';
-import { assemblePills } from '../../../lib/jevPills';
+import { assemblePills, pillsDegraded } from '../../../lib/jevPills';
 import { logVerdicts, yesterday as loadYesterday } from '../../../lib/jevLog';
 import { FRESH, claims4wkFromHistory, sahmFromHistory, parseTreasurySpreadCsv, resolvePillInput } from '../../../lib/jevInputs';
 import { makePillStore } from '../../../lib/jevStore';
@@ -292,6 +292,10 @@ export async function GET(request) {
         // Assemble the payload
         const payload = assemblePills({ raw, jevAnswers, yesterday: yesterdayData, mode, inputSources });
         payload._meta.inputTried = diag.tried || {};
+        // Degraded = Jev failed, or a sibling route didn't answer / answered degraded.
+        // Only an un-degraded answer is edge-cached (lib/cdn.js); a degraded one is
+        // rebuilt by the next request.
+        payload._meta.hasErrors = pillsDegraded(payload._meta.jev, results);
 
         // Log today's verdicts (best effort, never throw)
         const todayStr = new Date().toISOString().slice(0, 10);

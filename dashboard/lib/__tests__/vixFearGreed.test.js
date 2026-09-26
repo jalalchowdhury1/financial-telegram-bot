@@ -238,7 +238,7 @@ describe('resolveVixFearGreedTag cascade: CBOE -> FRED -> sheet', () => {
     });
 
     test('falls back to the sheet when BOTH CBOE and FRED fail', async () => {
-        const { tag, message } = await resolveVixFearGreedTag({
+        const { tag, message, fallback } = await resolveVixFearGreedTag({
             fredApiKey: 'k',
             fetchText: jest.fn().mockRejectedValue(new Error('CBOE down')),
             fetchJson: jest.fn().mockRejectedValue(new Error('FRED down')),
@@ -246,6 +246,7 @@ describe('resolveVixFearGreedTag cascade: CBOE -> FRED -> sheet', () => {
         });
         expect(tag).toBe('GREED99');
         expect(message).toMatch(/sheet value \(GREED99\)/);
+        expect(fallback).toBe(true); // keeps /api/sheets out of the edge cache
     });
 
     test('?_fail=vix_cboe forces the FRED tier', async () => {
