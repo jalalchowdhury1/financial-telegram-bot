@@ -33,12 +33,13 @@ async function withRetry(fn, { tries = 3, base = 400 } = {}) {
  * Works for equities (SPY), FX (CAD=X), futures (GC=F, CL=F), crypto (BTC-USD),
  * indices (DX-Y.NYB, ^TNX). Tries query1 then query2; uses adjusted close.
  */
-export async function yahooChart(ticker, { range = '1mo', interval = '1d', revalidate = 300 } = {}) {
+export async function yahooChart(ticker, { range = '1mo', interval = '1d', revalidate = 300, adjusted = true, tries = 3, timeout } = {}) {
     const path = `/v8/finance/chart/${encodeURIComponent(ticker)}?range=${range}&interval=${interval}`;
+    const opts = timeout ? { revalidate, timeout } : { revalidate };
     const data = await withRetry(async () => {
-        try { return await fetchJson(`https://query1.finance.yahoo.com${path}`, { revalidate }); }
-        catch { return await fetchJson(`https://query2.finance.yahoo.com${path}`, { revalidate }); }
-    });
+        try { return await fetchJson(`https://query1.finance.yahoo.com${path}`, opts); }
+        catch { return await fetchJson(`https://query2.finance.yahoo.com${path}`, opts); }
+    }, { tries });
     const r = data?.chart?.result?.[0];
     if (!r) throw new Error(`Yahoo: no result for ${ticker}`);
     const ts = r.timestamp || [];
@@ -46,7 +47,10 @@ export async function yahooChart(ticker, { range = '1mo', interval = '1d', reval
     const adj = r.indicators?.adjclose?.[0]?.adjclose;
     const history = [];
     for (let i = 0; i < ts.length; i++) {
-        const px = adj && adj[i] != null ? adj[i] : closes[i];
+        // adjusted=false keeps RAW closes — needed wherever the series is mixed with
+        // other vendors' unadjusted closes (the factor ratios), or dividends would
+        // silently change the basis mid-series.
+        const px = adjusted && adj && adj[i] != null ? adj[i] : closes[i];
         if (px != null && !Number.isNaN(px)) history.push({ date: day(ts[i]), price: px });
     }
     if (!history.length) throw new Error(`Yahoo: empty history for ${ticker}`);
@@ -138,12 +142,12 @@ export async function dbnomicsFred(seriesId, { revalidate = 1800 } = {}) {
  * { current, prevClose, history }. ticker examples: 'SPY', 'C:XAUUSD' (gold),
  * 'C:USDCAD' (fx), 'X:BTCUSD' (crypto). Requires a Polygon API key.
  */
-export async function polygonDaily(ticker, key, { years = 2, revalidate = 1800 } = {}) {
+export async function polygonDaily(ticker, key, { years = 2, revalidate = 1800, tries = 3, timeout } = {}) {
     if (!key) throw new Error('Polygon: no API key');
     const to = new Date().toISOString().slice(0, 10);
     const from = new Date(Date.now() - years * 365 * 864e5).toISOString().slice(0, 10);
     const url = `https://api.polygon.io/v2/aggs/ticker/${encodeURIComponent(ticker)}/range/1/day/${from}/${to}?adjusted=true&sort=asc&limit=50000&apiKey=${key}`;
-    const data = await withRetry(() => fetchJson(url, { revalidate }));
+    const data = await withRetry(() => fetchJson(url, timeout ? { revalidate, timeout } : { revalidate }), { tries });
     if (data?.status === 'ERROR' || !Array.isArray(data?.results)) throw new Error(`Polygon: ${data?.error || data?.message || 'no results'} for ${ticker}`);
     const history = data.results.map((r) => ({ date: new Date(r.t).toISOString().slice(0, 10), price: r.c })).filter((h) => h.price != null);
     if (!history.length) throw new Error(`Polygon: empty ${ticker}`);
@@ -197,6 +201,32 @@ export async function cnbcHistory(symbol, { range = '3M', revalidate = 1800, tim
     }
     if (!history.length) throw new Error(`CNBC: empty history ${symbol}`);
     history.sort((a, b) => (a.date < b.date ? -1 : 1)); // ISO 'YYYY-MM-DD' sorts chronologically as strings → oldest -> newest
+    return history;
+}
+
+/**
+ * Nasdaq.com historical quotes (KEYLESS JSON) -> ascending [{date, price}] of DAILY
+ * closes. One call returns up to ~10y (2,500+ rows) — so it can stand in for both
+ * the recent-daily and the long-history tier. Rows are newest-first with
+ * 'MM/DD/YYYY' dates and string closes (stocks may carry '$'/','). Closes match
+ * CNBC's to the cent (VLUE 201.63 on 2026-09-25, both vendors).
+ */
+export async function nasdaqHistory(symbol, { years = 10, assetclass = 'etf', revalidate = 3600, timeout = 8000, tries = 1, now = new Date() } = {}) {
+    const to = now.toISOString().slice(0, 10);
+    const from = new Date(now.getTime() - (years * 365.25 + 14) * 864e5).toISOString().slice(0, 10);
+    const url = `https://api.nasdaq.com/api/quote/${encodeURIComponent(symbol)}/historical?assetclass=${assetclass}&fromdate=${from}&todate=${to}&limit=9999`;
+    const data = await withRetry(() => fetchJson(url, { revalidate, timeout }), { tries });
+    const rows = data?.data?.tradesTable?.rows;
+    if (!Array.isArray(rows) || !rows.length) throw new Error(`Nasdaq: no rows for ${symbol}`);
+    const history = [];
+    for (const r of rows) {
+        const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(String(r?.date || ''));
+        const price = parseFloat(String(r?.close ?? '').replace(/[$,]/g, ''));
+        if (!m || !Number.isFinite(price) || price <= 0) continue;
+        history.push({ date: `${m[3]}-${m[1]}-${m[2]}`, price });
+    }
+    if (!history.length) throw new Error(`Nasdaq: empty history ${symbol}`);
+    history.sort((a, b) => (a.date < b.date ? -1 : 1));
     return history;
 }
 

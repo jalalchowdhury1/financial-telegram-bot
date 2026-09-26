@@ -17,6 +17,7 @@ import ExtraMarketsGrid from '../components/ExtraMarketsGrid';
 import PolymarketTable from '../components/PolymarketTable';
 import VolMetricsTable from '../components/VolMetricsTable';
 import RubberBandRadar from '../components/RubberBandRadar';
+import FactorRow from '../components/FactorRow';
 import Delta from '../components/Delta';
 import MarkChip from '../components/MarkChip';
 import { MarkProvider, useMark, collectLiveValues } from '../components/MarkProvider';
@@ -223,6 +224,12 @@ export default function Dashboard() {
 
             {/* CUSTOM INDICATOR BAR */}
             <CustomIndicatorBar sheets={sheets} loading={loading} />
+
+            {/* 🧬 FACTOR ROW — style factors vs the S&P 500 with one shared timeline.
+                Self-fetching (/api/factors); renders nothing if the route has no data. */}
+            <ErrorBoundary>
+                <FactorRow refreshKey={lastUpdated} />
+            </ErrorBoundary>
 
             {/* MARKET PULSE - Quick summary at top */}
             <MarketPulse spy={spy} spyDailyMove={spyDailyMove} fg={fg} fred={fred} loading={loading} fgColor={fgColor} />

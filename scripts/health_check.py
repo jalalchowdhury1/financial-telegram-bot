@@ -26,7 +26,7 @@ VERCEL_BASE = os.environ.get("DASHBOARD_BASE_URL", "https://financial-telegram-b
 # GET-able dashboard data endpoints. NOTE: /api/assessment is POST-only (needs a request
 # body), so it's excluded from this GET sweep — probing it properly is a Phase 2 candidate.
 ENDPOINTS = ["spy", "spy-daily-move", "market-extra", "polymarket", "fred",
-             "sheets", "fear-greed", "vol", "rubber-band"]
+             "sheets", "fear-greed", "vol", "rubber-band", "factors"]
 REQUIRED_CONFIG_URL_KEYS = ["SPY_DAILY_MOVE", "SPY_INDICATORS"]
 NAN_RE = re.compile(r"\bNaN\b|\bInfinity\b|\b-Infinity\b")
 SEVERITY_ORDER = {"ok": 0, "warn": 1, "critical": 2}
@@ -82,6 +82,39 @@ def check_rubber_band(payload):
                                "and ~/Library/Logs/rubber-band.log on the Mac mini; rerun scripts/rubber_band.py run.",
                         remediation="manual", evidence={"asOf": payload.get("asOf"), "ageDays": age})
     return _finding(fid, "ok", f"rubber band snapshot fresh (as of {payload.get('asOf')}, verdict {payload['verdict'].get('colour')})")
+
+
+def check_factors(payload):
+    """🧬 Factor row (/api/factors). Its cascade (CNBC -> Nasdaq -> Polygon -> Yahoo per
+    ticker, then /tmp, KV and a baked snapshot) degrades SILENTLY: every layer serves
+    numbers that look identical on the page, so endpoint_factors staying green proves
+    nothing (AGENTS.md governing principle). Primary = CNBC daily + CNBC weekly for all
+    six ETFs; anything else is a warn that names the layer actually serving."""
+    fid = "factors_primary"
+    if not isinstance(payload, dict) or not isinstance(payload.get("factors"), list) or not payload["factors"]:
+        return _finding(fid, "critical", "/api/factors has no factor data",
+                        detail="Every live tier, both caches AND the baked snapshot failed — the factor row is hidden. "
+                               "Probe tiers with ?_fail=fx_cnbc / fx_nasdaq on the live route.",
+                        remediation="manual", evidence={"_meta": (payload or {}).get("_meta") if isinstance(payload, dict) else None})
+    meta = payload.get("_meta") or {}
+    source = meta.get("source") or ""
+    n = len(payload["factors"])
+    ev = {"asOf": payload.get("asOf"), "source": source[:300], "factors": n}
+    if meta.get("allBaked") or source.startswith("baked snapshot"):
+        return _finding(fid, "warn", "factor row is running on the baked snapshot",
+                        detail="All four live sources and both caches failed; the page shows the bake from "
+                               f"{meta.get('bakedAt')}. If this persists, rerun `node scripts/bake-factors.mjs`.",
+                        remediation="manual", evidence=ev)
+    if "last-good" in source or "last-known-good" in source:
+        return _finding(fid, "warn", "factor row is serving a cached copy",
+                        detail=source[:300], remediation="manual", evidence=ev)
+    if meta.get("stale"):
+        return _finding(fid, "warn", f"factor data stale (as of {payload.get('asOf')})",
+                        detail=source[:300], remediation="manual", evidence=ev)
+    if meta.get("fallback") or n < 5:
+        return _finding(fid, "warn", f"factor row off its primary path ({n}/5 factors)",
+                        detail=source[:300], remediation="manual", evidence=ev)
+    return _finding(fid, "ok", f"factor row on CNBC primary (5/5, as of {payload.get('asOf')})")
 
 
 # Indicators that are N/A ON PURPOSE — their upstream series is dead/frozen, so they are
@@ -555,6 +588,9 @@ def run_all_checks(generated_at):
         # snapshot means that job missed, which nothing on Vercel can fix.
         if name == "rubber-band" and status == 200:
             findings.append(check_rubber_band(route_payloads.get(name)))
+        # /api/factors degrades silently through 7 layers — name the one serving.
+        if name == "factors" and status == 200:
+            findings.append(check_factors(route_payloads.get(name)))
 
     # The four Lambda-primary routes all degrade SILENTLY to direct sources, so the
     # only way to see the Lambda's HTTP path die is to read which source won.

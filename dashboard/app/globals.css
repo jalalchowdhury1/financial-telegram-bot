@@ -1755,3 +1755,166 @@ body::before {
   color: var(--text-muted);
   margin-top: 3px;
 }
+
+/* === 🧬 Factor row (FactorRow.js) — a thin strip under the indicator bar ===
+   Five chips, one timeline control, one caption line. Stays 5-across on phones
+   (no horizontal scroller: an overflow container would clip, and hiding chips
+   off-screen defeats a glance row). */
+.factor-row {
+  margin: -8px 0 24px;
+}
+
+.factor-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.factor-title {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+.factor-title .emoji { margin-right: 6px; }
+.factor-sub { text-transform: none; letter-spacing: 0; font-weight: 500; opacity: 0.8; }
+
+.factor-tf {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border-card);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.factor-tf-btn {
+  font: 600 0.66rem 'JetBrains Mono', monospace;
+  color: var(--text-muted);
+  background: none;
+  border: 0;
+  border-radius: 999px;
+  padding: 0 9px;
+  min-height: 24px;
+  cursor: pointer;
+  transition: color 0.2s ease, background 0.2s ease;
+}
+
+.factor-tf-btn:hover:not(:disabled) { color: var(--text-primary); }
+.factor-tf-btn.active { background: var(--purple-bg); color: var(--text-primary); }
+.factor-tf-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+.factor-tf-btn:focus-visible, .factor-chip:focus-visible { outline: 2px solid var(--purple); outline-offset: 2px; }
+
+.factor-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.factor-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  background: var(--bg-card);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.factor-chip:hover { background: var(--bg-card-hover); border-color: var(--border-glow); }
+.factor-chip.is-selected { border-color: rgba(129, 140, 248, 0.6); background: var(--bg-card-hover); }
+/* The window's leader gets a thin top accent — the one-glance answer to "what is working". */
+.factor-chip.is-leader { box-shadow: inset 0 2px 0 rgba(34, 197, 94, 0.55); }
+
+.factor-label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.factor-name-short { display: none; }
+
+.factor-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.factor-val {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.95rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.factor-spark {
+  display: block;
+  flex: 1 1 auto;
+  max-width: 170px;
+  min-width: 0;
+  height: 26px;
+}
+
+.factor-spark-empty { height: 26px; }
+.factor-spark-zero { stroke: var(--text-muted); stroke-width: 1; stroke-dasharray: 2 3; opacity: 0.45; }
+.factor-spark-line { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
+.factor-spark-fill { fill: currentColor; opacity: 0.1; stroke: none; }
+
+.factor-up { color: var(--green); }
+.factor-down { color: var(--red); }
+.factor-flat, .factor-muted { color: var(--text-secondary); }
+
+.factor-caption {
+  margin-top: 7px;
+  font-size: 0.7rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+  min-height: 1.45em;
+}
+
+.factor-caption strong { color: var(--text-secondary); font-weight: 600; }
+.factor-caption .factor-up, .factor-caption .factor-down { font-weight: 600; }
+.factor-stale { color: var(--orange); font-weight: 600; }
+
+@media (max-width: 900px) {
+  .factor-grid { gap: 8px; }
+  .factor-chip { padding: 9px 10px; }
+  .factor-spark { max-width: none; }
+}
+
+/* Phone: chips stack number over sparkline and use short names; the timeline
+   buttons grow to a thumb-friendly 30px while the row stays one strip. */
+@media (max-width: 640px) {
+  .factor-row { margin: -4px 0 16px; }
+  .factor-title { font-size: 0.62rem; }
+  .factor-sub { display: none; }
+  .factor-tf-btn { font-size: 0.6rem; padding: 0 6px; min-height: 30px; min-width: 30px; }
+  .factor-grid { gap: 5px; }
+  .factor-chip { padding: 7px 6px 6px; gap: 3px; border-radius: var(--radius-sm); }
+  .factor-label { font-size: 0.56rem; letter-spacing: 0.03em; }
+  .factor-name-long { display: none; }
+  .factor-name-short { display: inline; }
+  .factor-line { flex-direction: column; align-items: stretch; gap: 3px; }
+  .factor-val { font-size: 0.74rem; }
+  .factor-spark, .factor-spark-empty { height: 18px; width: 100%; }
+  .factor-caption { font-size: 0.66rem; min-height: 2.9em; }
+}

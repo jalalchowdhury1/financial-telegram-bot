@@ -563,6 +563,38 @@ def test_check_rubber_band_missing_dials_is_critical():
     assert hc.check_rubber_band(None)["severity"] == "critical"
 
 
+# --- 🧬 Factor row ---------------------------------------------------------------
+def _fx(meta, n=5, asOf="2026-09-25"):
+    return {"asOf": asOf, "factors": [{"key": str(i)} for i in range(n)], "_meta": meta}
+
+
+def test_factors_endpoint_is_swept():
+    assert "factors" in hc.ENDPOINTS
+
+
+def test_check_factors_primary_is_ok():
+    f = hc.check_factors(_fx({"source": "SPY:cnbc+cnbc-weekly", "fallback": False, "stale": False}))
+    assert f["severity"] == "ok"
+
+
+def test_check_factors_fallback_tier_is_warn_even_when_numbers_look_fine():
+    f = hc.check_factors(_fx({"source": "SPY:nasdaq · VLUE:nasdaq", "fallback": True, "stale": False}))
+    assert f["severity"] == "warn" and "nasdaq" in f["detail"]
+    assert hc.check_factors(_fx({"source": "x", "fallback": False}, n=4))["severity"] == "warn"
+
+
+def test_check_factors_cached_stale_and_baked_are_warn():
+    assert "cached" in hc.check_factors(_fx({"source": "KV last-good (2026-09-25) ← SPY:cnbc"}))["title"]
+    assert "cached" in hc.check_factors(_fx({"source": "SPY:cnbc (last-known-good 2026-09-25)", "stale": True}))["title"]
+    assert "stale" in hc.check_factors(_fx({"source": "SPY:cnbc", "stale": True}))["title"]
+    assert "baked" in hc.check_factors(_fx({"source": "SPY:baked(only)+baked", "allBaked": True, "bakedAt": "2026-09-26"}))["title"]
+
+
+def test_check_factors_empty_is_critical():
+    assert hc.check_factors({"factors": [], "_meta": {"source": "Unavailable"}})["severity"] == "critical"
+    assert hc.check_factors(None)["severity"] == "critical"
+
+
 def test_fallback_source_counts_as_degraded_so_fetch_endpoint_retries():
     """One Sheets stall at sample time must trigger a re-fetch, not a WARN."""
     import json

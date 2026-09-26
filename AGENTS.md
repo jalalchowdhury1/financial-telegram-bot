@@ -424,6 +424,41 @@ so `isGood` rejects an empty digest rather than letting it claim "nothing change
   `jevInputsTiers.test.js`, `jevStore.test.js`, + repairPillInputs tests in
   `jevPillsRoute.test.js`, + component tests in `JevPills.test.js`.
 
+### 🧬 Factor row (`/api/factors` + `FactorRow.js` + `lib/factors.js`) — added 2026-09-26
+A thin strip under the top indicator bar: **Value (VLUE), Momentum (MTUM), Quality (QUAL),
+Small caps (IWM), Low vol (USMV)**, each as a **price ratio vs SPY** — the number is how far
+$1 in the factor ETF is ahead of/behind $1 in SPY over the window; the sparkline is that
+ratio over time, 0 (dashed) = window start. One timeline control (1M 3M 6M YTD 1Y 3Y 5Y 10Y,
+remembered per device in localStorage) drives every chip; the window's leader gets a green
+top accent; tap/hover a chip → the caption line explains it (no tooltips: they bleed off
+68px phone chips). Self-fetching, refetches on the page refresh tick, hides itself if the
+route has no factors. Math cross-checked 2026-09-26 against Nasdaq raw closes: every window
+for all 5 factors matched to the cent.
+- **Price basis, on purpose.** No keyless datacenter source serves dividends (Yahoo adjclose
+  is 429 from Vercel), and mixing adjusted + unadjusted vendors would change the basis
+  mid-series. `yahooChart(..., { adjusted:false })` exists for this. Dividend gap between
+  these ETFs ≈ 1 pt/yr; the UI says "price ratio".
+- **Layers, deepest last.** Per ticker RECENT daily (must be ≤5 days old to win): CNBC `1Y`
+  (~2y daily) → Nasdaq historical (keyless, ~10y DAILY in one call) → Polygon (2y; free tier
+  5 req/min, so deliberately not first) → Yahoo 10y/1d (phantom from Vercel; free
+  best-effort, never counted). Per ticker LONG history (only the part older than the recent
+  series is used): CNBC `5Y` weekly → Nasdaq → Yahoo → baked weekly
+  (`lib/data/factorsBaked.json`). Route: /tmp last-good → **Upstash KV** `ftb:factors:lg`
+  (`lib/factorStore.js`, own no-store client, written once per asOf per 6h) → the all-baked
+  payload. An all-baked produce() is NOT `isGood` (a warmer cache wins); a stale payload is
+  served but never stored.
+- **CNBC weekly traps.** Bars are dated by the week's SUNDAY but carry the FRIDAY close
+  (verified 105/105) → shifted +5 days. The newest weekly bar is a moving snapshot and can
+  stay WRONG after the week ends (IWM read 285.58 on Sat 2026-09-26 vs a 281.97 Friday
+  close) → `weeklyToFriday` drops every bar from the last 7 days.
+- **Fault gates:** `fx_cnbc`, `fx_cnbcw`, `fx_nasdaq`, `fx_polygon`, `fx_yahoo`, `fx_baked`,
+  `fx_kv`, plus serve()'s `lastgood` and `sheetlkg` (= skip KV here). `_meta.fallback` is
+  true whenever any non-primary tier served; `_meta.source` names the tier per ticker.
+- **Health check:** `check_factors` (scripts/health_check.py) warns on fallback / cache /
+  stale / baked and is critical when the row would be hidden.
+- **Bake refresh:** `node scripts/bake-factors.mjs` (from `dashboard/`). While any live
+  daily tier works a bake stays useful for ~2 years; it refuses to write a smaller bake.
+
 ### FRED route specifics (`/api/fred`) — subtle, don't regress
 - The route uses `export const fetchCache = 'default-cache'` and stays dynamic by reading
   the request, so Next's Data Cache via per-fetch `revalidate` works (don't switch it to
