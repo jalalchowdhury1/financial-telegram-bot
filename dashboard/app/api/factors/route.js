@@ -30,7 +30,7 @@ import { cnbcHistory, nasdaqHistory, polygonDaily, yahooChart } from '../../../l
 import { serve } from '../../../lib/store';
 import { faultsFrom, gate, trip } from '../../../lib/faults';
 import {
-    BENCH, TICKERS, resolveTicker, buildPayload, isFreshGoodPayload, isStorablePayload,
+    BENCH, TICKERS, resolveTicker, buildPayload, isFreshGoodPayload, isStorablePayload, callBudget,
     weeklyToFriday, todayET,
 } from '../../../lib/factors';
 import { loadFactorsKV, saveFactorsKV } from '../../../lib/factorStore';
@@ -96,10 +96,9 @@ export async function GET(request) {
     return serve('factors', async () => {
         const started = Date.now();
         const deadline = started + DEADLINE_MS;
-        let polygonLeft = POLYGON_BUDGET;
+        const polygonMay = callBudget(POLYGON_BUDGET, BENCH);
         const polygon = (t) => {
-            if (polygonLeft <= (t === BENCH ? 0 : 1)) return Promise.reject(new Error('polygon budget spent (shared 5/min key)'));
-            polygonLeft -= 1;
+            if (!polygonMay(t)) return Promise.reject(new Error('polygon budget spent (shared 5/min key)'));
             return gate('fx_polygon', faults, () => polygonDaily(t, polygonKey, { years: 2, tries: 1, timeout: 6000, revalidate: 21600 }))
                 .then((r) => r.history);
         };

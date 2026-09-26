@@ -228,7 +228,8 @@ export async function resolveTicker(ticker, { recent = [], long = [], baked = nu
             if (!validSeries(h, minPoints)) { tried.push(`${tier.name}:invalid`); return null; }
             return h;
         } catch (e) {
-            tried.push(`${tier.name}:${/fault/i.test(e?.message || '') ? 'fault' : 'err'}`);
+            const msg = e?.message || '';
+            tried.push(`${tier.name}:${/fault/i.test(msg) ? 'fault' : /budget/i.test(msg) ? 'budget' : 'err'}`);
             return null;
         }
     };
@@ -343,6 +344,22 @@ export function buildPayload(resolved, { primary = { recent: 'cnbc', long: 'cnbc
             bakedAt,
             messages,
         },
+    };
+}
+
+/**
+ * Per-invocation call budget for a shared, rate-limited key. `priority` keeps one call
+ * reserved until it has used it; everyone else shares the rest. take(t) → may t call?
+ */
+export function callBudget(total, priority) {
+    let left = total;
+    let priorityUsed = false;
+    return (t) => {
+        const reserve = t !== priority && !priorityUsed ? 1 : 0;
+        if (left - reserve <= 0) return false;
+        left -= 1;
+        if (t === priority) priorityUsed = true;
+        return true;
     };
 }
 

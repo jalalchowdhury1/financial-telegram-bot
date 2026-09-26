@@ -3,7 +3,7 @@
  */
 import {
     windowStart, weeklyToFriday, thinToWeekly, validSeries, mergeSeries, align,
-    computeWindow, resolveTicker, buildPayload, isGoodPayload, isStorablePayload, isFreshGoodPayload,
+    computeWindow, resolveTicker, buildPayload, isGoodPayload, isStorablePayload, isFreshGoodPayload, callBudget,
     FACTORS, TICKERS, WINDOWS, daysBetween, todayET,
 } from '../factors';
 import { loadFactorsKV, saveFactorsKV, KV_KEY } from '../factorStore';
@@ -366,4 +366,29 @@ it('isFreshGoodPayload: a stale live payload does not count as a live win', () =
     expect(isFreshGoodPayload({ factors: f(5), _meta: { stale: true } })).toBe(false);
     expect(isFreshGoodPayload({ factors: f(5), _meta: { allBaked: true } })).toBe(false);
     expect(isFreshGoodPayload({ factors: f(2), _meta: {} })).toBe(false);
+});
+
+describe('callBudget (shared Polygon key)', () => {
+    it('SPY first: SPY + one factor, then nobody', () => {
+        const may = callBudget(2, 'SPY');
+        expect(['SPY', 'VLUE', 'MTUM', 'SPY'].map(may)).toEqual([true, true, false, false]);
+    });
+    it('a factor first still leaves SPY its reserved call', () => {
+        const may = callBudget(2, 'SPY');
+        expect(['VLUE', 'MTUM', 'SPY', 'QUAL'].map(may)).toEqual([true, false, true, false]);
+    });
+    it('a budget of 1 is SPY-only', () => {
+        const may = callBudget(1, 'SPY');
+        expect(['VLUE', 'SPY', 'SPY'].map(may)).toEqual([false, true, false]);
+    });
+});
+
+it('resolveTicker labels a budget skip apart from a real error', async () => {
+    const r = await resolveTicker('VLUE', {
+        recent: [{ name: 'polygon', fn: () => Promise.reject(new Error('polygon budget spent (shared 5/min key)')) }],
+        long: [],
+        baked: () => null,
+        today: '2026-09-26',
+    });
+    expect(r.tried).toContain('polygon:budget');
 });
