@@ -74,3 +74,47 @@ test('returns null (no crash) below 2 points', () => {
     expect(render(<MiniChart history={[]} cadence="monthly" />).container.firstChild).toBeNull();
     expect(render(<MiniChart history={undefined} cadence="monthly" />).container.firstChild).toBeNull();
 });
+
+// jsdom has no PointerEvent: without this, fireEvent.pointerDown drops clientX/pointerType.
+if (!window.PointerEvent) {
+    window.PointerEvent = class PointerEvent extends MouseEvent {
+        constructor(type, params = {}) { super(type, params); this.pointerType = params.pointerType || 'mouse'; }
+    };
+}
+
+describe('QoL: remembered tabs, honest tabs, tap readout', () => {
+    beforeEach(() => window.localStorage.clear());
+
+    test('the chosen timeframe is remembered per chart', () => {
+        const { unmount } = render(<MiniChart history={monthly(40)} cadence="monthly" gradientId="epsGrad" />);
+        fireEvent.click(screen.getByRole('button', { name: '10Y' }));
+        expect(window.localStorage.getItem('ftb:tf:epsGrad')).toBe('10Y');
+        unmount();
+        render(<MiniChart history={monthly(40)} cadence="monthly" gradientId="epsGrad" />);
+        expect(screen.getByRole('button', { name: '10Y' }).style.background).not.toMatch(/0\.05/);
+    });
+
+    test('tabs longer than the history are disabled', () => {
+        render(<MiniChart history={monthly(4)} cadence="monthly" />);
+        expect(screen.getByRole('button', { name: '1Y' })).not.toBeDisabled();
+        expect(screen.getByRole('button', { name: '3Y' })).not.toBeDisabled();
+        expect(screen.getByRole('button', { name: '5Y' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'ALL' })).not.toBeDisabled();
+    });
+
+    test('tapping the chart shows that point’s date and value', () => {
+        const { container } = render(<MiniChart history={monthly(40)} cadence="monthly" defaultTimeframe="1Y" />);
+        fireEvent.click(screen.getByRole('button', { name: '1Y' }));
+        const svg = container.querySelector('svg');
+        svg.getBoundingClientRect = () => ({ left: 0, width: 480, top: 0, height: 180 });
+        // right edge of the plot = the newest point (2026-06-01, value 100 + 480)
+        fireEvent.pointerDown(svg, { clientX: 472, pointerType: 'touch' });
+        expect(container.querySelector('.chart-readout').textContent).toBe('Jun 1, 2026 · 580.00');
+        expect(container.querySelector('.chart-cursor')).not.toBeNull();
+        // touch readout survives the finger lifting; a mouse leaving clears it
+        fireEvent.pointerLeave(svg, { pointerType: 'touch' });
+        expect(container.querySelector('.chart-readout')).not.toBeNull();
+        fireEvent.pointerLeave(svg, { pointerType: 'mouse' });
+        expect(container.querySelector('.chart-readout')).toBeNull();
+    });
+});

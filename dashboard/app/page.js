@@ -479,7 +479,7 @@ export default function Dashboard() {
                     </div>
                     <ErrorBoundary>
                         {loading || !spy || spy.error || !spy.chartHistory ? <Skeleton count={4} /> : (
-                            <SpyChart chartHistory={spy.chartHistory} recessions={fred?.recessions || []} />
+                            <SpyChart chartHistory={spy.chartHistory} recessions={fred?.recessions || []} current={spy.current} />
                         )}
                     </ErrorBoundary>
                 </div>

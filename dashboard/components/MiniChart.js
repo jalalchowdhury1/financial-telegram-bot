@@ -1,8 +1,14 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { yearTicks, indexFromPointer, tfAvailable, fmtDay, readChoice, saveChoice } from '../lib/chartAxis';
 
 export default function MiniChart({ history, color = '#818cf8', gradientId = 'chartGrad', showZero = false, recessions = [], label = '', cadence = 'auto', defaultTimeframe = null, fmt = null }) {
     const [timeframe, setTimeframe] = useState(defaultTimeframe || '5Y');
+    const [hover, setHover] = useState(null);
+    const svgRef = useRef(null);
+    // Each chart remembers its timeframe per device (gradientId is unique per card).
+    const storeKey = `ftb:tf:${gradientId}`;
+    useEffect(() => { const v = readChoice(storeKey); if (v) setTimeframe(v); }, [storeKey]);
     if (!history || history.length < 2) return null;
 
     // Explicit cadence='monthly' (12 points/yr) or 'weekly' (52 points/yr)
@@ -27,8 +33,9 @@ export default function MiniChart({ history, color = '#818cf8', gradientId = 'ch
         defaultTf = '5Y';
     }
 
-    // Use default if current timeframe isn't valid for this chart
-    const activeTf = tfKeys.includes(timeframe) ? timeframe : defaultTf;
+    // Only offer tabs the history really covers; fall back to the default, then ALL.
+    const usable = tfKeys.filter((tf) => tfAvailable(tf === 'ALL' ? null : tfMap[tf], history.length));
+    const activeTf = usable.includes(timeframe) ? timeframe : usable.includes(defaultTf) ? defaultTf : 'ALL';
     const sliceLen = Math.min(tfMap[activeTf] || history.length, history.length);
     const data = history.slice(-sliceLen);
 
@@ -54,13 +61,8 @@ export default function MiniChart({ history, color = '#818cf8', gradientId = 'ch
     };
     const visibleRecessions = recessions.filter(r => r.start <= dates[dates.length - 1] && r.end >= dates[0]);
 
-    // Year labels
-    const yearLabels = [];
-    let lastYear = '';
-    for (let i = 0; i < dates.length; i++) {
-        const yr = dates[i].substring(0, 4);
-        if (yr !== lastYear) { yearLabels.push({ x: toX(i), label: yr }); lastYear = yr; }
-    }
+    // Year labels, thinned so a 1947→today axis stays readable
+    const yearLabels = yearTicks(dates, toX);
 
     // Y-axis ticks (fmt lets big-number series render compact labels like 350K)
     const fmtTick = fmt || ((v) => (v >= 10 ? v.toFixed(1) : v.toFixed(2)));
@@ -74,15 +76,27 @@ export default function MiniChart({ history, color = '#818cf8', gradientId = 'ch
     const change = values[values.length - 1] - values[0];
     const changePct = (change / Math.abs(values[0] || 1)) * 100;
 
+    // Tap / hover readout: the point under the pointer replaces the change label.
+    const fmtVal = fmt || ((v) => v.toFixed(2));
+    const hi = hover != null && hover < data.length ? hover : null;
+    const pick = (tf) => { setTimeframe(tf); saveChoice(storeKey, tf); setHover(null); };
+    const onPoint = (e) => {
+        const i = indexFromPointer(e.clientX, svgRef.current?.getBoundingClientRect(), data.length, { w, padL, padR });
+        if (i != null) setHover(i);
+    };
+    const onLeave = (e) => { if (e.pointerType === 'mouse') setHover(null); };
+
     return (
         <div>
             {/* Timeframe selector + change */}
             <div style={{ display: 'flex', gap: '4px', marginBottom: '6px', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ display: 'flex', gap: '3px' }}>
                     {tfKeys.map(tf => (
-                        <button key={tf} onClick={() => setTimeframe(tf)}
+                        <button key={tf} onClick={() => pick(tf)} disabled={!usable.includes(tf)}
+                            title={usable.includes(tf) ? undefined : 'Not enough history yet'}
                             style={{
-                                padding: '2px 8px', borderRadius: '5px', border: 'none', cursor: 'pointer',
+                                padding: '2px 8px', borderRadius: '5px', border: 'none',
+                                cursor: usable.includes(tf) ? 'pointer' : 'default', opacity: usable.includes(tf) ? 1 : 0.35,
                                 fontSize: '0.6rem', fontWeight: 700, fontFamily: "'JetBrains Mono', monospace",
                                 background: tf === activeTf ? `${color}33` : 'rgba(255,255,255,0.05)',
                                 color: tf === activeTf ? color : 'var(--text-muted)',
@@ -90,15 +104,26 @@ export default function MiniChart({ history, color = '#818cf8', gradientId = 'ch
                             }}>{tf}</button>
                     ))}
                 </div>
-                <span style={{
-                    fontSize: '0.6rem', fontFamily: "'JetBrains Mono', monospace",
-                    color: change >= 0 ? 'var(--green)' : 'var(--red)', fontWeight: 700
-                }}>
-                    {change >= 0 ? '▲' : '▼'} {fmt ? fmt(Math.abs(change)) : Math.abs(change).toFixed(2)}
-                </span>
+                {hi != null ? (
+                    <span className="chart-readout" style={{
+                        fontSize: '0.6rem', fontFamily: "'JetBrains Mono', monospace",
+                        color: 'var(--text-primary)', fontWeight: 700, whiteSpace: 'nowrap'
+                    }}>
+                        {fmtDay(dates[hi])} · {fmtVal(values[hi])}
+                    </span>
+                ) : (
+                    <span style={{
+                        fontSize: '0.6rem', fontFamily: "'JetBrains Mono', monospace",
+                        color: change >= 0 ? 'var(--green)' : 'var(--red)', fontWeight: 700
+                    }}>
+                        {change >= 0 ? '▲' : '▼'} {fmt ? fmt(Math.abs(change)) : Math.abs(change).toFixed(2)}
+                    </span>
+                )}
             </div>
             <div className="mini-chart" style={{ height: '180px' }}>
-                <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none">
+                <svg ref={svgRef} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none"
+                    onPointerMove={onPoint} onPointerDown={onPoint} onPointerLeave={onLeave}
+                    style={{ touchAction: 'pan-y' }}>
                     <defs>
                         <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
                             <stop offset="0%" stopColor={color} stopOpacity="0.2" />
@@ -133,6 +158,12 @@ export default function MiniChart({ history, color = '#818cf8', gradientId = 'ch
                     )}
                     <polygon points={area} fill={`url(#${gradientId})`} />
                     <polyline points={line} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" />
+                    {hi != null && (
+                        <g className="chart-cursor" pointerEvents="none">
+                            <line x1={toX(hi)} x2={toX(hi)} y1={padT} y2={h - padB} stroke="rgba(255,255,255,0.35)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+                            <circle cx={toX(hi)} cy={toY(values[hi])} r="3" fill={color} stroke="#0a0e17" strokeWidth="1.5" />
+                        </g>
+                    )}
                 </svg>
             </div>
         </div>
