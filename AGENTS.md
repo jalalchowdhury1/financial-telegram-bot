@@ -650,6 +650,14 @@ Now: fewer than 756 bars → the Sheet's own 3Y return (`_sheet_return_3y`) → 
   check still alerts. `fetchSheetLkg` never throws (returns null → falls to the error default).
   `?_fail=sheetlkg` disables it in fault tests. The helper tab is written by
   [[project-financial-dashboard-history]]'s `scraper.py` (`build_lkg_pairs`/`write_helper_tab`).
+- **The history sheet reads five more routes (since 2026-09-26, Sheet1 columns AN–BS):**
+  `/api/vol` (SPY/QQQ rows, `regime.curve` points + ratio, `regime.decay`, `regime.moves`),
+  `/api/factors` (`factors[].windows.1M.rel`), `/api/spy` (`current`, `ma200`,
+  `week52High.pct`, `rsi`, `return3y`), `/api/fear-greed` (`score`) and `/api/breadth`
+  (`pairs.*.ratio`). The exact paths are in that repo's `scraper.py: EXTRA_COLUMNS`.
+  **Renaming or moving one of those fields raises no error anywhere**: the column goes N/A
+  and the carry-forward freezes it at its last value. Change `EXTRA_COLUMNS` in the same
+  change. (`python scraper.py --dry-run` there prints every column's value.)
 - **Copper/Gold ratio** (the `indicators.copperGold` tile) replaced the old `LEI`/`USSLIND`
   series, which FRED **discontinued/froze in 2020**. It is a leading growth/rates gauge
   (~1.4 = copper $/lb ÷ gold $/oz ×1000). The tile shows the **level + its ~1-month and
