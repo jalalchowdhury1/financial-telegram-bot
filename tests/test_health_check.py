@@ -590,6 +590,19 @@ def test_check_factors_cached_stale_and_baked_are_warn():
     assert "baked" in hc.check_factors(_fx({"source": "SPY:baked(only)+baked", "allBaked": True, "bakedAt": "2026-09-26"}))["title"]
 
 
+def test_check_factors_unlabelled_or_errored_source_is_not_green():
+    # serve()'s throw path relabels the baked floor "Unavailable" with fallback unset.
+    f = hc.check_factors(_fx({"source": "Unavailable", "hasErrors": True}))
+    assert f["severity"] == "warn" and "unconfirmed" in f["title"]
+    assert hc.check_factors(_fx({"source": ""}))["severity"] == "warn"
+
+
+def test_factor_fallback_flag_counts_as_degraded_so_the_probe_retries():
+    from scripts.health_check import _body_is_degraded
+    assert _body_is_degraded(json.dumps({"factors": [1], "_meta": {"source": "SPY:nasdaq", "hasErrors": False, "fallback": True}}))
+    assert not _body_is_degraded(json.dumps({"factors": [1], "_meta": {"source": "SPY:cnbc", "hasErrors": False, "fallback": False}}))
+
+
 def test_check_factors_empty_is_critical():
     assert hc.check_factors({"factors": [], "_meta": {"source": "Unavailable"}})["severity"] == "critical"
     assert hc.check_factors(None)["severity"] == "critical"

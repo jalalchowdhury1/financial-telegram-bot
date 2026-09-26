@@ -261,7 +261,19 @@ export async function resolveTicker(ticker, { recent = [], long = [], baked = nu
         }
     }
 
-    const history = mergeSeries(lng, rec);
+    let history = mergeSeries(lng, rec);
+    // Each side passed validSeries on its own, but the SPLICE can still hide a split
+    // (a bake from before a split under split-adjusted live bars would put 3Y/5Y/10Y
+    // off by the split ratio). A jump beyond MAX_BAR_MOVE at the seam → drop the long part.
+    if (lng && rec && history.length > rec.length) {
+        const seam = history.length - rec.length;
+        if (Math.abs(history[seam].price / history[seam - 1].price - 1) > MAX_BAR_MOVE) {
+            tried.push(`${longSource}:splice-jump`);
+            history = rec.slice();
+            lng = null;
+            longSource = null;
+        }
+    }
     if (!history.length) return { ticker, history: [], asOf: null, stale: true, recentSource, longSource, tried };
     const asOf = history[history.length - 1].date;
     return {
@@ -337,6 +349,15 @@ export function buildPayload(resolved, { primary = { recent: 'cnbc', long: 'cnbc
 /** Servable: at least 3 of 5 factors, and not purely the baked floor. */
 export function isGoodPayload(p) {
     return !!p && Array.isArray(p.factors) && p.factors.length >= 3 && !p._meta?.allBaked;
+}
+
+/**
+ * What serve() treats as a live win. A STALE live payload (e.g. SPY fell to the bake
+ * while the factors are live, so every window ends at the bake date) must not beat a
+ * fresher /tmp or KV copy; serve() still returns it when no cache exists.
+ */
+export function isFreshGoodPayload(p) {
+    return isGoodPayload(p) && !p._meta?.stale;
 }
 
 /** Worth storing as last-known-good: servable AND fresh (a stale payload must not refresh the cache's savedAt). */

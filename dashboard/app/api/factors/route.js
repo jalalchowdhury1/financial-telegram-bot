@@ -18,7 +18,7 @@
  *     3. Yahoo (same call as above, memoised)
  *     4. baked weekly closes in lib/data/factorsBaked.json (scripts/bake-factors.mjs)
  *   route level:
- *     5. /tmp last-known-good            (serve())
+ *     5. /tmp last-known-good            (serve(); also beats a STALE live payload)
  *     6. Upstash KV last-known-good      (lib/factorStore.js; survives cold starts)
  *     7. the all-baked payload           (stale-flagged; never blank)
  *
@@ -30,7 +30,7 @@ import { cnbcHistory, nasdaqHistory, polygonDaily, yahooChart } from '../../../l
 import { serve } from '../../../lib/store';
 import { faultsFrom, gate, trip } from '../../../lib/faults';
 import {
-    TICKERS, resolveTicker, buildPayload, isGoodPayload, isStorablePayload,
+    BENCH, TICKERS, resolveTicker, buildPayload, isFreshGoodPayload, isStorablePayload,
     weeklyToFriday, todayET,
 } from '../../../lib/factors';
 import { loadFactorsKV, saveFactorsKV } from '../../../lib/factorStore';
@@ -39,7 +39,25 @@ import baked from '../../../lib/data/factorsBaked.json';
 export const fetchCache = 'default-cache';
 export const maxDuration = 30;
 
-const DEADLINE_MS = 20000;
+// Timing budget (maxDuration 30 s). The deadline stops NEW tiers from starting; the
+// hard cap bounds the tiers already in flight (a CNBC hang + a slow Nasdaq could
+// otherwise run a ticker past 30 s, and a Vercel 504 skips serve() entirely). Past the
+// cap produce() throws → /tmp → KV → baked, like any other failure.
+const DEADLINE_MS = 18000;
+const HARD_CAP_MS = 23000;
+const KV_SAVE_BY_MS = 25000; // saveFactorsKV aborts after 3 s → done by 28 s
+// POLYGON_KEY is shared with spy / spy-daily-move / market-extra / vol / breadth on a
+// 5-requests-per-minute free tier. During a CNBC+Nasdaq outage six parallel calls here
+// would starve those cards' own fallbacks, so the factor row may spend at most 2 per
+// invocation, one reserved for SPY (without SPY nothing is computable).
+const POLYGON_BUDGET = 2;
+
+function capped(promise, ms) {
+    return new Promise((resolve, reject) => {
+        const t = setTimeout(() => reject(new Error(`factor sources over ${ms / 1000}s`)), ms);
+        promise.then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
+    });
+}
 
 function bakedSeries(faults) {
     return (t) => {
@@ -74,8 +92,17 @@ export async function GET(request) {
     const today = todayET();
     const fallback = await bakedPayload(faults, today);
 
+    let produced = null;
     return serve('factors', async () => {
-        const deadline = Date.now() + DEADLINE_MS;
+        const started = Date.now();
+        const deadline = started + DEADLINE_MS;
+        let polygonLeft = POLYGON_BUDGET;
+        const polygon = (t) => {
+            if (polygonLeft <= (t === BENCH ? 0 : 1)) return Promise.reject(new Error('polygon budget spent (shared 5/min key)'));
+            polygonLeft -= 1;
+            return gate('fx_polygon', faults, () => polygonDaily(t, polygonKey, { years: 2, tries: 1, timeout: 6000, revalidate: 21600 }))
+                .then((r) => r.history);
+        };
         const nasdaqMemo = new Map();
         const yahooMemo = new Map();
         const nasdaq = (t) => {
@@ -91,31 +118,40 @@ export async function GET(request) {
         };
 
         const recent = [
-            { name: 'cnbc', fn: (t) => gate('fx_cnbc', faults, () => cnbcHistory(t, { range: '1Y', timeout: 6000 })) },
+            { name: 'cnbc', fn: (t) => gate('fx_cnbc', faults, () => cnbcHistory(t, { range: '1Y', timeout: 6000, tries: 1 })) },
             { name: 'nasdaq', fn: nasdaq },
-            { name: 'polygon', fn: (t) => gate('fx_polygon', faults, () => polygonDaily(t, polygonKey, { years: 2, tries: 1, timeout: 6000 })).then((r) => r.history) },
+            { name: 'polygon', fn: polygon },
             { name: 'yahoo', fn: yahoo },
         ];
         const long = [
-            { name: 'cnbc-weekly', fn: (t) => gate('fx_cnbcw', faults, () => cnbcHistory(t, { range: '5Y', timeout: 6000 })).then((h) => weeklyToFriday(h, today)) },
+            { name: 'cnbc-weekly', fn: (t) => gate('fx_cnbcw', faults, () => cnbcHistory(t, { range: '5Y', timeout: 6000, tries: 1 })).then((h) => weeklyToFriday(h, today)) },
             { name: 'nasdaq', fn: nasdaq },
             { name: 'yahoo', fn: yahoo },
         ];
 
-        const results = await Promise.all(TICKERS.map((t) =>
-            resolveTicker(t, { recent, long, baked: bakedSeries(faults), today, deadline })));
+        const results = await capped(Promise.all(TICKERS.map((t) =>
+            resolveTicker(t, { recent, long, baked: bakedSeries(faults), today, deadline }))), HARD_CAP_MS);
         const resolved = Object.fromEntries(results.map((r) => [r.ticker, r]));
         const payload = buildPayload(resolved, { bakedAt: baked?.bakedAt || null });
+        produced = payload;
 
         // Durable copy for cold instances. Skipped under fault injection (never let a
-        // test write shared state) and for anything stale.
-        if (faults.size === 0 && isStorablePayload(payload)) await saveFactorsKV(payload);
+        // test write shared state), for anything stale, and when time is short.
+        if (faults.size === 0 && isStorablePayload(payload) && Date.now() - started < KV_SAVE_BY_MS) {
+            await saveFactorsKV(payload);
+        }
         return payload;
     }, {
         faults,
-        isGood: isGoodPayload,
+        isGood: isFreshGoodPayload,
         shouldStore: isStorablePayload,
-        lastResort: async () => (faults.has('fx_kv') ? null : loadFactorsKV()),
+        // The KV copy only wins if it is at least as new as what live just produced.
+        lastResort: async () => {
+            if (faults.has('fx_kv')) return null;
+            const kv = await loadFactorsKV();
+            if (kv && produced?.asOf && (kv.asOf || '') < produced.asOf) return null;
+            return kv;
+        },
         fallback,
     });
 }

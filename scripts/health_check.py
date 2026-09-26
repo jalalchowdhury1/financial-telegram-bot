@@ -114,6 +114,11 @@ def check_factors(payload):
     if meta.get("fallback") or n < 5:
         return _finding(fid, "warn", f"factor row off its primary path ({n}/5 factors)",
                         detail=source[:300], remediation="manual", evidence=ev)
+    # Green must PROVE the primary ran: serve()'s throw path relabels the baked floor
+    # as source "Unavailable" with fallback unset — that is not CNBC.
+    if meta.get("hasErrors") or "cnbc" not in source:
+        return _finding(fid, "warn", "factor row source unconfirmed",
+                        detail=(source or "no source label")[:300], remediation="manual", evidence=ev)
     return _finding(fid, "ok", f"factor row on CNBC primary (5/5, as of {payload.get('asOf')})")
 
 
@@ -514,6 +519,10 @@ def _body_is_degraded(text):
         body = json.loads(text) or {}
         meta = body.get("_meta") or {}
         if meta.get("hasErrors") or meta.get("unavailable"):
+            return True
+        # /api/factors flags any non-primary tier with _meta.fallback (hasErrors stays
+        # false: the numbers are fine). One CNBC blip at probe time must re-fetch, not WARN.
+        if meta.get("fallback") is True:
             return True
         # A Lambda-primary route served from a "(fallback)" source is ALSO degraded.
         # Before 2026-09-09 this branch did not exist, so one 10 s Google Sheets stall

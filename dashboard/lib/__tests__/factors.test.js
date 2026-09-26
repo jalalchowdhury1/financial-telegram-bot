@@ -3,7 +3,7 @@
  */
 import {
     windowStart, weeklyToFriday, thinToWeekly, validSeries, mergeSeries, align,
-    computeWindow, resolveTicker, buildPayload, isGoodPayload, isStorablePayload,
+    computeWindow, resolveTicker, buildPayload, isGoodPayload, isStorablePayload, isFreshGoodPayload,
     FACTORS, TICKERS, WINDOWS, daysBetween, todayET,
 } from '../factors';
 import { loadFactorsKV, saveFactorsKV, KV_KEY } from '../factorStore';
@@ -19,7 +19,7 @@ function weekdays(startIso, endIso, price = (i) => 100 + i * 0.1) {
     for (let t = Date.parse(`${startIso}T00:00:00Z`); t <= Date.parse(`${endIso}T00:00:00Z`); t += DAY) {
         const dow = new Date(t).getUTCDay();
         if (dow === 0 || dow === 6) continue;
-        out.push({ date: iso(t), price: price(i++) });
+        out.push({ date: iso(t), price: price(i++, iso(t)) });
     }
     return out;
 }
@@ -139,10 +139,13 @@ describe('computeWindow', () => {
 
 describe('resolveTicker cascade', () => {
     const today = '2026-09-26';
-    const fresh = weekdays('2024-09-27', '2026-09-25');
-    const stale = weekdays('2024-09-01', '2026-09-10');
-    const tenYears = weekdays('2016-09-26', '2026-09-25');
-    const weekly = thinToWeekly(weekdays('2016-09-26', '2026-09-18'));
+    // Price by DATE so every tier describes the same ETF (the seam check rejects a
+    // splice between unrelated price levels, as it would a split).
+    const px = (_, d) => 100 + daysBetween('2016-01-01', d) * 0.05;
+    const fresh = weekdays('2024-09-27', '2026-09-25', px);
+    const stale = weekdays('2024-09-01', '2026-09-10', px);
+    const tenYears = weekdays('2016-09-26', '2026-09-25', px);
+    const weekly = thinToWeekly(weekdays('2016-09-26', '2026-09-18', px));
     const ok = (h) => jest.fn().mockResolvedValue(h);
     const fail = () => jest.fn().mockRejectedValue(new Error('boom'));
 
@@ -159,6 +162,20 @@ describe('resolveTicker cascade', () => {
         expect(r.stale).toBe(false);
         expect(r.history[0].date < '2017-01-01').toBe(true);
         expect(r.asOf).toBe('2026-09-25');
+    });
+
+    it('a split hidden at the splice drops the long history instead of distorting 3Y+', async () => {
+        // long history priced ~4x the recent bars (pre-split bake under post-split live data)
+        const preSplit = weekly.map((p) => ({ ...p, price: p.price * 4 }));
+        const r = await resolveTicker('SPY', {
+            recent: [{ name: 'cnbc', fn: ok(fresh) }],
+            long: [{ name: 'cnbc-weekly', fn: ok(preSplit) }],
+            today,
+        });
+        expect(r.tried).toContain('cnbc-weekly:splice-jump');
+        expect(r.longSource).toBeNull();
+        expect(r.history).toEqual(fresh);
+        expect(r.recentSource).toBe('cnbc');
     });
 
     it('a STALE primary is replaced by a fresher later tier', async () => {
@@ -341,4 +358,12 @@ describe('factorStore (KV last-good)', () => {
         expect(await saveFactorsKV({ ...payload, _meta: { stale: true } }, { kv, tmp, now })).toBe(false);
         expect(kv.set).toHaveBeenCalledTimes(3);
     });
+});
+
+it('isFreshGoodPayload: a stale live payload does not count as a live win', () => {
+    const f = (n) => Array.from({ length: n }, (_, i) => ({ key: `k${i}` }));
+    expect(isFreshGoodPayload({ factors: f(5), _meta: { stale: false } })).toBe(true);
+    expect(isFreshGoodPayload({ factors: f(5), _meta: { stale: true } })).toBe(false);
+    expect(isFreshGoodPayload({ factors: f(5), _meta: { allBaked: true } })).toBe(false);
+    expect(isFreshGoodPayload({ factors: f(2), _meta: {} })).toBe(false);
 });
