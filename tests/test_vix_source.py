@@ -87,15 +87,15 @@ def _row(*cells):
 def test_brief_keeps_the_fear_greed_score():
     nsb = MagicMock(status_code=200, text="a,b\nc,d\ne,ON\n")
     fr = MagicMock(status_code=200, text="h\nBIL (T-Bill ETF)1\n")
-    aaii = MagicMock(status_code=200, text="h\na,b,c,d,11.50%\n")
+    aaii = _api({"diff": "11.50%", "as_of": "2099-01-01", "source": "aaii.com", "stale": False})
 
     def side_effect(url, *a, **kw):
+        if "/api/aaii" in url:
+            return aaii
         if "vercel.app" in url:
             return DASH_OK
         if "10Y8Jus8" in url:
             return nsb
-        if "1zQQ2am1" in url:
-            return aaii
         return fr
 
     with patch("bot.fetchers.requests.get", side_effect=side_effect):

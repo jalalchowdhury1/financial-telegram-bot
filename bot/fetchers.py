@@ -62,6 +62,68 @@ def fetch_vix_row() -> tuple:
     return _vix_from_sheet()
 
 
+AAII_LEGEND = "(G | >20% | 6mths out)"
+AAII_MAX_AGE_DAYS = 10   # AAII publishes weekly; older than this is stale no matter what the API says
+
+
+def fetch_aaii(retries: int = 2, timeout: int = 10, backoff: float = 2.0) -> Optional[Dict[str, Any]]:
+    """
+    Read the AAII bull-bear spread from the dashboard's /api/aaii.
+
+    Returns {"diff": str, "as_of": str, "stale": bool, "source": str} or None when
+    the value cannot be obtained (503, timeout, bad payload). Retries network
+    errors and 5xx `retries` times; a malformed 200 is not retried.
+    Never raises — the brief must survive an AAII outage.
+
+    stale is True if the API says so, if the flag is missing/non-bool, or if
+    as_of is older than AAII_MAX_AGE_DAYS (belt and braces: old data must never
+    be shown as fresh).
+    """
+    from datetime import date, datetime
+
+    url = URLS['DASHBOARD_AAII']
+    for attempt in range(retries + 1):
+        try:
+            r = requests.get(url, timeout=timeout)
+            if r.status_code >= 500:
+                raise requests.HTTPError(f"HTTP {r.status_code}")
+            r.raise_for_status()
+            j = r.json()
+            if not isinstance(j, dict):
+                logging.warning("AAII: payload is not an object")
+                return None
+            diff = j.get('diff')
+            if not isinstance(diff, str) or not diff.strip():
+                logging.warning("AAII: payload has no usable diff")
+                return None
+            as_of = j.get('as_of') if isinstance(j.get('as_of'), str) else ""
+            stale = j.get('stale') is not False
+            try:
+                age = (date.today() - datetime.strptime(as_of, "%Y-%m-%d").date()).days
+                if age > AAII_MAX_AGE_DAYS:
+                    stale = True
+            except ValueError:
+                stale = True
+            return {"diff": diff.strip(), "as_of": as_of, "stale": stale,
+                    "source": str(j.get('source') or "")}
+        except Exception as e:
+            logging.warning("AAII: fetch attempt %d/%d failed (%s)", attempt + 1, retries + 1, e)
+            if attempt < retries:
+                time.sleep(backoff * (attempt + 1))
+    return None
+
+
+def format_aaii_line(aaii: Optional[Dict[str, Any]], clean=lambda v: v) -> str:
+    """The brief's AAII line. Identical to the old sheet line when fresh."""
+    if not aaii:
+        return f"🔸 AAII Diff : ⚠️ AAII unavailable {AAII_LEGEND}"
+    val = clean(aaii["diff"])
+    if aaii.get("stale"):
+        as_of = aaii.get("as_of") or "unknown date"
+        return f"🔸 AAII Diff : {val} ⚠️ STALE (as of {as_of}) {AAII_LEGEND}"
+    return f"🔸 AAII Diff : {val} {AAII_LEGEND}"
+
+
 def fetch_google_sheet_indicators() -> str:
     """
     Fetch custom indicator values from assigned Google Sheets via CSV export.
@@ -79,10 +141,9 @@ def fetch_google_sheet_indicators() -> str:
         reader_fr = list(csv.reader(StringIO(r_fr.text)))
         front_runner_val = reader_fr[1][0].strip().split('\n')[0].strip()
 
-        # 3. AAII Diff
-        r_aaii = requests.get(URLS['AAII'], timeout=10)
-        reader_aaii = list(csv.reader(StringIO(r_aaii.text)))
-        aaii_val = reader_aaii[1][4].strip()
+        # 3. AAII Diff — from the dashboard's /api/aaii. Isolated: an AAII
+        #    failure only degrades its own line, never the whole block.
+        aaii = fetch_aaii()
 
         # 4. VIX — from the dashboard (single source of truth for the
         #    fear/greed tag), sheet as graceful fallback. See fetch_vix_row.
@@ -107,7 +168,7 @@ def fetch_google_sheet_indicators() -> str:
         output = (
             f"🛡️ NotSoBoring : {clean_val(not_so_boring_val)}\n\n"
             f"🔑 FrontRunner : {clean_val(front_runner_val)}\n\n"
-            f"🔸 AAII Diff : {clean_val(aaii_val)} (G | >20% | 6mths out)\n\n"
+            f"{format_aaii_line(aaii, clean_val)}\n\n"
             # fear_greed_status is NOT passed through clean_val: the tag's
             # trailing digits are its score (GREED13 = VIX ~13% under its
             # 50-day mean), not the spreadsheet artifact clean_val exists to

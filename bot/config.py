@@ -30,7 +30,6 @@ FRED_SERIES = {
 URLS = {
     'NOT_SO_BORING': "https://docs.google.com/spreadsheets/d/10Y8Jus8_fMwH9H69vWh7thSzl2hH34Ri3BRbDw_GEgw/export?format=csv&gid=0",
     'FRONT_RUNNER': "https://docs.google.com/spreadsheets/d/1vdlPNlT6gRpzMHuQUT7olqUNb455CQM3ab4wPuCE5R0/export?format=csv&gid=1668420064",
-    'AAII': "https://docs.google.com/spreadsheets/d/1zQQ2am1yhzTwY7nx8xPak4Q0WoNMwxWj7Ekr-fDEIF4/export?format=csv&gid=0",
     'VIX': "https://docs.google.com/spreadsheets/d/1vdlPNlT6gRpzMHuQUT7olqUNb455CQM3ab4wPuCE5R0/export?format=csv&gid=790638481",
     'FEAR_GREED': "https://production.dataviz.cnn.io/index/fearandgreed/graphdata",
     # The dashboard's own sheets endpoint. PRIMARY source for the brief's VIX row:
@@ -42,6 +41,10 @@ URLS = {
     # Rubber Band Radar: five regime dials computed nightly on the Mac mini and
     # relayed by the dashboard. One optional line in the brief; never fails it.
     'DASHBOARD_RUBBER_BAND': "https://financial-telegram-bot-beryl.vercel.app/api/rubber-band",
+    # AAII bull-bear spread for the brief's AAII line. Replaced the old Google-Sheet
+    # CSV (fed by a retired leaked key) on 2026-09-27. Contract: 200 {bull, neutral,
+    # bear, diff, as_of, source, stale} | 503 {error}. See bot/fetchers.py:fetch_aaii.
+    'DASHBOARD_AAII': "https://financial-telegram-bot-beryl.vercel.app/api/aaii",
     # SPY data-tier sources used by bot/fetchers.py (fetch_spy_with_fallback /
     # fetch_spy_daily_move). Previously missing → those tiers KeyError'd and were dead
     # (AGENTS.md §4). URLs mirror dashboard/lib/constants.js so bot + dashboard agree.
