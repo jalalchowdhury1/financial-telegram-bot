@@ -1,5 +1,5 @@
 import {
-    change, sigmaOf, buildMoveDigest, collectMoves, fmtMove, roundsToZero, bizDaysBetween, marketDateOf,
+    change, sigmaOf, buildMoveDigest, collectMoves, fmtMove, roundsToZero, bizDaysBetween, marketDateOf, movedWhen,
     FG_SIGMA_BAKED, TOP_N, SHEET_MOVERS,
 } from '../whatMoved';
 
@@ -130,4 +130,10 @@ test('collectMoves: F&G from the VIX proxy or a stale cache is never ranked', ()
     const f = feeds();
     f.fg._meta.source = 'RapidAPI';
     expect(collectMoves(f, NOW).find((x) => x.key === 'fg')).toBeDefined();
+});
+
+test('movedWhen: "today" on the market date, else its weekday', () => {
+    expect(movedWhen(feeds(), NOW)).toBe('Fri'); // Sat, market date Fri 2026-09-25
+    expect(movedWhen(feeds(), new Date('2026-09-25T18:00:00Z'))).toBe('today');
+    expect(movedWhen({}, NOW)).toBeNull();
 });

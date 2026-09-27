@@ -89,3 +89,24 @@ it('a feed that fails on refresh keeps the card it already had', async () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh all data' })).not.toBeDisabled());
     expect(screen.getByText('$612.34')).toBeInTheDocument();
 });
+
+it('👋 since last visit: compares against the last visit, and a tab coming back never reads "flat" before the refresh lands', async () => {
+    const real = Date.now.bind(Date);
+    const at = real() - 2 * 3600e3;
+    window.localStorage.setItem('fd:seen:v1', JSON.stringify({ v: { spy: { x: 600, at } }, p: {} }));
+    const extra = { '/api/market-extra': Promise.resolve({ status: 200, json: async () => ({}) }) };
+    mockRoutes(extra);
+    render(<Dashboard />);
+    await waitFor(() => expect(screen.getByRole('note').textContent).toMatch(/SPY \+2\.1%/)); // 600 → 612.34
+
+    // Two hours hidden, then back: the old numbers are still on screen, the refresh is in flight.
+    let land;
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh all data' })).not.toBeDisabled());
+    mockRoutes({ ...extra, '/api/spy': new Promise((r) => { land = r; }) });
+    jest.spyOn(Date, 'now').mockImplementation(() => real() + 2 * 3600e3);
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+    expect(screen.queryByRole('note')).toBeNull(); // not "SPY flat": nothing new has landed yet
+
+    await act(async () => { land({ status: 200, json: async () => ({ ...spyPayload, current: 624.58 }) }); });
+    await waitFor(() => expect(screen.getByRole('note').textContent).toMatch(/SPY \+2\.0%/)); // 612.34 → 624.58
+});

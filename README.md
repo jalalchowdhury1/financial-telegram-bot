@@ -10,7 +10,8 @@ A personal market intelligence tool:
   markets, and a factor row (value, momentum, quality, small caps, low vol vs the market,
   1 month to 40 years). It opens instantly from the last visit's numbers (tagged 🕐 until
   live ones land), leads with a "What moved" line (the 5 most unusual moves since the last
-  close), and on a phone has pull-to-refresh, a ticking "updated 3 min ago" and an offline
+  close) and a "Since you last looked" line, shows whether the market is open, draws a
+  90-day chart when you tap a number, and on a phone has pull-to-refresh, a ticking "updated 3 min ago" and an offline
   banner. Deployed on Vercel: <https://financial-telegram-bot-beryl.vercel.app/>
 
 Data comes from a resilient multi-source waterfall (yfinance, Polygon, Finnhub, Stooq,

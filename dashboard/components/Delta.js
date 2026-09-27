@@ -10,7 +10,9 @@
  * scroll-into-view is deliberate — scanning is exactly when the owner is looking —
  * and nothing pulses forever, so a page with four marks never strobes.
  *
- * Double-click the value (or click/tap the dot) to see what it was before.
+ * Tap / click the value (or the dot) to see what it was before — and, for any number
+ * with history-sheet data (`chartKey`), its 90-day chart (2026-09-26). A number with a
+ * chart but no mark gets a faint dotted underline so it reads as tappable.
  *
  * THE POPOVER IS PORTALLED TO document.body AND POSITIONED FIXED. It must not live
  * inside the card: `.card` sets backdrop-filter, which creates a stacking context, so
@@ -19,6 +21,7 @@
  */
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { useChart } from './MarkProvider';
 
 const MAX_SPARK = 8;
 
@@ -49,6 +52,42 @@ function Spark({ runs, dir }) {
             <circle cx={x(pts.length - 1)} cy={y(pts[pts.length - 1])} r="2.6" fill={stroke} />
             <circle cx={x(pts.length - 2)} cy={y(pts[pts.length - 2])} r="1.8" fill="rgba(148,163,184,.75)" />
         </svg>
+    );
+}
+
+const fmtNum = (v) => v.toLocaleString('en-US', { maximumFractionDigits: Math.abs(v) >= 100 ? 0 : 2 });
+
+/**
+ * 90-day line of daily sheet snapshots: low / high, first → last, and the dates. Drawn in a
+ * neutral colour: "up" is bad news for VIX, claims or spreads, so green/red would mislead.
+ */
+export function SeriesChart({ chart, format }) {
+    const pts = chart?.points || [];
+    if (pts.length < 2) return null;
+    const f = (v) => { try { return format ? format(v) : fmtNum(v); } catch { return fmtNum(v); } };
+    const w = 218, h = 64;
+    const t0 = Date.parse(`${pts[0].date}T00:00:00Z`);
+    const span = Math.max(1, Date.parse(`${pts[pts.length - 1].date}T00:00:00Z`) - t0);
+    const vals = pts.map((p) => p.value);
+    const lo = Math.min(...vals), hi = Math.max(...vals), vr = (hi - lo) || 1;
+    const x = (p) => ((Date.parse(`${p.date}T00:00:00Z`) - t0) / span) * (w - 6) + 3;
+    const y = (v) => h - 4 - ((v - lo) / vr) * (h - 8);
+    const first = pts[0], last = pts[pts.length - 1];
+    return (
+        <div className="series-chart">
+            <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" aria-hidden="true">
+                <polyline points={pts.map((p) => `${x(p).toFixed(1)},${y(p.value).toFixed(1)}`).join(' ')}
+                    fill="none" stroke="var(--mark, #22d3ee)" strokeWidth="1.6" strokeLinejoin="round" />
+                <circle cx={x(last)} cy={y(last.value)} r="2.6" fill="var(--mark, #22d3ee)" />
+            </svg>
+            <div className="series-range">
+                <span>low {f(lo)}</span><span>high {f(hi)}</span>
+            </div>
+            <div className="series-dates">
+                <span>{fmtDate(first.date)}: {f(first.value)}</span>
+                <span>{fmtDate(last.date)}: {f(last.value)}</span>
+            </div>
+        </div>
     );
 }
 
@@ -87,7 +126,7 @@ function fmtDelta(mark) {
  * @param {string=}  props.format    how the PREVIOUS value should be rendered (defaults to toString)
  * @param {node}     props.children  the already-formatted current value
  */
-export default function Delta({ mark, format, className, children }) {
+export default function Delta({ mark, format, className, children, chartKey, raw }) {
     const btnRef = useRef(null);
     const popRef = useRef(null);
     const [open, setOpen] = useState(false);
@@ -95,6 +134,7 @@ export default function Delta({ mark, format, className, children }) {
     // settle into the rested state immediately rather than never showing the mark.
     const [seen, setSeen] = useState(() => typeof IntersectionObserver === 'undefined');
     const marked = !!mark;
+    const chart = useChart(chartKey, raw);
 
     // announce once, on entering view
     useEffect(() => {
@@ -134,7 +174,51 @@ export default function Delta({ mark, format, className, children }) {
         };
     }, [open, reposition]);
 
-    if (!marked) return <span className={className}>{children}</span>;
+    if (!marked && !chart) return <span className={className}>{children}</span>;
+
+    // One tap toggles. The 2nd/3rd click of a double/triple click is ignored (e.detail), so a
+    // double-click opens once instead of open → close (→ open, replaying the animation).
+    const toggle = (e) => { if (e?.detail > 1) return; setOpen((o) => !o); };
+    const chartBlock = chart && (
+        <>
+            {marked && <div className="mark-pop-sep" />}
+            <div className="mark-pop-eyebrow">{chart.label} · 90 days</div>
+            <SeriesChart chart={chart} format={format} />
+            <div className="mark-pop-foot">daily snapshots · history sheet</div>
+        </>
+    );
+    const popover = (body) => (open && typeof document !== 'undefined' ? createPortal(
+        <div
+            ref={popRef}
+            className="mark-pop"
+            role="dialog"
+            aria-label={chart ? `${chart.label}, last 90 days` : 'Previous value'}
+            onClick={(e) => e.stopPropagation()}
+        >
+            {body}
+        </div>,
+        document.body,
+    ) : null);
+
+    if (!marked) {
+        return (
+            <span
+                ref={btnRef}
+                role="button"
+                tabIndex={0}
+                className={`chartable ${className || ''}`}
+                data-open={open ? 'true' : undefined}
+                aria-haspopup="dialog"
+                aria-expanded={open}
+                title="Tap for the 90-day chart"
+                onClick={toggle}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } }}
+            >
+                {children}
+                {popover(chartBlock)}
+            </span>
+        );
+    }
 
     const isMove = mark.kind === 'move';
     const prevText = format ? format(mark.prev) : String(mark.prev);
@@ -150,8 +234,9 @@ export default function Delta({ mark, format, className, children }) {
             className={`mark ${className || ''}`}
             data-mark={mark.kind}
             data-open={open ? 'true' : undefined}
-            aria-label={`${prevText} before this change. Activate to see details.`}
-            onDoubleClick={(e) => { e.preventDefault(); setOpen((o) => !o); }}
+            aria-label={`${prevText} before this change. Activate to see details${chart ? ' and the 90-day chart' : ''}.`}
+            aria-expanded={open}
+            onClick={toggle}
             onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen((o) => !o); }
             }}
@@ -159,19 +244,13 @@ export default function Delta({ mark, format, className, children }) {
             <span className={`mark-num${seen ? ' seen' : ''}`}>{children}</span>
             <span
                 className={`mark-glyph${seen ? ' seen' : ''}`}
-                onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}
+                onClick={(e) => { e.stopPropagation(); toggle(e); }}
             >
                 {isMove ? (mark.dir > 0 ? '⌃' : '⌄') : <span className="mark-dot" />}
             </span>
 
-            {open && typeof document !== 'undefined' && createPortal(
-                <div
-                    ref={popRef}
-                    className="mark-pop"
-                    role="dialog"
-                    onClick={(e) => e.stopPropagation()}
-                    onDoubleClick={(e) => e.stopPropagation()}
-                >
+            {popover(
+                <>
                     <div className="mark-pop-eyebrow">{isMove ? 'Yesterday' : 'Before this print'}</div>
                     <div className="mark-pop-row">
                         <span className="mark-pop-prev">{prevText}</span>
@@ -184,8 +263,8 @@ export default function Delta({ mark, format, className, children }) {
                     <div className="mark-pop-foot">
                         {isMove ? 'last sessions' : `last ${Math.min(mark.runs?.length || 0, MAX_SPARK)} prints`}
                     </div>
-                </div>,
-                document.body,
+                    {chartBlock}
+                </>,
             )}
         </span>
     );

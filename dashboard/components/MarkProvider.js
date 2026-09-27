@@ -10,17 +10,35 @@
  * They never see where the baseline came from.
  */
 import { createContext, useContext, useMemo } from 'react';
-import { markFor, todayET } from '../lib/marks';
+import { markFor, todayET, chartFor } from '../lib/marks';
 
 const MarkContext = createContext({ entries: {}, today: null });
+// 📈 90-day series (/api/history `series`). Its own context and its own prop: charts stay
+// on while marks are off (a saved copy), since a chart is labelled with its own dates.
+const SeriesContext = createContext(null);
 
-export function MarkProvider({ history, children }) {
+export function MarkProvider({ history, series = null, children }) {
     const value = useMemo(() => ({
         entries: history?.metrics || {},
         today: history?.today || todayET(),
     }), [history]);
 
-    return <MarkContext.Provider value={value}>{children}</MarkContext.Provider>;
+    return (
+        <MarkContext.Provider value={value}>
+            <SeriesContext.Provider value={series}>{children}</SeriesContext.Provider>
+        </MarkContext.Provider>
+    );
+}
+
+/** The 90-day chart for `key`, or null (no history, or not the number on screen). */
+export function useChart(key, live) {
+    const series = useContext(SeriesContext);
+    return useMemo(() => {
+        // An N/A or unavailable number (null, '', NaN) gets no chart: the sheet's old value
+        // must not stand in for a number the card deliberately hides.
+        if (live == null || live === '') return null;
+        try { return chartFor(series, key, Number(live)); } catch { return null; }
+    }, [series, key, live]);
 }
 
 /**

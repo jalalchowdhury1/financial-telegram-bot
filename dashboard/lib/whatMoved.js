@@ -129,6 +129,13 @@ export function marketDateOf({ spy, vol } = {}) {
     return ds.length ? ds[ds.length - 1] : null;
 }
 
+/** "today" when the market date is today in New York, else its weekday ("Fri"); null = unknown. */
+export function movedWhen(feeds, now = new Date()) {
+    const d = marketDateOf(feeds);
+    if (!d) return null;
+    return d === todayET(now) ? 'today' : weekday(d);
+}
+
 const prices = (hist) => (Array.isArray(hist) ? hist.map((p) => num(p?.price)) : []);
 
 /** SPY / 10Y / Oil / Gold / BTC: the payload's own dailyChange + history. */

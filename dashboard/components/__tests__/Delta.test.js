@@ -44,11 +44,11 @@ describe('rendering', () => {
 });
 
 describe('the reveal', () => {
-    test('double-click opens exactly one popover, and it mounts on document.body', () => {
+    test('a tap opens exactly one popover, and it mounts on document.body', () => {
         const { container } = render(<Delta mark={printMark}>5.0%</Delta>);
         expect(document.querySelectorAll('.mark-pop')).toHaveLength(0);
 
-        fireEvent.doubleClick(container.querySelector('[data-mark]'));
+        fireEvent.click(container.querySelector('[data-mark]'));
         const pops = document.querySelectorAll('.mark-pop');
         expect(pops).toHaveLength(1);
 
@@ -59,7 +59,7 @@ describe('the reveal', () => {
 
     test('shows the previous value, the delta, and how long it held', () => {
         const { container } = render(<Delta mark={printMark} format={(v) => `${v.toFixed(2)}%`}>5.0%</Delta>);
-        fireEvent.doubleClick(container.querySelector('[data-mark]'));
+        fireEvent.click(container.querySelector('[data-mark]'));
         expect(screen.getByText('8.19%')).toBeInTheDocument();
         expect(screen.getByText(/held 22 days/)).toBeInTheDocument();
         expect(screen.getByText(/Jun 3/)).toBeInTheDocument();
@@ -68,7 +68,7 @@ describe('the reveal', () => {
 
     test('a move mark explains itself as a 2 sigma move, not a print', () => {
         const { container } = render(<Delta mark={moveMark}>1.50</Delta>);
-        fireEvent.doubleClick(container.querySelector('[data-mark]'));
+        fireEvent.click(container.querySelector('[data-mark]'));
         expect(screen.getByText('Yesterday')).toBeInTheDocument();
         expect(screen.getByText(/2σ of its own daily range/)).toBeInTheDocument();
     });
@@ -79,25 +79,34 @@ describe('the reveal', () => {
         expect(document.querySelectorAll('.mark-pop')).toHaveLength(1);
     });
 
-    test('double-clicking again closes it', () => {
+    test('tapping again closes it', () => {
         const { container } = render(<Delta mark={printMark}>5.0%</Delta>);
         const trigger = container.querySelector('[data-mark]');
-        fireEvent.doubleClick(trigger);
+        fireEvent.click(trigger);
         expect(document.querySelectorAll('.mark-pop')).toHaveLength(1);
-        fireEvent.doubleClick(trigger);
+        fireEvent.click(trigger);
         expect(document.querySelectorAll('.mark-pop')).toHaveLength(0);
+    });
+
+    test('a real double-click (click, click, dblclick) leaves it open, once', () => {
+        const { container } = render(<Delta mark={printMark}>218</Delta>);
+        const t = container.querySelector('[data-mark]');
+        fireEvent.click(t, { detail: 1 });
+        fireEvent.click(t, { detail: 2 });
+        fireEvent.doubleClick(t);
+        expect(document.querySelectorAll('.mark-pop')).toHaveLength(1);
     });
 
     test('Escape closes it', () => {
         const { container } = render(<Delta mark={printMark}>5.0%</Delta>);
-        fireEvent.doubleClick(container.querySelector('[data-mark]'));
+        fireEvent.click(container.querySelector('[data-mark]'));
         fireEvent.keyDown(document, { key: 'Escape' });
         expect(document.querySelectorAll('.mark-pop')).toHaveLength(0);
     });
 
     test('a click outside closes it, a click inside does not', () => {
         const { container } = render(<Delta mark={printMark}>5.0%</Delta>);
-        fireEvent.doubleClick(container.querySelector('[data-mark]'));
+        fireEvent.click(container.querySelector('[data-mark]'));
         fireEvent.mouseDown(document.querySelector('.mark-pop'));
         expect(document.querySelectorAll('.mark-pop')).toHaveLength(1);
         fireEvent.mouseDown(document.body);
@@ -114,14 +123,14 @@ describe('the reveal', () => {
 describe('resilience', () => {
     test('omits the sparkline rather than breaking when there are too few points', () => {
         const { container } = render(<Delta mark={{ ...printMark, runs: [5.0] }}>5.0%</Delta>);
-        fireEvent.doubleClick(container.querySelector('[data-mark]'));
+        fireEvent.click(container.querySelector('[data-mark]'));
         expect(document.querySelector('.mark-pop')).toBeInTheDocument();
         expect(document.querySelector('.mark-spark')).toBeNull();
     });
 
     test('renders with no runs array at all', () => {
         const { container } = render(<Delta mark={{ ...printMark, runs: undefined }}>5.0%</Delta>);
-        expect(() => fireEvent.doubleClick(container.querySelector('[data-mark]'))).not.toThrow();
+        expect(() => fireEvent.click(container.querySelector('[data-mark]'))).not.toThrow();
         expect(document.querySelector('.mark-pop')).toBeInTheDocument();
     });
 });
@@ -162,5 +171,39 @@ describe('collectLiveValues freshness', () => {
 
     test('survives entirely absent payloads', () => {
         expect(() => collectLiveValues(null, null, null)).not.toThrow();
+    });
+});
+
+describe('📈 tap for the 90-day chart', () => {
+    const { MarkProvider } = require('../MarkProvider');
+    const series = { from: '2026-06-29', days: 90, v: { claims: Array.from({ length: 90 }, (_, i) => 200 + (i % 5)) } };
+    const wrap = (ui) => render(<MarkProvider history={null} series={series}>{ui}</MarkProvider>);
+
+    test('a number with history but no mark is tappable and opens its chart', () => {
+        wrap(<Delta mark={null} chartKey="claims" raw={204}>204</Delta>);
+        const btn = screen.getByRole('button');
+        expect(btn).toHaveClass('chartable');
+        fireEvent.click(btn);
+        const pop = document.querySelector('.mark-pop');
+        expect(pop.textContent).toMatch(/Initial Claims \(4wk\) · 90 days/);
+        expect(pop.textContent).toMatch(/low 200/);
+        expect(pop.textContent).toMatch(/Sep 26: 204/);
+        expect(pop.querySelector('svg polyline')).not.toBeNull();
+        fireEvent.click(btn);
+        expect(document.querySelector('.mark-pop')).toBeNull();
+    });
+
+    test('a marked number opens with a single tap and shows the chart under the mark', () => {
+        const { container } = wrap(<Delta mark={printMark} chartKey="claims" raw={204}>204</Delta>);
+        fireEvent.click(container.querySelector('[data-mark]'));
+        const pop = document.querySelector('.mark-pop');
+        expect(pop.textContent).toMatch(/Before this print/);
+        expect(pop.textContent).toMatch(/90 days/);
+    });
+
+    test('no history, or history of a different basis → plain text, not tappable', () => {
+        wrap(<Delta mark={null} chartKey="sahmRule" raw={0.03}>0.03</Delta>);
+        wrap(<Delta mark={null} chartKey="claims" raw={204000}>204k</Delta>);
+        expect(screen.queryByRole('button')).toBeNull();
     });
 });

@@ -16,14 +16,16 @@
  * back empty, which renders NO marks and leaves every number exactly as it is today. This
  * feature must fail invisible — a wrong mark is far worse than a missing one.
  *
- * Also serves `moves` — recent snapshots + σ for the "What moved" strip (lib/whatMoved.js).
+ * Also serves `moves` — backup σ (VIX, F&G) for the "What moved" strip (lib/whatMoved.js),
+ * and `series` — 90 days of every sheet metric for the tap-a-number chart (~20 KB;
+ * lib/marks.js buildChartSeries). Both ride the same last-known-good as the digest.
  *
  * Fault gate: `?_fail=history_sheet`.
  */
 import { serve } from '../../../lib/store';
 import { faultsFrom, trip } from '../../../lib/faults';
 import { parseCsvLine } from '../../../lib/sheetLkg';
-import { buildDigest } from '../../../lib/marks';
+import { buildDigest, buildChartSeries } from '../../../lib/marks';
 import { buildMoveDigest } from '../../../lib/whatMoved';
 
 const SHEET_CSV =
@@ -81,8 +83,11 @@ export async function GET(request) {
         const count = Object.keys(digest.metrics).length;
         return {
             ...digest,
-            // "What moved" strip: recent snapshots + σ for VIX, Dollar, USD/BDT, F&G.
+            // "What moved" strip: backup σ for VIX and F&G.
             moves: buildMoveDigest(rows),
+            // Tap a number → its 90-day chart. A failure here costs only the charts, never
+            // the fresh digest above (no charts = plain, untappable numbers).
+            series: (() => { try { return buildChartSeries(rows); } catch { return null; } })(),
             _meta: {
                 source: 'Google Sheet (financial-dashboard-history, Sheet1)',
                 hasErrors: false,

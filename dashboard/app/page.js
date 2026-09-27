@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useLayoutEffect, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react';
 import ErrorBoundary from '../components/ErrorBoundary';
 import { freshnessNote, formatAsOf } from '../lib/freshness';
 
@@ -25,6 +25,9 @@ import JumpNav from '../components/JumpNav';
 import WhatMoved from '../components/WhatMoved';
 import { UpdatedAgo, OfflineBanner, PullToRefresh } from '../components/PhonePolish';
 import { readSnap, writeSnap, savedLabel, purgeOldSnaps, isLiveAnswer } from '../lib/snapshot';
+import { readSeen, writeSeen, mergeSeen, pickSeen, SINCE_MIN_GAP_MS } from '../lib/lastVisit';
+import SinceLastVisit from '../components/SinceLastVisit';
+import MarketClock from '../components/MarketClock';
 
 // useLayoutEffect warns during the static prerender; on the server nothing runs anyway.
 const useIsoLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
@@ -62,7 +65,7 @@ function HeroValue({ markKey, raw, stale, format, style, children }) {
     const mark = useMark(markKey, raw);
     return (
         <div className="hero-price" style={style}>
-            <Delta mark={stale ? null : mark} format={format}>{children}</Delta>
+            <Delta mark={stale ? null : mark} format={format} chartKey={markKey} raw={raw}>{children}</Delta>
         </div>
     );
 }
@@ -93,6 +96,13 @@ export default function Dashboard() {
     const [savedAt, setSavedAt] = useState({});
     const savedRef = useRef({});
     const [updatedAt, setUpdatedAt] = useState(null); // ms, drives "3 min ago"
+    // 👋 The numbers seen on the last visit (lib/lastVisit.js), read once before any live
+    // answer can overwrite them; re-read when the tab comes back after an hour away. `at`
+    // = when it was read: only feeds that land live AFTER it count as seen on this visit.
+    const [seenBase, setSeenBase] = useState({ rec: null, at: 0 });
+    const readBase = () => setSeenBase({ rec: readSeen(), at: Date.now() });
+    // feed key → ms its last LIVE answer landed (the time a seen number is stamped with).
+    const [landedAt, setLandedAt] = useState({});
     // Refresh behaviour: `loading` is the FIRST load only (the header badge reads
     // "Loading live data..." until every feed has answered once); cards key off their
     // own feed via `pending` below. Every
@@ -128,6 +138,7 @@ export default function Dashboard() {
     // Paint the last visit's numbers before the first frame; live ones replace them feed
     // by feed. Runs before fetchAll (a layout effect precedes every plain effect).
     useIsoLayoutEffect(() => {
+        readBase();
         purgeOldSnaps();
         const got = {};
         for (const { key } of FEEDS) {
@@ -163,6 +174,7 @@ export default function Dashboard() {
                     live++;
                     setters[key](res);
                     dropSaved(key);
+                    setLandedAt((p) => ({ ...p, [key]: Date.now() }));
                     setTimeout(() => writeSnap(key, res), 0); // off the render path
                 } else if (res != null && !(key in savedRef.current)) {
                     setters[key](res); // no saved copy: the card shows the route's own degraded state
@@ -257,7 +269,10 @@ export default function Dashboard() {
             if (!document.hidden && navigator.onLine !== false) fetchAll();
         }, REFRESH_MS);
         const onVisible = () => {
-            if (!document.hidden && navigator.onLine !== false && Date.now() - lastFetchRef.current > REFRESH_MS) fetchAll();
+            if (document.hidden) return;
+            // Back after an hour or more = a new visit: compare against what was last seen.
+            if (Date.now() - lastFetchRef.current >= SINCE_MIN_GAP_MS) readBase();
+            if (navigator.onLine !== false && Date.now() - lastFetchRef.current > REFRESH_MS) fetchAll();
         };
         document.addEventListener('visibilitychange', onVisible);
         return () => {
@@ -295,10 +310,21 @@ export default function Dashboard() {
         return l ? { '--saved': JSON.stringify(l) } : null;
     };
     const anySaved = saved(...Object.keys(savedAt));
+    // 👋 What is on screen now, LIVE only and landed on THIS visit — a saved copy, or the
+    // numbers left on screen while the tab was hidden, are not a new look.
+    const liveOnly = (key, v) => (!(key in savedAt) && landedAt[key] > seenBase.at ? v : null);
+    const seenNow = useMemo(() => pickSeen(
+        { spy: liveOnly('spy', spy), vol: liveOnly('vol', vol), fg: liveOnly('fg', fg), extra: liveOnly('extra', extraMarkets) },
+        collectLiveValues(liveOnly('fred', fred), liveOnly('extra', extraMarkets), liveOnly('sheets', sheets)),
+    ), [spy, vol, fg, extraMarkets, fred, sheets, savedAt, landedAt, seenBase.at]); // eslint-disable-line react-hooks/exhaustive-deps
+    useEffect(() => {
+        if (!updatedAt || !Object.values(seenNow.v).some((x) => x != null)) return;
+        writeSeen(mergeSeen(readSeen(), seenNow, Date.now(), landedAt));
+    }, [seenNow, updatedAt]); // eslint-disable-line react-hooks/exhaustive-deps
     const marksOff = MARK_INPUTS.some((k) => k in savedAt);
 
     return (
-        <MarkProvider history={marksOff ? null : history}>
+        <MarkProvider history={marksOff ? null : history} series={history?.series || null}>
         <OfflineBanner onBack={refreshNow} since={anySaved || lastUpdated?.slice(11)} />
         <PullToRefresh onRefresh={refreshNow} busy={refreshing} />
         <div className="dashboard">
@@ -334,12 +360,17 @@ export default function Dashboard() {
                         </svg>
                     </button>
                 </div>
+                {/* 🕰️ NYSE open/closed + countdown, computed on the device */}
+                <div className="mkt-clock-row"><ErrorBoundary><MarketClock /></ErrorBoundary></div>
                 {fred?._meta?.fetchedAt && (
                     <p className="subtitle" style={{ fontSize: '0.7rem', opacity: 0.6, marginTop: '6px' }}>
-                        Economic data as of {new Date(fred._meta.fetchedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}<span className="hide-sm"> · refreshes every 30 min</span> · tap any number for its date
+                        Economic data as of {new Date(fred._meta.fetchedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}<span className="hide-sm"> · refreshes every 30 min</span> · tap a label for its date, a number for its 90-day chart
                     </p>
                 )}
             </header>
+
+            {/* 👋 SINCE LAST VISIT — what changed since the numbers you last saw (≥ 1 h ago) */}
+            <ErrorBoundary resetKey={refreshTick}><SinceLastVisit base={seenBase.rec} live={seenNow} /></ErrorBoundary>
 
             {/* 📈 WHAT MOVED — the 5 most unusual moves since the last close; tap → card */}
             <ErrorBoundary resetKey={refreshTick}>

@@ -43,7 +43,7 @@ export default function CustomIndicatorBar({ sheets, loading }) {
                     const dateStr = targetDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
                     return (
                         <>
-                            <Delta mark={aaiiMark} className="value"
+                            <Delta mark={aaiiMark} className="value" chartKey="aaiiDiff" raw={parseFloat(sheets?.AAIIDiff)}
                                 format={(v) => `${v > 0 ? '+' : ''}${v.toFixed(2)}%`}>
                                 <span style={{ color: isBullish ? 'var(--green)' : 'var(--text-primary)' }}>
                                     {sheets.AAIIDiff}

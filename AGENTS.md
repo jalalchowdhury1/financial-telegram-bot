@@ -330,6 +330,65 @@ answered. Three fixes, each safe on its own:
     zoomed-in page (`visualViewport.scale > 1`) cancels the pull. `html { overscroll-behavior-y:
     contain }` stops Android Chrome's own pull-to-reload from firing too.
 
+### 🕰️ Market clock · 👋 Since last visit · 📈 Tap for 90 days — 2026-09-26
+- **Market clock (`lib/marketClock.js` + `components/MarketClock.js`).** A header pill:
+  "Open · closes in 2h 10m", "Pre-market · opens in 45m" (from 4:00 ET; before that it is
+  "Closed · opens in …"), "Closed (Thanksgiving) · opens Fri 9:30 ET". Computed on the device from the NYSE calendar: no network, nothing to
+  fail. All maths in America/New_York (Intl), so it is right from any time zone. Opens
+  more than 18 h away read as weekday + 9:30 ET instead of a countdown. It renders
+  nothing until mounted (the page is static-prerendered; a build-time clock would
+  mismatch), ticks every 30 s, and catches up when the tab becomes visible.
+  - **The holiday + 1 pm early-close calendar is hand-copied** from
+    nyse.com/markets/hours-calendars (read 2026-09-26, covers 2026–2028). Past
+    `CALENDAR_THROUGH` the weekday rule still runs and the pill says "≈". The REMINDER
+    test in `lib/__tests__/marketClock.test.js` fails once the calendar reaches less than
+    a year ahead (i.e. from 2028-01-01): copy the next year from nyse.com, bump
+    `CALENDAR_THROUGH`.
+  - "What moved" names its session: "What moved · today" when the market date (see
+    above) is today in ET, else its weekday ("· Fri" all weekend) — `movedWhen()`.
+- **Since last visit (`lib/lastVisit.js` + `components/SinceLastVisit.js`).** On open, one
+  line: "👋 Since Thu 09:05 · SPY +1.3% · VIX −8.0% · F&G +6 · 10Y −5bp · 🆕 Initial
+  Claims". ✕ hides it for that visit.
+  - Record `fd:seen:v1` in localStorage: plain numbers, per-field `{x, at}`. **Not
+    deploy-keyed** (unlike `fd:snap:v1:<sha>:`), so a deploy does not wipe it. `readSeen`
+    drops junk fields; every read/write is try/catch.
+  - Only LIVE numbers landed on THIS visit are used or recorded: `liveOnly` passes a feed
+    as null unless its live answer landed after the baseline was read (`landedAt[key] >
+    seenBase.at`). Without this, a tab coming back after an hour compared the numbers
+    still on screen with themselves ("SPY flat") and re-stamped them as new (caught in
+    review 2026-09-26; `app/__tests__/page.test.js` guards it). Each field is stamped with
+    the time ITS feed landed (`mergeSeen(..., landedAt)`, `feedOf`), never a re-render's. F&G only from CNN/RapidAPI; prints only from
+    `collectLiveValues` (already drops stale), only `SHEET_METRICS` kind 'print'.
+  - The baseline is read once on open, and again when the tab comes back after ≥ 1 h
+    hidden. Shown only when that visit was ≥ 1 h ago (a reload is not a visit); a visit a
+    week or more ago is dated ("Thu Sep 17 09:05"). Each
+    field must have been seen within 1 h of SPY's time on that visit, or it is left out
+    (never compared across the wrong gap). Changes that round to zero read "flat". Colours
+    are neutral on purpose: this is a catch-up line, not a signal.
+- **Tap a number → 90-day chart (`buildChartSeries` / `chartFor` in `lib/marks.js`,
+  `useChart` in `MarkProvider.js`, `SeriesChart` in `Delta.js`).**
+  - `/api/history` now also returns `series`: `{from, days: 90, v: {key: [90 values|null]}}`
+    — one shared day axis for every `SHEET_METRICS` column (~19 KB for 36 metrics), so it
+    rides the route's last-known-good (/tmp + KV) and the page's saved copy for free. If
+    building it throws, `series` is null and only the charts go (the digest stays fresh).
+  - A day's value is its LAST sheet row (the 10:00 ET snapshot — daily snapshots, not
+    closes; the popover foot says so). Points that are a ×1000 unit jump against the
+    latest are dropped; a metric with < 10 points is left out (its number is not
+    tappable).
+  - **Basis guard:** `chartFor(series, key, live)` returns null when the sheet's latest
+    value is not the number on screen (×1000 jump, or > 50% apart for |live| ≥ 1) — the
+    chart must be of the number that was tapped. An N/A number (null, '', NaN) gets no
+    chart either: FRED nulls stale values on purpose, the sheet must not bring them back.
+  - The line is one neutral cyan (`--mark`), not green/red: "up" is bad news for VIX,
+    claims or spreads.
+  - Call sites pass `chartKey` + `raw` to `<Delta>`: the economy grid, checklist, Four
+    Horsemen, AAII bar, hero values, and the Markets grid. `ExtraMarketsGrid.CHART_KEYS`
+    maps tickers (TNX, DXY, CL, GOLD, BTC, the FX pairs) to sheet keys — add a row there
+    when a new market row gets a history column.
+  - One popover: a single tap (or Enter/Space) opens it; a marked number shows its mark
+    AND the chart. The 2nd click of a double-click is ignored (`e.detail > 1`), so a
+    double-click opens it once. Tooltips live on the labels, so the two never compete.
+
 ### VIX pill fear/greed tag (`/api/sheets` + `lib/vixFearGreed.js`)
 The VIX pill in `CustomIndicatorBar.js` shows a `current | threeMonth | fearGreed` triple
 (e.g. "14.43 | 17.48 | GREED13"). `current`/`threeMonth` still come straight from the
@@ -1195,6 +1254,10 @@ Now: fewer than 756 bars → the Sheet's own 3Y return (`_sheet_return_3y`) → 
   Ken French), refreshed by `scripts/bake-factors.mjs` / `scripts/bake-factors-long.mjs`.
 - `dashboard/lib/{snapshot,whatMoved}.js` — instant-open saved copies (localStorage) and
   the "What moved" ranking (σ-normalised moves + the history sheet's backup σ).
+- `dashboard/lib/{marketClock,lastVisit}.js` + `components/{MarketClock,SinceLastVisit}.js`
+  — the NYSE open/closed pill (hand-copied holiday calendar, see §3) and the "Since
+  Thu 09:05" catch-up line (`fd:seen:v1`). The 90-day tap charts are `buildChartSeries` /
+  `chartFor` in `lib/marks.js` (`/api/history` `series`).
 - `dashboard/app/page.js` — dashboard page + the `.system-status-bar` footer.
 - `dashboard/components/*.js` — UI (MarketModal, PolymarketTable, SpyChart, Gauge,
   EconomicIndicatorGrid, BullChecklist, ExtraMarketsGrid, MarketPulse, MiniChart,

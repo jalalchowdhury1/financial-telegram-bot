@@ -331,3 +331,56 @@ export function buildDigest(rows, now = new Date()) {
     }
     return { today, metrics: out };
 }
+
+// ── 📈 Tap a number → its 90-day chart ────────────────────────────────────────────
+
+export const CHART_DAYS = 90;
+export const CHART_MIN_POINTS = 10;
+const plusDays = (date, n) => new Date(Date.parse(`${date}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
+
+/**
+ * 90 days of every sheet metric, for /api/history `series`. One shared day axis keeps it
+ * small (~20 KB for ~40 metrics): `v[key][i]` is the value on `from + i days`, null where
+ * the sheet has none. A date's value is its LAST row — the 10:00 ET run (the Date column
+ * is the runner's UTC date, see AGENTS.md), so market series are daily snapshots, not
+ * closes. A point that is a ×1000 unit jump against the latest value (the sheet once held
+ * housing starts in units, not thousands) is dropped, never drawn. A metric with fewer
+ * than CHART_MIN_POINTS points is left out: its number simply is not tappable.
+ */
+export function buildChartSeries(rows, now = new Date()) {
+    const today = todayET(now);
+    const from = plusDays(today, -(CHART_DAYS - 1));
+    const v = {};
+    for (const [key, meta] of Object.entries(SHEET_METRICS)) {
+        const s = buildSeries(rows || [], meta.col).filter((p) => p.date >= from && p.date <= today);
+        if (!s.length) continue;
+        const last = s[s.length - 1].value;
+        const arr = new Array(CHART_DAYS).fill(null);
+        let n = 0;
+        for (const p of s) {
+            if (isUnitJump(p.value, last)) continue;
+            arr[daysBetween(from, p.date)] = p.value;
+            n++;
+        }
+        if (n >= CHART_MIN_POINTS) v[key] = arr;
+    }
+    return { from, days: CHART_DAYS, v };
+}
+
+/**
+ * One metric's chart, or null. Null when there is no live number (N/A), and when the sheet's
+ * latest value is not the number on screen (a ×1000 unit jump, or more than 50% apart for |live| ≥ 1): a chart must be
+ * of the number that was tapped.
+ * @returns {{key, label, points: Array<{date, value}>}|null}
+ */
+export function chartFor(series, key, live) {
+    const vals = key ? series?.v?.[key] : null;
+    if (!Array.isArray(vals) || typeof series.from !== 'string') return null;
+    const points = [];
+    vals.forEach((x, i) => { if (typeof x === 'number' && Number.isFinite(x)) points.push({ date: plusDays(series.from, i), value: x }); });
+    if (points.length < CHART_MIN_POINTS) return null;
+    const last = points[points.length - 1].value;
+    if (!Number.isFinite(live)) return null; // no number on screen → nothing to chart
+    if (isUnitJump(last, live) || (Math.abs(live) >= 1 && Math.abs(last - live) / Math.abs(live) > 0.5)) return null;
+    return { key, label: SHEET_METRICS[key]?.label || key, points };
+}

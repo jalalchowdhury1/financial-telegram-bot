@@ -60,3 +60,9 @@ test('holds its line while feeds load, then collapses if nothing moved', () => {
     rerender(<WhatMoved {...empty} waiting={false} />);
     expect(container.firstChild).toBeNull();
 });
+
+test('says which session the moves are from: on a Saturday, "· Fri"', () => {
+    const { container } = render(<WhatMoved {...props()} />);
+    expect(container.querySelector('.moved-when').textContent).toBe(' · Fri');
+    expect(container.firstChild).toHaveAttribute('aria-label', 'What moved on Fri');
+});

@@ -5,7 +5,7 @@
  * to its card. Renders nothing until there is something real to show.
  */
 import { useMemo } from 'react';
-import { collectMoves, fmtLevel } from '../lib/whatMoved';
+import { collectMoves, fmtLevel, movedWhen } from '../lib/whatMoved';
 import { jumpTarget } from './JumpNav';
 
 const FLASH_MS = 1600;
@@ -25,6 +25,8 @@ export function jumpToCard(label) {
 
 export default function WhatMoved({ spy, fg, extra, vol, history, saved = null, waiting = false }) {
     const moves = useMemo(() => collectMoves({ spy, fg, extra, vol, history }), [spy, fg, extra, vol, history]);
+    // Which session the moves belong to: "today", or "Fri" over a weekend / before the open.
+    const when = useMemo(() => { try { return movedWhen({ spy, vol }); } catch { return null; } }, [spy, vol]);
     if (!moves.length) {
         // Hold the line while its feeds load, so the cards below do not jump when it fills.
         return waiting ? (
@@ -37,10 +39,10 @@ export default function WhatMoved({ spy, fg, extra, vol, history, saved = null, 
     return (
         <nav
             className="moved-strip"
-            aria-label="What moved since the last close"
+            aria-label={when === 'today' ? 'What moved today' : when ? `What moved on ${when}` : 'What moved since the last close'}
             data-cached={saved || undefined}
         >
-            <span className="moved-title">What moved</span>
+            <span className="moved-title">What moved{when && <span className="moved-when"> · {when}</span>}</span>
             {/* inline, not a corner tag: the strip scrolls sideways and would clip one */}
             {saved && <span className="moved-saved">🕐 {saved}</span>}
             {moves.map((m) => {

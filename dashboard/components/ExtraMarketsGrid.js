@@ -21,6 +21,12 @@ function Sparkline({ data, color }) {
     );
 }
 
+/** Rows with no markKey still have a history-sheet column: tap → 90-day chart (lib/marks.js keys). */
+const CHART_KEYS = {
+    TNX: 'tnx', T2Y: 't2y', DXY: 'dxy', CL: 'cl', GOLD: 'gold', BTC: 'btc',
+    'USD/BDT': 'usdbdt', 'USD/CAD': 'usdcad', 'USD/INR': 'usdinr', 'INR/BDT': 'inrbdt', 'CAD/INR': 'cadinr', 'CAD/BDT': 'cadbdt',
+};
+
 function MarketRow({ item }) {
     // Hooks must run unconditionally, so this sits above the early return.
     // markKey is undefined for every FX / commodity / crypto row, and useMark
@@ -54,7 +60,7 @@ function MarketRow({ item }) {
                         {item.name}
                     </span>
                 </div>
-                <Delta mark={mark} format={fmtOne}
+                <Delta mark={mark} format={fmtOne} chartKey={item.markKey || CHART_KEYS[item.ticker]} raw={d.current}
                     className="market-row-value"
                     >
                     <span style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)', fontFamily: "'JetBrains Mono', monospace" }}>

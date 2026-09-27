@@ -74,7 +74,7 @@ function ChecklistItem({ itemKey, item }) {
                 </span>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '3px' }}>
-                <Delta mark={shown} format={(v) => fmtValue(itemKey, v)}
+                <Delta mark={shown} format={(v) => fmtValue(itemKey, v)} chartKey={itemKey} raw={item.value}
                     className={`checklist-value ${item.bullish ? 'stat-positive' : 'stat-negative'}`}>
                     <span style={{ fontSize: '0.95rem', ...(note.tone === 'stale' ? { color: 'var(--orange)' } : note.tone === 'unavailable' ? { color: 'var(--yellow)' } : {}) }}>
                         {fmtValue(itemKey, item.value)}

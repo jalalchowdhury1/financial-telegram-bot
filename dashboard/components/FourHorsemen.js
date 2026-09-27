@@ -84,7 +84,7 @@ function StatChip({ color, label, value, chip, warn, metric, markKey, markRaw, f
                 {label}
             </span>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' }}>
-                <Delta mark={metric?.stale ? null : mark} format={fmtPrev}>
+                <Delta mark={metric?.stale ? null : mark} format={fmtPrev} chartKey={markKey} raw={markRaw}>
                     <span style={{ fontSize: '1.05rem', fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: metric?.stale ? 'var(--orange)' : 'var(--text)' }}>
                         {metric?.stale ? '🕐 ' : ''}{value}
                     </span>

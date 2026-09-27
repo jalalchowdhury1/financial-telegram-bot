@@ -92,5 +92,7 @@ export function savedLabel(savedAt, now = Date.now()) {
     const d = new Date(savedAt);
     const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
     if (d.toDateString() === new Date(now).toDateString()) return hm;
+    // A week or more ago, a bare weekday reads as this week: add the date ("Thu Sep 17 09:05").
+    if (now - savedAt > 6 * 864e5) return `${d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).replace(',', '')} ${hm}`;
     return `${d.toLocaleDateString('en-US', { weekday: 'short' })} ${hm}`;
 }

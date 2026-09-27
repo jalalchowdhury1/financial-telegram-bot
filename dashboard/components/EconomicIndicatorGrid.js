@@ -44,7 +44,7 @@ function IndicatorRow({ ind, statusColor }) {
                 {ind.icon} <span className="tooltip-trigger" data-tooltip={`${ind.tooltip}${note.suffix}`}>{ind.label}</span>
             </span>
             <span className="stat-right">
-                <Delta mark={note.tone === 'fresh' ? mark : null} format={ind.fmtPrev}
+                <Delta mark={note.tone === 'fresh' ? mark : null} format={ind.fmtPrev} chartKey={ind.markKey} raw={ind.raw}
                     className={`stat-value ${statusColor(ind.status)}`}>
                     <span style={staleStyle}>{shownValue}</span>
                 </Delta>

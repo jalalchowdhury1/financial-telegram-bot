@@ -44,6 +44,7 @@ test('blocked or full storage never throws', () => {
 test('savedLabel: time today, weekday + time on another day', () => {
     expect(savedLabel(new Date(2026, 8, 26, 10, 42).getTime(), NOW)).toBe('10:42');
     expect(savedLabel(new Date(2026, 8, 24, 9, 5).getTime(), NOW)).toBe('Thu 09:05');
+    expect(savedLabel(new Date(2026, 8, 17, 9, 5).getTime(), NOW)).toBe('Thu Sep 17 09:05'); // > 6 days: dated
     expect(savedLabel(NaN, NOW)).toBe('');
 });
 

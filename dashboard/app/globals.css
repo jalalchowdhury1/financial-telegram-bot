@@ -2183,3 +2183,49 @@ html { overscroll-behavior-y: contain; } /* Android's own pull = full reload; ou
   border-color: rgba(245, 158, 11, 0.35);
 }
 .header-status .live-badge.is-saved .live-dot { background: var(--orange); box-shadow: none; animation: none; }
+
+/* ── QoL round 3 (2026-09-26): market clock · since last visit · 90-day charts ── */
+.mkt-clock-row { display: flex; justify-content: center; margin-top: 8px; min-height: 22px; }
+.mkt-clock {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 10px; border-radius: 999px;
+  font-size: 0.72rem; font-weight: 600; letter-spacing: 0.02em;
+  color: var(--text-muted); background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-card);
+}
+.mkt-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted); }
+.mkt-clock.is-open { color: var(--text-primary); }
+.mkt-clock.is-open .mkt-dot { background: var(--green); box-shadow: 0 0 6px var(--green); }
+.mkt-clock.is-pre .mkt-dot { background: #f59e0b; }
+
+.moved-when { font-weight: 500; color: var(--text-muted); }
+
+.since-line {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px;
+  margin: 0 0 10px; padding: 8px 12px;
+  font-size: 0.8rem; color: var(--text-secondary, var(--text-muted));
+  background: rgba(34, 211, 238, 0.06);
+  border: 1px solid rgba(34, 211, 238, 0.22);
+  border-radius: var(--radius-md);
+}
+.since-title { font-weight: 700; color: var(--text-primary); }
+.since-item { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.since-item b { font-weight: 600; color: var(--text-primary); }
+.since-prints { white-space: normal; }
+.since-close {
+  margin-left: auto; padding: 2px 8px; font: inherit; line-height: 1;
+  color: var(--text-muted); background: none; border: 0; cursor: pointer;
+}
+.since-close:hover { color: var(--text-primary); }
+
+/* a number with a 90-day chart but no mark: faint dotted underline = tappable */
+.chartable { cursor: pointer; text-decoration: underline dotted rgba(148, 163, 184, 0.45); text-underline-offset: 3px; }
+.chartable:hover, .chartable[data-open] { text-decoration-color: rgba(34, 211, 238, 0.8); }
+.chartable:focus-visible { outline: 2px solid rgba(34, 211, 238, 0.6); outline-offset: 2px; border-radius: 3px; }
+.mark-pop-sep { height: 1px; margin: 10px 0 8px; background: rgba(255, 255, 255, 0.08); }
+.series-chart svg { display: block; width: 100%; height: 64px; margin: 6px 0 4px; }
+.series-range, .series-dates {
+  display: flex; justify-content: space-between; gap: 8px;
+  font-size: 0.68rem; color: var(--text-muted); font-variant-numeric: tabular-nums;
+}
+.series-dates { color: var(--text-primary); opacity: 0.85; }
