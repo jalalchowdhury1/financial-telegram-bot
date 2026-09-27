@@ -232,3 +232,42 @@ def test_reenter_names_book_b_under_nabilas_login_and_c8t_under_jalals():
 def test_default_context_with_no_files_is_the_empty_fallback():
     ctx = dt.default_ctx("PENDING_DEFENSIVE")
     assert ctx == {"funded": [], "notes": [], "ticks": {}, "loaded": False, "md_loaded": False}
+
+
+# --- nag outcome line (the fleet probe reads the log tail; a failed send must show) ---------------
+def _nag_logged(st, send, now=T0 + timedelta(hours=1)):
+    lines, out = [], {}
+    st, sent = dt.nag(st, send=send, taps=lambda: {}, now=now, log=lines.append, outcome=out)
+    return st, sent, lines, out
+
+
+def test_nag_outcome_nothing_pending():
+    st = dt.fresh_state()
+    st["last_asof"] = T0.date().isoformat()                            # fresh radar: no stale shout either
+    st, sent, lines, out = _nag_logged(st, lambda *a: True, now=T0)
+    assert sent == [] and out == {"sent": 0, "failed": 0, "pending": None}
+    assert lines[-1] == "  nag outcome: sent=0 failed=0 pending=none"
+
+
+def test_nag_outcome_pending_and_the_send_works():
+    st, _ = run([snap(closes()[0], slow="red")])
+    st, sent, lines, out = _nag_logged(st, lambda t, b=None: True)
+    assert len(sent) == 1 and out["sent"] == 1 and out["failed"] == 0
+    assert lines[-1] == "  nag outcome: sent=1 failed=0 pending=PENDING_DEFENSIVE"
+    assert not any("send FAILED" in l for l in lines)
+
+
+def test_nag_outcome_pending_and_the_send_fails():
+    st, _ = run([snap(closes()[0], slow="red")])
+    st, sent, lines, out = _nag_logged(st, lambda t, b=None: False)
+    assert sent == [] and out["sent"] == 0 and out["failed"] == 1
+    assert lines[-1] == "  nag outcome: sent=0 failed=1 pending=PENDING_DEFENSIVE"
+    fail = [l for l in lines if l.startswith("  send FAILED: ")]
+    assert len(fail) == 1 and "GO DEFENSIVE" in fail[0] and "<" not in fail[0]
+    assert st["pending"]["reminders"] == 1                             # what it decides is unchanged
+
+
+def test_nag_outcome_one_arg_sender_still_falls_back_and_counts():
+    st, _ = run([snap(closes()[0], slow="red")])
+    st, sent, lines, out = _nag_logged(st, lambda t: False)            # arity TypeError must not be counted
+    assert out["failed"] == 1 and out["sent"] == 0 and lines[-1].endswith("failed=1 pending=PENDING_DEFENSIVE")

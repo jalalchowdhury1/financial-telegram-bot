@@ -361,8 +361,40 @@ def business_days_between(a, b):
     return n
 
 
-def nag(st, send=send_telegram, taps=get_taps, now=None, log=print):
-    """Hourly: read taps from KV, remind while something is pending, shout if the radar is stale."""
+def _msg_label(text):
+    """First line of a message, tags stripped, short — safe to log (never carries a token)."""
+    first = re.sub(r"<[^>]+>", "", str(text or "")).strip().splitlines()
+    return (first[0] if first else "(empty)")[:60]
+
+
+def nag_outcome_line(outcome):
+    return f"  nag outcome: sent={outcome['sent']} failed={outcome['failed']} pending={outcome['pending'] or 'none'}"
+
+
+def nag(st, send=send_telegram, taps=get_taps, now=None, log=print, outcome=None):
+    """Hourly: read taps from KV, remind while something is pending, shout if the radar is stale.
+    Always ends with ONE `  nag outcome: sent=N failed=N pending=KIND|none` line (the fleet probe reads the
+    log tail); every falsy send is logged as `  send FAILED: …`. `outcome` (a dict) is filled for the caller."""
+    outcome = outcome if outcome is not None else {}
+    outcome.update(sent=0, failed=0, pending=None)
+    raw_send = send
+
+    def send(*a):                                # counts every real send; arity TypeErrors pass through untouched
+        ok = raw_send(*a)
+        if ok:
+            outcome["sent"] += 1
+        else:
+            outcome["failed"] += 1
+            log(f"  send FAILED: {_msg_label(a[0] if a else '')} (send returned {ok!r})")
+        return ok
+
+    st, sent = _nag(st, send, taps, now, log)
+    outcome["pending"] = (st.get("pending") or {}).get("kind")
+    log(nag_outcome_line(outcome))
+    return st, sent
+
+
+def _nag(st, send, taps, now, log):
     now = now or datetime.now(timezone.utc)
     try:
         from zoneinfo import ZoneInfo
@@ -459,7 +491,8 @@ def main(argv):
         path = args[args.index("--snapshot") + 1] if "--snapshot" in args else _path("rubber-band.json")
         st, _ = evaluate(json.load(open(path)), st, send=send, now=now)
     elif cmd == "nag":
-        st, _ = nag(st, send=send, taps=(lambda: {}) if dry else get_taps, now=now)
+        nag_out = {}
+        st, _ = nag(st, send=send, taps=(lambda: {}) if dry else get_taps, now=now, outcome=nag_out)
     elif cmd == "ack":
         st, _ = ack(st, send=send, now=now)
     elif cmd == "set":
@@ -491,6 +524,8 @@ def main(argv):
             f.write(now.isoformat())
         if cmd in ("evaluate", "ack", "set") or st["mode"] != mode_before:
             republish(st)                          # the dashboard shows mode + streaks from the gist
+            if cmd == "nag":
+                print(nag_outcome_line(nag_out))   # keep the outcome as the log's LAST line (fleet probe)
     return 0
 
 
