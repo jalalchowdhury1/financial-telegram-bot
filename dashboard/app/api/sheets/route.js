@@ -4,6 +4,8 @@ import { fetchText, fetchJson } from '../../../lib/fetcher';
 import { faultsFrom } from '../../../lib/faults';
 import { cacheHeaders } from '../../../lib/cdn';
 import { resolveVixFearGreedTag } from '../../../lib/vixFearGreed';
+import { loadLastGood, saveLastGood } from '../../../lib/store';
+import { resolveAaii } from '../../../lib/aaii';
 
 export const dynamic = 'force-dynamic';
 const CACHE_FILE = '/tmp/financial-dashboard-sheets-cache.json';
@@ -12,7 +14,7 @@ const CACHE_FILE = '/tmp/financial-dashboard-sheets-cache.json';
 const STATIC_DEFAULTS = {
     NotSoBoring: 'N/A',
     FrontRunner: 'N/A',
-    AAIIDiff: '0.00%',
+    AAIIDiff: 'N/A',
     VIX: { current: 'N/A', threeMonth: 'N/A', fearGreed: 'N/A' }
 };
 
@@ -34,7 +36,9 @@ function parseCSV(text) {
 const SHEETS = [
     { name: 'NotSoBoring', url: GOOGLE_SHEETS.NOT_SO_BORING, parse: (rows) => rows[2]?.[1]?.trim() || 'N/A' },
     { name: 'FrontRunner', url: GOOGLE_SHEETS.FRONT_RUNNER, parse: (rows) => (rows[1]?.[0]?.trim() || 'N/A').split('\n')[0].trim() },
-    { name: 'AAIIDiff', url: GOOGLE_SHEETS.AAII, parse: (rows) => rows[1]?.[4]?.trim() || 'N/A' },
+    // AAIIDiff is NOT read from a sheet any more: it comes straight from AAII
+    // (lib/aaii.js, the same resolver as /api/aaii) and is laid over whichever
+    // layer below won — see GET(). The old AAII sheet's writer key leaked (2026-09-27).
     { name: 'VIX', url: GOOGLE_SHEETS.VIX, parse: (rows) => ({ current: rows[1]?.[0]?.trim() || 'N/A', threeMonth: rows[1]?.[1]?.trim() || 'N/A', fearGreed: rows[1]?.[2]?.trim() || 'N/A' }) }
 ];
 
@@ -104,11 +108,10 @@ async function resolveSheetsCascade() {
         return { results, source: 'Google Sheets (Alt URL)', hasErrors: true, messages };
     } catch (e) { messages.push(`Layer 3 (Alt URL) failed: ${e.message}`); }
 
-    // Layer 4: FRED/Yahoo proxies for VIX + AAII sentiment estimate
+    // Layer 4: FRED proxy for VIX (AAII is resolved separately in GET())
     try {
         const fredKey = process.env.FRED_API_KEY;
         let vixCurrent = 'N/A';
-        let aaiDiff = 'N/A';
 
         if (fredKey) {
             // VIX from FRED VIXCLS
@@ -120,28 +123,13 @@ async function resolveSheetsCascade() {
                 const vixObs = vixData.observations.filter(o => o.value !== '.');
                 if (vixObs.length > 0) vixCurrent = parseFloat(vixObs[0].value).toFixed(2);
             } catch {}
-
-            // AAII diff proxy from FRED UMCSENT (consumer sentiment)
-            // Not a perfect match, but correlated — use as estimate
-            try {
-                const sentData = await fetchJson(
-                    `https://api.stlouisfed.org/fred/series/observations?series_id=UMCSENT&api_key=${fredKey}&file_type=json&sort_order=desc&limit=2`,
-                    { revalidate: 0 }
-                );
-                const sentObs = sentData.observations.filter(o => o.value !== '.');
-                if (sentObs.length >= 2) {
-                    const diff = parseFloat(sentObs[0].value) - parseFloat(sentObs[1].value);
-                    aaiDiff = `${diff >= 0 ? '+' : ''}${diff.toFixed(2)}% (UMCSENT proxy)`;
-                }
-            } catch {}
         }
 
         const results = {
             ...(cached || STATIC_DEFAULTS),
             VIX: { current: vixCurrent, threeMonth: 'N/A', fearGreed: 'N/A' },
-            AAIIDiff: aaiDiff
         };
-        return { results, source: 'FRED Proxy (VIX + sentiment)', hasErrors: true, messages };
+        return { results, source: 'FRED Proxy (VIX)', hasErrors: true, messages };
     } catch (e) { messages.push(`Layer 4 (FRED proxy) failed: ${e.message}`); }
 
     // Layer 5: Stale cache (even if >24h) or hardcoded defaults
@@ -156,7 +144,29 @@ async function resolveSheetsCascade() {
 
 export async function GET(request) {
     const faults = faultsFrom(request);
-    const { results, source, hasErrors, messages } = await resolveSheetsCascade();
+    // AAII straight from AAII (lib/aaii.js), in parallel with the sheet cascade. Never
+    // throws out of here: any failure = 'N/A' + hasErrors, never an old sheet value.
+    const aaiiPromise = resolveAaii({ fetchText, store: { load: loadLastGood, save: saveLastGood }, faults })
+        .catch((e) => ({ payload: null, messages: [`aaii resolver threw: ${String(e?.message).slice(0, 120)}`] }));
+    const [cascade, aaii] = await Promise.all([resolveSheetsCascade(), aaiiPromise]);
+    const { results: sheetResults, source, messages } = cascade;
+    let { hasErrors } = cascade;
+    const a = aaii.payload;
+    const results = {
+        ...sheetResults,
+        AAIIDiff: a ? a.diff : 'N/A',
+        AAII: a
+            ? { bull: a.bull, neutral: a.neutral, bear: a.bear, as_of: a.as_of, source: a.source, stale: a.stale, lastGood: !!aaii.lastGood }
+            : null,
+    };
+    if (!a) {
+        hasErrors = true;
+        messages.push(`AAII unavailable: ${aaii.messages.join(' | ')}`);
+    } else {
+        messages.push(`AAII ${a.as_of} via ${a.source}${aaii.cachedAt ? ` (cached ${aaii.cachedAt})` : ''}`);
+        if (a.stale) { hasErrors = true; messages.push(`AAII is STALE: survey ${a.as_of} is more than 9 days old`); }
+        if (aaii.lastGood) { hasErrors = true; messages.push('AAII from the last good copy: every live tier failed'); }
+    }
 
     // VIX fear/greed tag (the pill's "GREED13"-style value): FRED-computed is
     // now the primary source (folds in the vix-fear-greed repo's formula —

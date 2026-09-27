@@ -63,7 +63,7 @@ Browser ─▶ Vercel (Next.js /dashboard) ─▶ /api/* route ─┬─▶ API 
 - Every dashboard `/api/*` route calls the Lambda first, then falls back to direct public
   sources, so the dashboard keeps working even if the Lambda is down. Only `/api/spy`,
   `/api/spy-daily-move`, `/api/market-extra`, `/api/polymarket` actually call the Lambda;
-  `/api/fred`, `/api/sheets`, `/api/fear-greed`, `/api/assessment`, `/api/last-run` are
+  `/api/fred`, `/api/sheets`, `/api/aaii`, `/api/fear-greed`, `/api/assessment`, `/api/last-run` are
   dashboard-only (no Lambda hop).
 
 ---
@@ -388,6 +388,33 @@ answered. Three fixes, each safe on its own:
   - One popover: a single tap (or Enter/Space) opens it; a marked number shows its mark
     AND the chart. The 2nd click of a double-click is ignored (`e.detail > 1`), so a
     double-click opens it once. Tooltips live on the labels, so the two never compete.
+
+### 🔸 AAII direct (`/api/aaii` + `lib/aaii.js`) — 2026-09-27
+AAII no longer flows through a Google Sheet. The old chain (sentiment-scraper GHA →
+sheet `1zQQ2am1…` E2 → `/api/sheets`) was retired because the sheet writer's
+service-account key leaked; the sheet stays as frozen history — **never read it again**.
+- **Tiers** (`fetchAaiiLive`): aaii.com `sent_results` table (strict cell regex, loose
+  sum-checked pass; needs a browser UA — a bare curl UA gets 403) → Substack archive
+  JSON → post JSON → Substack RSS (`insights.aaii.com`). Both ported from
+  sentiment-scraper Tier 0 / Tier 2. **Proven reachable from Vercel 2026-09-27.**
+  Substack prose has no date: survey date = the last Wednesday before the post day.
+- **Cache:** 3 h per instance (`/tmp` `lg-aaii-live`), then live, then last good ≤ 21 d
+  (`_meta.lastGood`). Edge row `aaii` in `lib/cdn.js`. `stale` is recomputed from
+  `as_of` on every read (> 9 days = a missed week).
+- **Contract (other repos read it — do not rename):** `GET /api/aaii` → 200
+  `{bull, neutral, bear, diff, as_of, source: 'aaii.com'|'substack', stale, _meta}`;
+  `diff` = bear − bull as `"15.40%"` (the exact string the sheet's E2 held). Total
+  failure → **503 `{error}`**, never made-up numbers (deliberately NOT `serve()`).
+- `/api/sheets` lays the same resolver over whichever sheet layer won: `AAIIDiff` (same
+  string) + `AAII {bull, neutral, bear, as_of, source, stale, lastGood}`; AAII down →
+  `'N/A'` + `hasErrors`; stale/last-good → `hasErrors` (so no edge cache, and
+  `endpoint_sheets` warns). The old FRED UMCSENT "AAII proxy" in Layer 4 is gone (it
+  was a different number wearing the AAII label). The pill shows "Survey Sep 23 ·
+  aaii.com", or "⚠️ STALE · survey …".
+- Faults: `aaii_http`, `aaii_substack`, `aaii_rss`, `aaii_lastgood`
+  (`/api/aaii?_fail=aaii_http` proves the Substack tier). Health check probes `aaii`.
+  Tests: `lib/__tests__/aaii.test.js`, `aaiiRoutes.test.js` (fixture = the real table,
+  saved 2026-09-27), `components/__tests__/CustomIndicatorBar.test.js`.
 
 ### VIX pill fear/greed tag (`/api/sheets` + `lib/vixFearGreed.js`)
 The VIX pill in `CustomIndicatorBar.js` shows a `current | threeMonth | fearGreed` triple

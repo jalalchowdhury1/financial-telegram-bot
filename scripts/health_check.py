@@ -26,7 +26,7 @@ VERCEL_BASE = os.environ.get("DASHBOARD_BASE_URL", "https://financial-telegram-b
 # GET-able dashboard data endpoints. NOTE: /api/assessment is POST-only (needs a request
 # body), so it's excluded from this GET sweep — probing it properly is a Phase 2 candidate.
 ENDPOINTS = ["spy", "spy-daily-move", "market-extra", "polymarket", "fred",
-             "sheets", "fear-greed", "vol", "rubber-band", "factors"]
+             "sheets", "fear-greed", "vol", "rubber-band", "factors", "aaii"]
 REQUIRED_CONFIG_URL_KEYS = ["SPY_DAILY_MOVE", "SPY_INDICATORS"]
 NAN_RE = re.compile(r"\bNaN\b|\bInfinity\b|\b-Infinity\b")
 SEVERITY_ORDER = {"ok": 0, "warn": 1, "critical": 2}

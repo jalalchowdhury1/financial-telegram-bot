@@ -2,6 +2,22 @@
 import Delta from './Delta';
 import { useMark } from './MarkProvider';
 
+// "Survey Sep 23 · aaii.com" under the AAII pill; a missed week (> 9 days, set by
+// /api/sheets from lib/aaii.js) turns it into a warning so old data never looks fresh.
+export function aaiiAsOf(aaii) {
+    if (!aaii || !aaii.as_of) return null;
+    const d = new Date(`${aaii.as_of}T12:00:00Z`);
+    if (Number.isNaN(d.getTime())) return null;
+    const label = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+    const stale = !!aaii.stale;
+    return (
+        <div className="pill-detail" data-testid="aaii-asof"
+            style={{ fontSize: '0.6rem', marginTop: '2px', color: stale ? 'var(--orange)' : 'var(--text-muted)', fontWeight: stale ? 700 : 400 }}>
+            {stale ? `⚠️ STALE · survey ${label}` : `Survey ${label}`} · {aaii.source}
+        </div>
+    );
+}
+
 export default function CustomIndicatorBar({ sheets, loading }) {
     // AAII is the only pill that earns a mark: it prints weekly on Thursdays.
     // VIX changes daily, and NotSoBoring / FrontRunner are not in the history sheet.
@@ -55,6 +71,7 @@ export default function CustomIndicatorBar({ sheets, loading }) {
                             <div className="pill-detail" style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginTop: '2px' }}>
                                 Threshold: &gt;20% = bullish 6mo forward
                             </div>
+                            {aaiiAsOf(sheets?.AAII)}
                         </>
                     );
                 })() : <div className="value">{loading ? '...' : 'N/A'}</div>}

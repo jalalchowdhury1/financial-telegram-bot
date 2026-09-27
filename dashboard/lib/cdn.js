@@ -34,6 +34,7 @@ export const CDN_POLICY = {
     'jev-pills':      [120, 480],   // ≤ 10 min: regime pills, built from sibling routes
     polymarket:       [300, 900],   // ≤ 20 min: betting odds drift slowly
     'rubber-band':    [300, 1500],  // ≤ 30 min: written nightly by the Mac mini
+    aaii:             [900, 2700],  // ≤ 1 h: weekly survey (the route also caches 3 h per instance)
     breadth:          [900, 2700],  // ≤ 1 h: daily bars
     factors:          [900, 2700],  // ≤ 1 h: daily bars
     history:          [900, 2700],  // ≤ 1 h: one row per day
