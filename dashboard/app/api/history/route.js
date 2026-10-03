@@ -27,6 +27,7 @@ import { faultsFrom, trip } from '../../../lib/faults';
 import { parseCsvLine } from '../../../lib/sheetLkg';
 import { buildDigest, buildChartSeries } from '../../../lib/marks';
 import { buildMoveDigest } from '../../../lib/whatMoved';
+import { newestRowOf } from '../../../lib/servedFreshness';
 
 const SHEET_CSV =
     'https://docs.google.com/spreadsheets/d/1lA-_yjLMc3qDTt9sogSPQrCohNULIk5wwJYfb5wIHfc/export?format=csv&gid=0';
@@ -93,6 +94,8 @@ export async function GET(request) {
                 hasErrors: false,
                 messages: [`Baselines for ${count} metrics`],
                 fetchedAt: new Date().toISOString(),
+                // Newest Sheet1 row (UTC date + row count) — read by /api/freshness.
+                newestRow: newestRowOf(rows),
             },
         };
     }, {

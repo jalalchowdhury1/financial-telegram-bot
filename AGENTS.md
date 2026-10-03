@@ -716,6 +716,24 @@ research portfolios instead, monthly back to 1963-07:
   to write a bake older than the committed one. Re-bake a few times a year so the fallback
   stays close.
 
+### 🩺 Freshness endpoint (`/api/freshness` + `lib/servedFreshness.js`) — 2026-10-02
+Fleet contract v1: `GET /api/freshness` (no auth, `no-store`) returns ONLY pipeline names +
+ages in hours — `{"app","v":1,"items":[{name,inputAgeH,servedAgeH,graceH,maxAgeH?}]}`. It
+fetches the SAME public routes the page reads (edge cache + last-good included), so it
+measures what is SERVED, not whether a writer ran. The fleet monitor (github-notion-sync
+`fleet_health.py`) judges red: `inputAgeH > graceH` and served older than input + 0.25 h, or
+`servedAgeH > maxAgeH`. Sibling fetch failure → 500 `{"error"}`.
+- `rubber-band` — Mac launchd (weekdays 18:30 ET) → gist → `/api/rubber-band`. input = newest
+  NYSE close (`lib/marketClock.js` calendar, early closes); served = close of the snapshot's
+  `asOf`; `graceH` 6 (early close waits 5.5 h for the run).
+- `history-sheet` — financial-dashboard-history scraper (GHA `0 14,2 * * *`) → Sheet1 →
+  `/api/history` (marks, What-moved σ, tap charts). `/api/history` now carries
+  `_meta.newestRow {date, rows}` (UTC date; 1 row = 02:00 run, ≥2 = 14:00 run too).
+  `maxAgeH` 30 = one dropped GHA run + queue delay stays green, two in a row go red.
+- NOT covered (no timestamp in the served value): `/api/sheets` (NotSoBoring / FrontRunner /
+  VIX sheet cells) and the Lambda's Telegram brief built from them.
+- Tests: `lib/__tests__/servedFreshness.test.js` (real producer shapes; fresh=green, stale=red).
+
 ### 📉 Chart helpers (`lib/chartAxis.js`, MiniChart + SpyChart) — 2026-09-26
 - Year labels go through `yearTicks`: round steps (1/2/5/10/20 years, max 8 labels) and a
   crowded partial first year is dropped. Before this the Profit Margin ALL view printed all
