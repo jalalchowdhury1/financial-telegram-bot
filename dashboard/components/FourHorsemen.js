@@ -44,6 +44,9 @@ const kFmt = (v) => {
 };
 const pctFmt = (v) => (v == null || !Number.isFinite(v) ? 'N/A' : `${v.toFixed(2)}%`);
 
+/** A horsemen metric ({ current, asOf, … }) in the { value, asOf, … } shape freshnessNote reads. */
+const withValue = (m) => (m ? { ...m, value: m.current } : m);
+
 // "Riding" warning lines — the badge counts these, and the footer spells them out.
 const RISING_PCT = 10;      // claims / bankruptcies up more than this in a year
 const SAHM_TRIGGER = 0.5;   // Sahm rule recession signal
@@ -121,14 +124,16 @@ export default function FourHorsemen({ fred, loading }) {
         {
             key: 'claims', color: SERIES_STYLE.claims.color, label: SERIES_STYLE.claims.label,
             value: kFmt(claims?.current),
-            metric: claims,
+            // Horsemen metrics key their number as `current`; freshnessNote reads `value`.
+            // Without this the tooltip said "Unavailable" right beside 197K.
+            metric: withValue(claims),
             chip: claimsYoy != null ? { text: `${claimsYoy >= 0 ? '▲' : '▼'} ${Math.abs(claimsYoy).toFixed(1)}% vs 1y`, bad: claimsYoy > 0 } : null,
             warn: claimsYoy != null ? (claimsYoy > RISING_PCT ? { bad: true, label: 'Rising' } : { bad: false, label: 'Contained' }) : null,
         },
         {
             key: 'unemployment', color: SERIES_STYLE.unemployment.color, label: SERIES_STYLE.unemployment.label,
             value: pctFmt(unemployment?.current),
-            metric: unemployment,
+            metric: withValue(unemployment),
             chip: unempYoy != null ? { text: `${unempYoy >= 0 ? '▲' : '▼'} ${Math.abs(unempYoy).toFixed(1)}pp vs 1y`, bad: unempYoy > 0 } : null,
             warn: sahm != null ? (sahm >= SAHM_TRIGGER ? { bad: true, label: `Sahm ${sahm.toFixed(2)}` } : { bad: false, label: `Sahm ${sahm.toFixed(2)}` }) : null,
         },

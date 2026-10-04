@@ -131,4 +131,28 @@ describe('FourHorsemen (run-up bars)', () => {
         expect(screen.getByText('Rising')).toBeInTheDocument();                // bankruptcies
         expect(screen.getByText('Contained')).toBeInTheDocument();             // claims
     });
+
+    // Claims + unemployment key their number as `current`; freshnessNote reads `.value`, so the
+    // tooltip used to say "Unavailable — source busy" right next to 197K / 4.20%.
+    test('tapping a label shows its real as-of date, never "Unavailable" beside a live number', () => {
+        const { container } = render(<FourHorsemen fred={live} loading={false} />);
+        const tip = (label) => [...container.querySelectorAll('.tooltip-trigger')]
+            .find((e) => e.textContent === label).getAttribute('data-tooltip');
+        expect(tip('Initial Jobless Claims')).toBe('Initial Jobless Claims • As of Sep 26, 2026');
+        expect(tip('Unemployment Rate')).toBe('Unemployment Rate • As of Sep 1, 2026');
+        expect(tip('US Bankruptcies')).toBe('US Bankruptcies • As of Jun 30, 2026');
+        expect(tip('10Y − 2Y Yield Spread')).toBe('10Y − 2Y Yield Spread • As of Oct 2, 2026');
+        for (const e of container.querySelectorAll('.tooltip-trigger')) {
+            expect(e.getAttribute('data-tooltip')).not.toMatch(/Unavailable/);
+        }
+    });
+
+    test('a really missing claims number still says unavailable (and nothing throws)', () => {
+        const fred = { ...live, horsemen: { ...live.horsemen, claims: { current: null, asOf: null, unavailable: true, history: [] } } };
+        const { container } = render(<FourHorsemen fred={fred} loading={false} />);
+        const claimsTip = [...container.querySelectorAll('.tooltip-trigger')]
+            .find((e) => e.textContent === 'Initial Jobless Claims').getAttribute('data-tooltip');
+        expect(claimsTip).toMatch(/Unavailable/);
+    });
 });
+
