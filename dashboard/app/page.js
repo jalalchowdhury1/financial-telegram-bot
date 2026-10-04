@@ -28,6 +28,8 @@ import { readSnap, writeSnap, savedLabel, purgeOldSnaps, isLiveAnswer } from '..
 import { readSeen, writeSeen, mergeSeen, pickSeen, SINCE_MIN_GAP_MS } from '../lib/lastVisit';
 import SinceLastVisit from '../components/SinceLastVisit';
 import MarketClock from '../components/MarketClock';
+import { movedWhen } from '../lib/whatMoved';
+import { fgHistoryCells } from '../lib/fgHistory';
 
 // useLayoutEffect warns during the static prerender; on the server nothing runs anyway.
 const useIsoLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
@@ -322,6 +324,9 @@ export default function Dashboard() {
         writeSeen(mergeSeen(readSeen(), seenNow, Date.now(), landedAt));
     }, [seenNow, updatedAt]); // eslint-disable-line react-hooks/exhaustive-deps
     const marksOff = MARK_INPUTS.some((k) => k in savedAt);
+    // The SPY move's session, named the way What moved names it: "today" during the
+    // session, "Fri" all weekend and before Monday's open. Unknown market date = "today".
+    const spyWhen = useMemo(() => { try { return movedWhen({ spy, vol }) || 'today'; } catch { return 'today'; } }, [spy, vol]);
 
     return (
         <MarkProvider history={marksOff ? null : history} series={history?.series || null}>
@@ -423,11 +428,11 @@ export default function Dashboard() {
                                     <div className="hero-price">${spy.current.toFixed(2)}</div>
                                     {spyDailyMove?.value ? (
                                         <div className={`daily-change-badge ${parseFloat(spyDailyMove.value) >= 0 ? 'daily-up' : 'daily-down'}`}>
-                                            {parseFloat(spyDailyMove.value) >= 0 ? '▲' : '▼'} {spyDailyMove.value} today
+                                            {parseFloat(spyDailyMove.value) >= 0 ? '▲' : '▼'} {spyDailyMove.value} {spyWhen}
                                         </div>
                                     ) : spy.dailyChange && (
                                         <div className={`daily-change-badge ${spy.dailyChange.pct >= 0 ? 'daily-up' : 'daily-down'}`}>
-                                            {spy.dailyChange.pct >= 0 ? '▲' : '▼'} ${Math.abs(spy.dailyChange.value).toFixed(2)} ({spy.dailyChange.pct >= 0 ? '+' : ''}{spy.dailyChange.pct.toFixed(2)}%) today
+                                            {spy.dailyChange.pct >= 0 ? '▲' : '▼'} ${Math.abs(spy.dailyChange.value).toFixed(2)} ({spy.dailyChange.pct >= 0 ? '+' : ''}{spy.dailyChange.pct.toFixed(2)}%) {spyWhen}
                                         </div>
                                     )}
                                     <div className={`hero-change ${spy.ma200.pct >= 0 ? 'stat-positive' : 'stat-negative'}`} style={{ marginTop: '6px' }}>
@@ -493,26 +498,21 @@ export default function Dashboard() {
                                     <Gauge score={fg.score} segments={fgSegments} labels={[0, 25, 50, 75, 100]} />
                                 </div>
 
-                                {/* Historical */}
+                                {/* Historical — a cell the backup tiers leave empty ('N/A', null) reads "—" */}
                                 <div className="fg-history">
-                                    {[
-                                        { label: 'Prev Close', val: Math.round(fg.previousClose) },
-                                        { label: '1 Week', val: Math.round(fg.previousWeek) },
-                                        { label: '1 Month', val: Math.round(fg.previousMonth) },
-                                        { label: '1 Year', val: Math.round(fg.previousYear) }
-                                    ].map(h => {
-                                        const current = Math.round(fg.score);
-                                        const diff = current - h.val;
+                                    {fgHistoryCells(fg).map(({ label, val, diff }) => {
                                         const arrow = diff > 0 ? '▲' : diff < 0 ? '▼' : '—';
                                         const arrowColor = diff > 0 ? 'var(--green)' : diff < 0 ? 'var(--red)' : 'var(--text-muted)';
                                         return (
-                                            <div key={h.label} className="fg-history-item">
-                                                <div className="fg-history-label">{h.label}</div>
+                                            <div key={label} className="fg-history-item">
+                                                <div className="fg-history-label">{label}</div>
                                                 <div className="fg-history-value">
-                                                    {h.val}
-                                                    <span style={{ marginLeft: '6px', fontSize: '0.7rem', color: arrowColor, fontWeight: 600 }}>
-                                                        {arrow}{Math.abs(diff)}
-                                                    </span>
+                                                    {val ?? '—'}
+                                                    {diff != null && (
+                                                        <span style={{ marginLeft: '6px', fontSize: '0.7rem', color: arrowColor, fontWeight: 600 }}>
+                                                            {arrow}{Math.abs(diff)}
+                                                        </span>
+                                                    )}
                                                 </div>
                                             </div>
                                         );

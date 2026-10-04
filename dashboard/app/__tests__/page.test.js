@@ -127,3 +127,53 @@ it('⚡ the Jev card is saved when it lands, and the next open paints it from th
     const h = screen.getByText('🧪 Jev Regime Pills'); // synchronously: painted before any feed answered
     expect(h.closest('.saved-wrap')).toHaveAttribute('data-cached');
 });
+
+describe('honest labels on the SPY and Fear & Greed cards', () => {
+    const { todayET } = require('../../lib/marks');
+    const withChart = (lastDate) => ({
+        ...spyPayload,
+        chartHistory: [
+            { date: '2026-10-01', price: 606.1, ma50: 600, ma200: 580 },
+            { date: lastDate, price: 612.34, ma50: 601, ma200: 580.1 },
+        ],
+    });
+    const ok = (body) => Promise.resolve({ status: 200, json: async () => body });
+    const badge = () => document.querySelector('.daily-change-badge');
+
+    it('the SPY move names its session like What moved: "Fri" on a weekend, not "today"', async () => {
+        mockRoutes({ '/api/spy': ok(withChart('2026-10-02')), '/api/spy-daily-move': ok({ value: '0.74%' }) });
+        render(<Dashboard />);
+        await waitFor(() => expect(badge()).not.toBeNull());
+        expect(badge().textContent).toBe('▲ 0.74% Fri');
+    });
+
+    it('during the session it still says "today"; with no market date it keeps "today"', async () => {
+        mockRoutes({ '/api/spy': ok(withChart(todayET())), '/api/spy-daily-move': ok({ value: '-0.31%' }) });
+        const r = render(<Dashboard />);
+        await waitFor(() => expect(badge()).not.toBeNull());
+        expect(badge().textContent).toBe('▼ -0.31% today');
+        r.unmount();
+        // the first render's saved copies are written off the render path (setTimeout 0): flush, then forget them
+        await act(async () => { await new Promise((res) => setTimeout(res, 0)); });
+        window.localStorage.clear();
+
+        mockRoutes({ '/api/spy-daily-move': ok({ value: null }) }); // spyPayload: no chart, no vol
+        render(<Dashboard />);
+        await waitFor(() => expect(badge()).not.toBeNull());
+        expect(badge().textContent).toBe('▲ $1.20 (+0.20%) today');
+    });
+
+    it("Fear & Greed on its VIX proxy (previousYear 'N/A') shows — in that cell, never NaN", async () => {
+        mockRoutes({
+            '/api/fear-greed': ok({
+                score: 34.2, rating: 'Fear', previousClose: 36.1, previousWeek: 40.9, previousMonth: 52.3, previousYear: 'N/A',
+                _meta: { source: 'Yahoo VIX proxy', hasErrors: false },
+            }),
+        });
+        render(<Dashboard />);
+        await waitFor(() => expect(document.querySelectorAll('.fg-history-item')).toHaveLength(4));
+        const cells = [...document.querySelectorAll('.fg-history-item')].map((c) => c.textContent);
+        expect(cells).toEqual(['Prev Close36▼2', '1 Week41▼7', '1 Month52▼18', '1 Year—']);
+        expect(document.body.textContent).not.toMatch(/NaN/);
+    });
+});
