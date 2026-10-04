@@ -1,6 +1,7 @@
 import {
-    valueAt, changeOver, preRecessionRunups, runupMedian, horsemanStatus, lastInversion,
+    valueAt, changeOver, preRecessionRunups, runupMedian, horsemanStatus, lastInversion, latestYoY,
 } from '../horsemenRunup';
+import live from './fixtures/fred-horsemen-2026-10-04.json';
 
 const D = (s) => new Date(`${s}T00:00:00Z`).getTime();
 // Monthly series: 4.0 for 2019, stepping up through 2020.
@@ -91,5 +92,66 @@ describe('lastInversion', () => {
     });
     test('null when it never inverted', () => {
         expect(lastInversion([{ date: '2026-01-01', value: 0.3 }], D('2026-09-01'))).toBeNull();
+    });
+});
+
+// Real /api/fred slices saved 2026-10-04 (see the fixture's _note).
+describe('latestYoY — latest print vs the print one calendar year before it', () => {
+    const H = live.horsemen;
+    test('unemployment: Sep-26 vs Sep-25 = -0.2pp, even though Oct-25 never printed', () => {
+        // The old header counted 13 entries back and, with Oct-25 missing, landed on Aug-25 (-0.1pp).
+        expect(latestYoY(H.unemployment.history, 'pp')).toBeCloseTo(-0.2, 6);
+    });
+    test('bankruptcies: a months-old quarterly print compares with its own quarter a year earlier (+16.9%)', () => {
+        // Anchoring at TODAY compared Jun-26 with Sep-25 (+12%) while the header said +16.9%.
+        expect(latestYoY(H.bankruptcies.history, 'pct')).toBeCloseTo(16.916, 2);
+    });
+    test('weekly claims: the same week a year earlier (52 weeks back), not 53', () => {
+        // 2026-09-26 vs 2025-09-27 (225K), one day off the calendar date; 2025-09-20 is six days off.
+        expect(latestYoY(H.claims.history, 'pct')).toBeCloseTo(100 * (197000 / 225000 - 1), 6);
+    });
+    test('no print near the year-ago date -> null, never a 13-month change labelled "1y"', () => {
+        const oct = [...H.unemployment.history, { date: '2026-10-01', value: 4.3 }];
+        expect(latestYoY(oct, 'pp')).toBeNull();
+    });
+    test('skips null prints and handles missing or short histories', () => {
+        expect(latestYoY(null, 'pct')).toBeNull();
+        expect(latestYoY([], 'pct')).toBeNull();
+        expect(latestYoY([{ date: '2026-01-01', value: 1 }], 'pct')).toBeNull();
+        expect(latestYoY([{ date: '2025-01-01', value: 0 }, { date: '2026-01-01', value: 1 }], 'pct')).toBeNull();
+        const withNull = [{ date: '2025-01-01', value: 4 }, { date: '2026-01-01', value: 4.5 }, { date: '2026-02-01', value: null }];
+        expect(latestYoY(withNull, 'pp')).toBeCloseTo(0.5, 6);
+    });
+});
+
+describe('lastInversion — real 2022-2024 curve with the September 2024 one-day dips', () => {
+    test('a one-day dip after a short positive gap belongs to the same inversion', () => {
+        const r = lastInversion(live.yieldCurve.history, D('2026-10-04'));
+        expect(r.startYear).toBe(2022);
+        expect(r.endYear).toBe(2024);
+        expect(r.start).toBe('2022-07-06');
+        expect(r.end).toBe('2024-09-05');
+        expect(r.monthsSince).toBe(25);
+        expect(r.currentlyInverted).toBe(false);
+    });
+    test('a positive gap of ~90 days or more starts a separate inversion', () => {
+        const s = [
+            { date: '2019-08-27', value: -0.04 }, { date: '2019-08-29', value: -0.01 },
+            { date: '2019-09-03', value: 0.02 }, { date: '2022-04-01', value: 0.1 },
+            { date: '2022-07-06', value: -0.02 }, { date: '2023-07-03', value: -1.05 },
+            { date: '2024-08-26', value: -0.01 }, { date: '2024-08-27', value: 0.02 },
+        ];
+        const r = lastInversion(s, D('2026-10-04'));
+        expect(r.start).toBe('2022-07-06');
+        expect(r.end).toBe('2024-08-26');
+    });
+    test('a curve inverted right now is live, even straight after a short positive gap', () => {
+        const s = [
+            { date: '2026-05-01', value: -0.1 }, { date: '2026-06-01', value: 0.05 }, { date: '2026-07-01', value: -0.2 },
+        ];
+        const r = lastInversion(s, D('2026-07-02'));
+        expect(r.currentlyInverted).toBe(true);
+        expect(r.start).toBe('2026-05-01');
+        expect(r.monthsSince).toBe(0);
     });
 });

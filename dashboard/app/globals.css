@@ -2229,3 +2229,20 @@ html { overscroll-behavior-y: contain; } /* Android's own pull = full reload; ou
   font-size: 0.68rem; color: var(--text-muted); font-variant-numeric: tabular-nums;
 }
 .series-dates { color: var(--text-primary); opacity: 0.85; }
+
+/* ===== QoL ship 6 · lane B (cards) ===== */
+/* Four Horsemen rail (HorsemenRunup.js): label | bar | note on one line when it fits.
+   The note wraps instead of being cut; on phones it gets its own full-width line. */
+.fh-row {
+  display: grid;
+  grid-template-columns: minmax(96px, 1.1fr) minmax(0, 2fr) minmax(120px, 1.4fr);
+  gap: 2px 10px; align-items: center; padding: 5px 0;
+}
+.fh-note {
+  min-width: 0; font-size: 0.62rem; line-height: 1.35;
+  font-family: 'JetBrains Mono', monospace; overflow-wrap: anywhere;
+}
+@media (max-width: 640px) {
+  .fh-row { grid-template-columns: 104px minmax(0, 1fr); }
+  .fh-note { grid-column: 1 / -1; }
+}

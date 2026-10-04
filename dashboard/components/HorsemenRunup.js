@@ -14,7 +14,7 @@
  */
 
 import {
-    changeOver, preRecessionRunups, runupMedian, horsemanStatus, lastInversion,
+    latestYoY, preRecessionRunups, runupMedian, horsemanStatus, lastInversion,
 } from '../lib/horsemenRunup';
 
 const STATUS_COLOUR = {
@@ -32,7 +32,12 @@ const ROWS = [
     { key: 'bankruptcies', label: 'Bankruptcies', mode: 'pct', unit: '%', pick: (f) => f?.horsemen?.bankruptcies },
 ];
 
-const fmt = (v, unit) => (v == null ? '—' : `${v >= 0 ? '+' : ''}${v.toFixed(unit === 'pp' ? 1 : 0)}${unit}`);
+const fmt = (v, unit) => {
+    if (v == null) return '—';
+    const s = v.toFixed(unit === 'pp' ? 1 : 0);
+    // A true minus sign; a move that rounds to zero carries no sign at all.
+    return `${Number(s) > 0 ? '+' : Number(s) < 0 ? '−' : ''}${s.replace('-', '')}${unit}`;
+};
 
 /** Bar with 0 in the middle, today's move as a dot, the pre-recession median as a tick. */
 function Bar({ change, median, colour }) {
@@ -51,10 +56,11 @@ function Bar({ change, median, colour }) {
     );
 }
 
+// Layout lives in globals.css (.fh-row): label | bar | note on one line when it fits; on
+// phones the note drops to its own full-width line. An inline grid would beat the media query.
 function Row({ children, k, status }) {
     return (
-        <div data-testid={`fh-row-${k}`} data-status={status}
-            style={{ display: 'grid', gridTemplateColumns: 'minmax(96px, 1.1fr) minmax(0, 2fr) minmax(120px, 1.4fr)', gap: 10, alignItems: 'center', padding: '5px 0' }}>
+        <div className="fh-row" data-testid={`fh-row-${k}`} data-status={status}>
             {children}
         </div>
     );
@@ -64,23 +70,24 @@ const Label = ({ children }) => (
     <span style={{ fontSize: '0.66rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-muted)' }}>{children}</span>
 );
 
+// Wraps rather than cuts: the comparison after the "·" is the point of the row.
 const Note = ({ colour, children }) => (
-    <span style={{ fontSize: '0.62rem', fontFamily: "'JetBrains Mono', monospace", color: colour, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{children}</span>
+    <span className="fh-note" style={{ color: colour }}>{children}</span>
 );
 
-export default function RunupBars({ fred, now = Date.now() }) {
+/** `ridingNote`: the card's own "N of 4 riding" sentence, so the footer counts the way
+ *  the badge does (it used to add a second, different "N of 3" count). */
+export default function RunupBars({ fred, now = Date.now(), ridingNote = null }) {
     const recessions = fred?.recessions || [];
     const rows = ROWS.map((r) => {
         const m = r.pick(fred);
         const history = m?.history;
-        const change = changeOver(history, now, r.mode);
+        // Same helper as the card header: latest print vs the print a year before it.
+        const change = latestYoY(history, r.mode);
         const runups = preRecessionRunups(history, recessions, r.mode);
         const median = runupMedian(runups);
         return { ...r, history, change, runups, median };
     });
-
-    const deteriorating = rows.filter((r) => r.key !== 'spread'
-        && ['watch', 'recession-like'].includes(horsemanStatus(r.change, r.median, true))).length;
 
     return (
         <div>
@@ -115,7 +122,7 @@ export default function RunupBars({ fred, now = Date.now() }) {
                             <Bar change={r.change} median={r.median} colour={colour} />
                         )}
                         <Note colour={colour}>
-                            {fmt(r.change, r.unit)} vs 1y · recession {fmt(r.median, r.unit)} ({r.runups.length} recessions)
+                            {fmt(r.change, r.unit)} vs 1y · recessions began at {fmt(r.median, r.unit)} (median of {r.runups.length})
                         </Note>
                     </Row>
                 );
@@ -123,7 +130,7 @@ export default function RunupBars({ fred, now = Date.now() }) {
             <div style={{ color: 'var(--text-muted)', fontSize: '0.6rem', marginTop: 6, opacity: 0.85 }}>
                 Dot = how far it has moved in 12 months. Red tick = how far it had typically moved by the
                 start of past recessions (median). Levels don&apos;t warn — in March 2020 claims sat near
-                their calmest ever. {deteriorating} of 3 moving the wrong way.
+                their calmest ever.{ridingNote ? ` ${ridingNote}` : ''}
             </div>
         </div>
     );
