@@ -110,3 +110,20 @@ it('👋 since last visit: compares against the last visit, and a tab coming bac
     await act(async () => { land({ status: 200, json: async () => ({ ...spyPayload, current: 624.58 }) }); });
     await waitFor(() => expect(screen.getByRole('note').textContent).toMatch(/SPY \+2\.0%/)); // 612.34 → 624.58
 });
+
+const jevLive = require('../../lib/__tests__/fixtures/jev-pills-2026-10-04.json');
+
+it('⚡ the Jev card is saved when it lands, and the next open paints it from that copy with its 🕐 tag', async () => {
+    const { SNAP_PREFIX } = require('../../lib/snapshot');
+    mockRoutes({ '/api/jev-pills': Promise.resolve({ status: 200, json: async () => jevLive }) });
+    const first = render(<Dashboard />);
+    await waitFor(() => expect(screen.getByText('🧪 Jev Regime Pills')).toBeInTheDocument());
+    await waitFor(() => expect(window.localStorage.getItem(`${SNAP_PREFIX}jev`)).not.toBeNull());
+    first.unmount();
+
+    // Warm second open: /api/jev-pills is slow, the saved copy paints at once, tagged.
+    mockRoutes({ '/api/jev-pills': never });
+    render(<Dashboard />);
+    const h = screen.getByText('🧪 Jev Regime Pills'); // synchronously: painted before any feed answered
+    expect(h.closest('.saved-wrap')).toHaveAttribute('data-cached');
+});

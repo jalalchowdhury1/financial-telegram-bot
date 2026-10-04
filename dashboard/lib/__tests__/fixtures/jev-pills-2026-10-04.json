@@ -1,0 +1,245 @@
+{
+  "enabled": true,
+  "mode": "on",
+  "asOf": "2026-10-04T23:10:06.315Z",
+  "state": "1. SPY 769.64, +6.8% vs 200-day avg, -1.1% from 52-week high, RSI 56.48, today +0.7%\n2. Fear & Greed 31 (FEAR), previous week 36.9428571428571, previous month 46.057142857142864\n3. SPY IV 15.31, IV rank 10.47, IV percentile 15.08, realized vol 10.71, VRP 4.60\n4. Yield curve 0.45, Sahm rule 0.03, jobless claims 200.00k, BBB credit spread 1.06, real yields 2.88, copper/gold 1.58, sentiment 52, NFCI -0.55\n5. 10Y-3M spread 1.09\n6. RSP/SPY 0.27, 20d -4.3%, 60d -4.1%, vs 50d avg -4.0%\n7. IWM/SPY 0.37, 20d -4.2%, 60d -7.5%\n8. XLK/XLU 5.02, 20d +16.1%\n9. HYG/LQD 0.76, 20d +0.6%\n10. AAII bull-bear spread +11.9%",
+  "pills": {
+    "regime": {
+      "verdict": "risk-on",
+      "p": null,
+      "by": "rule",
+      "reason": "Score 2: ma200=+6.8% (+1), fg=31 (30-49, 0), hygLqd=+0.60% (>0, +1), legs 20d: HYG -2.9% · LQD -3.5%",
+      "jev": {
+        "verdict": "risk-on",
+        "p": 0.47
+      }
+    },
+    "recession": {
+      "verdict": "low",
+      "p": 0.88,
+      "by": "jev",
+      "reason": "no recession signals triggered",
+      "jev": {
+        "verdict": "low",
+        "p": 0.88
+      }
+    },
+    "breadth": {
+      "verdict": "rolling-over",
+      "p": null,
+      "by": "rule",
+      "reason": "RSP/SPY 20d -4.3% (< -1.5) and vs 50d avg -4.0% (< 0)",
+      "jev": {
+        "verdict": "narrow",
+        "p": 0.52
+      }
+    },
+    "hedging": {
+      "verdict": "cheap",
+      "p": 1,
+      "by": "jev",
+      "reason": "IV percentile 15 < 20 and VRP 4.6 < 6",
+      "jev": {
+        "verdict": "cheap",
+        "p": 1
+      }
+    },
+    "conflict": {
+      "verdict": "major-divergence",
+      "p": null,
+      "by": "rule",
+      "reason": "sentiment vs price: Fear (31) despite strong trend (+6.8% above 200d MA); breadth vs index: SPY within -1.1% of 52w high yet RSP/SPY -4.3% over 20d",
+      "jev": {
+        "verdict": "major-divergence",
+        "p": 0.33
+      }
+    }
+  },
+  "factors": {
+    "regime": {
+      "summary": "Score 2 → risk-on (risk-on needs ≥ 2, risk-off ≤ −1)",
+      "rows": [
+        {
+          "label": "SPY vs 200-day avg",
+          "value": "+6.8%",
+          "test": "> 0 → +1, else −1",
+          "hit": true,
+          "effect": "+1"
+        },
+        {
+          "label": "Fear & Greed",
+          "value": "31",
+          "test": "≥ 50 → +1 · < 30 → −1 · else 0",
+          "hit": false,
+          "effect": "0"
+        },
+        {
+          "label": "HYG/LQD 20d",
+          "value": "+0.60%",
+          "note": "HYG -2.9% · LQD -3.5%",
+          "test": "> 0 → +1 · < −1 → −1 · else 0",
+          "hit": true,
+          "effect": "+1"
+        }
+      ]
+    },
+    "recession": {
+      "summary": "Strongest warning wins; none tripped → low",
+      "rows": [
+        {
+          "label": "Sahm rule",
+          "value": "0.03",
+          "test": "≥ 0.2 → rising · ≥ 0.5 → high",
+          "hit": false,
+          "effect": ""
+        },
+        {
+          "label": "Yield curve (2s10s)",
+          "value": "0.45",
+          "test": "< 0 → rising · < 0 with claims ≥ 260k → high",
+          "hit": false,
+          "effect": ""
+        },
+        {
+          "label": "Jobless claims",
+          "value": "200k",
+          "test": "≥ 260k → rising · ≥ 260k with curve < 0 → high",
+          "hit": false,
+          "effect": ""
+        },
+        {
+          "label": "NFCI",
+          "value": "-0.55",
+          "test": "> 0 → rising",
+          "hit": false,
+          "effect": ""
+        }
+      ]
+    },
+    "breadth": {
+      "summary": "Rolling over: RSP/SPY declining below 50d avg",
+      "rows": [
+        {
+          "label": "RSP/SPY 20d",
+          "value": "-4.3%",
+          "test": "< −1.5% with RSP vs 50d < 0 → rolling-over · > 0 with IWM > 0 → broad",
+          "hit": true,
+          "effect": "rolling-over"
+        },
+        {
+          "label": "RSP/SPY vs 50d avg",
+          "value": "-4.0%",
+          "test": "< 0 (with 20d < −1.5%) → rolling-over",
+          "hit": true,
+          "effect": "rolling-over"
+        },
+        {
+          "label": "IWM/SPY 20d",
+          "value": "-4.2%",
+          "test": "> 0 (with RSP 20d > 0) → broad",
+          "hit": false,
+          "effect": ""
+        }
+      ]
+    },
+    "hedging": {
+      "summary": "Hedging is cheap",
+      "rows": [
+        {
+          "label": "IV percentile (1y)",
+          "value": "15",
+          "test": "> 70 → expensive · < 20 (with VRP < 6) → cheap",
+          "hit": true,
+          "effect": "cheap"
+        },
+        {
+          "label": "VRP",
+          "value": "4.60",
+          "test": "> 10 → expensive · < 6 (with IV pct < 20) → cheap",
+          "hit": true,
+          "effect": "cheap"
+        }
+      ]
+    },
+    "conflict": {
+      "summary": "2 of 4 pairs diverge → major-divergence",
+      "rows": [
+        {
+          "label": "sentiment vs price",
+          "value": "F&G 31 · SPY +6.8% vs 200d",
+          "test": "F&G < 35 with SPY > +3% · or F&G > 65 with SPY < −3%",
+          "hit": true,
+          "effect": "divergence"
+        },
+        {
+          "label": "2s10s vs 3m10y",
+          "value": "2s10s 0.45 · 3m10y 1.09",
+          "test": "Opposite signs between 2s10s and 3m10y",
+          "hit": false,
+          "effect": ""
+        },
+        {
+          "label": "credit vs equities",
+          "value": "SPY +6.8% vs 200d · HYG/LQD +0.60%",
+          "test": "SPY > 0% vs 200d with HYG/LQD 20d < −1.5%",
+          "hit": false,
+          "effect": ""
+        },
+        {
+          "label": "breadth vs index",
+          "value": "SPY -1.1% from 52w high · RSP/SPY -4.3%",
+          "test": "SPY within 2% of high with RSP/SPY 20d < −1.5%",
+          "hit": true,
+          "effect": "divergence"
+        }
+      ]
+    }
+  },
+  "conflictPairs": [
+    {
+      "pair": "sentiment vs price",
+      "detail": "Fear (31) despite strong trend (+6.8% above 200d MA)"
+    },
+    {
+      "pair": "breadth vs index",
+      "detail": "SPY within -1.1% of 52w high yet RSP/SPY -4.3% over 20d"
+    }
+  ],
+  "since": {
+    "direction": "none",
+    "changed": [],
+    "noBaseline": false,
+    "date": "2026-10-03"
+  },
+  "_meta": {
+    "jev": "ok",
+    "sources": {
+      "spy": "Polygon + Finnhub Spot",
+      "fg": "CNN",
+      "vol": "VIX:cboe · VXN:cboe · VVIX:cboe · SPY:cnbc · QQQ:cnbc · TQQQ:cnbc · SQQQ:cnbc · UVXY:cnbc",
+      "fred": "St. Louis Fed",
+      "breadth": "RSP:polygon · SPY:polygon · IWM:polygon · XLK:polygon · XLU:polygon · HYG:polygon · LQD:polygon",
+      "sheets": "Google Sheets (Live)"
+    },
+    "dataAsOf": {
+      "spy": "2026-10-02",
+      "fg": "2026-10-04",
+      "breadth": "2026-10-02",
+      "vol": "2026-10-02",
+      "fred": "2026-10-02"
+    },
+    "inputSources": {
+      "t10y3m": "fred",
+      "nfci": "fred-route",
+      "claims": "fred-route",
+      "sahm": "fred-route"
+    },
+    "inputTried": {
+      "t10y3m": [
+        "fred:ok"
+      ]
+    },
+    "hasErrors": false,
+    "logged": true
+  }
+}
