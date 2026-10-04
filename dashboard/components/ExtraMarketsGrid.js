@@ -3,6 +3,7 @@ import ErrorBoundary from './ErrorBoundary';
 import Skeleton from './Skeleton';
 import Delta from './Delta';
 import { useMark } from './MarkProvider';
+import { marketWindow, spotLabel } from '../lib/marketWindow';
 
 function Sparkline({ data, color }) {
     if (!data || data.length < 2) return null;
@@ -27,6 +28,9 @@ const CHART_KEYS = {
     'USD/BDT': 'usdbdt', 'USD/CAD': 'usdcad', 'USD/INR': 'usdinr', 'INR/BDT': 'inrbdt', 'CAD/INR': 'cadinr', 'CAD/BDT': 'cadbdt',
 };
 
+/** Yield / rate rows: their change prints in basis points, like What moved. */
+const RATE_TICKERS = new Set(['TNX', 'T2Y', 'MORT30']);
+
 function MarketRow({ item }) {
     // Hooks must run unconditionally, so this sits above the early return.
     // markKey is undefined for every FX / commodity / crypto row, and useMark
@@ -35,11 +39,11 @@ function MarketRow({ item }) {
     if (!item?.data) return null;
     const d = item.data;
     const val = d.current;
-    const pct = d.dailyChange?.pct ?? 0;
-    const hasChange = d.history?.length > 1;
-    const isPos = pct >= 0;
-    const color = !hasChange ? 'var(--text-muted)' : isPos ? 'var(--green)' : 'var(--red)';
-    const sign = isPos ? '+' : '';
+    // Change over the row's own last two history bars, tagged with the window it covers
+    // ("−5bp · Thu", "+0.23% · 1mo"); rate rows in bp. null -> show no number at all.
+    const win = marketWindow(d, { rate: RATE_TICKERS.has(item.ticker), ticker: item.ticker });
+    const spot = !(d.history?.length > 1) ? spotLabel(item.ticker) : null;
+    const color = !win || win.dir === 0 ? 'var(--text-muted)' : win.dir > 0 ? 'var(--green)' : 'var(--red)';
     /** Render any value for this row the same way — used for the tile and its "was" popover. */
     const fmtOne = (v) => (item.format
         ? item.format(v)
@@ -69,13 +73,15 @@ function MarketRow({ item }) {
                 </Delta>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px', paddingLeft: '10px', flexShrink: 0 }}>
-                {hasChange ? (
-                    <span style={{ fontSize: '0.68rem', fontWeight: 600, color, fontFamily: "'JetBrains Mono', monospace" }}>
-                        {sign}{pct.toFixed(2)}%
+                {win ? (
+                    <span className="mkt-chg" data-testid={`mkt-chg-${item.ticker}`}
+                        style={{ fontSize: '0.68rem', fontWeight: 600, color, fontFamily: "'JetBrains Mono', monospace" }}>
+                        {win.text}{win.tag && <span className="mkt-win"> · {win.tag}</span>}
                     </span>
-                ) : (
-                    <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>live</span>
-                )}
+                ) : spot ? (
+                    <span className="mkt-spot" data-testid={`mkt-spot-${item.ticker}`}
+                        style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>{spot}</span>
+                ) : null}
                 <Sparkline data={d.history} color={color} />
             </div>
         </div>

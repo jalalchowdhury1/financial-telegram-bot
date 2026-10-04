@@ -2276,3 +2276,6 @@ html { overscroll-behavior-y: contain; } /* Android's own pull = full reload; ou
   .jev-pill { flex-wrap: wrap; }
   .jev-pill .jev-pill-why { flex: 1 0 100%; margin-top: 4px; }
 }
+/* Global Markets: the window tag after each change ("−5bp · Thu") is tiny and muted. */
+.mkt-chg { white-space: nowrap; }
+.mkt-chg .mkt-win { color: var(--text-muted); font-weight: 400; }
