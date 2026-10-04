@@ -9,13 +9,27 @@
  * - Color-coded probability bar with dynamic width
  * - Formatted trading volume display
  * - Link to Polymarket.com
- * - Dismissible via close button or backdrop click
- * - Responsive and accessible
+ * - Dismissible via close button, backdrop click or Esc
+ * - A modal dialog (role="dialog", aria-modal) that holds the page still while open
+ *   (useSheetLock), with a 44px tap area on its × (.sheet-x)
  */
+import { useEffect } from 'react';
+import useSheetLock from './useSheetLock';
 
 export default function MarketModal({ bet, isOpen, onClose }) {
+  const open = !!(isOpen && bet);
+  useSheetLock(open);
+
+  // Esc closes it, like the Jev sheet
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
   // Early return if modal is closed
-  if (!isOpen || !bet) {
+  if (!open) {
     return null;
   }
 
@@ -58,18 +72,24 @@ export default function MarketModal({ bet, isOpen, onClose }) {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          padding: '20px'
+          padding: '20px',
+          overscrollBehavior: 'contain'
         }}
         onClick={onClose}
         aria-label="Close modal"
       >
         {/* Modal card - prevent click from propagating to backdrop */}
         <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="market-modal-title"
+          data-sheet-scroll=""
           style={{
             width: '100%',
             maxWidth: '520px',
             maxHeight: '90vh',
             overflowY: 'auto',
+            overscrollBehavior: 'contain',
             zIndex: 9999,
             animation: 'fadeInUp 0.3s ease forwards',
             pointerEvents: 'auto'
@@ -100,6 +120,7 @@ export default function MarketModal({ bet, isOpen, onClose }) {
             }}
           >
             <h2
+              id="market-modal-title"
               style={{
                 fontSize: '1.1rem',
                 fontWeight: 700,
@@ -112,6 +133,7 @@ export default function MarketModal({ bet, isOpen, onClose }) {
 
             {/* Close button */}
             <button
+              className="sheet-x"
               onClick={onClose}
               aria-label="Close modal"
               style={{

@@ -1317,11 +1317,12 @@ body::before {
   position: relative;
 }
 /* Keep a comfortable tap target without making the button visually taller than
-   the two pills beside it. */
+   the two pills beside it: 30px drawn on a phone, 46px to the thumb (≥44 after
+   subpixel rounding; the 8px gap to its neighbour is never crossed). */
 .header-status .refresh-btn::after {
   content: '';
   position: absolute;
-  inset: -7px;
+  inset: -8px;
 }
 .header-status .live-dot,
 .header-status .mark-chip-dot {
@@ -1917,16 +1918,19 @@ a.factor-chip { text-decoration: none; } /* chips link to Yahoo Finance */
 }
 
 /* Phone: chips stack number over sparkline and use short names; the timeline
-   buttons grow to a thumb-friendly 30px while the row stays one strip. */
+   buttons are a full 44px thumb target while the row stays one strip. The scroller
+   clips pseudo-element hit areas, so the buttons themselves are 44px (no padding
+   round them: the capsule's padding would be a dead ring). */
 @media (max-width: 640px) {
   .factor-row { margin: -4px 0 16px; }
   .factor-title { font-size: 0.62rem; }
   .factor-sub { display: none; }
-  .factor-tf-btn { font-size: 0.6rem; padding: 0 6px; min-height: 30px; min-width: 30px; flex: none; }
+  .factor-tf-btn { font-size: 0.6rem; padding: 0 6px; min-height: 44px; min-width: 44px; flex: none; }
   /* 11 windows don't fit beside the title on a phone: scroll sideways (the active one
      is kept in view by FactorRow), with a fade on the right hinting there is more. */
   .factor-tf {
     min-width: 0;
+    padding: 0;
     overflow-x: auto;
     scrollbar-width: none;
     -webkit-overflow-scrolling: touch;
@@ -2229,3 +2233,32 @@ html { overscroll-behavior-y: contain; } /* Android's own pull = full reload; ou
   font-size: 0.68rem; color: var(--text-muted); font-variant-numeric: tabular-nums;
 }
 .series-dates { color: var(--text-primary); opacity: 0.85; }
+
+/* ===== QoL ship 6 · lane C (chrome + charts) ===== */
+
+/* 👆 Thumb-sized taps. The drawn controls keep their look; an invisible ::before widens
+   what a finger hits (never ::after: on a .tooltip-trigger that is the tooltip bubble).
+   Chart timeframe pills (MiniChart 28×17, SpyChart 32×20): a 44px-tall hit band. Sideways
+   it reaches exactly half the 3–4px gap, so neighbours meet but never overlap. Up it stops
+   12px above the pill (the tappable hero number starts ~13px higher); down it takes the
+   empty margin + the chart's blank top padding. z-index on the BUTTON (not the ::before)
+   lifts the band over the chart's edge — a disabled pill's opacity makes the button its
+   own stacking context, which would trap a z-index set on the ::before. */
+.tf-btn { position: relative; z-index: 1; }
+.tf-btn::before {
+  content: '';
+  position: absolute;
+  left: -1.5px;
+  right: -1.5px;
+  top: -12px;
+  bottom: -15px; /* 17 + 12 + 15 = 44 */
+}
+.tf-btn-spy::before { left: -2px; right: -2px; bottom: -12px; } /* 20 + 12 + 12 = 44 */
+
+/* Sheet × (Jev pills, Polymarket): 32px drawn, 46px to the thumb (≥44 after subpixel rounding). */
+.sheet-x { position: relative; }
+.sheet-x::before { content: ''; position: absolute; inset: -7px; }
+
+/* 🧷 Sheets hold the page still (components/useSheetLock.js puts .sheet-open on <html>
+   and locks scroll). A swipe that reaches the end of a sheet stays in the sheet. */
+.jev-modal-backdrop, .jev-modal { overscroll-behavior: contain; }

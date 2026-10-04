@@ -91,7 +91,7 @@ export default function SpyChart({ chartHistory, recessions = [], current = null
             <div style={{ display: 'flex', gap: '4px', marginBottom: '8px', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ display: 'flex', gap: '4px' }}>
                     {TF_KEYS.map(tf => (
-                        <button key={tf} onClick={() => pick(tf)} disabled={!usable.includes(tf)}
+                        <button key={tf} className="tf-btn tf-btn-spy" onClick={() => pick(tf)} disabled={!usable.includes(tf)}
                             title={usable.includes(tf) ? undefined : 'Not enough history from this source'}
                             style={{
                                 padding: '3px 10px', borderRadius: '6px', border: 'none',

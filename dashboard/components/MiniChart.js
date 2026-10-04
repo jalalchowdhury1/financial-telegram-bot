@@ -92,7 +92,7 @@ export default function MiniChart({ history, color = '#818cf8', gradientId = 'ch
             <div style={{ display: 'flex', gap: '4px', marginBottom: '6px', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ display: 'flex', gap: '3px' }}>
                     {tfKeys.map(tf => (
-                        <button key={tf} onClick={() => pick(tf)} disabled={!usable.includes(tf)}
+                        <button key={tf} className="tf-btn" onClick={() => pick(tf)} disabled={!usable.includes(tf)}
                             title={usable.includes(tf) ? undefined : 'Not enough history yet'}
                             style={{
                                 padding: '2px 8px', borderRadius: '5px', border: 'none',
