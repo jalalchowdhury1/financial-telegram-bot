@@ -2246,3 +2246,15 @@ html { overscroll-behavior-y: contain; } /* Android's own pull = full reload; ou
   .fh-row { grid-template-columns: 104px minmax(0, 1fr); }
   .fh-note { grid-column: 1 / -1; }
 }
+
+/* AAII pill caption (CustomIndicatorBar.js aaiiCaption): phones only — desktop keeps its
+   detail lines; ≤500px hides those, so this one quiet line carries who leads + the date. */
+.indicator-pill .pill-caption { display: none; }
+@media (max-width: 500px) {
+  .indicator-pill .pill-caption {
+    display: block; margin-top: 2px;
+    font-size: 0.6rem; line-height: 1.3; color: var(--text-muted);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .indicator-pill .pill-caption-stale { color: var(--orange); font-weight: 700; }
+}

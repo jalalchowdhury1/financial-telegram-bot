@@ -18,6 +18,30 @@ export function aaiiAsOf(aaii) {
     );
 }
 
+/**
+ * Phone-only one-liner under the AAII number (≤500px hides every .pill-detail, so the
+ * survey date and the STALE warning above never showed on the iPhone). The number on
+ * the pill is AAIIDiff = bear − bull, so a positive diff means bears lead:
+ * "Bears +11.9 · Sep 30", or an orange "⚠ STALE · Sep 23" when a week was missed.
+ * No survey date or no number -> nothing (never a guess).
+ */
+export function aaiiCaption(aaii, diffStr) {
+    if (!aaii || !aaii.as_of) return null;
+    const diff = parseFloat(diffStr);
+    if (!Number.isFinite(diff)) return null;
+    const d = new Date(`${aaii.as_of}T12:00:00Z`);
+    if (Number.isNaN(d.getTime())) return null;
+    const label = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+    const stale = !!aaii.stale;
+    const lead = Math.abs(diff).toFixed(1);
+    const side = diff > 0 ? `Bears +${lead}` : diff < 0 ? `Bulls +${lead}` : 'Even';
+    return (
+        <div className={`pill-caption${stale ? ' pill-caption-stale' : ''}`} data-testid="aaii-caption">
+            {stale ? `⚠ STALE · ${label}` : `${side} · ${label}`}
+        </div>
+    );
+}
+
 export default function CustomIndicatorBar({ sheets, loading }) {
     // AAII is the only pill that earns a mark: it prints weekly on Thursdays.
     // VIX changes daily, and NotSoBoring / FrontRunner are not in the history sheet.
@@ -65,6 +89,7 @@ export default function CustomIndicatorBar({ sheets, loading }) {
                                     {sheets.AAIIDiff}
                                 </span>
                             </Delta>
+                            {aaiiCaption(sheets?.AAII, sheets.AAIIDiff)}
                             <div className="pill-detail" style={{ fontSize: '0.68rem', marginTop: '4px', color: isBullish ? 'var(--green)' : 'var(--text-muted)', fontWeight: 600 }}>
                                 {isBullish ? '🟢' : '⚪'} {isBullish ? 'Bullish' : 'Neutral'} outlook → {dateStr}
                             </div>
