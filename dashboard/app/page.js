@@ -22,6 +22,7 @@ import Delta from '../components/Delta';
 import MarkChip from '../components/MarkChip';
 import { MarkProvider, useMark, collectLiveValues } from '../components/MarkProvider';
 import JumpNav from '../components/JumpNav';
+import GlanceBar from '../components/GlanceBar';
 import WhatMoved from '../components/WhatMoved';
 import { UpdatedAgo, OfflineBanner, PullToRefresh } from '../components/PhonePolish';
 import { readSnap, writeSnap, savedLabel, purgeOldSnaps, isLiveAnswer } from '../lib/snapshot';
@@ -678,6 +679,15 @@ export default function Dashboard() {
 
             {/* 🧭 Jump menu — floating, appears once you scroll past the first screen */}
             <JumpNav />
+
+            {/* 🔝 Glance bar — SPY · F&G · age · ↻, floats in once Market Pulse scrolls off */}
+            <ErrorBoundary resetKey={refreshTick}>
+                <GlanceBar
+                    spy={spy} spyDailyMove={spyDailyMove} fg={fg} fgColor={fgColor}
+                    updatedAt={updatedAt} saved={anySaved} loading={loading}
+                    onRefresh={refreshNow} busy={refreshing}
+                />
+            </ErrorBoundary>
 
             {/* FOOTER */}
             <footer className="dashboard-footer">

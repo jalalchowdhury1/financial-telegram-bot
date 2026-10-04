@@ -2268,3 +2268,97 @@ html { overscroll-behavior-y: contain; } /* Android's own pull = full reload; ou
     pointer-events: none;
   }
 }
+
+/* 🔝 Glance bar (components/GlanceBar.js) — a floating glass capsule at the top once Market
+   Pulse scrolls off: "SPY 769.64 ▲0.74% · F&G 31 · 3 min ago ↻". Below the 2px auto-refresh
+   bar (top 0), z 905: over the cards and the ☰ (900), under the offline banner (940), the
+   pull label (950) and every modal. Hidden while a sheet, the jump menu or the offline
+   banner is up. 44px tall: both halves are full-height tap targets. */
+.glance-bar {
+  position: fixed;
+  top: calc(8px + env(safe-area-inset-top, 0px));
+  left: 50%;
+  z-index: 905;
+  display: flex;
+  align-items: center;
+  max-width: calc(100vw - 24px);
+  height: 44px;
+  padding: 0 0 0 2px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(17, 24, 39, 0.72);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  backdrop-filter: blur(16px) saturate(150%);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  transform: translate(-50%, calc(-100% - 20px - env(safe-area-inset-top, 0px)));
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.2s ease, visibility 0s linear 0.28s;
+}
+.glance-bar.is-on {
+  transform: translate(-50%, 0);
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.2s ease, visibility 0s;
+}
+html.sheet-open .glance-bar,
+html:has(.jump-menu) .glance-bar,
+html:has(.offline-banner) .glance-bar {
+  transform: translate(-50%, calc(-100% - 20px - env(safe-area-inset-top, 0px)));
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+.glance-main {
+  display: block;
+  min-width: 0;
+  height: 44px;
+  padding: 0 6px 0 14px;
+  border: 0;
+  border-radius: 999px 0 0 999px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  line-height: 44px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.glance-main b { font-weight: 700; }
+.glance-k { color: var(--text-muted); font-size: 0.68rem; font-weight: 600; letter-spacing: 0.05em; }
+.glance-sep { color: var(--text-muted); opacity: 0.6; }
+.glance-bar > .glance-sep { flex: none; margin-right: 6px; }
+.glance-bar .upd-ago,
+.glance-saved { flex: none; color: var(--text-secondary); font-size: 0.72rem; font-weight: 600; }
+.glance-bar .upd-ago.is-old,
+.glance-saved { color: var(--orange); }
+.glance-refresh {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin-left: 2px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.glance-refresh:hover { color: var(--purple); }
+.glance-refresh:disabled { opacity: 0.55; cursor: default; }
+.glance-refresh svg.spinning { animation: spin 0.8s linear infinite; }
+.glance-main:focus-visible, .glance-refresh:focus-visible { outline: 2px solid var(--purple); outline-offset: -2px; }
+/* jump landings clear the floating bar (8px + 44px + a little air) */
+[data-jump], [data-jump] > * { scroll-margin-top: calc(64px + env(safe-area-inset-top, 0px)); }
+@media (prefers-reduced-motion: reduce) {
+  .glance-bar, .glance-bar.is-on { transition: none; }
+}
+@media print { .glance-bar { display: none; } }
