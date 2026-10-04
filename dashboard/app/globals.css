@@ -2258,3 +2258,21 @@ html { overscroll-behavior-y: contain; } /* Android's own pull = full reload; ou
   }
   .indicator-pill .pill-caption-stale { color: var(--orange); font-weight: 700; }
 }
+
+/* Jev pills: one quiet "why" line under each verdict (JevPills.js + lib/jevWhy.js).
+   Desktop: the pill is a block, so the line simply follows. Phones (≤640px) lay the pill
+   out as a row; wrapping lets the line take its own full-width row. Max 2 lines. */
+.jev-pill .jev-pill-why {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+  margin-top: 6px; font-size: 0.68rem; line-height: 1.35; font-weight: 400;
+  color: var(--text-secondary, var(--text-muted)); opacity: 0.9;
+}
+/* A <button> centres its content vertically; with lines of different length that put each
+   pill's label + verdict at a different height. Top-align them on wide screens. */
+@media (min-width: 641px) {
+  .jev-pill { display: flex; flex-direction: column; justify-content: flex-start; }
+}
+@media (max-width: 640px) {
+  .jev-pill { flex-wrap: wrap; }
+  .jev-pill .jev-pill-why { flex: 1 0 100%; margin-top: 4px; }
+}
