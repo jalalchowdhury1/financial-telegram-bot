@@ -2229,3 +2229,42 @@ html { overscroll-behavior-y: contain; } /* Android's own pull = full reload; ou
   font-size: 0.68rem; color: var(--text-muted); font-variant-numeric: tabular-nums;
 }
 .series-dates { color: var(--text-primary); opacity: 0.85; }
+
+/* ===== QoL ship 6 · lane A (top of page) ===== */
+
+/* 📈 What moved on a phone: two calm rows (title + 2 chips, then 3 chips) instead of a
+   sideways scroll that hid 3 of the 5 chips (scrollWidth 598 vs 366 at 390px). Desktop
+   keeps its one line. Height = 2px + 30px chips + 6px gap + 30px chips + 2px = 70px. */
+@media (max-width: 480px) {
+  .moved-strip {
+    flex-wrap: wrap;
+    align-content: flex-start;
+    row-gap: 6px;
+    overflow: visible;
+    border-radius: 16px;
+  }
+  /* the waiting placeholder holds the same two rows, so nothing jumps when the chips land */
+  .moved-strip.is-waiting { min-height: 70px; }
+  .moved-strip.is-waiting .moved-saved { line-height: 30px; }
+  /* A saved copy gets the cards' corner tag instead of the inline one: inline, it can push
+     a chip onto a third row (and back when the live answer lands). Bottom-right, where the
+     shorter second row leaves room — above the strip sits the "Since" line. */
+  .moved-strip[data-cached] .moved-saved { display: none; }
+  .moved-strip[data-cached]::before {
+    content: "🕐 " attr(data-cached);
+    position: absolute;
+    right: 14px;
+    bottom: -10px;
+    z-index: 2;
+    padding: 1px 8px;
+    border-radius: 999px;
+    border: 1px dashed var(--text-muted);
+    background: var(--bg-primary);
+    color: var(--text-muted);
+    font-size: 0.62rem;
+    font-weight: 600;
+    line-height: 1.5;
+    letter-spacing: 0.02em;
+    pointer-events: none;
+  }
+}
