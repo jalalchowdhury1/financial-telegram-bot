@@ -33,7 +33,8 @@ test('14 months of bars (the Polygon path) cannot pose as a 5Y chart', () => {
 
 test('index-point history (Sheet path) is labelled as index points, not dollars', () => {
     const { container } = render(<SpyChart chartHistory={bars(1500, 6000, 1)} current={771.35} />);
-    const labels = [...container.querySelectorAll('svg text')].map((t) => t.textContent);
+    const labels = [...container.querySelectorAll('.axis-lbl')].map((t) => t.textContent);
+    expect(labels.length).toBeGreaterThan(4); // the y ticks are there, just not in dollars
     expect(labels.some((l) => l.startsWith('$'))).toBe(false);
     expect(container.querySelector('.chart-note').textContent).toMatch(/S&P 500 index points/);
 });
@@ -49,4 +50,18 @@ test('tap readout shows date and SPY price; the choice is remembered', () => {
     unmount();
     render(<SpyChart chartHistory={bars(1500, 400)} current={549.9} />);
     expect(screen.getByRole('button', { name: '1Y' }).style.color).toBe('rgb(56, 189, 248)');
+});
+
+test('axis labels are HTML spans over the chart, placed by % of the viewBox, never SVG text', () => {
+    const { container } = render(<SpyChart chartHistory={bars(1500, 400)} current={549.9} />);
+    expect(container.querySelectorAll('svg text').length).toBe(0);
+    const labels = [...container.querySelectorAll('.axis-layer .axis-lbl')];
+    const texts = labels.map((l) => l.textContent);
+    expect(texts).toContain('2026'); // a year label
+    expect(texts.some((t) => /^\$\d+$/.test(t))).toBe(true); // a y tick: SPY dollars
+    for (const l of labels) {
+        expect(l.style.left).toMatch(/%$/);
+        expect(l.style.top).toMatch(/%$/);
+    }
+    expect(container.querySelector('.axis-layer').getAttribute('aria-hidden')).toBe('true');
 });

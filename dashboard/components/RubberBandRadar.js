@@ -3,6 +3,9 @@ import { useEffect, useState } from 'react';
 import ErrorBoundary from './ErrorBoundary';
 import Skeleton from './Skeleton';
 import { DIAL_ORDER, dialLabel } from '../lib/rubberBand';
+import { gutterFor, spreadLabels } from '../lib/chartAxis';
+import useElementWidth from './useElementWidth';
+import AxisLabels from './AxisLabels';
 
 /**
  * 🪢 Rubber Band Radar v1.1 — "is the dip-buying regime still alive?" in five dials, plus the
@@ -186,35 +189,50 @@ function ExplainPanel({ k, d, ctx, onClose }) {
 
 /** Slow (solid) + fast (dashed) excess lines over the published history, zero line drawn. */
 function BandChart({ history }) {
+    const [plotRef, plotPx] = useElementWidth();
     const pts = (history || []).filter((h) => h.slow != null);
     if (pts.length < 20) return null;
-    const W = 720, H = 120, padL = 34, padR = 8, padT = 8, padB = 18;
+    // The chart scales evenly with its width, so on a phone the old 720×120 drawing shrank to
+    // ~56px tall with ~4px text. Once measured, the height and margins are set in real px
+    // (k = viewBox units per CSS px; 1 = the old drawing until then) and labels are 10px HTML.
+    const W = 720, padR = 8;
+    const k = plotPx ? W / plotPx : 1;
+    const H = Math.max(120, Math.round(96 * k));
+    const padT = Math.max(8, Math.ceil(7 * k)), padB = Math.max(18, Math.ceil(16 * k));
     const vals = pts.flatMap((h) => [h.slow, h.fast ?? h.slow]).filter((v) => v != null);
     const lo = Math.min(0, ...vals), hi = Math.max(0, ...vals);
     const span = hi - lo || 1;
+    const ticks = [lo, 0, hi].filter((v, i, a) => a.indexOf(v) === i);
+    const padL = gutterFor(ticks.map((v) => signed(v, 1)), W, plotPx, 34);
     const x = (i) => padL + (i / (pts.length - 1)) * (W - padL - padR);
     const y = (v) => padT + (1 - (v - lo) / span) * (H - padT - padB);
     const path = (key) => pts.map((h, i) => (h[key] == null ? null : `${i === 0 || pts[i - 1][key] == null ? 'M' : 'L'}${x(i).toFixed(1)},${y(h[key]).toFixed(1)}`)).filter(Boolean).join(' ');
     const last = pts[pts.length - 1];
-    const ticks = [lo, 0, hi].filter((v, i, a) => a.indexOf(v) === i);
     const first = pts[0].d, mid = pts[Math.floor(pts.length / 2)].d;
+    // zero first, then the extremes; a tick closer than 12px to a kept one goes unlabelled
+    const tickLabels = spreadLabels([0, hi, lo].filter((v) => ticks.includes(v)).map((v) => ({ v, pos: y(v) / k })), 12);
+    const labels = [
+        ...tickLabels.map(({ v }) => ({ x: padL - 4 * k, y: y(v), text: signed(v, 1), ax: 'end', ay: 'middle' })),
+        { x: padL, y: H, text: first, ax: 'start', ay: 'bottom' },
+        { x: (padL + W - padR) / 2, y: H, text: mid, ax: 'middle', ay: 'bottom' },
+        { x: W - padR, y: H, text: last.d, ax: 'end', ay: 'bottom' },
+    ];
     return (
+        <>
+        <div className="chart-plot" ref={plotRef}>
         <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Slow and fast dip-payoff lines over the last three years, with the zero line" style={{ width: '100%', height: 'auto', display: 'block' }}>
             {ticks.map((v) => (
-                <g key={v}>
-                    <line x1={padL} x2={W - padR} y1={y(v)} y2={y(v)} stroke={v === 0 ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.08)'} strokeDasharray={v === 0 ? '' : '2 4'} />
-                    <text x={padL - 4} y={y(v) + 3} fontSize="9" fill="var(--text-muted)" textAnchor="end">{signed(v, 1)}</text>
-                </g>
+                <line key={v} x1={padL} x2={W - padR} y1={y(v)} y2={y(v)} stroke={v === 0 ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.08)'} strokeDasharray={v === 0 ? '' : '2 4'} />
             ))}
             <rect x={padL} y={y(0)} width={W - padL - padR} height={Math.max(0, y(lo) - y(0))} fill="rgba(239,68,68,0.06)" />
             <path d={path('fast')} fill="none" stroke="var(--text-muted)" strokeWidth="1.2" strokeDasharray="3 3" opacity="0.9" />
             <path d={path('slow')} fill="none" stroke={last.slow >= 0 ? 'var(--green)' : 'var(--red)'} strokeWidth="2" />
             <circle cx={x(pts.length - 1)} cy={y(last.slow)} r="3" fill={last.slow >= 0 ? 'var(--green)' : 'var(--red)'} />
-            <text x={padL} y={H - 5} fontSize="9" fill="var(--text-muted)">{first}</text>
-            <text x={(padL + W - padR) / 2} y={H - 5} fontSize="9" fill="var(--text-muted)" textAnchor="middle">{mid}</text>
-            <text x={W - padR} y={H - 5} fontSize="9" fill="var(--text-muted)" textAnchor="end">{last.d}</text>
-            <text x={W - padR} y={padT + 9} fontSize="9" fill="var(--text-muted)" textAnchor="end">— slow (30 dips)   - - fast (20 dips)   · below zero = dips lose</text>
         </svg>
+        <AxisLabels w={W} h={H} labels={labels} />
+        </div>
+        <div className="band-legend">— slow (30 dips) · - - fast (20 dips) · below zero = dips lose</div>
+        </>
     );
 }
 

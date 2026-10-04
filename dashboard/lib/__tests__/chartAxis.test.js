@@ -1,4 +1,4 @@
-import { yearTicks, indexFromPointer, tfAvailable, fmtDay, readChoice, saveChoice } from '../chartAxis';
+import { yearTicks, indexFromPointer, tfAvailable, fmtDay, readChoice, saveChoice, unitsForPx, spreadLabels, axisPos, gutterFor, clampUnits } from '../chartAxis';
 
 const quarterly = (from, to) => {
     const out = [];
@@ -76,5 +76,51 @@ describe('readChoice / saveChoice', () => {
         expect(readChoice('k')).toBeNull();
         expect(() => saveChoice('k', '1Y')).not.toThrow();
         spy.mockRestore(); spy2.mockRestore();
+    });
+});
+
+describe('readable axis labels (HTML over the SVG)', () => {
+    it('unitsForPx: viewBox units a run of CSS px spans; null until the chart is measured', () => {
+        expect(unitsForPx(34, 480, 336)).toBeCloseTo(48.57, 2); // phone: 480 units drawn 336px wide
+        expect(unitsForPx(34, 480, 620)).toBeCloseTo(26.32, 2); // desk
+        expect(unitsForPx(34, 480, null)).toBeNull();
+        expect(unitsForPx(34, 480, 0)).toBeNull();
+        expect(unitsForPx(34, 480, NaN)).toBeNull();
+    });
+
+    it('yearTicks with a phone-sized minGap drops a partial first year that would touch its neighbour', () => {
+        const d = ['2021-11-01', '2021-12-01', ...quarterly(2022, 2026)];
+        const x = toX(d.length);
+        // 2021 sits ~41 units left of 2022: fine on a desk (26-unit gap), a collision at 336px wide
+        expect(yearTicks(d, x).map((t) => t.label)[0]).toBe('2021');
+        expect(yearTicks(d, x, { minGap: unitsForPx(34, 480, 336) }).map((t) => t.label)).toEqual(['2022', '2023', '2024', '2025', '2026']);
+    });
+
+    it('spreadLabels keeps labels in priority order and drops any closer than the gap', () => {
+        const items = [{ id: 'zero', pos: 30 }, { id: 'hi', pos: 4 }, { id: 'lo', pos: 40 }];
+        expect(spreadLabels(items, 12).map((i) => i.id)).toEqual(['zero', 'hi']); // lo is 10px from zero
+        expect(spreadLabels(items, 8).map((i) => i.id)).toEqual(['zero', 'hi', 'lo']);
+        expect(spreadLabels([], 12)).toEqual([]);
+        expect(spreadLabels([{ id: 'a', pos: NaN }, { id: 'b', pos: 5 }], 12).map((i) => i.id)).toEqual(['b']);
+    });
+
+    it('axisPos places a label by % of the viewBox (so it never stretches with the SVG)', () => {
+        expect(axisPos(240, 90, 480, 180)).toEqual({ left: '50%', top: '50%' });
+        expect(axisPos(38, 180, 480, 180)).toEqual({ left: '7.9167%', top: '100%' });
+    });
+
+    it('gutterFor: a left gutter wide enough for the longest y label at 10px, never under the old one', () => {
+        // '1234.5' = 6 chars ≈ 6 × 6.1 + 8 = 44.6px → 63.7 units on a 480-unit chart drawn 336px wide
+        expect(gutterFor(['1.0', '1234.5'], 480, 336, 42)).toBe(64);
+        expect(gutterFor(['1.0', '1234.5'], 480, 620, 42)).toBe(42); // desk: the old gutter already fits
+        expect(gutterFor(['1.0'], 480, null, 42)).toBe(42); // not measured yet → old layout
+        expect(gutterFor([], 480, 336, 42)).toBe(42);
+    });
+
+    it('clampUnits keeps a centred label of `halfPx` inside the chart', () => {
+        expect(clampUnits(475, 12, 480, 336)).toBeCloseTo(480 - unitsForPx(12, 480, 336), 6);
+        expect(clampUnits(2, 12, 480, 336)).toBeCloseTo(unitsForPx(12, 480, 336), 6);
+        expect(clampUnits(240, 12, 480, 336)).toBe(240);
+        expect(clampUnits(475, 12, 480, null)).toBe(475); // not measured: left alone
     });
 });

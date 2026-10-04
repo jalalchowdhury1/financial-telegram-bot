@@ -2262,3 +2262,22 @@ html { overscroll-behavior-y: contain; } /* Android's own pull = full reload; ou
 /* 🧷 Sheets hold the page still (components/useSheetLock.js puts .sheet-open on <html>
    and locks scroll). A swipe that reaches the end of a sheet stays in the sheet. */
 .jev-modal-backdrop, .jev-modal { overscroll-behavior: contain; }
+
+/* 🔤 Readable chart labels. The SVGs stretch (preserveAspectRatio="none") or shrink with
+   the card, so SVG text came out 4–7px and squashed. Tick labels are now HTML spans laid
+   over the chart at the same viewBox point (by %, components/AxisLabels.js): a sharp 10px
+   at any width. They never take a tap — tap-to-read goes straight through to the SVG. */
+.chart-plot { position: relative; height: 100%; }
+.chart-plot > svg { display: block; }
+.axis-layer { position: absolute; inset: 0; pointer-events: none; }
+.axis-lbl {
+  position: absolute;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--text-muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+.band-legend { margin-top: 4px; font-size: 10px; line-height: 1.35; color: var(--text-muted); text-align: right; }

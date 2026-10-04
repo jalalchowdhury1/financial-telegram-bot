@@ -1,11 +1,14 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
-import { yearTicks, indexFromPointer, tfAvailable, fmtDay, readChoice, saveChoice } from '../lib/chartAxis';
+import { yearTicks, indexFromPointer, tfAvailable, fmtDay, readChoice, saveChoice, unitsForPx, gutterFor, clampUnits, LABEL_CHAR_PX } from '../lib/chartAxis';
+import useElementWidth from './useElementWidth';
+import AxisLabels from './AxisLabels';
 
 export default function MiniChart({ history, color = '#818cf8', gradientId = 'chartGrad', showZero = false, recessions = [], label = '', cadence = 'auto', defaultTimeframe = null, fmt = null }) {
     const [timeframe, setTimeframe] = useState(defaultTimeframe || '5Y');
     const [hover, setHover] = useState(null);
     const svgRef = useRef(null);
+    const [plotRef, plotPx] = useElementWidth(); // real px width → 10px labels spaced honestly
     // Each chart remembers its timeframe per device (gradientId is unique per card).
     const storeKey = `ftb:tf:${gradientId}`;
     useEffect(() => { const v = readChoice(storeKey); if (v) setTimeframe(v); }, [storeKey]);
@@ -39,14 +42,24 @@ export default function MiniChart({ history, color = '#818cf8', gradientId = 'ch
     const sliceLen = Math.min(tfMap[activeTf] || history.length, history.length);
     const data = history.slice(-sliceLen);
 
-    const w = 480, h = 180, padL = 42, padR = 8, padT = 10, padB = 22;
+    const w = 480, h = 180, padR = 8, padT = 10, padB = 22;
     const values = data.map(d => d.value);
     const dates = data.map(d => d.date);
     const min = Math.min(...values), max = Math.max(...values);
     const range = max - min || 1;
+    const toY = (v) => h - padB - ((v - min) / range) * (h - padT - padB);
+
+    // Y-axis ticks (fmt lets big-number series render compact labels like 350K)
+    const fmtTick = fmt || ((v) => (v >= 10 ? v.toFixed(1) : v.toFixed(2)));
+    const yTicks = [];
+    for (let i = 0; i <= 4; i++) {
+        const val = min + (range * i) / 4;
+        yTicks.push({ y: toY(val), label: fmtTick(val) });
+    }
+    // The left gutter fits the longest tick at a real 10px (the old 42 units until measured).
+    const padL = gutterFor(yTicks.map((t) => t.label), w, plotPx, 42);
 
     const toX = (i) => padL + (i / (data.length - 1)) * (w - padL - padR);
-    const toY = (v) => h - padB - ((v - min) / range) * (h - padT - padB);
 
     const line = values.map((v, i) => `${toX(i)},${toY(v)}`).join(' ');
     const area = line + ` ${w - padR},${h - padB} ${padL},${h - padB}`;
@@ -61,16 +74,14 @@ export default function MiniChart({ history, color = '#818cf8', gradientId = 'ch
     };
     const visibleRecessions = recessions.filter(r => r.start <= dates[dates.length - 1] && r.end >= dates[0]);
 
-    // Year labels, thinned so a 1947→today axis stays readable
-    const yearLabels = yearTicks(dates, toX);
-
-    // Y-axis ticks (fmt lets big-number series render compact labels like 350K)
-    const fmtTick = fmt || ((v) => (v >= 10 ? v.toFixed(1) : v.toFixed(2)));
-    const yTicks = [];
-    for (let i = 0; i <= 4; i++) {
-        const val = min + (range * i) / 4;
-        yTicks.push({ y: toY(val), label: fmtTick(val) });
-    }
+    // Year labels, thinned so a 1947→today axis stays readable; at least one 4-digit
+    // label + 10px apart once the real width is known (a partial first year drops out).
+    const yearLabels = yearTicks(dates, toX, { minGap: Math.max(26, unitsForPx(LABEL_CHAR_PX * 4 + 10, w, plotPx) ?? 26) });
+    const lblGap = unitsForPx(4, w, plotPx) ?? 4;
+    const axisLabels = [
+        ...yTicks.map((t) => ({ x: padL - lblGap, y: t.y, text: t.label, ax: 'end', ay: 'middle' })),
+        ...yearLabels.map((yl) => ({ x: clampUnits(yl.x, (yl.label.length * LABEL_CHAR_PX) / 2, w, plotPx), y: h, text: yl.label, ax: 'middle', ay: 'bottom' })),
+    ];
 
     // Change over period
     const change = values[values.length - 1] - values[0];
@@ -121,50 +132,46 @@ export default function MiniChart({ history, color = '#818cf8', gradientId = 'ch
                 )}
             </div>
             <div className="mini-chart" style={{ height: '180px' }}>
-                <svg ref={svgRef} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none"
-                    onPointerMove={onPoint} onPointerDown={onPoint} onPointerLeave={onLeave}
-                    style={{ touchAction: 'pan-y' }}>
-                    <defs>
-                        <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor={color} stopOpacity="0.2" />
-                            <stop offset="100%" stopColor={color} stopOpacity="0" />
-                        </linearGradient>
-                    </defs>
-                    {/* Y-axis grid + labels */}
-                    {yTicks.map((t, i) => (
-                        <g key={i}>
-                            <line x1={padL} x2={w - padR} y1={t.y} y2={t.y} stroke="rgba(255,255,255,0.04)" strokeWidth="1" />
-                            <text x={padL - 4} y={t.y + 3} fill="rgba(255,255,255,0.25)" fontSize="7" fontFamily="JetBrains Mono, monospace" textAnchor="end">{t.label}</text>
-                        </g>
-                    ))}
-                    {/* Year labels */}
-                    {yearLabels.map((yl, i) => (
-                        <text key={i} x={yl.x} y={h - 4} fill="rgba(255,255,255,0.2)" fontSize="7" fontFamily="JetBrains Mono, monospace" textAnchor="middle">{yl.label}</text>
-                    ))}
-                    {/* Recession bands */}
-                    {visibleRecessions.map((rec, i) => {
-                        const x1 = Math.max(dateToX(rec.start), padL);
-                        const x2 = Math.min(dateToX(rec.end), w - padR);
-                        if (x2 <= x1) return null;
-                        return <rect key={`rec-${i}`} x={x1} y={padT} width={x2 - x1} height={h - padT - padB} fill="rgba(239,68,68,0.08)" rx="2" />;
-                    })}
-                    {/* Zero line */}
-                    {showZero && min < 0 && max > 0 && (
-                        <line
-                            x1={padL} x2={w - padR}
-                            y1={toY(0)} y2={toY(0)}
-                            stroke="rgba(239,68,68,0.35)" strokeDasharray="4,3" strokeWidth="1"
-                        />
-                    )}
-                    <polygon points={area} fill={`url(#${gradientId})`} />
-                    <polyline points={line} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" />
-                    {hi != null && (
-                        <g className="chart-cursor" pointerEvents="none">
-                            <line x1={toX(hi)} x2={toX(hi)} y1={padT} y2={h - padB} stroke="rgba(255,255,255,0.35)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
-                            <circle cx={toX(hi)} cy={toY(values[hi])} r="3" fill={color} stroke="#0a0e17" strokeWidth="1.5" />
-                        </g>
-                    )}
-                </svg>
+                <div className="chart-plot" ref={plotRef}>
+                    <svg ref={svgRef} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none"
+                        onPointerMove={onPoint} onPointerDown={onPoint} onPointerLeave={onLeave}
+                        style={{ touchAction: 'pan-y' }}>
+                        <defs>
+                            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor={color} stopOpacity="0.2" />
+                                <stop offset="100%" stopColor={color} stopOpacity="0" />
+                            </linearGradient>
+                        </defs>
+                        {/* Y-axis grid (its labels are HTML, below) */}
+                        {yTicks.map((t, i) => (
+                            <line key={i} x1={padL} x2={w - padR} y1={t.y} y2={t.y} stroke="rgba(255,255,255,0.04)" strokeWidth="1" />
+                        ))}
+                        {/* Recession bands */}
+                        {visibleRecessions.map((rec, i) => {
+                            const x1 = Math.max(dateToX(rec.start), padL);
+                            const x2 = Math.min(dateToX(rec.end), w - padR);
+                            if (x2 <= x1) return null;
+                            return <rect key={`rec-${i}`} x={x1} y={padT} width={x2 - x1} height={h - padT - padB} fill="rgba(239,68,68,0.08)" rx="2" />;
+                        })}
+                        {/* Zero line */}
+                        {showZero && min < 0 && max > 0 && (
+                            <line
+                                x1={padL} x2={w - padR}
+                                y1={toY(0)} y2={toY(0)}
+                                stroke="rgba(239,68,68,0.35)" strokeDasharray="4,3" strokeWidth="1"
+                            />
+                        )}
+                        <polygon points={area} fill={`url(#${gradientId})`} />
+                        <polyline points={line} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" />
+                        {hi != null && (
+                            <g className="chart-cursor" pointerEvents="none">
+                                <line x1={toX(hi)} x2={toX(hi)} y1={padT} y2={h - padB} stroke="rgba(255,255,255,0.35)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+                                <circle cx={toX(hi)} cy={toY(values[hi])} r="3" fill={color} stroke="#0a0e17" strokeWidth="1.5" />
+                            </g>
+                        )}
+                    </svg>
+                    <AxisLabels w={w} h={h} labels={axisLabels} />
+                </div>
             </div>
         </div>
     );
