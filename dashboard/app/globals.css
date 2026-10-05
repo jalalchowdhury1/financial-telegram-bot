@@ -2463,6 +2463,11 @@ html:has(.offline-banner) .glance-bar {
 }
 html.sheet-open .back-pill,
 html:has(.jump-menu) .back-pill { opacity: 0; visibility: hidden; pointer-events: none; }
+/* near the top (☰ ↑ Top, or a tap on the glance bar) the ☰ hides: take its corner, no gap */
+html:not(:has(.jump-fab)) .back-pill {
+  right: calc(16px + env(safe-area-inset-right, 0px));
+  max-width: calc(100vw - 32px - env(safe-area-inset-right, 0px));
+}
 .back-pill:hover { border-color: var(--purple); }
 .back-pill:focus-visible { outline: 2px solid var(--purple); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) {

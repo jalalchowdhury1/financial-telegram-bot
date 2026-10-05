@@ -7,13 +7,15 @@
  *    carries the SPY card's session word off the day ("▲0.74% Fri"). F&G down = SPY + ↻ stay.
  *  - The age is the header's: <UpdatedAgo> (amber past 10 min), or "🕐 Saved 10:42" while
  *    the page shows a saved copy and nothing live has landed.
- *  - Tap the numbers → back to the top. ↻ = the header's refresh (skips the edge cache).
+ *  - Tap the numbers → back to the top, noted like ☰ → ↑ Top so the ↩ pill can bring him
+ *    back. ↻ = the header's refresh (skips the edge cache).
  *  - Hidden near the top; CSS also hides it while a sheet (html.sheet-open), the jump menu
  *    or the offline banner is up. Reduced motion: no slide.
  */
 import { useEffect, useState } from 'react';
 import { UpdatedAgo } from './PhonePolish';
 import { glanceNumbers, glanceAge, shouldShowGlance } from '../lib/glance';
+import { noteJumpFrom } from './JumpNav';
 
 // Market Pulse is the anchor; if it is not on the page (a crashed card), the header is.
 const ANCHORS = ['.market-pulse', '.dashboard-header'];
@@ -50,6 +52,7 @@ export default function GlanceBar({ spy, spyDailyMove, fg, fgColor, when, update
     const age = glanceAge({ updatedAt, saved, loading });
     const toTop = () => {
         const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+        noteJumpFrom();
         window.scrollTo({ top: 0, behavior: reduce ? 'auto' : 'smooth' });
     };
     const moveSaid = n.move ? ` ${n.move.text}${n.move.when ? ` ${n.move.when}` : ''}` : '';

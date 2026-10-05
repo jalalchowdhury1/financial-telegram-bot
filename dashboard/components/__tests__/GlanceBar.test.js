@@ -1,5 +1,6 @@
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import GlanceBar from '../GlanceBar';
+import { clearJump, currentJump } from '../../lib/jumpBack';
 
 const spy = { current: 769.64, dailyChange: { value: 5.65, pct: 0.7395 } };
 const fg = { score: 31.2, rating: 'fear' };
@@ -16,7 +17,7 @@ beforeEach(() => {
     window.scrollTo = jest.fn();
     jest.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => { cb(); return 1; });
 });
-afterEach(() => jest.restoreAllMocks());
+afterEach(() => { clearJump(); jest.restoreAllMocks(); });
 
 const Page = (props) => (
     <>
@@ -49,11 +50,13 @@ it('↻ runs the page refresh; it is disabled and spins while busy', () => {
     expect(btn.querySelector('svg')).toHaveClass('spinning');
 });
 
-it('tapping the numbers scrolls back to the top', () => {
+it('tapping the numbers scrolls back to the top, and ↩ can bring him back (as ☰ → ↑ Top does)', () => {
     render(<Page />);
     scrollPast(-5);
+    expect(currentJump()).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: /back to top/ }));
     expect(window.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: 'smooth' });
+    expect(currentJump()).not.toBeNull();
 });
 
 it('the SPY move names its session like the SPY card: "▲0.74% Fri" on a weekend, no word on the day', () => {
