@@ -192,3 +192,22 @@ it('📡 Market Pulse shows the verdicts of the cards below, the Rubber Band one
     expect(chips).toEqual(['Dips pay ✓', 'Vol calm', 'Horsemen 1/4', 'Curve +0.45%', 'Bull 7/8']);
     expect(line.textContent).not.toMatch(/RSI|F&G|SPY/);
 });
+
+it('↩ after a Market Pulse chip jump, the back pill offers the way back', async () => {
+    const { clearJump } = require('../../lib/jumpBack');
+    const ok = (body) => Promise.resolve({ status: 200, json: async () => body });
+    jest.spyOn(Element.prototype, 'getClientRects').mockImplementation(() => [{ top: 0 }]);
+    Element.prototype.scrollIntoView = jest.fn();
+    window.scrollY = 0;
+    mockRoutes({
+        '/api/fred': ok(require('../../lib/__tests__/fixtures/pulse-fred-2026-10-04.json')),
+        '/api/vol': ok(require('../../lib/__tests__/fixtures/pulse-vol-2026-10-04.json')),
+    });
+    render(<Dashboard />);
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Vol calm/ })).toBeInTheDocument());
+    expect(document.querySelector('.back-pill')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /^Vol calm/ }));
+    // jsdom has no layout (every top is 0), so only the pill itself is checked here; BackPill.test checks the names
+    expect(screen.getByRole('button', { name: /^Back to / })).toHaveClass('is-on');
+    act(() => clearJump());
+});

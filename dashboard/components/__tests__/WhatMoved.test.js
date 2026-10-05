@@ -52,6 +52,29 @@ test('tapping a chip scrolls to its card and flashes it', () => {
     expect(jumpToCard('Nope')).toBe(false);
 });
 
+test('↩ a chip jump remembers where he was (for the back pill); a missing card remembers nothing', () => {
+    const { currentJump, clearJump } = require('../../lib/jumpBack');
+    clearJump();
+    window.scrollY = 3100;
+    jest.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function box() {
+        const top = Number(this.dataset?.top || 0) - window.scrollY;
+        return { top, bottom: top + 100, left: 0, right: 100, width: 100, height: 100 };
+    });
+    render(
+        <>
+            <section data-jump="Economy" data-top="3000">e</section>
+            <div data-jump="Volatility" style={{ display: 'contents' }}><div className="card" data-top="5000" /></div>
+            <WhatMoved {...props()} />
+        </>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /^VIX/ }));
+    expect(currentJump()).toMatchObject({ label: 'Economy', offset: 100, y: 3100 });
+    clearJump();
+    expect(jumpToCard('Nope')).toBe(false);
+    expect(currentJump()).toBeNull();
+    window.scrollY = 0;
+});
+
 test('holds its line while feeds load, then collapses if nothing moved', () => {
     const empty = { spy: null, fg: null, vol: null, extra: null, history: null };
     const { container, rerender } = render(<WhatMoved {...empty} waiting />);

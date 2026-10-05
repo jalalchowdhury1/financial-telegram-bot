@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import { rememberJump } from '../lib/jumpBack';
 
 /**
  * 🧭 Jump menu. On a phone the page is ~8,000 px tall — reaching the vol table or
@@ -29,6 +30,19 @@ export function collectSections(root = typeof document !== 'undefined' ? documen
         .filter((s) => s.label && jumpTarget(s.el));
 }
 
+/** Every rendered section's document top, for the ↩ back pill's "section + offset". */
+export function measureSections() {
+    if (typeof window === 'undefined') return [];
+    return collectSections().map((s) => ({ label: s.label, top: jumpTarget(s.el).getBoundingClientRect().top + window.scrollY }));
+}
+
+/** Call just before any jump: remembers where he is, so ↩ can bring him back (lib/jumpBack.js). */
+export function noteJumpFrom() {
+    try {
+        rememberJump({ y: window.scrollY, vh: window.innerHeight, sections: measureSections() });
+    } catch { /* never block the jump itself */ }
+}
+
 export default function JumpNav() {
     const [show, setShow] = useState(false);
     const [open, setOpen] = useState(false);
@@ -56,10 +70,14 @@ export default function JumpNav() {
     const smooth = () => (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth');
     const go = (el) => {
         setOpen(false);
-        jumpTarget(el)?.scrollIntoView({ behavior: smooth(), block: 'start' });
+        const t = jumpTarget(el);
+        if (!t) return;
+        noteJumpFrom();
+        t.scrollIntoView({ behavior: smooth(), block: 'start' });
     };
     const top = () => {
         setOpen(false);
+        noteJumpFrom();
         window.scrollTo({ top: 0, behavior: smooth() });
     };
 

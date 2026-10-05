@@ -63,6 +63,32 @@ it('↑ Top scrolls to the top; Esc and the backdrop close the menu', () => {
     expect(screen.queryByRole('navigation')).toBeNull();
 });
 
+it('↩ a menu jump and ↑ Top both remember where he was (for the back pill)', () => {
+    const { currentJump, clearJump } = require('../../lib/jumpBack');
+    clearJump();
+    jest.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function box() {
+        const top = Number(this.dataset?.top || 0) - window.scrollY;
+        return { top, bottom: top + 100, left: 0, right: 100, width: 100, height: 100 };
+    });
+    render(
+        <>
+            <section data-jump="Factors" data-top="900">f</section>
+            <div data-jump="Economy" style={{ display: 'contents' }}><div className="card" data-top="3000">econ</div></div>
+            <JumpNav />
+        </>,
+    );
+    scrollTo(3100);
+    fireEvent.click(screen.getByRole('button', { name: 'Jump to a section' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Factors' }));
+    expect(currentJump()).toMatchObject({ label: 'Economy', offset: 100, y: 3100 });
+
+    scrollTo(1000);
+    fireEvent.click(screen.getByRole('button', { name: 'Jump to a section' }));
+    fireEvent.click(screen.getByRole('button', { name: '↑ Top' }));
+    expect(currentJump()).toMatchObject({ label: 'Factors', offset: 100, y: 1000 });
+    clearJump();
+});
+
 it('collectSections is safe with no document root', () => {
     expect(collectSections(null)).toEqual([]);
 });

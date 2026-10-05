@@ -2412,3 +2412,49 @@ html:has(.offline-banner) .glance-bar {
 @media (prefers-reduced-motion: reduce) {
   .pulse-chip { transition: none; }
 }
+/* ↩ Back pill: left of the ☰ button after any jump (BackPill.js · lib/jumpBack.js) */
+.back-pill {
+  position: fixed;
+  right: calc(16px + 44px + 8px + env(safe-area-inset-right, 0px));
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  z-index: 900;
+  display: block;
+  max-width: calc(100vw - 68px - 16px - env(safe-area-inset-right, 0px));
+  height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--border-glow);
+  border-radius: 999px;
+  background: rgba(17, 24, 39, 0.72);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  backdrop-filter: blur(16px) saturate(150%);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 42px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(8px);
+  transition: opacity 0.2s ease, transform 0.2s ease, visibility 0s linear 0.2s;
+}
+.back-pill.is-on {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: none;
+  transition: opacity 0.2s ease, transform 0.2s ease, visibility 0s;
+}
+html.sheet-open .back-pill,
+html:has(.jump-menu) .back-pill { opacity: 0; visibility: hidden; pointer-events: none; }
+.back-pill:hover { border-color: var(--purple); }
+.back-pill:focus-visible { outline: 2px solid var(--purple); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  .back-pill, .back-pill.is-on { transition: none; }
+}
+@media print { .back-pill { display: none; } }

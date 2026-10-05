@@ -6,7 +6,7 @@
  */
 import { useMemo } from 'react';
 import { collectMoves, fmtLevel, movedWhen } from '../lib/whatMoved';
-import { jumpTarget } from './JumpNav';
+import { jumpTarget, noteJumpFrom } from './JumpNav';
 
 const FLASH_MS = 1600;
 
@@ -16,6 +16,7 @@ export function jumpToCard(label) {
     const el = [...document.querySelectorAll('[data-jump]')].find((e) => e.getAttribute('data-jump') === label);
     const t = jumpTarget(el);
     if (!t) return false;
+    noteJumpFrom(); // ↩ the back pill can return here
     const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     t.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
     t.classList.add('jump-flash');

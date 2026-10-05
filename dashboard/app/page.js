@@ -23,6 +23,7 @@ import MarkChip from '../components/MarkChip';
 import { MarkProvider, useMark, collectLiveValues } from '../components/MarkProvider';
 import JumpNav from '../components/JumpNav';
 import GlanceBar from '../components/GlanceBar';
+import BackPill from '../components/BackPill';
 import WhatMoved from '../components/WhatMoved';
 import { UpdatedAgo, OfflineBanner, PullToRefresh } from '../components/PhonePolish';
 import { readSnap, writeSnap, savedLabel, purgeOldSnaps, isLiveAnswer } from '../lib/snapshot';
@@ -693,6 +694,8 @@ export default function Dashboard() {
                     onRefresh={refreshNow} busy={refreshing}
                 />
             </ErrorBoundary>
+            {/* ↩ Back pill — after any jump, one tap back to where he was */}
+            <ErrorBoundary resetKey={refreshTick}><BackPill /></ErrorBoundary>
 
             {/* FOOTER */}
             <footer className="dashboard-footer">
