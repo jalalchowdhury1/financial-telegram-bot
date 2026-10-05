@@ -17,6 +17,10 @@
  *
  * Nested opens are counted: the page unlocks only when the last sheet closes. The
  * effect cleanup runs on unmount too (a refresh resetting a card mid-open).
+ *
+ * useSheetFocus(open, boxRef) — keyboard + screen-reader focus follows the sheet: on open it
+ * moves to the sheet's × (.sheet-x, else the box), Tab wraps inside the box instead of walking
+ * the locked page behind it, and on close focus goes back to whatever opened it.
  */
 import { useEffect } from 'react';
 
@@ -79,4 +83,40 @@ export default function useSheetLock(open) {
         lockPage();
         return unlockPage;
     }, [open]);
+}
+
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+export function useSheetFocus(open, boxRef) {
+    useEffect(() => {
+        if (!open || typeof document === 'undefined') return undefined;
+        const before = document.activeElement;
+        const box = boxRef && boxRef.current;
+        if (box) {
+            const target = box.querySelector('.sheet-x') || box;
+            if (target === box && !box.hasAttribute('tabindex')) box.setAttribute('tabindex', '-1');
+            try { target.focus({ preventScroll: true }); } catch { /* best effort */ }
+        }
+        const onKey = (e) => {
+            const b = boxRef && boxRef.current;
+            if (e.key !== 'Tab' || !b) return;
+            const items = Array.from(b.querySelectorAll(FOCUSABLE));
+            if (!items.length) return;
+            const first = items[0];
+            const last = items[items.length - 1];
+            const at = document.activeElement;
+            let to = null;
+            if (!b.contains(at)) to = e.shiftKey ? last : first;
+            else if (e.shiftKey && at === first) to = last;
+            else if (!e.shiftKey && at === last) to = first;
+            if (to) { e.preventDefault(); try { to.focus({ preventScroll: true }); } catch { /* best effort */ } }
+        };
+        document.addEventListener('keydown', onKey);
+        return () => {
+            document.removeEventListener('keydown', onKey);
+            if (before && before !== document.body && before.isConnected && typeof before.focus === 'function') {
+                try { before.focus({ preventScroll: true }); } catch { /* best effort */ }
+            }
+        };
+    }, [open, boxRef]);
 }

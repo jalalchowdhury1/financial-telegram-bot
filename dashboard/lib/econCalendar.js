@@ -15,12 +15,14 @@
  *          Both BLS pages (and the bls.gov/schedule/news_release/bls.ics feed) list release
  *          dates only through December 2026 — BLS has not posted its 2027 schedule yet. 2027 CPI
  *          and jobs dates are LEFT OUT, never guessed. BLS_THROUGH = the last day of BLS's own
- *          release calendar (bls.ics ends 2026-12-30); the line never looks past it, so "Next"
- *          cannot skip a CPI or jobs release it has no date for.
+ *          release calendar (bls.ics ends 2026-12-30). Each series stops at its own schedule's end
+ *          (`through`): past BLS_THROUGH the known FOMC dates still show, but the line drops "Next",
+ *          because a CPI or jobs release it has no date for may come first.
  *
- * Reminders (lib/__tests__/econCalendar.test.js): a test fails on the first day the 14-day window
- * would reach past BLS_THROUGH (from 2026-12-17) or FED_THROUGH — the day the line would start
- * hiding releases. Copy next year's dates from the pages above.
+ * Reminders (lib/__tests__/econCalendar.test.js): the Fed one fails 6 months before FED_THROUGH
+ * (from 2027-07-01). The BLS one fails on the first day the 14-day window reaches past BLS_THROUGH
+ * (from 2026-12-17) — an exception: an earlier warning would be red already, with nothing to copy.
+ * Copy next year's dates from the pages above.
  *
  * All maths is in America/New_York via the marketClock helpers, whatever the device's zone.
  */
@@ -50,8 +52,11 @@ export const SERIES = {
  *  2027 schedule is not out yet; the Fed page lists all of 2027. */
 export const BLS_THROUGH = '2026-12-30';
 export const FED_THROUGH = '2027-12-31';
-/** The line vouches for nothing past the shorter of the two. */
-export const CALENDAR_THROUGH = BLS_THROUGH < FED_THROUGH ? BLS_THROUGH : FED_THROUGH;
+SERIES.jobs.through = BLS_THROUGH;
+SERIES.cpi.through = BLS_THROUGH;
+SERIES.fomc.through = FED_THROUGH;
+/** The Fed reminder test goes red this many days before FED_THROUGH. */
+export const FED_REMINDER_DAYS = 183;
 
 export const WINDOW_DAYS = 14;
 export const MAX_EVENTS = 3;
@@ -63,17 +68,18 @@ const addDays = (date, n) => new Date(dayMs(date) + n * 864e5).toISOString().sli
 const hm = (min) => `${((Math.floor(min / 60) + 11) % 12) + 1}:${String(min % 60).padStart(2, '0')}`;
 
 /**
- * Releases from today (ET) through today + `days` — never past `through`, the end of the copied
- * schedules — in time order, at most `max`.
+ * Releases from today (ET) through today + `days` — each series never past its own copied schedule
+ * (`SERIES[k].through`; `through` caps them all, for tests) — in time order, at most `max`.
  * @returns {{key:string,name:string,date:string,min:number,at:number,today:boolean,out:boolean}[]}
  */
-export function upcomingEvents(now, { days = WINDOW_DAYS, max = MAX_EVENTS, through = CALENDAR_THROUGH } = {}) {
+export function upcomingEvents(now, { days = WINDOW_DAYS, max = MAX_EVENTS, through = null } = {}) {
     if (!Number.isFinite(now)) return [];
     const today = etParts(now).date;
     const end = addDays(today, days);
-    const last = end < through ? end : through;
     const out = [];
     for (const [key, s] of Object.entries(SERIES)) {
+        let last = end < s.through ? end : s.through;
+        if (through && through < last) last = through;
         for (const date of s.dates) {
             if (date < today || date > last) continue;
             const at = etWallToMs(date, s.min);
@@ -99,11 +105,15 @@ function dayLabel(date, today) {
  * `segments` is the same text, one piece per release (NextEvents keeps each piece on one line, so a
  * wrap can only fall between releases); only the `hot` (release-day countdown) piece is amber.
  * On a 🔔 day only the next later release follows the countdown, so the line stays one row at 390px.
+ * When the window reaches past a series' copied dates (BLS after 2026-12-30), the rest still show but
+ * without "Next": it cannot vouch that nothing comes first.
  */
 export function econLine(now) {
     const evs = upcomingEvents(now);
     if (!evs.length) return null;
     const today = etParts(now).date;
+    const end = addDays(today, WINDOW_DAYS);
+    const next = Object.values(SERIES).every((s) => s.through >= end) ? 'Next · ' : '';
     const segments = [];
     const later = [];
     for (const e of evs) {
@@ -113,7 +123,7 @@ export function econLine(now) {
     }
     const shown = segments.some((g) => g.hot) ? later.slice(0, 1) : later;
     shown.forEach((e, i) => segments.push({
-        text: `${i === 0 ? 'Next · ' : ''}${e.name} ${dayLabel(e.date, today)} ${hm(e.min)}${i === shown.length - 1 ? ' ET' : ''}`,
+        text: `${i === 0 ? next : ''}${e.name} ${dayLabel(e.date, today)} ${hm(e.min)}${i === shown.length - 1 ? ' ET' : ''}`,
         hot: false,
     }));
     return { text: segments.map((g) => g.text).join(' · '), alert: segments.some((g) => g.hot), segments };

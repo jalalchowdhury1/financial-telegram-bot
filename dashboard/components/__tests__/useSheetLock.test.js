@@ -1,5 +1,6 @@
 import { render } from '@testing-library/react';
-import useSheetLock, { lockPage, unlockPage, SHEET_OPEN_CLASS } from '../useSheetLock';
+import { useRef } from 'react';
+import useSheetLock, { lockPage, unlockPage, useSheetFocus, SHEET_OPEN_CLASS } from '../useSheetLock';
 
 function Sheet({ open }) {
     useSheetLock(open);
@@ -122,4 +123,60 @@ test('a sheet whose content fits does not hand the swipe to the page either', ()
     expect(touchMove(sheet).defaultPrevented).toBe(true);
     unlockPage();
     sheet.remove();
+});
+
+describe('useSheetFocus — keyboard + screen-reader focus follows the sheet', () => {
+    function FocusSheet({ open }) {
+        const ref = useRef(null);
+        useSheetFocus(open, ref);
+        if (!open) return null;
+        return (
+            <div role="dialog" ref={ref}>
+                <button className="sheet-x">×</button>
+                <a href="#x">link</a>
+            </div>
+        );
+    }
+    function Page({ open }) {
+        return (<><button data-testid="trigger">open</button><FocusSheet open={open} /></>);
+    }
+    const tab = (shift = false) => {
+        const e = new KeyboardEvent('keydown', { key: 'Tab', shiftKey: shift, bubbles: true, cancelable: true });
+        document.activeElement.dispatchEvent(e);
+        return e;
+    };
+
+    test('open moves focus to the ×; close gives it back to the trigger', () => {
+        const { rerender, getByTestId } = render(<Page open={false} />);
+        getByTestId('trigger').focus();
+        rerender(<Page open />);
+        expect(document.activeElement.className).toBe('sheet-x');
+        rerender(<Page open={false} />);
+        expect(document.activeElement).toBe(getByTestId('trigger'));
+    });
+
+    test('Tab wraps inside the sheet, never onto the locked page behind it', () => {
+        const { rerender } = render(<Page open={false} />);
+        rerender(<Page open />);
+        const x = document.querySelector('.sheet-x');
+        const link = document.querySelector('a');
+        link.focus();
+        expect(tab().defaultPrevented).toBe(true);
+        expect(document.activeElement).toBe(x);
+        expect(tab(true).defaultPrevented).toBe(true);
+        expect(document.activeElement).toBe(link);
+        // a Tab in the middle is left to the browser
+        x.focus();
+        expect(tab().defaultPrevented).toBe(false);
+    });
+
+    test('a trigger that is gone by close time is skipped safely', () => {
+        function Gone({ open, showTrigger }) {
+            return (<>{showTrigger && <button data-testid="t">t</button>}<FocusSheet open={open} /></>);
+        }
+        const { rerender, getByTestId } = render(<Gone open={false} showTrigger />);
+        getByTestId('t').focus();
+        rerender(<Gone open showTrigger={false} />);
+        expect(() => rerender(<Gone open={false} showTrigger={false} />)).not.toThrow();
+    });
 });

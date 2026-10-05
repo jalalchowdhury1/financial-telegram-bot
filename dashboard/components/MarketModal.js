@@ -11,14 +11,17 @@
  * - Link to Polymarket.com
  * - Dismissible via close button, backdrop click or Esc
  * - A modal dialog (role="dialog", aria-modal) that holds the page still while open
- *   (useSheetLock), with a 44px tap area on its × (.sheet-x)
+ *   (useSheetLock), takes focus to its × and hands it back on close (useSheetFocus),
+ *   with a 44px tap area on its × (.sheet-x)
  */
-import { useEffect } from 'react';
-import useSheetLock from './useSheetLock';
+import { useEffect, useRef } from 'react';
+import useSheetLock, { useSheetFocus } from './useSheetLock';
 
 export default function MarketModal({ bet, isOpen, onClose }) {
   const open = !!(isOpen && bet);
+  const dialogRef = useRef(null);
   useSheetLock(open);
+  useSheetFocus(open, dialogRef); // focus moves to the ×, stays in the sheet, then goes back
 
   // Esc closes it, like the Jev sheet
   useEffect(() => {
@@ -80,6 +83,7 @@ export default function MarketModal({ bet, isOpen, onClose }) {
       >
         {/* Modal card - prevent click from propagating to backdrop */}
         <div
+          ref={dialogRef}
           role="dialog"
           aria-modal="true"
           aria-labelledby="market-modal-title"
