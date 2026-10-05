@@ -37,7 +37,8 @@ const PHRASES = {
     regime: {
         'SPY vs 200-day avg': (r) => ({ 1: 'uptrend', [-1]: 'downtrend' })[vote(r.effect)] || null,
         'Fear & Greed': (r) => ({ 1: 'greedy crowd', [-1]: 'fearful crowd' })[vote(r.effect)] || null,
-        'HYG/LQD 20d': (r) => ({ 1: 'junk bonds firm', [-1]: 'junk bonds slipping' })[vote(r.effect)] || null,
+        // A ratio: HYG can fall and still "beat" LQD, so never say junk bonds rose or fell.
+        'HYG/LQD 20d': (r) => ({ 1: 'junk bonds beating safe bonds', [-1]: 'junk bonds lagging safe bonds' })[vote(r.effect)] || null,
     },
     recession: {
         'Sahm rule': (r) => (num(r.value) == null ? null : `Sahm ${r.value}`),
@@ -56,7 +57,8 @@ const PHRASES = {
             if (v == null) return null;
             if (r.effect === 'cheap') return `options cheap: bottom ${v}% of the year`;
             if (r.effect === 'expensive') return `options pricey: top ${100 - v}% of the year`;
-            return `options mid-priced: ${ordinal(v)} percentile of the year`;
+            // "fair" can still sit low or high in the year (cheap also needs VRP < 6): state the fact.
+            return `options at the ${ordinal(v)} percentile of the year`;
         },
         VRP: (r) => (num(r.value) == null ? null : `options cost ${r.value} pts over real moves`),
     },
@@ -67,7 +69,7 @@ const PHRASES = {
             return fg < 50 ? 'fearful crowd in an uptrend' : 'greedy crowd in a downtrend';
         },
         '2s10s vs 3m10y': () => 'two yield curves disagree',
-        'credit vs equities': () => 'junk bonds slipping in an uptrend',
+        'credit vs equities': () => 'junk bonds lagging safe bonds in an uptrend',
         'breadth vs index': () => 'near the high, average stock slipping',
     },
 };
