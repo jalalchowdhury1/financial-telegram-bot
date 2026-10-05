@@ -389,6 +389,84 @@ answered. Three fixes, each safe on its own:
     AND the chart. The 2nd click of a double-click is ignored (`e.detail > 1`), so a
     double-click opens it once. Tooltips live on the labels, so the two never compete.
 
+### 🧰 QoL ship 6: glance bar · Pulse verdicts · back pill · thumb taps · Markets windows · econ line — 2026-10-04
+Twelve client-side upgrades; no `/api` route or feed contract changed. Rollback: tag
+`known-good-2026-10-04` (= 210de43). CSS for each lane sits at the end of `globals.css` in
+blocks headed `QoL ship 6 · lane A / B / C / integrate`.
+1. **Jev card opens instantly.** `lib/snapshot.js` validator `jev` now accepts a saved
+   `pills` object, so the card paints from the saved copy with the usual `saved-wrap` 🕐 tag
+   instead of shoving the page down when it lands.
+2. **What moved fits a phone.** ≤480px the strip wraps to two rows (title + 2 chips, then 3),
+   70px tall, placeholder holds the same height. A saved copy there gets a bottom-right
+   corner tag (`.moved-strip[data-cached]::before`) instead of the inline one — and drops it
+   when the indicator bar below draws its own tag (integrate block), so two 🕐 never stack.
+3. **Recession watch reads honestly** (`FourHorsemen.js`, `HorsemenRunup.js`). Rows wrap to
+   two lines on a phone; header and run-up rail both use `latestYoY(history, 'pp'|'pct')` in
+   `lib/horsemenRunup.js`: the latest print vs the print one calendar year before THAT
+   print's date (±7 days), null when unsure. `yearAgoGap` names a missing year-ago print
+   instead of "not enough history". The Pulse "Horsemen N/4" count (`horsemenRiding` in
+   `lib/pulseVerdicts.js`) calls the same helper — change the card rule, change both
+   (parity tests in `MarketPulse`/`pulseVerdicts` tests).
+4. **Small wrong labels.** AAII pill: a phone-only caption `.pill-caption` "Bears +11.9 ·
+   Sep 30" (orange "⚠ STALE · …" when a week was missed). Horsemen claims/unemployment
+   tooltips show their real as-of dates. SPY move says "Fri" off-session. F&G history cells:
+   `lib/fgHistory.js` turns 'N/A'/null into "—" (never NaN, never a made-up 0). Yield curve
+   hero prints 2 decimals (+0.45%), same as its Pulse chip and the Horsemen spread.
+5. **Glance bar** (`GlanceBar.js` + `lib/glance.js`). Fixed glass capsule "SPY 769.64
+   ▲0.74% Fri · F&G 31 · 3m ago ↻", z 905. Numbers only from page state (no fetch). Shows
+   once `.market-pulse` (else the header) scrolls above the top. **Hidden** while
+   `html.sheet-open`, `html:has(.jump-menu)`, `html:has(.offline-banner)`; reduced motion =
+   no slide. ≤374px drops the session word, ≤400px a saved copy reads "🕐 22:21". Tap the
+   numbers = back to top (noted for the back pill); ↻ = the header's refresh. No SPY = no bar.
+6. **Jev pills say why** (`lib/jevWhy.js` `pillWhy`, `JevPills.js`). One plain line under
+   each verdict from that pill's fired rows; it never claims more than the badge's number.
+7. **Market Pulse = verdict chips** (`MarketPulse.js` + `lib/pulseVerdicts.js`): "Vol calm ·
+   Horsemen 1/4 · Curve +0.45% · Bull 7/8 · Dips pay ✓", same numbers/thresholds as each card
+   (Rubber band hands its verdict up via `RubberBandRadar onVerdict`). Tap = `jumpToCard`.
+   Missing source = no chip; stale = dashed chip with 🕐; a saved copy is said only in the
+   chip's title/aria-label (the line's saved-wrap outline marks it; on a phone its corner tag
+   is hidden — it covered a chip). Cold open holds "📡 …" until fred AND vol are in (cap
+   `PULSE_WAIT_MS` 15 s). Phone line stays 58px: two rows of 26px chips, hit areas 29px
+   (meeting mid-gap; a 44px hit would overlap the other row).
+8. **Back pill** (`BackPill.js` + `lib/jumpBack.js`). After any jump (What moved chip, Pulse
+   chip, ☰ menu, glance tap) "↩ Back to Economy" sits left of the ☰; the spot is kept as
+   section + offset (cards landing above don't break it). Fades after `BACK_PILL_MS` 8 s or
+   a screen of hand-scrolling. Hidden under `html.sheet-open` and the jump menu. No history
+   entries / #hash.
+9. **Thumb taps + sheets hold still.** Chart timeframe pills: invisible `.tf-btn::before`
+   band (44px tall; z-index on the BUTTON, not the ::before). The tappable hero number is
+   lifted above that band on purpose (`.hero-price-section :is(.chartable,.mark)` z 2), so
+   e.g. Yield curve "ALL" gets 39px under "+0.45%" — don't "fix" by lifting the pill. Sheet ×
+   (`.sheet-x`) 46px. Factor windows 44px tap on a phone. `components/useSheetLock.js`:
+   while any sheet is open, **<html> has class `sheet-open` — the SHARED CONTRACT** every
+   floating UI hides under (keep `html.sheet-open …` rules in their OWN rule, never in a
+   selector list with `:has()`: a browser without `:has` drops the whole list).
+   Page scroll locked (overflow hidden + touchmove guard outside `[data-sheet-scroll]`),
+   scrollY restored; nested opens counted; `useSheetFocus` traps Tab and returns focus.
+   Polymarket sheet closes on Esc. The Jev sheet header (title + ×) is sticky.
+10. **Markets say the window** (`lib/marketWindow.js` → `ExtraMarketsGrid.js`). Each change
+   is the row's own last two history points, tagged from their date gap: 1–4 days = that
+   session's weekday ("Thu") if no session sits between, else "2d"; 6–8 "1w"; 28–31 "1mo";
+   89–92 "3mo"; else no tag. Rates in bp (−5bp), prices in %. A trailing weekend/holiday bar
+   that repeats the close is dropped (BTC never). No usable number = nothing, never +0.00%.
+   Gotcha: yfinance stamps the FX Asia session with the NEXT day, so on Sunday night ET
+   USD/CAD, USD/INR can say "Mon" and BTC "2d" — the tag matches the data.
+11. **Next econ events** (`lib/econCalendar.js` + `NextEvents.js`, under the market clock):
+   "Next · CPI Oct 14 8:30 ET", up to 3 within 14 days, amber on the day. Dates are
+   HAND-COPIED (FOMC: federalreserve.gov/monetarypolicy/fomccalendars.htm; CPI + jobs:
+   bls.gov/schedule/news_release/cpi.htm + empsit.htm). Never guessed: past `BLS_THROUGH`
+   (2026-12-30) CPI/jobs vanish and "Next" drops. **REMINDER tests in
+   `lib/__tests__/econCalendar.test.js` go RED** — BLS from 2026-12-17, Fed 6 months before
+   `FED_THROUGH` (2027-07-01) — and jest gates /ship: copy next year's dates, bump the
+   `*_THROUGH` constants. `.mkt-clock-row` reserves the line's height (no jump on mount).
+12. **Readable chart labels** (`components/AxisLabels.js`, MiniChart, SpyChart,
+   RubberBandRadar). Tick labels are 10px HTML spans placed over the SVG by viewBox % with
+   `pointer-events:none` (the SVG stretches, so SVG text was 4–7px). Only the F&G gauge
+   keeps SVG text.
+- Pre-existing, not fixed here: desk warm-open CLS ~0.17 (indicator pills grow 77→134px as
+  data lands; reserving their height would fix it). Not done from honest-labels: chart change
+  labels with unit + window ("▼ 0.69 pts · 5Y") and "Economic data checked …".
+
 ### 🔸 AAII direct (`/api/aaii` + `lib/aaii.js`) — 2026-09-27
 AAII no longer flows through a Google Sheet. The old chain (sentiment-scraper GHA →
 sheet `1zQQ2am1…` E2 → `/api/sheets`) was retired because the sheet writer's
