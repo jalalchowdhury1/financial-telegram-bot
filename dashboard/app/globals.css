@@ -2667,3 +2667,17 @@ html:not(:has(.jump-fab)) .back-pill {
   .horse-stats > :nth-child(even) .tooltip-trigger:hover::after { left: auto; right: 0; }
   .horse-stats > :nth-child(even) .tooltip-trigger:hover::before { left: auto; right: 15px; }
 }
+/* Jev sheet: the header (title + ×) stays pinned while the sheet scrolls, so the × is always in
+   reach (it scrolled ~290px out of view on a phone). Negative top/margins = the sheet's padding;
+   the solid background hides what scrolls under it. */
+.jev-modal-header {
+  position: sticky;
+  top: -28px;
+  z-index: 2;
+  margin: -28px -28px 24px;
+  padding: 28px 28px 16px;
+  background: rgb(17, 24, 39);
+}
+@media (max-width: 640px) {
+  .jev-modal-header { top: -20px; margin: -20px -20px 24px; padding: 20px 20px 16px; }
+}
