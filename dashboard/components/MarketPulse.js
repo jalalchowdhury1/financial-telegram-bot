@@ -1,39 +1,57 @@
 'use client';
+/**
+ * 📡 Market Pulse — one line of verdict chips about the cards far below the fold (Rubber band,
+ * Volatility, Recession watch, Yield curve, Bull checklist). Tap a chip to jump to its card.
+ * SPY / F&G live in What moved and the glance bar, so they are no longer repeated here.
+ * Chips come from lib/pulseVerdicts.js: same numbers and thresholds as each card, a missing
+ * source = no chip, a saved/stale source = a dashed chip that says so.
+ */
+import { useMemo } from 'react';
+import { pulseVerdicts } from '../lib/pulseVerdicts';
+import { jumpToCard } from './WhatMoved';
 
-export default function MarketPulse({ spy, spyDailyMove, fg, fred, loading, fgColor }) {
-    if (loading || !spy || !fg || spy.error || fg.error) return null;
-
-    // Parse the % move from spyDailyMove if available
-    const dailyMoveValue = spyDailyMove?.value;
-    const dailyMovePct = dailyMoveValue ? parseFloat(dailyMoveValue) : spy.dailyChange?.pct || 0;
-    const isPositive = dailyMovePct >= 0;
-
+export default function MarketPulse({ fred, vol, rubberBand, saved = null, waiting = false }) {
+    const savedFred = saved?.fred || null;
+    const savedVol = saved?.vol || null;
+    const chips = useMemo(
+        () => pulseVerdicts({ fred, vol, rubberBand, saved: { fred: savedFred, vol: savedVol } }),
+        [fred, vol, rubberBand, savedFred, savedVol],
+    );
+    const label = (
+        <span className="pulse-label">
+            <span aria-hidden="true">📡</span><span className="pulse-label-text"> Market Pulse</span>
+        </span>
+    );
+    if (!chips.length) {
+        // Hold the line while its feeds load, so the cards below do not jump when it fills.
+        return waiting ? (
+            <nav className="market-pulse is-waiting" aria-label="Market Pulse" aria-busy="true">
+                {label}
+                <span className="pulse-items"><span className="pulse-wait">…</span></span>
+            </nav>
+        ) : null;
+    }
     return (
-        <div className="market-pulse">
-            <span className="pulse-label">📡 Market Pulse</span>
+        <nav className="market-pulse" aria-label="Market Pulse: verdicts from the cards below">
+            {label}
             <span className="pulse-items">
-                <span className={isPositive ? 'stat-positive' : 'stat-negative'}>
-                    SPY {isPositive ? '▲' : '▼'}{Math.abs(dailyMovePct).toFixed(2)}%
-                </span>
-                <span className="pulse-sep">·</span>
-                <span style={{ color: fgColor(fg.score) }}>
-                    F&G {Math.round(fg.score)} {fg.rating}
-                </span>
-                <span className="pulse-sep">·</span>
-                <span className={spy.rsi > 70 ? 'stat-negative' : spy.rsi < 30 ? 'stat-positive' : ''}>
-                    RSI {spy.rsi.toFixed(0)}
-                </span>
-                {fred?.checklist && (() => {
-                    const bullishItems = Object.values(fred.checklist).filter(i => i.bullish).length;
-                    const totalItems = Object.values(fred.checklist).length;
+                {chips.map((c) => {
+                    const note = c.old ? ` · ${c.old.note}` : '';
                     return (
-                        <>
-                            <span className="pulse-sep">·</span>
-                            <span style={{ color: 'var(--green)' }}>Bull {bullishItems}/{totalItems}</span>
-                        </>
+                        <button
+                            key={c.key}
+                            type="button"
+                            className={`pulse-chip tone-${c.tone}${c.old ? ' is-old' : ''}`}
+                            onClick={() => jumpToCard(c.jump)}
+                            title={`${c.why}${note} · tap for the card`}
+                            aria-label={`${c.text} — ${c.why}${note}`}
+                        >
+                            {c.old?.kind === 'stale' && <span className="pulse-old" aria-hidden="true">🕐</span>}
+                            {c.text}
+                        </button>
                     );
-                })()}
+                })}
             </span>
-        </div>
+        </nav>
     );
 }

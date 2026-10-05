@@ -308,11 +308,17 @@ function Trigger({ def, rules, open, onToggle }) {
     );
 }
 
-export default function RubberBandRadar() {
+export default function RubberBandRadar({ onVerdict = null } = {}) {
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [open, setOpen] = useState(null);          // dial key, 'trigger', or null — one panel at a time
+
+    // 📡 Market Pulse shows this card's verdict as a chip: hand it the answer (null = failed).
+    useEffect(() => {
+        if (loading || !onVerdict) return;
+        try { onVerdict(data); } catch { /* the pulse line never breaks this card */ }
+    }, [loading, data, onVerdict]);
 
     useEffect(() => {
         const load = async () => {

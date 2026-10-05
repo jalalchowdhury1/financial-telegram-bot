@@ -177,3 +177,18 @@ describe('honest labels on the SPY and Fear & Greed cards', () => {
         expect(document.body.textContent).not.toMatch(/NaN/);
     });
 });
+
+it('📡 Market Pulse shows the verdicts of the cards below, the Rubber Band one handed up by its own card', async () => {
+    const ok = (body) => Promise.resolve({ status: 200, json: async () => body });
+    mockRoutes({
+        '/api/fred': ok(require('../../lib/__tests__/fixtures/pulse-fred-2026-10-04.json')),
+        '/api/vol': ok(require('../../lib/__tests__/fixtures/pulse-vol-2026-10-04.json')),
+        '/api/rubber-band': ok(require('../../lib/__tests__/fixtures/pulse-rubber-band-2026-10-04.json')),
+    });
+    const { container } = render(<Dashboard />);
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Dips pay ✓/ })).toBeInTheDocument());
+    const line = container.querySelector('.market-pulse');
+    const chips = [...line.querySelectorAll('button')].map((b) => b.textContent);
+    expect(chips).toEqual(['Dips pay ✓', 'Vol calm', 'Horsemen 1/4', 'Curve +0.45%', 'Bull 7/8']);
+    expect(line.textContent).not.toMatch(/RSI|F&G|SPY/);
+});

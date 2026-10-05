@@ -94,6 +94,9 @@ export default function Dashboard() {
     // component renders nothing — the page then reads exactly as it did before.
     const [jevPills, setJevPills] = useState(null);
     const [vol, setVol] = useState(null);
+    // 📡 Rubber Band verdict for Market Pulse: undefined = not answered yet, null = failed.
+    // RubberBandRadar fetches its own route and hands its answer up (no extra FEEDS row).
+    const [rubberBand, setRubberBand] = useState(undefined);
     // ⚡ Instant open: feed key → savedAt (ms) while that feed is showing this device's
     // saved copy (lib/snapshot.js). A key leaves the map when its live answer lands.
     const [savedAt, setSavedAt] = useState({});
@@ -399,8 +402,10 @@ export default function Dashboard() {
             </ErrorBoundary>
 
             {/* MARKET PULSE - Quick summary at top */}
-            <div className="saved-wrap" data-cached={saved('spy', 'spyDailyMove', 'fg', 'fred')} style={{ display: 'contents', ...savedVar('spy', 'spyDailyMove', 'fg', 'fred') }}>
-                <ErrorBoundary resetKey={refreshTick}><MarketPulse spy={spy} spyDailyMove={spyDailyMove} fg={fg} fred={fred} loading={(pending.spy && !spy) || (pending.fg && !fg)} fgColor={fgColor} /></ErrorBoundary>
+            <div className="saved-wrap" data-cached={saved('fred', 'vol')} style={{ display: 'contents', ...savedVar('fred', 'vol') }}>
+                <ErrorBoundary resetKey={refreshTick}><MarketPulse fred={fred} vol={vol} rubberBand={rubberBand}
+                    saved={{ fred: saved('fred'), vol: saved('vol') }}
+                    waiting={pending.fred || pending.vol || rubberBand === undefined} /></ErrorBoundary>
             </div>
 
             {/* JEV REGIME PILLS — hidden entirely when JEV_PILLS=off or the route is unreachable.
@@ -635,7 +640,7 @@ export default function Dashboard() {
                 <div className="saved-wrap" data-jump="Recession watch" data-cached={saved('fred')} style={{ display: 'contents', ...savedVar('fred') }}><ErrorBoundary resetKey={refreshTick}><FourHorsemen fred={fred} loading={pending.fred && !fred} /></ErrorBoundary></div>
 
                 {/* RUBBER BAND RADAR — is the dip-buying regime alive? (full width, nightly from the Mac mini) */}
-                <div data-jump="Rubber band" style={{ display: 'contents' }}><ErrorBoundary resetKey={refreshTick}><RubberBandRadar /></ErrorBoundary></div>
+                <div data-jump="Rubber band" style={{ display: 'contents' }}><ErrorBoundary resetKey={refreshTick}><RubberBandRadar onVerdict={setRubberBand} /></ErrorBoundary></div>
 
                 {/* SPY HISTORICAL CHART */}
                 <div className="card" style={{ animationDelay: '0.55s' }} data-jump="SPY chart" data-cached={saved('spy')}>
