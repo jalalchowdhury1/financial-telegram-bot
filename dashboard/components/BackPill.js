@@ -48,7 +48,7 @@ export default function BackPill() {
         };
     }, [spot]);
 
-    if (spot) lastLabel.current = spot.label;
+    if (spot) lastLabel.current = spot.name || spot.label; // name = a desk row's two cards
     if (!lastLabel.current) return null; // never jumped yet
     const on = !!spot;
     const name = lastLabel.current === 'Top' ? 'top' : lastLabel.current;

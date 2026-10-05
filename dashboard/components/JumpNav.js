@@ -30,16 +30,19 @@ export function collectSections(root = typeof document !== 'undefined' ? documen
         .filter((s) => s.label && jumpTarget(s.el));
 }
 
-/** Every rendered section's document top, for the ↩ back pill's "section + offset". */
+/** Every rendered section's document top (and its sides, for cards sharing a desk row), for the ↩ back pill. */
 export function measureSections() {
     if (typeof window === 'undefined') return [];
-    return collectSections().map((s) => ({ label: s.label, top: jumpTarget(s.el).getBoundingClientRect().top + window.scrollY }));
+    return collectSections().map((s) => {
+        const r = jumpTarget(s.el).getBoundingClientRect();
+        return { label: s.label, top: r.top + window.scrollY, left: r.left, right: r.right };
+    });
 }
 
 /** Call just before any jump: remembers where he is, so ↩ can bring him back (lib/jumpBack.js). */
 export function noteJumpFrom() {
     try {
-        rememberJump({ y: window.scrollY, vh: window.innerHeight, sections: measureSections() });
+        rememberJump({ y: window.scrollY, vh: window.innerHeight, cx: window.innerWidth / 2, sections: measureSections() });
     } catch { /* never block the jump itself */ }
 }
 

@@ -25,6 +25,23 @@ test('the anchor is the section he is reading (top third of the screen), else To
     expect(pickAnchor(500, [], VH)).toEqual({ label: 'Top', offset: 500 });
 });
 
+test('two cards side by side (desk grid): the one under the screen centre, else the row by both names', () => {
+    // 1440px: S&P 500 EPS (left) and Economy (right) share a row top; DOM order alone said "S&P 500 EPS"
+    const row = [
+        { label: 'S&P 500 EPS', top: 1737, left: 24, right: 708 },
+        { label: 'Economy', top: 1738, left: 732, right: 1416 },
+        { label: 'Volatility', top: 5000, left: 24, right: 1416 },
+    ];
+    expect(pickAnchor(1777, row, 900, 1000)).toEqual({ label: 'Economy', offset: 39 });
+    expect(pickAnchor(1777, row, 900, 300)).toEqual({ label: 'S&P 500 EPS', offset: 40 });
+    // centre in the gutter between them: name the row, keep the first card as the anchor (same top)
+    expect(pickAnchor(1777, row, 900, 720)).toEqual({ label: 'S&P 500 EPS', offset: 40, name: 'S&P 500 EPS · Economy' });
+    // no widths known (old callers, tests): unchanged
+    expect(pickAnchor(1777, row.map(({ label, top }) => ({ label, top })), 900)).toEqual({ label: 'S&P 500 EPS', offset: 40, name: 'S&P 500 EPS · Economy' });
+    // a phone: one column, no tie, no name
+    expect(pickAnchor(3100, SECTIONS, VH, 195)).toEqual({ label: 'Economy', offset: 100 });
+});
+
 test('the way back follows the section when cards above it landed meanwhile', () => {
     const spot = { label: 'Economy', offset: 100, y: 3100 };
     expect(resolveBack(spot, () => 3000)).toBe(3100);
