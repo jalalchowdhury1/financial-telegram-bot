@@ -2360,6 +2360,23 @@ html:has(.offline-banner) .glance-bar {
 .glance-refresh:disabled { opacity: 0.55; cursor: default; }
 .glance-refresh svg.spinning { animation: spin 0.8s linear infinite; }
 .glance-main:focus-visible, .glance-refresh:focus-visible { outline: 2px solid var(--purple); outline-offset: -2px; }
+/* Narrow phones (320px): "Fri" pushed the ellipsis into F&G ("▲0.74% Fri · …"). Drop the session
+   word first — the move still reads, and the screen reader label still says it. */
+@media (max-width: 374px) {
+  .glance-main .glance-when { display: none; }
+}
+/* …and a saved copy reads "🕐 22:21" like the cards' corner tags (it filled 365.5 of 366px at
+   390, and clipped F&G at 375). "Saved" stays for screen readers. */
+@media (max-width: 400px) {
+  .glance-saved-word {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+  }
+}
+/* 320px: a touch smaller, so "F&G 31" never meets the ellipsis */
+@media (max-width: 340px) {
+  .glance-bar { font-size: 0.75rem; }
+  .glance-main { padding-left: 10px; }
+}
 /* jump landings clear the floating bar (8px + 44px + a little air) */
 [data-jump], [data-jump] > * { scroll-margin-top: calc(64px + env(safe-area-inset-top, 0px)); }
 @media (prefers-reduced-motion: reduce) {
@@ -2367,8 +2384,9 @@ html:has(.offline-banner) .glance-bar {
 }
 @media print { .glance-bar { display: none; } }
 /* 📡 Market Pulse = verdict chips about the cards below the fold. 50px on a desk (one row, as
-   before). On a phone two rows of 30px chips (What moved's size) 6px apart = 74px: the old
-   line was 58px, but its 24px chips 2px apart sent a near-miss to a card far down the page. */
+   before). On a phone it stays today's 58px (the brief: the line must not grow): two rows of
+   26px chips 4px apart, each tap area reaching to mid-gap (30px tall, no overlap). Round 1 had
+   24px chips 2px apart (a near-miss hit the wrong card); 7d56b0f had 30px chips = a 74px line. */
 .market-pulse { box-sizing: border-box; min-height: 50px; padding: 9px 24px; gap: 10px; }
 .market-pulse .pulse-label { gap: 6px; } /* "📡 MARKET PULSE": a flex item drops its leading space */
 .market-pulse .pulse-items { font-family: inherit; font-size: 0.8rem; gap: 6px; }
@@ -2388,6 +2406,7 @@ html:has(.offline-banner) .glance-bar {
   transition: filter 0.15s ease;
 }
 .pulse-chip.tone-good { color: var(--green); background: var(--green-bg); }
+.pulse-chip.tone-caution { color: var(--yellow); background: var(--yellow-bg); } /* the cards' badge-yellow */
 .pulse-chip.tone-watch { color: var(--orange); background: var(--orange-bg); }
 .pulse-chip.tone-bad { color: var(--red); background: var(--red-bg); border-color: rgba(239, 68, 68, 0.45); }
 .pulse-chip.is-old { border: 1px dashed var(--text-muted); }
@@ -2413,11 +2432,13 @@ html:has(.offline-banner) .glance-bar {
     flex-wrap: wrap;
     align-content: center;
     justify-content: flex-start;
-    gap: 6px;
-    min-height: 74px; /* the waiting "📡 …" holds the same two rows */
-    padding: 3px 10px;
+    gap: 4px 6px;
+    min-height: 58px; /* 1 + 26 + 4 + 26 + 1; the waiting "📡 …" holds the same two rows */
+    padding: 0 10px;
   }
   .market-pulse .pulse-items { display: contents; }
+  .pulse-chip { min-height: 26px; }
+  .pulse-chip::after { inset: -3px -4px; } /* 2px past the border = mid row gap; 3px = mid column gap */
 }
 /* 320px on a bad day ("Dips: watch", "Vol stress", stale sources): the 🕐 on a chip pushed the
    line to a third row. The dashed border still marks it; the chip's label still says "stale". */

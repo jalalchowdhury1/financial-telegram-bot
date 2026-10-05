@@ -64,6 +64,8 @@ it('the SPY move names its session like the SPY card: "▲0.74% Fri" on a weeken
     scrollPast(-5);
     expect(bar().textContent).toMatch(/^SPY 769\.64 ▲0\.74% Fri · F&G 31 · 3 min ago$/);
     expect(screen.getByRole('button', { name: /back to top/ }).getAttribute('aria-label')).toMatch(/▲0\.74% Fri,/);
+    // its own wrapper, so a 320px phone can drop the word before the ellipsis reaches F&G
+    expect(bar().querySelector('.glance-when')).toHaveTextContent('Fri');
     rerender(<Page when="today" />);
     expect(bar().textContent).toMatch(/^SPY 769\.64 ▲0\.74% · F&G 31/);
 });
@@ -72,6 +74,8 @@ it('a saved copy says so: "🕐 Saved 10:42" instead of an age', () => {
     render(<Page updatedAt={null} saved="10:42" loading />);
     scrollPast(-5);
     expect(bar().textContent).toMatch(/🕐 Saved 10:42/);
+    // phones show "🕐 10:42" like the cards' corner tags; the word stays for screen readers
+    expect(bar().querySelector('.glance-saved-word')).toHaveTextContent('Saved');
     expect(bar().textContent).not.toMatch(/ago/);
 });
 

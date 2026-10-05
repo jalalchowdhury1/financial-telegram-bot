@@ -59,6 +59,20 @@ test('names the section he left; one tap goes back there even after cards landed
     expect(currentJump()).toBeNull();
 });
 
+test('two cards on one desk row with the centre in the gutter: the pill names the row, and goes back to it', () => {
+    render(<Page />);
+    act(() => {
+        window.scrollY = 3040;
+        rememberJump({ y: 3040, vh: 900, cx: 720, sections: [
+            { label: 'Economy', top: 3000, left: 24, right: 708 },
+            { label: 'Volatility', top: 3001, left: 732, right: 1416 },
+        ] });
+    });
+    expect(screen.getByRole('button', { name: 'Back to Economy · Volatility' })).toHaveTextContent('↩ Back to Economy · Volatility');
+    fireEvent.click(pill());
+    expect(window.scrollTo).toHaveBeenCalledWith({ top: 3040, behavior: 'smooth' });
+});
+
 test('fades by itself after 8 s; a second jump starts the clock again', () => {
     render(<Page />);
     jumpFrom(3100);

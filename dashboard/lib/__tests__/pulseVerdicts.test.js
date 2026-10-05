@@ -18,7 +18,7 @@ const texts = (chips) => chips.map((c) => c.text);
 test('the real answers of 4 Oct give the five verdicts in a fixed order, each pointing at its card', () => {
     const chips = pulseVerdicts({ fred: FRED, vol: VOL, rubberBand: RB });
     expect(texts(chips)).toEqual(['Vol calm', 'Horsemen 1/4', 'Curve +0.45%', 'Bull 7/8', 'Dips pay ✓']);
-    expect(chips.map((c) => c.tone)).toEqual(['good', 'watch', 'good', 'good', 'good']);
+    expect(chips.map((c) => c.tone)).toEqual(['good', 'caution', 'good', 'good', 'good']);
     expect(chips.map((c) => c.jump)).toEqual(['Volatility', 'Recession watch', 'Yield curve', 'Bull checklist', 'Rubber band']);
     expect(chips.every((c) => c.old === null)).toBe(true);
     expect(chips.every((c) => typeof c.why === 'string' && c.why.length > 0)).toBe(true);
@@ -49,13 +49,18 @@ test('tones follow each card\'s own colour rule', () => {
     delete calm.horsemen.bankruptcies.history;          // no history: the card falls back to the route's changePct
     calm.horsemen.bankruptcies.changePct = 4;
     expect(pulseVerdicts({ fred: calm })[0]).toMatchObject({ text: 'Horsemen 0/4', tone: 'good' });
+    // 1-2 riding / Bull 50-74 % = the cards' badge-yellow ('caution', --yellow); Dips amber and
+    // Vol watch are orange on their own cards ('watch', --orange)
+    const two = clone(FRED);
+    two.yieldCurve.current = -0.12;
+    expect(pulseVerdicts({ fred: two })[0]).toMatchObject({ text: 'Horsemen 2/4', tone: 'caution' });
 
     const bull = (n) => {
         const g = clone(FRED);
         Object.keys(g.checklist).forEach((k, i) => { g.checklist[k].bullish = i < n; });
         return pulseVerdicts({ fred: g }).find((c) => c.key === 'bull');
     };
-    expect(bull(4)).toMatchObject({ text: 'Bull 4/8', tone: 'watch' }); // 50 %
+    expect(bull(4)).toMatchObject({ text: 'Bull 4/8', tone: 'caution' }); // 50 % — badge-yellow on the card
     expect(bull(3)).toMatchObject({ text: 'Bull 3/8', tone: 'bad' });
 });
 

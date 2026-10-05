@@ -85,7 +85,7 @@ function horsemenChip(fred, savedLabel) {
     if (!r) return null;
     return {
         key: 'horsemen', jump: 'Recession watch', text: `Horsemen ${r.riding}/4`,
-        tone: r.riding >= 3 ? 'bad' : r.riding >= 1 ? 'watch' : 'good',
+        tone: r.riding >= 3 ? 'bad' : r.riding >= 1 ? 'caution' : 'good', // the card's badge-yellow
         why: `Recession watch: ${r.riding} of 4 riding${r.known < 4 ? ` (${4 - r.known} with no data)` : ''}`,
         old: savedMark(savedLabel),
     };
@@ -113,7 +113,7 @@ function bullChip(fred, savedLabel) {
     const pct = (bullish / items.length) * 100;
     return {
         key: 'bull', jump: 'Bull checklist', text: `Bull ${bullish}/${items.length}`,
-        tone: pct >= 75 ? 'good' : pct >= 50 ? 'watch' : 'bad',
+        tone: pct >= 75 ? 'good' : pct >= 50 ? 'caution' : 'bad', // the card's badge-yellow
         why: `Bull market checklist: ${bullish} of ${items.length} bullish`,
         old: savedMark(savedLabel),
     };
@@ -122,7 +122,7 @@ function bullChip(fred, savedLabel) {
 /**
  * @param {{fred?:any, vol?:any, rubberBand?:any, saved?:{fred?:string, vol?:string}}} src
  *   `saved` = the page's "🕐 19:43" label for a feed currently shown from a saved copy.
- * @returns {Array<{key, jump, text, tone:'good'|'watch'|'bad', why, old:null|{kind:'saved'|'stale', note}}>}
+ * @returns {Array<{key, jump, text, tone:'good'|'caution'|'watch'|'bad', why, old:null|{kind:'saved'|'stale', note}}>}
  */
 export function pulseVerdicts({ fred, vol, rubberBand, saved = {} } = {}) {
     const s = isObj(saved) ? saved : {};

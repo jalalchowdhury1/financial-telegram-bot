@@ -16,17 +16,23 @@ const emit = () => subs.forEach((fn) => { try { fn(spot); } catch { /* a listene
 
 /**
  * The section he is reading: the last one starting above the top third of the screen.
- * @param {number} y scrollY  @param {{label:string, top:number}[]} sections document tops
- * @returns {{label:string, offset:number}} offset = y − that section's top ('Top' = from 0)
+ * On a desk two or three cards share a grid row (the same top, ±2px). Then the card under
+ * the screen's centre wins; if the centre falls in a gutter, or widths are unknown, the
+ * pill names the row ("S&P 500 EPS · Economy") and the first of them anchors the way back.
+ * @param {number} y scrollY  @param {{label:string, top:number, left?:number, right?:number}[]} sections
+ *   document rects  @param {number} vh  @param {number} [cx] the screen's horizontal centre
+ * @returns {{label:string, offset:number, name?:string}} offset = y − that section's top ('Top' = from 0)
  */
-export function pickAnchor(y, sections, vh) {
+export function pickAnchor(y, sections, vh, cx) {
     const line = y + (Number.isFinite(vh) ? vh / 3 : 0);
-    let best = null;
-    for (const s of Array.isArray(sections) ? sections : []) {
-        if (!s || !s.label || !Number.isFinite(s.top) || s.top > line) continue;
-        if (!best || s.top > best.top) best = s;
-    }
-    return best ? { label: best.label, offset: y - best.top } : { label: 'Top', offset: y };
+    const ok = (Array.isArray(sections) ? sections : []).filter((s) => s && s.label && Number.isFinite(s.top) && s.top <= line);
+    if (!ok.length) return { label: 'Top', offset: y };
+    const rowTop = Math.max(...ok.map((s) => s.top));
+    const row = ok.filter((s) => s.top >= rowTop - 2);
+    if (row.length === 1) return { label: row[0].label, offset: y - row[0].top };
+    const under = Number.isFinite(cx) ? row.find((s) => Number.isFinite(s.left) && Number.isFinite(s.right) && s.left <= cx && cx <= s.right) : null;
+    if (under) return { label: under.label, offset: y - under.top };
+    return { label: row[0].label, offset: y - row[0].top, name: row.slice(0, 2).map((s) => s.label).join(' · ') };
 }
 
 /** Where "back" is now: the section's current top + the offset (the raw y if it is gone). */
@@ -43,9 +49,9 @@ export function movedTooFar(y, landY, vh) {
     return Number.isFinite(landY) && Math.abs(y - landY) > vh;
 }
 
-export function rememberJump({ y, vh, sections }) {
+export function rememberJump({ y, vh, sections, cx }) {
     if (!Number.isFinite(y)) return null;
-    spot = { ...pickAnchor(y, sections, vh), y, id: nextId++ };
+    spot = { ...pickAnchor(y, sections, vh, cx), y, id: nextId++ };
     emit();
     return spot;
 }
