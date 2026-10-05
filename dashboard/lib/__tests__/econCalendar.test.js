@@ -1,4 +1,4 @@
-import { SERIES, CALENDAR_THROUGH, BLS_THROUGH, FED_THROUGH, WINDOW_DAYS, upcomingEvents, econLine } from '../econCalendar';
+import { SERIES, BLS_THROUGH, FED_THROUGH, WINDOW_DAYS, FED_REMINDER_DAYS, upcomingEvents, econLine } from '../econCalendar';
 
 const at = (iso) => Date.parse(iso);
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
@@ -36,19 +36,23 @@ describe('the hand-copied calendar', () => {
         expect(FED_THROUGH).toBe('2027-12-31');
         for (const d of [...SERIES.cpi.dates, ...SERIES.jobs.dates]) expect(d <= BLS_THROUGH).toBe(true);
         for (const d of SERIES.fomc.dates) expect(d <= FED_THROUGH).toBe(true);
-        // the line vouches for nothing past the shorter of the two schedules
-        expect(CALENDAR_THROUGH).toBe('2026-12-30');
+        // each series knows where its own copied schedule ends
+        expect(SERIES.cpi.through).toBe(BLS_THROUGH);
+        expect(SERIES.jobs.through).toBe(BLS_THROUGH);
+        expect(SERIES.fomc.through).toBe(FED_THROUGH);
     });
 
-    // These two fail on the first day the 14-day line would reach past a copied schedule — the day the line
-    // starts hiding releases — so they only go red when there is something to do (copy next year's dates).
-    const windowEnd = () => new Date(Date.now() + WINDOW_DAYS * 864e5).toISOString().slice(0, 10);
+    const dayPlus = (n) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
+    // BLS (exception): goes red on the first day the 14-day line reaches past BLS_THROUGH (from 2026-12-17).
+    // An earlier warning would already be red today with nothing to copy: BLS has not posted 2027 yet.
     test('REMINDER: the 14-day line has reached the end of the BLS dates — copy next year\'s CPI + jobs schedule from bls.gov', () => {
-        expect(BLS_THROUGH >= windowEnd()).toBe(true);
+        expect(BLS_THROUGH >= dayPlus(WINDOW_DAYS)).toBe(true);
     });
 
-    test('REMINDER: the 14-day line has reached the end of the Fed dates — copy next year\'s FOMC calendar from federalreserve.gov', () => {
-        expect(FED_THROUGH >= windowEnd()).toBe(true);
+    // Fed: goes red 6 months before FED_THROUGH runs out (from 2027-07-01) — the Fed posts the next year well ahead.
+    test('REMINDER: under 6 months of Fed dates left — copy the next year\'s FOMC calendar from federalreserve.gov', () => {
+        expect(FED_REMINDER_DAYS).toBeGreaterThanOrEqual(182);
+        expect(FED_THROUGH >= dayPlus(FED_REMINDER_DAYS)).toBe(true);
     });
 });
 
@@ -66,12 +70,11 @@ describe('upcomingEvents', () => {
         expect(upcomingEvents(at('2026-11-10T05:00:00Z'))[0].at).toBe(at('2026-11-10T13:30:00Z'));
     });
 
-    test('never past the copied schedule: "Next" must not skip a release it cannot see', () => {
+    test('each series stops at its own copied schedule: never a guessed date, never a hidden known one', () => {
         // Tue 1 Dec 2026: Jobs Fri, FOMC Wed 9th, CPI Thu 10th — cut at the 9th, CPI is not listed
         expect(upcomingEvents(at('2026-12-01T15:00:00Z'), { through: '2026-12-09' }).map((e) => e.name)).toEqual(['Jobs', 'FOMC']);
-        // with today's copy: 20 Jan 2027 knows FOMC Jan 27 but not BLS's 2027 dates → nothing, not a lone "FOMC"
-        expect(upcomingEvents(at('2027-01-20T15:00:00Z'))).toEqual([]);
-        expect(econLine(at('2027-01-20T15:00:00Z'))).toBeNull();
+        // 20 Jan 2027: BLS's 2027 dates are not copied yet, the Fed's are → FOMC Jan 27 still shows
+        expect(upcomingEvents(at('2027-01-20T15:00:00Z')).map((e) => `${e.name} ${e.date}`)).toEqual(['FOMC 2027-01-27']);
     });
 
     test('the ET day decides "today", whatever the device clock zone', () => {
@@ -128,8 +131,20 @@ describe('econLine — the one quiet line under the market clock', () => {
         expect(econLine(at('2026-12-04T14:00:00Z')).text).toBe('Jobs out 8:30 · Next · FOMC Wed 2:00 · CPI Thu 8:30 ET');
     });
 
+    test('past the BLS dates: the known FOMC still shows, without "Next" (a jobs or CPI date it cannot see may come first)', () => {
+        // Wed 20 Jan 2027 10:00 EST
+        expect(econLine(at('2027-01-20T15:00:00Z'))).toEqual({
+            text: 'FOMC Jan 27 2:00 ET', alert: false, segments: [{ text: 'FOMC Jan 27 2:00 ET', hot: false }],
+        });
+        // ...and on the day, the amber countdown as usual
+        expect(econLine(at('2027-01-27T18:00:00Z'))).toMatchObject({ text: '🔔 FOMC today 2:00 ET · in 1h 0m', alert: true });
+        // the window still inside BLS's dates: "Next" as normal
+        expect(econLine(at('2026-12-01T15:00:00Z')).text.startsWith('Next · ')).toBe(true);
+    });
+
     test('nothing within 14 days → null (the line hides)', () => {
         expect(econLine(at('2026-12-11T15:00:00Z'))).toBeNull();
+        expect(econLine(at('2027-01-01T15:00:00Z'))).toBeNull();
         expect(econLine(NaN)).toBeNull();
     });
 });
