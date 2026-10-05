@@ -14,10 +14,13 @@
  *  - Jobs  https://www.bls.gov/schedule/news_release/empsit.htm  (Employment Situation, 8:30 AM ET)
  *          Both BLS pages (and the bls.gov/schedule/news_release/bls.ics feed) list release
  *          dates only through December 2026 — BLS has not posted its 2027 schedule yet. 2027 CPI
- *          and jobs dates are LEFT OUT, never guessed; BLS_THROUGH marks where they stop.
+ *          and jobs dates are LEFT OUT, never guessed. BLS_THROUGH = the last day of BLS's own
+ *          release calendar (bls.ics ends 2026-12-30); the line never looks past it, so "Next"
+ *          cannot skip a CPI or jobs release it has no date for.
  *
- * Reminders (lib/__tests__/econCalendar.test.js): a test fails 6 months before CALENDAR_THROUGH
- * runs out, and another 30 days before BLS_THROUGH does — re-copy the dates from the pages above.
+ * Reminders (lib/__tests__/econCalendar.test.js): a test fails on the first day the 14-day window
+ * would reach past BLS_THROUGH (from 2026-12-17) or FED_THROUGH — the day the line would start
+ * hiding releases. Copy next year's dates from the pages above.
  *
  * All maths is in America/New_York via the marketClock helpers, whatever the device's zone.
  */
@@ -43,10 +46,12 @@ export const SERIES = {
             '2027-01-27', '2027-03-17', '2027-04-28', '2027-06-09', '2027-07-28', '2027-09-15', '2027-10-27', '2027-12-08'],
     },
 };
-/** Last date the calendar covers (the FOMC list). */
-export const CALENDAR_THROUGH = '2027-12-08';
-/** Last BLS (CPI / jobs) date copied — BLS's own schedule stops in December 2026. */
-export const BLS_THROUGH = '2026-12-10';
+/** Last day each copied schedule covers: BLS's release calendar (bls.ics) ends 2026-12-30 — its
+ *  2027 schedule is not out yet; the Fed page lists all of 2027. */
+export const BLS_THROUGH = '2026-12-30';
+export const FED_THROUGH = '2027-12-31';
+/** The line vouches for nothing past the shorter of the two. */
+export const CALENDAR_THROUGH = BLS_THROUGH < FED_THROUGH ? BLS_THROUGH : FED_THROUGH;
 
 export const WINDOW_DAYS = 14;
 export const MAX_EVENTS = 3;
@@ -58,13 +63,15 @@ const addDays = (date, n) => new Date(dayMs(date) + n * 864e5).toISOString().sli
 const hm = (min) => `${((Math.floor(min / 60) + 11) % 12) + 1}:${String(min % 60).padStart(2, '0')}`;
 
 /**
- * Releases from today (ET) through today + `days`, in time order, at most `max`.
+ * Releases from today (ET) through today + `days` — never past `through`, the end of the copied
+ * schedules — in time order, at most `max`.
  * @returns {{key:string,name:string,date:string,min:number,at:number,today:boolean,out:boolean}[]}
  */
-export function upcomingEvents(now, { days = WINDOW_DAYS, max = MAX_EVENTS } = {}) {
+export function upcomingEvents(now, { days = WINDOW_DAYS, max = MAX_EVENTS, through = CALENDAR_THROUGH } = {}) {
     if (!Number.isFinite(now)) return [];
     const today = etParts(now).date;
-    const last = addDays(today, days);
+    const end = addDays(today, days);
+    const last = end < through ? end : through;
     const out = [];
     for (const [key, s] of Object.entries(SERIES)) {
         for (const date of s.dates) {

@@ -1,4 +1,4 @@
-import { SERIES, CALENDAR_THROUGH, BLS_THROUGH, upcomingEvents, econLine } from '../econCalendar';
+import { SERIES, CALENDAR_THROUGH, BLS_THROUGH, FED_THROUGH, WINDOW_DAYS, upcomingEvents, econLine } from '../econCalendar';
 
 const at = (iso) => Date.parse(iso);
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
@@ -31,18 +31,24 @@ describe('the hand-copied calendar', () => {
     });
 
     test('BLS has not posted 2027 yet: no CPI or jobs date is guessed past BLS_THROUGH', () => {
+        // bls.gov's own release calendar (bls.ics) runs to 2026-12-30; its last CPI / jobs dates are Dec 10 / Dec 4
+        expect(BLS_THROUGH).toBe('2026-12-30');
+        expect(FED_THROUGH).toBe('2027-12-31');
         for (const d of [...SERIES.cpi.dates, ...SERIES.jobs.dates]) expect(d <= BLS_THROUGH).toBe(true);
-        expect(SERIES.fomc.dates[SERIES.fomc.dates.length - 1]).toBe(CALENDAR_THROUGH);
+        for (const d of SERIES.fomc.dates) expect(d <= FED_THROUGH).toBe(true);
+        // the line vouches for nothing past the shorter of the two schedules
+        expect(CALENDAR_THROUGH).toBe('2026-12-30');
     });
 
-    test('REMINDER: the calendar must reach 6 months ahead — re-copy from federalreserve.gov', () => {
-        const sixMonths = new Date(Date.now() + 182 * 864e5).toISOString().slice(0, 10);
-        expect(CALENDAR_THROUGH >= sixMonths).toBe(true);
+    // These two fail on the first day the 14-day line would reach past a copied schedule — the day the line
+    // starts hiding releases — so they only go red when there is something to do (copy next year's dates).
+    const windowEnd = () => new Date(Date.now() + WINDOW_DAYS * 864e5).toISOString().slice(0, 10);
+    test('REMINDER: the 14-day line has reached the end of the BLS dates — copy next year\'s CPI + jobs schedule from bls.gov', () => {
+        expect(BLS_THROUGH >= windowEnd()).toBe(true);
     });
 
-    test('REMINDER: BLS dates must reach 30 days ahead — copy the 2027 CPI + jobs schedule from bls.gov once posted', () => {
-        const month = new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10);
-        expect(BLS_THROUGH >= month).toBe(true);
+    test('REMINDER: the 14-day line has reached the end of the Fed dates — copy next year\'s FOMC calendar from federalreserve.gov', () => {
+        expect(FED_THROUGH >= windowEnd()).toBe(true);
     });
 });
 
@@ -58,6 +64,14 @@ describe('upcomingEvents', () => {
         // CPI 14 Oct 2026 8:30 EDT = 12:30Z; CPI 10 Nov 2026 8:30 EST = 13:30Z
         expect(upcomingEvents(at('2026-10-14T05:00:00Z'))[0].at).toBe(at('2026-10-14T12:30:00Z'));
         expect(upcomingEvents(at('2026-11-10T05:00:00Z'))[0].at).toBe(at('2026-11-10T13:30:00Z'));
+    });
+
+    test('never past the copied schedule: "Next" must not skip a release it cannot see', () => {
+        // Tue 1 Dec 2026: Jobs Fri, FOMC Wed 9th, CPI Thu 10th — cut at the 9th, CPI is not listed
+        expect(upcomingEvents(at('2026-12-01T15:00:00Z'), { through: '2026-12-09' }).map((e) => e.name)).toEqual(['Jobs', 'FOMC']);
+        // with today's copy: 20 Jan 2027 knows FOMC Jan 27 but not BLS's 2027 dates → nothing, not a lone "FOMC"
+        expect(upcomingEvents(at('2027-01-20T15:00:00Z'))).toEqual([]);
+        expect(econLine(at('2027-01-20T15:00:00Z'))).toBeNull();
     });
 
     test('the ET day decides "today", whatever the device clock zone', () => {
