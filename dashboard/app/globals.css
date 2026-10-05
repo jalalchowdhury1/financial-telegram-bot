@@ -2323,7 +2323,14 @@ html { overscroll-behavior-y: contain; } /* Android's own pull = full reload; ou
   pointer-events: auto;
   transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.2s ease, visibility 0s;
 }
-html.sheet-open .glance-bar,
+/* html.sheet-open (the shared contract, set by useSheetLock) gets its own rule: a browser without
+   :has() drops a whole selector list, and the sheet rule must survive that. */
+html.sheet-open .glance-bar {
+  transform: translate(-50%, calc(-100% - 20px - env(safe-area-inset-top, 0px)));
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
 html:has(.jump-menu) .glance-bar,
 html:has(.offline-banner) .glance-bar {
   transform: translate(-50%, calc(-100% - 20px - env(safe-area-inset-top, 0px)));
@@ -2498,7 +2505,7 @@ html:has(.offline-banner) .glance-bar {
   transform: none;
   transition: opacity 0.2s ease, transform 0.2s ease, visibility 0s;
 }
-html.sheet-open .back-pill,
+html.sheet-open .back-pill { opacity: 0; visibility: hidden; pointer-events: none; } /* own rule: see .glance-bar */
 html:has(.jump-menu) .back-pill { opacity: 0; visibility: hidden; pointer-events: none; }
 /* near the top (☰ ↑ Top, or a tap on the glance bar) the ☰ hides: take its corner, no gap */
 html:not(:has(.jump-fab)) .back-pill {
