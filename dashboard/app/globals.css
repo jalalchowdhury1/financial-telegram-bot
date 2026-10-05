@@ -2263,7 +2263,8 @@ html { overscroll-behavior-y: contain; } /* Android's own pull = full reload; ou
    Desktop: the pill is a block, so the line simply follows. Phones (≤640px) lay the pill
    out as a row; wrapping lets the line take its own full-width row. Max 2 lines. */
 .jev-pill .jev-pill-why {
-  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+  /* 3 lines: a Jev override adds "Rule says … ·", which needs a third line in a 252px desk pill. */
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden;
   margin-top: 6px; font-size: 0.68rem; line-height: 1.35; font-weight: 400;
   color: var(--text-secondary, var(--text-muted)); opacity: 0.9;
 }

@@ -32,6 +32,21 @@ describe('JevPills — one plain "why" line per pill', () => {
         expect(within(pill('Regime')).getByText('2 of 3 votes: uptrend + junk bonds firm')).toBeInTheDocument();
     });
 
+    test('Jev overrides the rule with another verdict: the line is labelled as the rule', () => {
+        const data = { ...live, pills: { ...live.pills, recession: { ...live.pills.recession, verdict: 'high', by: 'jev', p: 0.8 } } };
+        render(<JevPills data={data} loading={false} />);
+        expect(within(pill('Recession')).getByText('High')).toBeInTheDocument();
+        expect(pill('Recession').querySelector('.jev-pill-why').textContent).toBe('Rule says low · 0 of 4 warnings tripped');
+    });
+
+    test('every input n/a (feed outage): no line reads as an all-clear', () => {
+        const na = (f) => ({ ...f, rows: f.rows.map((r) => ({ ...r, value: 'n/a', hit: false, effect: '' })) });
+        const factors = Object.fromEntries(Object.entries(live.factors).map(([k, f]) => [k, na(f)]));
+        const { container } = render(<JevPills data={{ ...live, factors }} loading={false} />);
+        expect(container.querySelectorAll('.jev-pill')).toHaveLength(5);
+        expect(container.querySelector('.jev-pill-why')).toBeNull();
+    });
+
     test('no factors at all (older payload): pills render exactly as before', () => {
         const { factors, ...noFactors } = live;
         const { container } = render(<JevPills data={noFactors} loading={false} />);

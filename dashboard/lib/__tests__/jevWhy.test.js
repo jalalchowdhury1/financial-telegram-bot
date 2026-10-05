@@ -100,3 +100,66 @@ describe('pillWhy — missing data shows nothing, never a guess', () => {
         expect(pillWhy({ factors: noSummary }, 'breadth')).toBeNull();
     });
 });
+
+// Review fix: the line explains the RULE's rows. When Jev (p >= 0.6) overrides the rule with
+// a different verdict, the bare line would argue against the badge above it.
+describe('pillWhy — a Jev override never sits over a line that argues the other way', () => {
+    const withPill = (pill, p) => ({ ...live, pills: { ...live.pills, [pill]: { ...live.pills[pill], ...p } } });
+
+    test('Jev agrees with the rule: the line is unchanged', () => {
+        // Live: recession low by Jev 0.88, hedging cheap by Jev 1.00 — both match the rule.
+        expect(live.pills.recession.by).toBe('jev');
+        expect(pillWhy(live, 'recession')).toBe('0 of 4 warnings tripped');
+        expect(pillWhy(live, 'hedging')).toBe('Options cheap: bottom 15% of the year');
+    });
+    test('Jev disagrees: the line says it is the rule talking', () => {
+        expect(pillWhy(withPill('regime', { verdict: 'risk-off', by: 'jev', p: 0.72 }), 'regime'))
+            .toBe('Rule says risk-on · 2 of 3 votes: uptrend + junk bonds firm');
+        expect(pillWhy(withPill('recession', { verdict: 'high', by: 'jev', p: 0.8 }), 'recession'))
+            .toBe('Rule says low · 0 of 4 warnings tripped');
+        expect(pillWhy(withPill('breadth', { verdict: 'narrow', by: 'jev', p: 0.7 }), 'breadth'))
+            .toBe('Rule says rolling over · average stock −4.3% vs SPY in 20 days · below its 50-day trend');
+        expect(pillWhy(withPill('hedging', { verdict: 'fair', by: 'jev', p: 0.65 }), 'hedging'))
+            .toBe('Rule says cheap · options cheap: bottom 15% of the year');
+        expect(pillWhy(withPill('conflict', { verdict: 'aligned', by: 'jev', p: 0.9 }), 'conflict'))
+            .toBe('Rule says major divergence · fearful crowd in an uptrend · near the high, average stock slipping');
+    });
+    test('a rule verdict the rows do not support (mismatched payload): no line', () => {
+        expect(pillWhy(withPill('regime', { verdict: 'risk-off', by: 'rule', p: null }), 'regime')).toBeNull();
+        expect(pillWhy(withPill('recession', { verdict: 'n/a', by: 'rule', p: null }), 'recession')).toBeNull();
+    });
+    test('Jev disagrees and only the rule summary is left to say: no line', () => {
+        const factors = { breadth: { summary: 'Rolling over: RSP/SPY declining', rows: [{ label: 'Renamed row', value: '-3%', hit: true, effect: 'rolling-over' }] } };
+        expect(pillWhy({ factors, pills: { breadth: { verdict: 'narrow', by: 'jev', p: 0.7 } } }, 'breadth')).toBeNull();
+        expect(pillWhy({ factors, pills: { breadth: { verdict: 'rolling-over', by: 'rule' } } }, 'breadth')).toBe('Rolling over: RSP/SPY declining');
+    });
+});
+
+// Review fix: a missing input used to count as "not tripped", so a FRED outage read as an
+// all-clear ("0 of 4 warnings tripped"). Count only what was measured; say what was not.
+describe('pillWhy — missing inputs are never counted as calm', () => {
+    test('nothing measured at all: no line for any pill', () => {
+        for (const d of [{}, { fred: { yieldCurve: 'N/A' } }]) {
+            const f = pillFactors(d);
+            for (const pill of PILLS) expect(pillWhy({ factors: f }, pill)).toBeNull();
+        }
+    });
+    test('one recession input missing: counted out of what was measured, and named', () => {
+        expect(why(data({ fred: { nfci: null } }), 'recession')).toBe('0 of 3 warnings tripped (NFCI n/a)');
+        expect(why(data({ fred: { yieldCurve: 'N/A', sahmRule: 0.52 } }), 'recession')).toBe('1 of 3 warnings tripped: Sahm 0.52 (curve n/a)');
+        expect(why(data({ fred: { sahmRule: null, claims: null } }), 'recession')).toBe('0 of 2 warnings tripped (Sahm, claims n/a)');
+    });
+    test('one regime input missing', () => {
+        expect(why(data({ fg: { score: null } }), 'regime')).toBe('2 of 2 votes: uptrend + junk bonds firm (F&G n/a)');
+        expect(why(data({ spy: { ma200Pct: null }, fg: { score: 22 } }), 'regime')).toBe('1 of 2 votes: junk bonds firm · against: fearful crowd (SPY trend n/a)');
+    });
+    test('conflict: "all agree" counts only the pairs that could be checked', () => {
+        expect(why(data({ ten: null }), 'conflict')).toBe('All 3 pairs agree (1 pair n/a)');
+        expect(why(data({ ten: null, fg: { score: null } }), 'conflict')).toBe('All 2 pairs agree (2 pairs n/a)');
+    });
+    test('the payload with every input present is unchanged', () => {
+        expect(why(data(), 'recession')).toBe('0 of 4 warnings tripped');
+        expect(why(data(), 'regime')).toBe('3 of 3 votes: uptrend + greedy crowd + junk bonds firm');
+        expect(why(data(), 'conflict')).toBe('All 4 pairs agree');
+    });
+});

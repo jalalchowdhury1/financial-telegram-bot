@@ -8,6 +8,13 @@
  * label rename in pillFactors must be mirrored here (jevWhy.test.js fails until it is).
  * A fired row with no phrase falls back to factors[pill].summary, then pills[pill].reason,
  * then nothing. Missing rows or an n/a number -> null, never a guess.
+ *
+ * Two honesty rules (review, QoL ship 6):
+ *  - An input that is n/a is NOT a calm reading. Counts use only the rows that were measured
+ *    and name the rest ("0 of 3 warnings tripped (NFCI n/a)"); nothing measured -> null.
+ *  - The rows are the RULE's. If the badge shows a different verdict (Jev at p >= 0.6 overrode
+ *    it, lib/jevBrief.js: mergeVerdicts), the line says so: "Rule says risk-on · …". A rule
+ *    badge the rows do not support (mismatched payload) gets no line at all.
  */
 
 const num = (v) => {
@@ -65,20 +72,63 @@ const PHRASES = {
     },
 };
 
+// Short names for an n/a input inside the line ("(F&G n/a)"). Unlisted -> the row label.
+const SHORT = {
+    'SPY vs 200-day avg': 'SPY trend', 'Fear & Greed': 'F&G', 'HYG/LQD 20d': 'HYG/LQD',
+    'Sahm rule': 'Sahm', 'Yield curve (2s10s)': 'curve', 'Jobless claims': 'claims',
+};
+
+// A row was measured when it fired, or when its shown value has no 'n/a' in it
+// (pillFactors prints 'n/a' for every missing number, including inside the conflict pairs).
+const measured = (r) => r.hit || (r.value != null && String(r.value).trim() !== '' && !/n\/a/i.test(String(r.value)));
+const naNote = (rows) => {
+    const gone = rows.filter((r) => !measured(r)).map((r) => SHORT[r.label] || r.label);
+    return gone.length ? ` (${gone.join(', ')} n/a)` : '';
+};
+
+// The verdict the rows themselves give — the same thresholds as pillFactors / ruleVerdicts.
+const RULE = {
+    regime(rows) {
+        const score = rows.reduce((n, r) => n + vote(r.effect), 0);
+        return score >= 2 ? 'risk-on' : score <= -1 ? 'risk-off' : 'neutral';
+    },
+    recession(rows) {
+        const fired = rows.filter((r) => r.hit);
+        return fired.some((r) => r.effect === 'high') ? 'high' : fired.length ? 'rising' : 'low';
+    },
+    breadth(rows) {
+        const e = rows.filter((r) => r.hit).map((r) => r.effect);
+        return e.includes('rolling-over') ? 'rolling-over' : e.includes('broad') ? 'broad' : 'narrow';
+    },
+    hedging(rows) {
+        const e = rows.filter((r) => r.hit).map((r) => r.effect);
+        return e.includes('expensive') ? 'expensive' : e.includes('cheap') ? 'cheap' : 'fair';
+    },
+    conflict(rows) {
+        const n = rows.filter((r) => r.hit).length;
+        return n === 0 ? 'aligned' : n === 1 ? 'mild-divergence' : 'major-divergence';
+    },
+};
+const spoken = (v) => String(v).replace(/^(rolling|mild|major)-/, '$1 ');
+
 /** Row labels each pill has a phrase for (the test pins these to pillFactors). */
 export const WHY_LABELS = Object.fromEntries(Object.entries(PHRASES).map(([k, v]) => [k, Object.keys(v)]));
 
 // Per-pill composition from the rows. `say(row)` = that row's phrase (undefined = no template).
 const COMPOSE = {
     regime(rows, say) {
+        const known = rows.filter(measured).length;
+        if (!known) return null;
         const up = rows.filter((r) => vote(r.effect) === 1).map(say);
         const down = rows.filter((r) => vote(r.effect) === -1).map(say);
-        return `${up.length} of ${rows.length} votes${up.length ? `: ${up.join(' + ')}` : ''}`
-            + `${down.length ? ` · against: ${down.join(' + ')}` : ''}`;
+        return `${up.length} of ${known} votes${up.length ? `: ${up.join(' + ')}` : ''}`
+            + `${down.length ? ` · against: ${down.join(' + ')}` : ''}${naNote(rows)}`;
     },
     recession(rows, say) {
+        const known = rows.filter(measured).length;
+        if (!known) return null;
         const fired = rows.filter((r) => r.hit).map(say);
-        return `${fired.length} of ${rows.length} warnings tripped${fired.length ? `: ${fired.join(' + ')}` : ''}`;
+        return `${fired.length} of ${known} warnings tripped${fired.length ? `: ${fired.join(' + ')}` : ''}${naNote(rows)}`;
     },
     breadth(rows, say) {
         const fired = rows.filter((r) => r.hit);
@@ -98,8 +148,11 @@ const COMPOSE = {
     },
     conflict(rows, say) {
         const fired = rows.filter((r) => r.hit);
-        if (!fired.length) return `all ${rows.length} pairs agree`;
-        return fired.map(say).join(' · ');
+        if (fired.length) return fired.map(say).join(' · ');
+        const known = rows.filter(measured).length;
+        const gone = rows.length - known;
+        if (!known) return null;
+        return `all ${known} pairs agree${gone ? ` (${gone} pair${gone > 1 ? 's' : ''} n/a)` : ''}`;
     },
 };
 
@@ -118,10 +171,19 @@ export function pillWhy(data, pill) {
         if (s == null && r.hit) missing = true;   // a fired row we cannot word honestly
         return s;
     };
+    // Does the badge show the verdict these rows give? If not, only a Jev override may keep
+    // the line, and then it is labelled as the rule's.
+    const shown = data?.pills?.[pill];
+    const ruleSays = RULE[pill](rows);
+    const overridden = !!shown?.verdict && shown.verdict !== ruleSays;
+    if (overridden && shown.by !== 'jev') return null;
+
     const line = compose(rows, say);
     if (missing) {
-        const fallback = f.summary || data?.pills?.[pill]?.reason;
+        if (overridden) return null;            // the summary/reason are the rule's prose too
+        const fallback = f.summary || shown?.reason;
         return typeof fallback === 'string' && fallback ? fallback : null;
     }
-    return line ? cap(line) : null;
+    if (!line) return null;
+    return overridden ? `Rule says ${spoken(ruleSays)} · ${line}` : cap(line);
 }
