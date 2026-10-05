@@ -96,6 +96,26 @@ describe('marketWindow: weekend and holiday tails', () => {
         expect(marketWindow(r, { rate: true, ticker: 'TNX' })).toEqual({ text: '+3bp', tag: 'Tue', dir: 1 });
     });
 
+    test('BTC: a missing Sunday bar means Sat to Mon is two days, not "Mon" (live 2026-10-05 tail)', () => {
+        const r = row(h(['2026-10-02', 84497.21], ['2026-10-03', 84763.58], ['2026-10-05', 86690.75]));
+        expect(marketWindow(r, { ticker: 'BTC' })).toEqual({ text: '+2.27%', tag: '2d', dir: 1 });
+    });
+
+    test('TNX: a missing Friday bar means Thu to Mon spans two sessions, tagged 4d not "Mon"', () => {
+        const r = row(h(['2026-09-30', 5.29], ['2026-10-01', 5.24], ['2026-10-05', 5.20]));
+        expect(marketWindow(r, { rate: true, ticker: 'TNX' })).toEqual({ text: '−4bp', tag: '4d', dir: -1 });
+    });
+
+    test('CL: Thu to a real Sunday bar with Friday missing is not one session', () => {
+        const r = row(h(['2026-09-30', 92.0], ['2026-10-01', 92.87], ['2026-10-04', 91.03]));
+        expect(marketWindow(r, { ticker: 'CL' }).tag).toBe('3d');
+    });
+
+    test('a missing mid-week bar (Tue to Thu) is two sessions, tagged 2d', () => {
+        const r = row(h(['2026-09-28', 5.30], ['2026-09-29', 5.26], ['2026-10-01', 5.24]));
+        expect(marketWindow(r, { rate: true, ticker: 'TNX' }).tag).toBe('2d');
+    });
+
     test('a 5-day gap matches no cadence: the number stays, the tag goes', () => {
         const r = row(h(['2026-09-03', 5.00], ['2026-09-08', 5.03]));
         expect(marketWindow(r, { rate: true, ticker: 'TNX' })).toEqual({ text: '+3bp', tag: null, dir: 1 });
