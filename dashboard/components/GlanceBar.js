@@ -3,7 +3,8 @@
  * 🔝 Glance bar. Once Market Pulse scrolls off the top, a slim glass capsule slides in:
  * "SPY 769.64 ▲0.74% · F&G 31 · 3 min ago ↻". From 5,000px down (Volatility, Markets) the
  * live state and the refresh used to be a long thumb-scroll away.
- *  - Numbers come from the page's own state (lib/glance.js) — no fetch of its own.
+ *  - Numbers come from the page's own state (lib/glance.js) — no fetch of its own. The move
+ *    carries the SPY card's session word off the day ("▲0.74% Fri"). F&G down = SPY + ↻ stay.
  *  - The age is the header's: <UpdatedAgo> (amber past 10 min), or "🕐 Saved 10:42" while
  *    the page shows a saved copy and nothing live has landed.
  *  - Tap the numbers → back to the top. ↻ = the header's refresh (skips the edge cache).
@@ -17,7 +18,7 @@ import { glanceNumbers, glanceAge, shouldShowGlance } from '../lib/glance';
 // Market Pulse is the anchor; if it is not on the page (a crashed card), the header is.
 const ANCHORS = ['.market-pulse', '.dashboard-header'];
 
-export default function GlanceBar({ spy, spyDailyMove, fg, fgColor, updatedAt, saved, loading, onRefresh, busy }) {
+export default function GlanceBar({ spy, spyDailyMove, fg, fgColor, when, updatedAt, saved, loading, onRefresh, busy }) {
     const [on, setOn] = useState(false);
 
     useEffect(() => {
@@ -44,20 +45,22 @@ export default function GlanceBar({ spy, spyDailyMove, fg, fgColor, updatedAt, s
         };
     }, []);
 
-    const n = glanceNumbers({ spy, spyDailyMove, fg });
+    const n = glanceNumbers({ spy, spyDailyMove, fg, when });
     if (!n) return null;
     const age = glanceAge({ updatedAt, saved, loading });
     const toTop = () => {
         const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
         window.scrollTo({ top: 0, behavior: reduce ? 'auto' : 'smooth' });
     };
-    const said = `SPY ${n.price}${n.move ? ` ${n.move.text}` : ''}${n.fg != null ? `, Fear & Greed ${n.fg}` : ''}`;
+    const moveSaid = n.move ? ` ${n.move.text}${n.move.when ? ` ${n.move.when}` : ''}` : '';
+    const said = `SPY ${n.price}${moveSaid}${n.fg != null ? `, Fear & Greed ${n.fg}` : ''}`;
 
     return (
         <div className={`glance-bar${on ? ' is-on' : ''}`} role="region" aria-label="Glance bar">
             <button type="button" className="glance-main" onClick={toTop} tabIndex={on ? 0 : -1} aria-label={`${said} — back to top`}>
                 <span className="glance-k">SPY</span> <b>{n.price}</b>
                 {n.move && <> <span className={n.move.up ? 'stat-positive' : 'stat-negative'}>{n.move.text}</span></>}
+                {n.move?.when && <> <span className="glance-k">{n.move.when}</span></>}
                 {n.fg != null && (
                     <>
                         <span className="glance-sep" aria-hidden="true"> · </span>

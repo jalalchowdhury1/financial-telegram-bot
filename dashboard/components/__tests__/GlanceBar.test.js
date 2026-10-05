@@ -56,6 +56,15 @@ it('tapping the numbers scrolls back to the top', () => {
     expect(window.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: 'smooth' });
 });
 
+it('the SPY move names its session like the SPY card: "▲0.74% Fri" on a weekend, no word on the day', () => {
+    const { rerender } = render(<Page when="Fri" />);
+    scrollPast(-5);
+    expect(bar().textContent).toMatch(/^SPY 769\.64 ▲0\.74% Fri · F&G 31 · 3 min ago$/);
+    expect(screen.getByRole('button', { name: /back to top/ }).getAttribute('aria-label')).toMatch(/▲0\.74% Fri,/);
+    rerender(<Page when="today" />);
+    expect(bar().textContent).toMatch(/^SPY 769\.64 ▲0\.74% · F&G 31/);
+});
+
 it('a saved copy says so: "🕐 Saved 10:42" instead of an age', () => {
     render(<Page updatedAt={null} saved="10:42" loading />);
     scrollPast(-5);
@@ -63,13 +72,22 @@ it('a saved copy says so: "🕐 Saved 10:42" instead of an age', () => {
     expect(bar().textContent).not.toMatch(/ago/);
 });
 
-it('renders nothing without SPY or F&G, or with an errored payload', () => {
+it('renders nothing without SPY, or with an errored SPY payload', () => {
     const { rerender } = render(<Page spy={null} />);
     expect(bar()).toBeNull();
-    rerender(<Page fg={{ error: 'down' }} />);
+    rerender(<Page spy={{ error: 'down' }} />);
     expect(bar()).toBeNull();
     rerender(<Page spy={{}} />);
     expect(bar()).toBeNull();
+});
+
+it('F&G down: SPY, the age and ↻ stay — a failed feed is exactly when ↻ is wanted', () => {
+    const { rerender } = render(<Page fg={{ error: 'down' }} />);
+    scrollPast(-5);
+    expect(bar().textContent).toMatch(/^SPY 769\.64 ▲0\.74% · 3 min ago$/);
+    expect(screen.getByRole('button', { name: 'Refresh now' })).toBeInTheDocument();
+    rerender(<Page fg={null} />);
+    expect(bar().textContent).not.toMatch(/F&G|NaN/);
 });
 
 it('F&G that is not a number is simply left out', () => {

@@ -145,6 +145,8 @@ describe('honest labels on the SPY and Fear & Greed cards', () => {
         render(<Dashboard />);
         await waitFor(() => expect(badge()).not.toBeNull());
         expect(badge().textContent).toBe('▲ 0.74% Fri');
+        // the floating glance bar names the session too
+        expect(document.querySelector('.glance-main').textContent).toBe('SPY 612.34 ▲0.74% Fri');
     });
 
     it('during the session it still says "today"; with no market date it keeps "today"', async () => {
@@ -152,6 +154,7 @@ describe('honest labels on the SPY and Fear & Greed cards', () => {
         const r = render(<Dashboard />);
         await waitFor(() => expect(badge()).not.toBeNull());
         expect(badge().textContent).toBe('▼ -0.31% today');
+        expect(document.querySelector('.glance-main').textContent).toBe('SPY 612.34 ▼0.31%');
         r.unmount();
         // the first render's saved copies are written off the render path (setTimeout 0): flush, then forget them
         await act(async () => { await new Promise((res) => setTimeout(res, 0)); });

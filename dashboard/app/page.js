@@ -692,7 +692,7 @@ export default function Dashboard() {
             {/* 🔝 Glance bar — SPY · F&G · age · ↻, floats in once Market Pulse scrolls off */}
             <ErrorBoundary resetKey={refreshTick}>
                 <GlanceBar
-                    spy={spy} spyDailyMove={spyDailyMove} fg={fg} fgColor={fgColor}
+                    spy={spy} spyDailyMove={spyDailyMove} fg={fg} fgColor={fgColor} when={spyWhen}
                     updatedAt={updatedAt} saved={anySaved} loading={loading}
                     onRefresh={refreshNow} busy={refreshing}
                 />

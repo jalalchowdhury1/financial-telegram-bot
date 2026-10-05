@@ -6,23 +6,34 @@ const fg = { score: 31.2, rating: 'fear' };
 describe('glanceNumbers — the same numbers the cards show, never a guess', () => {
     test('SPY price + the spy-daily-move % + the F&G score', () => {
         expect(glanceNumbers({ spy, spyDailyMove: { value: '0.74%' }, fg })).toEqual({
-            price: '769.64', move: { up: true, text: '▲0.74%' }, fg: 31, fgScore: 31.2,
+            price: '769.64', move: { up: true, text: '▲0.74%', when: null }, fg: 31, fgScore: 31.2,
         });
-        expect(glanceNumbers({ spy, spyDailyMove: { value: '-0.31%' }, fg }).move).toEqual({ up: false, text: '▼0.31%' });
+        expect(glanceNumbers({ spy, spyDailyMove: { value: '-0.31%' }, fg }).move).toEqual({ up: false, text: '▼0.31%', when: null });
     });
     test("no spy-daily-move: SPY's own daily change; neither: no move at all (not a fake 0.00%)", () => {
-        expect(glanceNumbers({ spy, spyDailyMove: { value: null }, fg }).move).toEqual({ up: true, text: '▲0.74%' });
+        expect(glanceNumbers({ spy, spyDailyMove: { value: null }, fg }).move).toEqual({ up: true, text: '▲0.74%', when: null });
         expect(glanceNumbers({ spy: { current: 700 }, spyDailyMove: null, fg }).move).toBeNull();
         expect(glanceNumbers({ spy: { current: 700 }, spyDailyMove: { value: 'N/A' }, fg }).move).toBeNull();
     });
     test('an F&G score that is not a number is left out', () => {
         expect(glanceNumbers({ spy, fg: { score: 'N/A' } }).fg).toBeNull();
     });
-    test('nothing at all when SPY or F&G is missing, errored, or SPY has no price (as Market Pulse)', () => {
+    test('the move names its session like the SPY card: "Fri" all weekend, nothing extra on the day itself', () => {
+        expect(glanceNumbers({ spy, spyDailyMove: { value: '0.74%' }, fg, when: 'Fri' }).move).toEqual({ up: true, text: '▲0.74%', when: 'Fri' });
+        expect(glanceNumbers({ spy, spyDailyMove: { value: '0.74%' }, fg, when: 'today' }).move.when).toBeNull();
+        expect(glanceNumbers({ spy, spyDailyMove: { value: '0.74%' }, fg, when: '' }).move.when).toBeNull();
+        expect(glanceNumbers({ spy: { current: 700 }, fg, when: 'Fri' }).move).toBeNull(); // no move: no lone "Fri"
+    });
+    test('F&G missing or errored: SPY and the ↻ stay (a failed feed is when ↻ matters most)', () => {
+        for (const bad of [null, undefined, { error: 'down' }, {}]) {
+            const n = glanceNumbers({ spy, spyDailyMove: { value: '0.74%' }, fg: bad });
+            expect(n).toMatchObject({ price: '769.64', fg: null });
+            expect(n.move.text).toBe('▲0.74%');
+        }
+    });
+    test('nothing at all when SPY is missing, errored, or has no price', () => {
         expect(glanceNumbers({ spy: null, fg })).toBeNull();
-        expect(glanceNumbers({ spy, fg: null })).toBeNull();
         expect(glanceNumbers({ spy: { error: 'down' }, fg })).toBeNull();
-        expect(glanceNumbers({ spy, fg: { error: 'down' } })).toBeNull();
         expect(glanceNumbers({ spy: {}, fg })).toBeNull();
         expect(glanceNumbers({ spy: { current: 'N/A' }, fg })).toBeNull();
         expect(glanceNumbers()).toBeNull();
