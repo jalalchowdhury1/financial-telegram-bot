@@ -2356,6 +2356,23 @@ html:has(.offline-banner) .glance-bar {
 .glance-refresh:disabled { opacity: 0.55; cursor: default; }
 .glance-refresh svg.spinning { animation: spin 0.8s linear infinite; }
 .glance-main:focus-visible, .glance-refresh:focus-visible { outline: 2px solid var(--purple); outline-offset: -2px; }
+/* Narrow phones (320px): "Fri" pushed the ellipsis into F&G ("▲0.74% Fri · …"). Drop the session
+   word first — the move still reads, and the screen reader label still says it. */
+@media (max-width: 374px) {
+  .glance-main .glance-when { display: none; }
+}
+/* …and a saved copy reads "🕐 22:21" like the cards' corner tags (it filled 365.5 of 366px at
+   390, and clipped F&G at 375). "Saved" stays for screen readers. */
+@media (max-width: 400px) {
+  .glance-saved-word {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+  }
+}
+/* 320px: a touch smaller, so "F&G 31" never meets the ellipsis */
+@media (max-width: 340px) {
+  .glance-bar { font-size: 0.75rem; }
+  .glance-main { padding-left: 10px; }
+}
 /* jump landings clear the floating bar (8px + 44px + a little air) */
 [data-jump], [data-jump] > * { scroll-margin-top: calc(64px + env(safe-area-inset-top, 0px)); }
 @media (prefers-reduced-motion: reduce) {

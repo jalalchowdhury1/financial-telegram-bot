@@ -63,7 +63,7 @@ export default function GlanceBar({ spy, spyDailyMove, fg, fgColor, when, update
             <button type="button" className="glance-main" onClick={toTop} tabIndex={on ? 0 : -1} aria-label={`${said} — back to top`}>
                 <span className="glance-k">SPY</span> <b>{n.price}</b>
                 {n.move && <> <span className={n.move.up ? 'stat-positive' : 'stat-negative'}>{n.move.text}</span></>}
-                {n.move?.when && <> <span className="glance-k">{n.move.when}</span></>}
+                {n.move?.when && <span className="glance-when"> <span className="glance-k">{n.move.when}</span></span>}
                 {n.fg != null && (
                     <>
                         <span className="glance-sep" aria-hidden="true"> · </span>
@@ -74,7 +74,7 @@ export default function GlanceBar({ spy, spyDailyMove, fg, fgColor, when, update
             {age && (
                 <>
                     <span className="glance-sep" aria-hidden="true"> · </span>
-                    {age.saved ? <span className="glance-saved">🕐 Saved {age.saved}</span> : <UpdatedAgo at={age.at} />}
+                    {age.saved ? <span className="glance-saved">🕐 <span className="glance-saved-word">Saved </span>{age.saved}</span> : <UpdatedAgo at={age.at} />}
                 </>
             )}
             <button
