@@ -230,6 +230,19 @@ describe('JevPills', () => {
         expect(screen.queryByRole('dialog')).toBeNull();
     });
 
+    test('the open dialog holds the page still; closing lets go', () => {
+        const html = document.documentElement;
+        render(<JevPills data={sampleData} loading={false} />);
+        fireEvent.click(screen.getByText('Regime'));
+        expect(html.classList.contains('sheet-open')).toBe(true);
+        expect(html.style.overflow).toBe('hidden');
+        expect(document.querySelector('.jev-modal').hasAttribute('data-sheet-scroll')).toBe(true);
+        expect(document.querySelector('.jev-modal-close').classList.contains('sheet-x')).toBe(true);
+        fireEvent.keyDown(document, { key: 'Escape' });
+        expect(html.classList.contains('sheet-open')).toBe(false);
+        expect(html.style.overflow).toBe('');
+    });
+
     test('backdrop click closes the dialog', () => {
         render(<JevPills data={sampleData} loading={false} />);
         fireEvent.click(screen.getByText('Regime'));

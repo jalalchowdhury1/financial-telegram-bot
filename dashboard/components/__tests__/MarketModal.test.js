@@ -231,4 +231,54 @@ describe('MarketModal Component', () => {
       unmount();
     });
   });
+  describe('QoL: behaves like a real sheet', () => {
+    afterEach(() => {
+      document.documentElement.className = '';
+      document.documentElement.style.overflow = '';
+      document.body.style.overflow = '';
+    });
+
+    test('is announced as a modal dialog named by its title', () => {
+      render(<MarketModal bet={mockBet} isOpen={true} onClose={mockOnClose} />);
+      const dialog = screen.getByRole('dialog');
+      expect(dialog).toHaveAttribute('aria-modal', 'true');
+      expect(dialog).toHaveAccessibleName('Market Details');
+    });
+
+    test('Escape closes it; other keys do not', () => {
+      render(<MarketModal bet={mockBet} isOpen={true} onClose={mockOnClose} />);
+      fireEvent.keyDown(document, { key: 'Enter' });
+      expect(mockOnClose).not.toHaveBeenCalled();
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(mockOnClose).toHaveBeenCalledTimes(1);
+    });
+
+    test('a closed modal does not listen for Escape', () => {
+      render(<MarketModal bet={mockBet} isOpen={false} onClose={mockOnClose} />);
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(mockOnClose).not.toHaveBeenCalled();
+    });
+
+    test('holds the page still while open and lets go on close and on unmount', () => {
+      const html = document.documentElement;
+      const { rerender, unmount } = render(<MarketModal bet={mockBet} isOpen={false} onClose={mockOnClose} />);
+      expect(html.classList.contains('sheet-open')).toBe(false);
+      rerender(<MarketModal bet={mockBet} isOpen={true} onClose={mockOnClose} />);
+      expect(html.classList.contains('sheet-open')).toBe(true);
+      expect(html.style.overflow).toBe('hidden');
+      rerender(<MarketModal bet={mockBet} isOpen={false} onClose={mockOnClose} />);
+      expect(html.classList.contains('sheet-open')).toBe(false);
+      expect(html.style.overflow).toBe('');
+      rerender(<MarketModal bet={mockBet} isOpen={true} onClose={mockOnClose} />);
+      unmount();
+      expect(html.classList.contains('sheet-open')).toBe(false);
+      expect(html.style.overflow).toBe('');
+    });
+
+    test('the sheet scrolls itself and its close button carries the 44px hit class', () => {
+      render(<MarketModal bet={mockBet} isOpen={true} onClose={mockOnClose} />);
+      expect(document.querySelector('[data-sheet-scroll]')).not.toBeNull();
+      expect(screen.getAllByLabelText('Close modal').some((b) => b.tagName === 'BUTTON' && b.classList.contains('sheet-x'))).toBe(true);
+    });
+  });
 });

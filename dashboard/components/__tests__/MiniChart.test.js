@@ -118,3 +118,27 @@ describe('QoL: remembered tabs, honest tabs, tap readout', () => {
         expect(container.querySelector('.chart-readout')).toBeNull();
     });
 });
+
+describe('QoL: readable axis labels', () => {
+    test('y ticks and years are HTML labels over the chart; taps still read the chart', () => {
+        const { container } = render(<MiniChart history={monthly(40)} cadence="monthly" defaultTimeframe="10Y" />);
+        fireEvent.click(screen.getByRole('button', { name: '10Y' }));
+        expect(container.querySelectorAll('svg text').length).toBe(0);
+        const texts = [...container.querySelectorAll('.axis-layer .axis-lbl')].map((l) => l.textContent);
+        expect(texts.filter((t) => /^\d{4}$/.test(t)).length).toBeGreaterThanOrEqual(5); // years
+        expect(texts.filter((t) => /^\d+\.\d+$/.test(t)).length).toBe(5); // 5 y ticks
+        // the label layer sits beside the svg in one box and never takes the pointer
+        const svg = container.querySelector('svg');
+        expect(svg.parentElement.classList.contains('chart-plot')).toBe(true);
+        svg.getBoundingClientRect = () => ({ left: 0, width: 480, top: 0, height: 180 });
+        fireEvent.pointerDown(svg, { clientX: 472, pointerType: 'touch' });
+        expect(container.querySelector('.chart-readout').textContent).toBe('Jun 1, 2026 · 580.00');
+    });
+
+    test('a custom fmt still formats the y ticks', () => {
+        const big = monthly(10).map((h) => ({ ...h, value: h.value * 1000 }));
+        const { container } = render(<MiniChart history={big} cadence="monthly" fmt={(v) => `${Math.round(v / 1000)}K`} />);
+        const texts = [...container.querySelectorAll('.axis-lbl')].map((l) => l.textContent);
+        expect(texts.some((t) => /^\d+K$/.test(t))).toBe(true);
+    });
+});

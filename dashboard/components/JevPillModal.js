@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import useSheetLock from './useSheetLock';
 import { PILL_EXPLAIN, INPUT_EXPLAIN, FEED_NAMES, PILL_FEEDS } from './jevExplain';
 
 const FRIENDLY = {
@@ -55,6 +56,9 @@ function trimSource(val) {
 
 export default function JevPillModal({ pillKey, data, onClose }) {
     const backdropRef = useRef(null);
+    const pillOpen = !!data?.pills?.[pillKey];
+    // the page underneath holds still while the sheet is open (and html gets .sheet-open)
+    useSheetLock(pillOpen);
 
     // close on Escape
     useEffect(() => {
@@ -145,7 +149,7 @@ export default function JevPillModal({ pillKey, data, onClose }) {
             aria-modal="true"
             aria-labelledby="jev-modal-title"
         >
-            <div className="jev-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="jev-modal" data-sheet-scroll="" onClick={(e) => e.stopPropagation()}>
                 {/* Header */}
                 <div className="jev-modal-header">
                     <div>
@@ -156,7 +160,7 @@ export default function JevPillModal({ pillKey, data, onClose }) {
                         <p className="jev-modal-sub">{decidedLine}</p>
                     </div>
                     <button
-                        className="jev-modal-close"
+                        className="jev-modal-close sheet-x"
                         onClick={onClose}
                         aria-label="Close modal"
                     >

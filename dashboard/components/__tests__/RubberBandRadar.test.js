@@ -81,4 +81,19 @@ describe('RubberBandRadar', () => {
         render(<RubberBandRadar onVerdict={() => { throw new Error('pulse bug'); }} />);
         await waitFor(() => expect(screen.getByText(/rubber band is working/i)).toBeInTheDocument());
     });
+
+    test('the band chart labels are readable HTML text, not shrunken SVG text', async () => {
+        mockFetch(snap);
+        const { container } = render(<RubberBandRadar />);
+        await waitFor(() => expect(screen.getByText(/rubber band is working/i)).toBeInTheDocument());
+        const chart = container.querySelector('svg[aria-label^="Slow and fast"]');
+        expect(chart).not.toBeNull();
+        expect(chart.querySelectorAll('text').length).toBe(0);
+        const plot = chart.parentElement;
+        expect(plot.classList.contains('chart-plot')).toBe(true);
+        const labels = [...plot.querySelectorAll('.axis-layer .axis-lbl')].map((l) => l.textContent);
+        expect(labels).toEqual(expect.arrayContaining(['2026-01-01', '2026-04-30', '0.0%']));
+        expect(screen.getByText(/slow \(30 dips\)/)).toHaveClass('band-legend');
+    });
 });
+

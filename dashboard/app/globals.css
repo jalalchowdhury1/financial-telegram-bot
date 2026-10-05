@@ -1317,11 +1317,12 @@ body::before {
   position: relative;
 }
 /* Keep a comfortable tap target without making the button visually taller than
-   the two pills beside it. */
+   the two pills beside it: 30px drawn on a phone, 46px to the thumb (≥44 after
+   subpixel rounding; the 8px gap to its neighbour is never crossed). */
 .header-status .refresh-btn::after {
   content: '';
   position: absolute;
-  inset: -7px;
+  inset: -8px;
 }
 .header-status .live-dot,
 .header-status .mark-chip-dot {
@@ -1917,16 +1918,19 @@ a.factor-chip { text-decoration: none; } /* chips link to Yahoo Finance */
 }
 
 /* Phone: chips stack number over sparkline and use short names; the timeline
-   buttons grow to a thumb-friendly 30px while the row stays one strip. */
+   buttons are a full 44px thumb target while the row stays one strip. The scroller
+   clips pseudo-element hit areas, so the buttons themselves are 44px (no padding
+   round them: the capsule's padding would be a dead ring). */
 @media (max-width: 640px) {
   .factor-row { margin: -4px 0 16px; }
   .factor-title { font-size: 0.62rem; }
   .factor-sub { display: none; }
-  .factor-tf-btn { font-size: 0.6rem; padding: 0 6px; min-height: 30px; min-width: 30px; flex: none; }
+  .factor-tf-btn { font-size: 0.6rem; padding: 0 6px; min-height: 44px; min-width: 44px; flex: none; }
   /* 11 windows don't fit beside the title on a phone: scroll sideways (the active one
      is kept in view by FactorRow), with a fade on the right hinting there is more. */
   .factor-tf {
     min-width: 0;
+    padding: 0;
     overflow-x: auto;
     scrollbar-width: none;
     -webkit-overflow-scrolling: touch;
@@ -2532,3 +2536,73 @@ html:not(:has(.jump-fab)) .back-pill {
   .horse-stats > :nth-child(odd) .tooltip-trigger.tooltip-open::after { left: 0; right: auto; }
   .horse-stats > :nth-child(odd) .tooltip-trigger.tooltip-open::before { left: 15px; right: auto; }
 }
+
+/* ===== QoL ship 6 · lane C (chrome + charts) ===== */
+
+/* 👆 Thumb-sized taps. The drawn controls keep their look; an invisible ::before widens
+   what a finger hits (never ::after: on a .tooltip-trigger that is the tooltip bubble).
+   Chart timeframe pills (MiniChart 28×17, SpyChart 32×20): a 44px-tall hit band. Sideways
+   it reaches exactly half the 3–4px gap, so neighbours meet but never overlap. Up it reaches
+   12px; down it takes the empty margin + the chart's blank top padding (the line starts 10px
+   in, so it stays tappable). z-index on the BUTTON (not the ::before) lifts the band over the
+   chart's edge — a disabled pill's opacity makes the button its own stacking context, which
+   would trap a z-index set on the ::before. The hero number above sits higher still (next rule). */
+.tf-btn { position: relative; z-index: 1; }
+.tf-btn::before {
+  content: '';
+  position: absolute;
+  left: -1.5px;
+  right: -1.5px;
+  top: -12px;
+  bottom: -15px; /* 17 + 12 + 15 = 44 */
+}
+.tf-btn-spy::before { left: -2px; right: -2px; bottom: -12px; } /* 20 + 12 + 12 = 44 */
+/* On the phone the tappable hero number's box hangs ~4px into that band (Yield curve, Profit margin
+   cards: 8px gap, 12px reach). Its own pixels must open the 90-day chart, not switch the timeframe,
+   so it stacks above the band. The card (backdrop-filter) is the stacking context: the lift never
+   leaves the card, and the chart popover is portalled to <body>. */
+.hero-price-section :is(.chartable, .mark) { position: relative; z-index: 2; }
+
+/* Sheet × (Jev pills, Polymarket): 32px drawn, 46px to the thumb (≥44 after subpixel rounding). */
+.sheet-x { position: relative; }
+.sheet-x::before { content: ''; position: absolute; inset: -7px; }
+
+/* 🧷 Sheets hold the page still (components/useSheetLock.js puts .sheet-open on <html>
+   and locks scroll). A swipe that reaches the end of a sheet stays in the sheet. */
+.jev-modal-backdrop, .jev-modal { overscroll-behavior: contain; }
+
+/* 🔤 Readable chart labels. The SVGs stretch (preserveAspectRatio="none") or shrink with
+   the card, so SVG text came out 4–7px and squashed. Tick labels are now HTML spans laid
+   over the chart at the same viewBox point (by %, components/AxisLabels.js): a sharp 10px
+   at any width. They never take a tap — tap-to-read goes straight through to the SVG. */
+.chart-plot { position: relative; height: 100%; }
+.chart-plot > svg { display: block; }
+.axis-layer { position: absolute; inset: 0; pointer-events: none; }
+.axis-lbl {
+  position: absolute;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--text-muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+.band-legend { margin-top: 4px; font-size: 10px; line-height: 1.35; color: var(--text-muted); text-align: right; }
+
+/* 🔔 Next releases under the market clock (components/NextEvents.js): its own full-width
+   row inside the centred .mkt-clock-row; quiet muted text, only the release-day countdown amber. */
+/* The clock + line only render after mount, so the row keeps their room from the first paint
+   (pill 22 + gap 4 + one 0.68rem × 1.35 line): nothing below jumps when they appear. */
+.mkt-clock-row { flex-wrap: wrap; row-gap: 4px; min-height: calc(26px + 0.68rem * 1.35); }
+.econ-line {
+  flex-basis: 100%;
+  padding: 0 8px;
+  text-align: center;
+  font-size: 0.68rem;
+  line-height: 1.35;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.econ-seg, .econ-sep { white-space: nowrap; } /* one release never splits across lines */
+.econ-hot { color: var(--orange); font-weight: 600; } /* release day, before the time */
