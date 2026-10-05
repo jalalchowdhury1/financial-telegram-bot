@@ -1,6 +1,7 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import FourHorsemen from '../FourHorsemen';
+import live from '../../lib/__tests__/fixtures/fred-horsemen-2026-10-04.json';
 
 // Ascending history with real spaced dates: n points, stepDays apart, ending 2026-07-20.
 const series = (n, stepDays, fn) => {
@@ -30,7 +31,8 @@ const mockFred = {
         bankruptcies: {
             current: 25960, total: 591850, asOf: '2026-03-31', stale: false, unavailable: false,
             changePct: 11.4, status: 'rising', source: 'uscourts',
-            history: series(40, 91, (i) => 20000 + i * 150),         // quarterly, rising
+            // quarterly, rising 11.4% a year (agrees with changePct), ending at `current`
+            history: series(40, 91, (i) => Math.round(25960 / 1.114 ** ((39 - i) / 4))),
         },
     },
 };
@@ -110,4 +112,47 @@ describe('FourHorsemen (run-up bars)', () => {
         expect(screen.getByText(/🕐\s*26K/)).toBeInTheDocument();
         expect(screen.getByText(/Last data .*(stale)/)).toBeInTheDocument();
     });
+
+    // Real /api/fred slices saved 2026-10-04: header and rail must print the same changes.
+    test('live data: header chips and rail notes agree (one helper for both)', () => {
+        render(<FourHorsemen fred={live} loading={false} />);
+        expect(screen.getByText('▼ 0.2pp vs 1y')).toBeInTheDocument();        // was ▼ 0.1pp (13 months)
+        expect(screen.getByTestId('fh-row-unemployment').textContent).toMatch(/−0\.2pp vs 1y/);
+        expect(screen.getByText('▲ 16.9% vs 1y')).toBeInTheDocument();
+        expect(screen.getByTestId('fh-row-bankruptcies').textContent).toMatch(/\+17% vs 1y/);   // was +12%
+        expect(screen.getByText('▼ 12.4% vs 1y')).toBeInTheDocument();
+        expect(screen.getByTestId('fh-row-claims').textContent).toMatch(/−12% vs 1y/);
+    });
+
+    test('live data: riding count unchanged (bankruptcies only) and the footer says it the same way', () => {
+        render(<FourHorsemen fred={live} loading={false} />);
+        expect(screen.getByText('1 of 4 riding')).toBeInTheDocument();
+        expect(screen.getByText(/: 1 of 4 riding\./)).toBeInTheDocument();
+        expect(screen.getByText('Rising')).toBeInTheDocument();                // bankruptcies
+        expect(screen.getByText('Contained')).toBeInTheDocument();             // claims
+    });
+
+    // Claims + unemployment key their number as `current`; freshnessNote reads `.value`, so the
+    // tooltip used to say "Unavailable — source busy" right next to 197K / 4.20%.
+    test('tapping a label shows its real as-of date, never "Unavailable" beside a live number', () => {
+        const { container } = render(<FourHorsemen fred={live} loading={false} />);
+        const tip = (label) => [...container.querySelectorAll('.tooltip-trigger')]
+            .find((e) => e.textContent === label).getAttribute('data-tooltip');
+        expect(tip('Initial Jobless Claims')).toBe('Initial Jobless Claims • As of Sep 26, 2026');
+        expect(tip('Unemployment Rate')).toBe('Unemployment Rate • As of Sep 1, 2026');
+        expect(tip('US Bankruptcies')).toBe('US Bankruptcies • As of Jun 30, 2026');
+        expect(tip('10Y − 2Y Yield Spread')).toBe('10Y − 2Y Yield Spread • As of Oct 2, 2026');
+        for (const e of container.querySelectorAll('.tooltip-trigger')) {
+            expect(e.getAttribute('data-tooltip')).not.toMatch(/Unavailable/);
+        }
+    });
+
+    test('a really missing claims number still says unavailable (and nothing throws)', () => {
+        const fred = { ...live, horsemen: { ...live.horsemen, claims: { current: null, asOf: null, unavailable: true, history: [] } } };
+        const { container } = render(<FourHorsemen fred={fred} loading={false} />);
+        const claimsTip = [...container.querySelectorAll('.tooltip-trigger')]
+            .find((e) => e.textContent === 'Initial Jobless Claims').getAttribute('data-tooltip');
+        expect(claimsTip).toMatch(/Unavailable/);
+    });
 });
+

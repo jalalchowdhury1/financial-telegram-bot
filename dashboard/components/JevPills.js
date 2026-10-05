@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Skeleton from './Skeleton';
 import JevPillModal from './JevPillModal';
+import { pillWhy } from '../lib/jevWhy';
 
 const SEVERITY = {
     'risk-on':      { badge: 'badge-green',  order: 0 },
@@ -154,6 +155,10 @@ export default function JevPills({ data, loading }) {
                         title = p.reason;
                     }
 
+                    // One quiet line from this pill's fired factor rows (the title above
+                    // is hover-only, which an iPhone never shows). No rows -> no line.
+                    const why = pillWhy(data, key);
+
                     return (
                         <button
                             key={key}
@@ -170,6 +175,7 @@ export default function JevPills({ data, loading }) {
                                 <span className="jev-pill-source">{sourceTag}</span>
                                 <span className="jev-pill-chevron">›</span>
                             </span>
+                            {why && <span className="jev-pill-why">{why}</span>}
                         </button>
                     );
                 })}

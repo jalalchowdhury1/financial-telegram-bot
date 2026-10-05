@@ -6,6 +6,7 @@ import Skeleton from './Skeleton';
 import Delta from './Delta';
 import { useMark } from './MarkProvider';
 import { freshnessNote, formatAsOf } from '../lib/freshness';
+import { latestYoY } from '../lib/horsemenRunup';
 
 /**
  * 🐎 Four Horsemen — Recession Watch. ONE overlay chart (like the classic
@@ -43,14 +44,12 @@ const kFmt = (v) => {
 };
 const pctFmt = (v) => (v == null || !Number.isFinite(v) ? 'N/A' : `${v.toFixed(2)}%`);
 
-// Latest-vs-≈1-year-ago change from an ascending history array.
-function yoyPct(history, pointsPerYear) {
-    if (!history || history.length <= pointsPerYear) return null;
-    const now = history[history.length - 1]?.value;
-    const ago = history[history.length - 1 - pointsPerYear]?.value;
-    if (now == null || ago == null || ago === 0) return null;
-    return ((now - ago) / Math.abs(ago)) * 100;
-}
+/** A horsemen metric ({ current, asOf, … }) in the { value, asOf, … } shape freshnessNote reads. */
+const withValue = (m) => (m ? { ...m, value: m.current } : m);
+
+// "Riding" warning lines — the badge counts these, and the footer spells them out.
+const RISING_PCT = 10;      // claims / bankruptcies up more than this in a year
+const SAHM_TRIGGER = 0.5;   // Sahm rule recession signal
 
 
 /** True below 640px. Defaults to false (desktop) so SSR/jsdom render wide. */
@@ -114,25 +113,29 @@ export default function FourHorsemen({ fred, loading }) {
     const bk = fred?.horsemen?.bankruptcies;
     const sahm = fred?.indicators?.sahmRule?.value;
 
-    const claimsYoy = yoyPct(claims?.history, 52);
-    const unempYoy = unemployment?.history?.length > 13
-        ? unemployment.history[unemployment.history.length - 1].value - unemployment.history[unemployment.history.length - 13].value
-        : null;
+    // One helper for the header AND the rail below (latest print vs the print a year
+    // before it), so the two can never print different "vs 1y" numbers for one series.
+    const claimsYoy = latestYoY(claims?.history, 'pct');
+    const unempYoy = latestYoY(unemployment?.history, 'pp');
+    // Bankruptcies: the route's own changePct only when the history can't answer.
+    const bkYoy = latestYoY(bk?.history, 'pct') ?? (Number.isFinite(bk?.changePct) ? bk.changePct : null);
 
     const stats = !loading && fred && !fred.error ? [
         {
             key: 'claims', color: SERIES_STYLE.claims.color, label: SERIES_STYLE.claims.label,
             value: kFmt(claims?.current),
-            metric: claims,
+            // Horsemen metrics key their number as `current`; freshnessNote reads `value`.
+            // Without this the tooltip said "Unavailable" right beside 197K.
+            metric: withValue(claims),
             chip: claimsYoy != null ? { text: `${claimsYoy >= 0 ? '▲' : '▼'} ${Math.abs(claimsYoy).toFixed(1)}% vs 1y`, bad: claimsYoy > 0 } : null,
-            warn: claimsYoy != null ? (claimsYoy > 10 ? { bad: true, label: 'Rising' } : { bad: false, label: 'Contained' }) : null,
+            warn: claimsYoy != null ? (claimsYoy > RISING_PCT ? { bad: true, label: 'Rising' } : { bad: false, label: 'Contained' }) : null,
         },
         {
             key: 'unemployment', color: SERIES_STYLE.unemployment.color, label: SERIES_STYLE.unemployment.label,
             value: pctFmt(unemployment?.current),
-            metric: unemployment,
+            metric: withValue(unemployment),
             chip: unempYoy != null ? { text: `${unempYoy >= 0 ? '▲' : '▼'} ${Math.abs(unempYoy).toFixed(1)}pp vs 1y`, bad: unempYoy > 0 } : null,
-            warn: sahm != null ? (sahm >= 0.5 ? { bad: true, label: `Sahm ${sahm.toFixed(2)}` } : { bad: false, label: `Sahm ${sahm.toFixed(2)}` }) : null,
+            warn: sahm != null ? (sahm >= SAHM_TRIGGER ? { bad: true, label: `Sahm ${sahm.toFixed(2)}` } : { bad: false, label: `Sahm ${sahm.toFixed(2)}` }) : null,
         },
         {
             key: 'spread', color: SERIES_STYLE.spread.color, label: SERIES_STYLE.spread.label,
@@ -145,12 +148,14 @@ export default function FourHorsemen({ fred, loading }) {
             key: 'bankruptcies', color: SERIES_STYLE.bankruptcies.color, label: SERIES_STYLE.bankruptcies.label,
             value: kFmt(bk?.current),
             metric: { value: bk?.current, asOf: bk?.asOf, stale: bk?.stale, unavailable: bk?.unavailable },
-            chip: bk?.changePct != null ? { text: `${bk.changePct >= 0 ? '▲' : '▼'} ${Math.abs(bk.changePct).toFixed(1)}% YoY`, bad: bk.changePct > 0 } : null,
-            warn: bk?.changePct != null ? (bk.changePct > 10 ? { bad: true, label: 'Rising' } : { bad: false, label: 'Contained' }) : null,
+            chip: bkYoy != null ? { text: `${bkYoy >= 0 ? '▲' : '▼'} ${Math.abs(bkYoy).toFixed(1)}% vs 1y`, bad: bkYoy > 0 } : null,
+            warn: bkYoy != null ? (bkYoy > RISING_PCT ? { bad: true, label: 'Rising' } : { bad: false, label: 'Contained' }) : null,
         },
     ] : [];
 
     const riding = stats.filter((s) => s.warn?.bad).length;
+    const ridingNote = `Riding = past a warning line (claims or bankruptcies up more than ${RISING_PCT}% in a year, `
+        + `Sahm ${SAHM_TRIGGER.toFixed(2)}+, curve inverted): ${riding} of 4 riding.`;
     const histories = [claims?.history, unemployment?.history, spread?.history, bk?.history];
     const hasAnySeries = histories.some((h) => h?.length >= 2);
 
@@ -177,10 +182,10 @@ export default function FourHorsemen({ fred, loading }) {
                         {/* Current values + status, doubling as the chart legend.
                             Explicit shrinkable tracks (minmax(0,1fr)) — auto-fit's intrinsic
                             sizing let long chip content widen the whole card on phones. */}
-                        <div style={{ display: 'grid', gridTemplateColumns: isNarrow ? 'repeat(2, minmax(0, 1fr))' : 'repeat(4, minmax(0, 1fr))', gap: '10px 20px', marginBottom: '10px' }}>
+                        <div className="horse-stats" style={{ display: 'grid', gridTemplateColumns: isNarrow ? 'repeat(2, minmax(0, 1fr))' : 'repeat(4, minmax(0, 1fr))', gap: '10px 20px', marginBottom: '10px' }}>
                             {stats.map((s) => <StatChip key={s.key} {...s} />)}
                         </div>
-                        <RunupBars fred={fred} />
+                        <RunupBars fred={fred} ridingNote={ridingNote} />
                     </>
                 )}
             </ErrorBoundary>

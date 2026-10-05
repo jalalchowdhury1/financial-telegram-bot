@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import RunupBars from '../HorsemenRunup';
+import live from '../../lib/__tests__/fixtures/fred-horsemen-2026-10-04.json';
 
 const monthly = (start, n, fn) => Array.from({ length: n }, (_, i) => ({
     date: new Date(Date.UTC(start + Math.floor(i / 12), i % 12, 1)).toISOString().slice(0, 10),
@@ -42,11 +43,57 @@ describe('RunupBars', () => {
 
     test('states how many recessions each comparison rests on', () => {
         render(<RunupBars fred={fred} />);
-        expect(screen.getByTestId('fh-row-claims').textContent).toMatch(/2 recessions/);
+        expect(screen.getByTestId('fh-row-claims').textContent).toMatch(/median of 2\)/);
     });
 
     test('renders nothing rather than throwing when a series is missing', () => {
         const { container } = render(<RunupBars fred={{ recessions: [], horsemen: {} }} />);
         expect(container).toBeTruthy();
     });
+
+    // Real /api/fred slices saved 2026-10-04.
+    const NOW = Date.UTC(2026, 9, 4);
+    test('live data: each change is the latest print vs a year before it (matches the header)', () => {
+        render(<RunupBars fred={live} now={NOW} />);
+        expect(screen.getByTestId('fh-row-unemployment').textContent).toMatch(/−0\.2pp vs 1y/);
+        expect(screen.getByTestId('fh-row-bankruptcies').textContent).toMatch(/\+17% vs 1y/);
+        expect(screen.getByTestId('fh-row-claims').textContent).toMatch(/−12% vs 1y/);
+    });
+
+    test('live data: the curve reads as the one 2022–2024 inversion, not a September 2024 blip', () => {
+        render(<RunupBars fred={live} now={NOW} />);
+        expect(screen.getByTestId('fh-row-spread').textContent).toMatch(/inverted 2022–2024 · tell fired 25 months ago/);
+    });
+
+    test('notes are never cut: no nowrap/ellipsis, and the row layout lives in CSS (so phones can restack it)', () => {
+        render(<RunupBars fred={live} now={NOW} />);
+        for (const row of screen.getAllByTestId(/^fh-row-/)) {
+            expect(row).toHaveClass('fh-row');
+            expect(row.style.gridTemplateColumns).toBe('');
+            const note = row.querySelector('.fh-note');
+            expect(note).not.toBeNull();
+            expect(note.style.whiteSpace).toBe('');
+            expect(note.style.textOverflow).toBe('');
+        }
+    });
+
+    test('the footer count uses the badge wording when the card passes it', () => {
+        render(<RunupBars fred={live} now={NOW} ridingNote="Riding = test: 1 of 4 riding." />);
+        expect(screen.getByText(/1 of 4 riding\./)).toBeInTheDocument();
+        expect(screen.queryByText(/moving the wrong way/)).not.toBeInTheDocument();
+    });
 });
+
+describe('RunupBars — a missing year-ago print is named, not called "not enough history"', () => {
+    test('UNRATE once Oct 2026 prints (no Oct 2025 print): says so, keeps "— vs 1y"', () => {
+        const H = live.horsemen;
+        const oct = { ...live, horsemen: { ...H, unemployment: { ...H.unemployment, history: [...H.unemployment.history, { date: '2026-10-01', value: 4.3 }] } } };
+        render(<RunupBars fred={oct} />);
+        const row = screen.getByTestId('fh-row-unemployment');
+        expect(row.textContent).toMatch(/no Oct 2025 print to compare/);
+        expect(row.textContent).not.toMatch(/not enough history/);
+        expect(row.textContent).toMatch(/— vs 1y/);
+        expect(row).toHaveAttribute('data-status', 'unknown');
+    });
+});
+
