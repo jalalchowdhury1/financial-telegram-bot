@@ -46,6 +46,7 @@ test('tones follow each card\'s own colour rule', () => {
     expect(chips.map((c) => c.tone)).toEqual(['bad', 'bad', 'good']);
 
     const calm = clone(FRED);
+    delete calm.horsemen.bankruptcies.history;          // no history: the card falls back to the route's changePct
     calm.horsemen.bankruptcies.changePct = 4;
     expect(pulseVerdicts({ fred: calm })[0]).toMatchObject({ text: 'Horsemen 0/4', tone: 'good' });
 
@@ -91,6 +92,13 @@ test('missing or failed sources leave their chip out — never a guessed 0 or Na
 
     const all = JSON.stringify(pulseVerdicts({ fred: { yieldCurve: { current: 'N/A' }, checklist: { a: {} } } }));
     expect(all).not.toMatch(/NaN|undefined/);
+
+    // Junk where a history array should be ('N/A', {}): that tell is unknown, nothing throws.
+    const junk = clone(FRED);
+    junk.horsemen.claims.history = 'N/A';
+    junk.horsemen.bankruptcies.history = {};
+    junk.horsemen.bankruptcies.changePct = 'N/A';
+    expect(horsemenRiding(junk)).toEqual({ riding: 0, known: 2 });
 });
 
 test('a saved copy or a stale source marks its chip old instead of passing for live', () => {
@@ -129,14 +137,30 @@ describe('Horsemen chip = the Recession watch card\'s own "N of 4 riding" badge'
         })(),
         'nothing riding': (() => {
             const f = clone(FRED);
+            delete f.horsemen.bankruptcies.history;
             f.horsemen.bankruptcies.changePct = -3;
+            return f;
+        })(),
+        // The card reads bankruptcies from the history's own latest-vs-year-ago print and
+        // only falls back to the route's changePct when the history can't answer.
+        'bankruptcies: history beats changePct': (() => {
+            const f = clone(FRED);
+            f.horsemen.bankruptcies.changePct = -3;
+            return f;
+        })(),
+        'claims: a hole where the year-ago week should be gives no answer': (() => {
+            const f = clone(FRED);
+            const h = f.horsemen.claims.history;
+            const last = new Date(h[h.length - 1].date).getTime();
+            f.horsemen.claims.history = h.filter((p) => Math.abs(new Date(p.date).getTime() - last + 365.25 * 864e5) > 20 * 864e5)
+                .map((p, i, a) => (i === a.length - 1 ? { ...p, value: 400000 } : p));
             return f;
         })(),
     };
     for (const [name, fred] of Object.entries(variants)) {
         it(name, () => {
             const { unmount } = render(<FourHorsemen fred={fred} loading={false} />);
-            const badge = screen.getByText(/\d of 4 riding/).textContent;
+            const badge = screen.getByText(/^\d of 4 riding$/).textContent;
             const r = horsemenRiding(fred);
             expect(badge).toBe(`${r.riding} of 4 riding`);
             unmount();

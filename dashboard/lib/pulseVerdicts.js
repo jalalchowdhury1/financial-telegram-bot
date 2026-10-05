@@ -11,6 +11,7 @@
  * A missing or failed source leaves its chip out — never a guessed 0. A saved copy (this
  * device) or a stale source (the route says so) keeps the chip but marks it `old`.
  */
+import { latestYoY } from './horsemenRunup';
 
 const RB = {
     green: { text: 'Dips pay ✓', tone: 'good', word: 'OK' },
@@ -28,27 +29,20 @@ const usable = (o) => isObj(o) && !o.error;
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 const savedMark = (label) => (label ? { kind: 'saved', note: `saved copy ${label}` } : null);
 
-// FourHorsemen.js yoyPct: latest vs the point `pointsPerYear` back in an ascending history.
-function yoyPct(history, pointsPerYear) {
-    if (!Array.isArray(history) || history.length <= pointsPerYear) return null;
-    const now = num(history[history.length - 1]?.value);
-    const ago = num(history[history.length - 1 - pointsPerYear]?.value);
-    if (now == null || ago == null || ago === 0) return null;
-    return ((now - ago) / Math.abs(ago)) * 100;
-}
-
 /**
  * The Recession watch card's tells, with its thresholds (FourHorsemen.js `warn`):
- * claims > +10 % vs 1y · Sahm ≥ 0.5 · 10Y−2Y < 0 · bankruptcies > +10 % YoY.
+ * claims > +10 % vs 1y · Sahm ≥ 0.5 · 10Y−2Y < 0 · bankruptcies > +10 % vs 1y.
+ * "vs 1y" = the card's own latestYoY (latest print vs the print a year before it, ±7 days);
+ * bankruptcies fall back to the route's changePct only when the history can't answer.
  * @returns {{riding:number, known:number}|null} null when nothing is known.
  */
 export function horsemenRiding(fred) {
     if (!usable(fred)) return null;
     const h = isObj(fred.horsemen) ? fred.horsemen : {};
-    const claims = yoyPct(h.claims?.history, 52);
+    const claims = latestYoY(h.claims?.history, 'pct');
     const sahm = num(fred.indicators?.sahmRule?.value);
     const spread = num(fred.yieldCurve?.current);
-    const bk = num(h.bankruptcies?.changePct);
+    const bk = num(latestYoY(h.bankruptcies?.history, 'pct')) ?? num(h.bankruptcies?.changePct);
     const tells = [
         claims == null ? null : claims > 10,
         sahm == null ? null : sahm >= 0.5,

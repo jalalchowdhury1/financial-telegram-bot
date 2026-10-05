@@ -91,7 +91,7 @@ const YEAR_AGO_TOLERANCE_MS = 7 * 86400000;
  * mode 'pp' -> difference in the units; 'pct' -> percentage change. Null when unsure.
  */
 export function latestYoY(history, mode) {
-    const pts = (history || []).filter((p) => p?.date && p.value != null && Number.isFinite(Number(p.value)));
+    const pts = (Array.isArray(history) ? history : []).filter((p) => p?.date && p.value != null && Number.isFinite(Number(p.value)));
     if (pts.length < 2) return null;
     const last = pts[pts.length - 1];
     const target = yearBefore(ms(last.date));
@@ -112,7 +112,7 @@ export function latestYoY(history, mode) {
  * (weekly/daily). Null when latestYoY has an answer, or the series starts after that date.
  */
 export function yearAgoGap(history) {
-    const pts = (history || []).filter((p) => p?.date && p.value != null && Number.isFinite(Number(p.value)));
+    const pts = (Array.isArray(history) ? history : []).filter((p) => p?.date && p.value != null && Number.isFinite(Number(p.value)));
     if (pts.length < 2) return null;
     const last = pts[pts.length - 1];
     const target = yearBefore(ms(last.date));

@@ -117,6 +117,9 @@ describe('latestYoY — latest print vs the print one calendar year before it', 
     test('skips null prints and handles missing or short histories', () => {
         expect(latestYoY(null, 'pct')).toBeNull();
         expect(latestYoY([], 'pct')).toBeNull();
+        expect(latestYoY('N/A', 'pct')).toBeNull();       // junk where an array should be: no throw
+        expect(latestYoY({}, 'pp')).toBeNull();
+        expect(yearAgoGap('N/A')).toBeNull();
         expect(latestYoY([{ date: '2026-01-01', value: 1 }], 'pct')).toBeNull();
         expect(latestYoY([{ date: '2025-01-01', value: 0 }, { date: '2026-01-01', value: 1 }], 'pct')).toBeNull();
         const withNull = [{ date: '2025-01-01', value: 4 }, { date: '2026-01-01', value: 4.5 }, { date: '2026-02-01', value: null }];
