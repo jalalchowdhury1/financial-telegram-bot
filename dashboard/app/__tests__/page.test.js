@@ -189,7 +189,8 @@ it('📡 Market Pulse shows the verdicts of the cards below, the Rubber Band one
         '/api/rubber-band': ok(require('../../lib/__tests__/fixtures/pulse-rubber-band-2026-10-04.json')),
     });
     const { container } = render(<Dashboard />);
-    await waitFor(() => expect(screen.getByRole('button', { name: /^Dips pay ✓/ })).toBeInTheDocument());
+    // a plain DOM query: getByRole over the whole dashboard took >1 s per poll under a full parallel run
+    await waitFor(() => expect([...container.querySelectorAll('.market-pulse button')].map((b) => b.textContent)).toContain('Dips pay ✓'), { timeout: 5000 });
     const line = container.querySelector('.market-pulse');
     const chips = [...line.querySelectorAll('button')].map((b) => b.textContent);
     expect(chips).toEqual(['Vol calm', 'Horsemen 1/4', 'Curve +0.45%', 'Bull 7/8', 'Dips pay ✓']);

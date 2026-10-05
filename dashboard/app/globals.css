@@ -2363,8 +2363,9 @@ html:has(.offline-banner) .glance-bar {
 }
 @media print { .glance-bar { display: none; } }
 /* 📡 Market Pulse = verdict chips about the cards below the fold. 50px on a desk (one row, as
-   before). On a phone two rows of 30px chips (What moved's size) 6px apart = 74px: the old
-   line was 58px, but its 24px chips 2px apart sent a near-miss to a card far down the page. */
+   before). On a phone it stays today's 58px (the brief: the line must not grow): two rows of
+   26px chips 4px apart, each tap area reaching to mid-gap (30px tall, no overlap). Round 1 had
+   24px chips 2px apart (a near-miss hit the wrong card); 7d56b0f had 30px chips = a 74px line. */
 .market-pulse { box-sizing: border-box; min-height: 50px; padding: 9px 24px; gap: 10px; }
 .market-pulse .pulse-label { gap: 6px; } /* "📡 MARKET PULSE": a flex item drops its leading space */
 .market-pulse .pulse-items { font-family: inherit; font-size: 0.8rem; gap: 6px; }
@@ -2410,11 +2411,13 @@ html:has(.offline-banner) .glance-bar {
     flex-wrap: wrap;
     align-content: center;
     justify-content: flex-start;
-    gap: 6px;
-    min-height: 74px; /* the waiting "📡 …" holds the same two rows */
-    padding: 3px 10px;
+    gap: 4px 6px;
+    min-height: 58px; /* 1 + 26 + 4 + 26 + 1; the waiting "📡 …" holds the same two rows */
+    padding: 0 10px;
   }
   .market-pulse .pulse-items { display: contents; }
+  .pulse-chip { min-height: 26px; }
+  .pulse-chip::after { inset: -3px -4px; } /* 2px past the border = mid row gap; 3px = mid column gap */
 }
 /* 320px on a bad day ("Dips: watch", "Vol stress", stale sources): the 🕐 on a chip pushed the
    line to a third row. The dashed border still marks it; the chip's label still says "stale". */
