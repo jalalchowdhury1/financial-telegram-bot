@@ -106,6 +106,23 @@ export function latestYoY(history, mode) {
     return a - b;
 }
 
+/**
+ * Why latestYoY gave no answer, when the reason is a hole in the series rather than a short
+ * one: the missing year-ago print as 'Oct 2025' (monthly or slower) or 'Sep 26, 2025'
+ * (weekly/daily). Null when latestYoY has an answer, or the series starts after that date.
+ */
+export function yearAgoGap(history) {
+    const pts = (history || []).filter((p) => p?.date && p.value != null && Number.isFinite(Number(p.value)));
+    if (pts.length < 2) return null;
+    const last = pts[pts.length - 1];
+    const target = yearBefore(ms(last.date));
+    if (ms(pts[0].date) > target || latestYoY(pts, 'pp') != null) return null;
+    const weekly = ms(last.date) - ms(pts[pts.length - 2].date) < 25 * 86400000;
+    return new Date(target).toLocaleDateString('en-US', weekly
+        ? { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }
+        : { month: 'short', year: 'numeric', timeZone: 'UTC' });
+}
+
 /** A positive stretch shorter than this between two negative spells is a blip, not the
  *  end of the inversion (T10Y2Y re-steepened 2024-08-27, then dipped for single days on
  *  2024-09-03 and 2024-09-05 — that is still the 2022 inversion ending, not a new one). */

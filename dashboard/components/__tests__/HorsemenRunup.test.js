@@ -83,3 +83,17 @@ describe('RunupBars', () => {
         expect(screen.queryByText(/moving the wrong way/)).not.toBeInTheDocument();
     });
 });
+
+describe('RunupBars — a missing year-ago print is named, not called "not enough history"', () => {
+    test('UNRATE once Oct 2026 prints (no Oct 2025 print): says so, keeps "— vs 1y"', () => {
+        const H = live.horsemen;
+        const oct = { ...live, horsemen: { ...H, unemployment: { ...H.unemployment, history: [...H.unemployment.history, { date: '2026-10-01', value: 4.3 }] } } };
+        render(<RunupBars fred={oct} />);
+        const row = screen.getByTestId('fh-row-unemployment');
+        expect(row.textContent).toMatch(/no Oct 2025 print to compare/);
+        expect(row.textContent).not.toMatch(/not enough history/);
+        expect(row.textContent).toMatch(/— vs 1y/);
+        expect(row).toHaveAttribute('data-status', 'unknown');
+    });
+});
+

@@ -1,5 +1,5 @@
 import {
-    valueAt, changeOver, preRecessionRunups, runupMedian, horsemanStatus, lastInversion, latestYoY,
+    valueAt, changeOver, preRecessionRunups, runupMedian, horsemanStatus, lastInversion, latestYoY, yearAgoGap,
 } from '../horsemenRunup';
 import live from './fixtures/fred-horsemen-2026-10-04.json';
 
@@ -153,5 +153,33 @@ describe('lastInversion — real 2022-2024 curve with the September 2024 one-day
         expect(r.currentlyInverted).toBe(true);
         expect(r.start).toBe('2026-05-01');
         expect(r.monthsSince).toBe(0);
+    });
+});
+
+// Review: UNRATE never printed Oct 2025. When Oct 2026 lands (early Nov), latestYoY is null
+// for a month; the rail must say WHY instead of "not enough history" (it has 50+ years).
+describe('yearAgoGap — names the missing year-ago print', () => {
+    const H = live.horsemen;
+    test('UNRATE with an Oct-2026 print: the Oct-2025 print is missing', () => {
+        const oct = [...H.unemployment.history, { date: '2026-10-01', value: 4.3 }];
+        expect(yearAgoGap(oct)).toBe('Oct 2025');
+    });
+    test('a year-ago print exists: no gap (today\'s live series)', () => {
+        expect(yearAgoGap(H.unemployment.history)).toBeNull();
+        expect(yearAgoGap(H.claims.history)).toBeNull();
+        expect(yearAgoGap(H.bankruptcies.history)).toBeNull();
+    });
+    test('weekly series: the gap is named by its day, not a whole month', () => {
+        const wk = (d, v) => ({ date: d, value: v });
+        const h = [wk('2025-09-06', 1), wk('2025-09-13', 1), wk('2025-10-04', 1), wk('2026-09-19', 2), wk('2026-09-26', 2)];
+        expect(yearAgoGap(h)).toBe('Sep 26, 2025');
+    });
+    test('a series that starts after the year-ago date is short, not gapped', () => {
+        expect(yearAgoGap([{ date: '2026-03-01', value: 1 }, { date: '2026-09-01', value: 2 }])).toBeNull();
+    });
+    test('missing or tiny histories -> null', () => {
+        expect(yearAgoGap(null)).toBeNull();
+        expect(yearAgoGap([])).toBeNull();
+        expect(yearAgoGap([{ date: '2026-01-01', value: 1 }])).toBeNull();
     });
 });

@@ -14,7 +14,7 @@
  */
 
 import {
-    latestYoY, preRecessionRunups, runupMedian, horsemanStatus, lastInversion,
+    latestYoY, yearAgoGap, preRecessionRunups, runupMedian, horsemanStatus, lastInversion,
 } from '../lib/horsemenRunup';
 
 const STATUS_COLOUR = {
@@ -86,7 +86,9 @@ export default function RunupBars({ fred, now = Date.now(), ridingNote = null })
         const change = latestYoY(history, r.mode);
         const runups = preRecessionRunups(history, recessions, r.mode);
         const median = runupMedian(runups);
-        return { ...r, history, change, runups, median };
+        // No year-ago print to compare with (UNRATE skipped Oct 2025): say which, not "no history".
+        const gap = change == null ? yearAgoGap(history) : null;
+        return { ...r, history, change, runups, median, gap };
     });
 
     return (
@@ -117,7 +119,9 @@ export default function RunupBars({ fred, now = Date.now(), ridingNote = null })
                     <Row key={r.key} k={r.key} status={status}>
                         <Label>{r.label}</Label>
                         {r.median == null || r.change == null ? (
-                            <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)' }}>not enough history</span>
+                            <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)' }}>
+                                {r.gap ? `no ${r.gap} print to compare` : 'not enough history'}
+                            </span>
                         ) : (
                             <Bar change={r.change} median={r.median} colour={colour} />
                         )}
