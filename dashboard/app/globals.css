@@ -1918,19 +1918,31 @@ a.factor-chip { text-decoration: none; } /* chips link to Yahoo Finance */
 }
 
 /* Phone: chips stack number over sparkline and use short names; the timeline
-   buttons are a full 44px thumb target while the row stays one strip. The scroller
-   clips pseudo-element hit areas, so the buttons themselves are 44px (no padding
-   round them: the capsule's padding would be a dead ring). */
+   buttons are a full 44px thumb target while the row stays one strip and keeps its
+   look. The scroller clips pseudo-element hit areas, so the buttons themselves are
+   44px tall, but a 7px see-through border top and bottom (background clipped to the
+   padding box) keeps the drawn active pill 30px. The capsule's line is an outline
+   drawn 4px inside its box, so it stays 36px tall around a 44px hit strip, and -4px
+   margins keep the row exactly as tall as before. */
 @media (max-width: 640px) {
   .factor-row { margin: -4px 0 16px; }
   .factor-title { font-size: 0.62rem; }
   .factor-sub { display: none; }
-  .factor-tf-btn { font-size: 0.6rem; padding: 0 6px; min-height: 44px; min-width: 44px; flex: none; }
+  .factor-tf-btn {
+    font-size: 0.6rem; padding: 0 6px; min-height: 44px; min-width: 30px; flex: none;
+    border: 7px solid transparent; border-left: 0; border-right: 0; background-clip: padding-box;
+    border-radius: 15px / 22px; /* inner corners 15 × 15: the same round pill as before */
+  }
+  .factor-tf-btn.active { background-clip: padding-box; } /* its `background` shorthand resets the clip */
   /* 11 windows don't fit beside the title on a phone: scroll sideways (the active one
      is kept in view by FactorRow), with a fade on the right hinting there is more. */
   .factor-tf {
     min-width: 0;
-    padding: 0;
+    padding: 0 6px;
+    border: 0;
+    outline: 1px solid var(--border-card);
+    outline-offset: -4px;
+    margin: -4px 0; /* the 4px hit margins tuck into the row's spacing: nothing below moves */
     overflow-x: auto;
     scrollbar-width: none;
     -webkit-overflow-scrolling: touch;
