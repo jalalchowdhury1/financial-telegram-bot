@@ -4,7 +4,8 @@
  * Volatility, Recession watch, Yield curve, Bull checklist). Tap a chip to jump to its card.
  * SPY / F&G live in What moved and the glance bar, so they are no longer repeated here.
  * Chips come from lib/pulseVerdicts.js: same numbers and thresholds as each card, a missing
- * source = no chip, a saved/stale source = a dashed chip that says so.
+ * source = no chip, a stale source = a dashed 🕐 chip. A saved copy only says so in the title /
+ * aria-label: the line's own saved-wrap outline already marks it (one marker, not two).
  * Chips never slide under a thumb: on a cold open the line holds its placeholder until fred
  * AND vol are in (`hold`), then paints them in one go; Dips, fetched by its own card, lands last.
  */
@@ -53,7 +54,7 @@ export default function MarketPulse({ fred, vol, rubberBand, saved = null, waiti
                         <button
                             key={c.key}
                             type="button"
-                            className={`pulse-chip tone-${c.tone}${c.old ? ' is-old' : ''}`}
+                            className={`pulse-chip tone-${c.tone}${c.old?.kind === 'stale' ? ' is-old' : ''}`}
                             onClick={() => jumpToCard(c.jump)}
                             title={`${c.why}${note} · tap for the card`}
                             aria-label={`${c.text} — ${c.why}${note}`}

@@ -2646,3 +2646,17 @@ html:not(:has(.jump-fab)) .back-pill {
 }
 .econ-seg, .econ-sep { white-space: nowrap; } /* one release never splits across lines */
 .econ-hot { color: var(--orange); font-weight: 600; } /* release day, before the time */
+
+/* ===== QoL ship 6 · integrate (cross-lane polish) ===== */
+@media (max-width: 480px) {
+  /* Saved copy on a phone: What moved's bottom-right 🕐 tag (lane A) landed on the indicator bar's
+     own top-right 🕐 tag just below (same right edge, ~6px overlap). When the next block draws a
+     tag, the strip keeps only its dashed outline. */
+  .moved-strip[data-cached]:has(+ .saved-wrap[data-cached] > *)::before { content: none; }
+}
+@media (max-width: 500px) {
+  /* Market Pulse in a saved copy: the corner 🕐 tag sat on the top-right chip ("Curve +0.45%").
+     Two rows of chips leave no free corner, so on a phone the dashed outline alone marks it
+     (each chip's label still says "saved copy HH:MM"). */
+  .saved-wrap[data-cached] > .market-pulse::before { content: none; }
+}

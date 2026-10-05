@@ -44,7 +44,7 @@ test('tapping a chip scrolls to its card and flashes it', () => {
     card.remove();
 });
 
-test('a saved copy or a stale source marks the chip, and says so', () => {
+test('a stale source dashes the chip; a saved copy only says so in its label', () => {
     const staleRb = { ...RB, _meta: { ...RB._meta, stale: true, ageDays: 6 } };
     render(<MarketPulse fred={FRED} vol={VOL} rubberBand={staleRb} saved={{ fred: '19:43' }} />);
     const [vol, horse] = chips();
@@ -53,8 +53,8 @@ test('a saved copy or a stale source marks the chip, and says so', () => {
     expect(dips.textContent).toBe('🕐Dips pay ✓');                 // stale at the source: 🕐 on the chip
     expect(dips.getAttribute('aria-label')).toMatch(/stale · 6 days old$/);
     expect(vol).not.toHaveClass('is-old');                          // vol is live here
-    expect(horse).toHaveClass('is-old');                            // fred from the saved copy
-    expect(horse.textContent).toBe('Horsemen 1/4');                 // the line's own 🕐 tag covers a saved copy
+    expect(horse).not.toHaveClass('is-old');                        // fred from the saved copy: no dash on the chip,
+    expect(horse.textContent).toBe('Horsemen 1/4');                 // the line's own dashed outline covers it
     expect(horse.getAttribute('aria-label')).toMatch(/saved copy 19:43$/);
 });
 
