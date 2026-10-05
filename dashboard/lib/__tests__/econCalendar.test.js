@@ -70,8 +70,14 @@ describe('upcomingEvents', () => {
 
 describe('econLine — the one quiet line under the market clock', () => {
     test('a normal day: "Next · …" with weekdays this week, dates further out, one ET', () => {
-        expect(econLine(at('2026-12-01T15:00:00Z'))).toMatchObject({
+        expect(econLine(at('2026-12-01T15:00:00Z'))).toEqual({
             text: 'Next · Jobs Fri 8:30 · FOMC Dec 9 2:00 · CPI Dec 10 8:30 ET', alert: false,
+            // one segment per release, so the line can only ever wrap BETWEEN releases
+            segments: [
+                { text: 'Next · Jobs Fri 8:30', hot: false },
+                { text: 'FOMC Dec 9 2:00', hot: false },
+                { text: 'CPI Dec 10 8:30 ET', hot: false },
+            ],
         });
         expect(econLine(at('2026-09-28T17:50:00Z'))).toMatchObject({ text: 'Next · Jobs Fri 8:30 ET', alert: false });
     });
@@ -94,6 +100,18 @@ describe('econLine — the one quiet line under the market clock', () => {
     test('FOMC day reads 2:00 ET (the statement), in EST after the clocks change', () => {
         // Wed 9 Dec 2026 13:00 EST = 18:00Z
         expect(econLine(at('2026-12-09T18:00:00Z')).text).toBe('🔔 FOMC today 2:00 ET · in 1h 0m · Next · CPI Thu 8:30 ET');
+    });
+
+    test('release day keeps to one row on a phone: the countdown + only the next release after it', () => {
+        // Wed 28 Oct 2026 13:00 EDT: FOMC today, then Jobs Nov 6 and CPI Nov 10 are both within 14 days
+        expect(econLine(at('2026-10-28T17:00:00Z'))).toEqual({
+            text: '🔔 FOMC today 2:00 ET · in 1h 0m · Next · Jobs Nov 6 8:30 ET', alert: true,
+            segments: [{ text: '🔔 FOMC today 2:00 ET · in 1h 0m', hot: true }, { text: 'Next · Jobs Nov 6 8:30 ET', hot: false }],
+        });
+        // Fri 4 Dec 2026 08:00 EST: Jobs today, then FOMC Wed and CPI Thu
+        expect(econLine(at('2026-12-04T13:00:00Z')).text).toBe('🔔 Jobs today 8:30 ET · in 30m · Next · FOMC Wed 2:00 ET');
+        // once it is out, the quiet line has room for both again
+        expect(econLine(at('2026-12-04T14:00:00Z')).text).toBe('Jobs out 8:30 · Next · FOMC Wed 2:00 · CPI Thu 8:30 ET');
     });
 
     test('nothing within 14 days → null (the line hides)', () => {

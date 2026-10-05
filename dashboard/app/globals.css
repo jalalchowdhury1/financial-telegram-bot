@@ -2289,7 +2289,9 @@ html { overscroll-behavior-y: contain; } /* Android's own pull = full reload; ou
 
 /* 🔔 Next releases under the market clock (components/NextEvents.js): its own full-width
    row inside the centred .mkt-clock-row; quiet muted text, only the release-day countdown amber. */
-.mkt-clock-row { flex-wrap: wrap; row-gap: 4px; }
+/* The clock + line only render after mount, so the row keeps their room from the first paint
+   (pill 22 + gap 4 + one 0.68rem × 1.35 line): nothing below jumps when they appear. */
+.mkt-clock-row { flex-wrap: wrap; row-gap: 4px; min-height: calc(26px + 0.68rem * 1.35); }
 .econ-line {
   flex-basis: 100%;
   padding: 0 8px;
@@ -2299,4 +2301,5 @@ html { overscroll-behavior-y: contain; } /* Android's own pull = full reload; ou
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
+.econ-seg, .econ-sep { white-space: nowrap; } /* one release never splits across lines */
 .econ-hot { color: var(--orange); font-weight: 600; } /* release day, before the time */

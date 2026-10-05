@@ -31,6 +31,18 @@ describe('next releases line', () => {
         expect(line(container).classList.contains('is-today')).toBe(false);
     });
 
+    test('one unbreakable piece per release; the " ·" joins it to the next, so a wrap only falls between releases', () => {
+        jest.useFakeTimers().setSystemTime(new Date('2026-12-01T15:00:00Z')); // Tue 10:00 ET
+        const { container } = render(<MarketClock />);
+        const segs = [...line(container).querySelectorAll('.econ-seg')].map((n) => n.textContent);
+        expect(segs).toEqual(['Next · Jobs Fri 8:30', 'FOMC Dec 9 2:00', 'CPI Dec 10 8:30 ET']);
+        expect(line(container).querySelectorAll('.econ-sep')).toHaveLength(2);
+        // the only break opportunities are the plain spaces between pieces, outside every nowrap span
+        const between = [...line(container).childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent);
+        expect(between).toEqual([' ', ' ']);
+        expect(line(container).textContent).toBe('Next · Jobs Fri 8:30 · FOMC Dec 9 2:00 · CPI Dec 10 8:30 ET');
+    });
+
     test('hidden when nothing is due within 14 days; the pill stays', () => {
         jest.useFakeTimers().setSystemTime(new Date('2026-12-11T15:00:00Z'));
         const { container } = render(<MarketClock />);

@@ -87,9 +87,11 @@ function dayLabel(date, today) {
 /**
  * The line under the market clock, or null when nothing is due within the window.
  *   "Next · Jobs Fri 8:30 · CPI Wed 8:30 · FOMC Oct 28 2:00 ET"
- *   "🔔 CPI today 8:30 ET · in 1h 10m"   (alert: amber, before the time on the day)
- *   "CPI out 8:30"                       (after the time, the rest of that day)
- * `segments` is the same text in pieces; only the `hot` (release-day countdown) piece is amber.
+ *   "🔔 CPI today 8:30 ET · in 1h 10m · Next · FOMC Oct 28 2:00 ET"   (amber piece, before the time on the day)
+ *   "CPI out 8:30 · Next · …"            (after the time, the rest of that day)
+ * `segments` is the same text, one piece per release (NextEvents keeps each piece on one line, so a
+ * wrap can only fall between releases); only the `hot` (release-day countdown) piece is amber.
+ * On a 🔔 day only the next later release follows the countdown, so the line stays one row at 390px.
  */
 export function econLine(now) {
     const evs = upcomingEvents(now);
@@ -100,8 +102,12 @@ export function econLine(now) {
     for (const e of evs) {
         if (e.out) segments.push({ text: `${e.name} out ${hm(e.min)}`, hot: false });
         else if (e.today) segments.push({ text: `🔔 ${e.name} today ${hm(e.min)} ET · in ${fmtCountdown(e.at - now)}`, hot: true });
-        else later.push(`${e.name} ${dayLabel(e.date, today)} ${hm(e.min)}`);
+        else later.push(e);
     }
-    if (later.length) segments.push({ text: `Next · ${later.join(' · ')} ET`, hot: false });
+    const shown = segments.some((g) => g.hot) ? later.slice(0, 1) : later;
+    shown.forEach((e, i) => segments.push({
+        text: `${i === 0 ? 'Next · ' : ''}${e.name} ${dayLabel(e.date, today)} ${hm(e.min)}${i === shown.length - 1 ? ' ET' : ''}`,
+        hot: false,
+    }));
     return { text: segments.map((g) => g.text).join(' · '), alert: segments.some((g) => g.hot), segments };
 }
