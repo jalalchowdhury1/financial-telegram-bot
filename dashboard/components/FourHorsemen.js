@@ -182,7 +182,7 @@ export default function FourHorsemen({ fred, loading }) {
                         {/* Current values + status, doubling as the chart legend.
                             Explicit shrinkable tracks (minmax(0,1fr)) — auto-fit's intrinsic
                             sizing let long chip content widen the whole card on phones. */}
-                        <div style={{ display: 'grid', gridTemplateColumns: isNarrow ? 'repeat(2, minmax(0, 1fr))' : 'repeat(4, minmax(0, 1fr))', gap: '10px 20px', marginBottom: '10px' }}>
+                        <div className="horse-stats" style={{ display: 'grid', gridTemplateColumns: isNarrow ? 'repeat(2, minmax(0, 1fr))' : 'repeat(4, minmax(0, 1fr))', gap: '10px 20px', marginBottom: '10px' }}>
                             {stats.map((s) => <StatChip key={s.key} {...s} />)}
                         </div>
                         <RunupBars fred={fred} ridingNote={ridingNote} />

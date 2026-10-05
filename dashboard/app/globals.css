@@ -2280,3 +2280,10 @@ html { overscroll-behavior-y: contain; } /* Android's own pull = full reload; ou
 /* Global Markets: the window tag after each change ("−5bp · Thu") is tiny and muted. */
 .mkt-chg { white-space: nowrap; }
 .mkt-chg .mkt-win { color: var(--text-muted); font-weight: 400; }
+/* Four Horsemen on phones (2 columns): a tapped LEFT-column label opens its bubble from the
+   label's left edge. The global open rule anchors every bubble right:0, which pushed these
+   ~55px off the left of a 390px screen and cut the as-of date. Right column keeps right:0. */
+@media (max-width: 640px) {
+  .horse-stats > :nth-child(odd) .tooltip-trigger.tooltip-open::after { left: 0; right: auto; }
+  .horse-stats > :nth-child(odd) .tooltip-trigger.tooltip-open::before { left: 15px; right: auto; }
+}
