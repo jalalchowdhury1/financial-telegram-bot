@@ -2660,3 +2660,10 @@ html:not(:has(.jump-fab)) .back-pill {
      (each chip's label still says "saved copy HH:MM"). */
   .saved-wrap[data-cached] > .market-pulse::before { content: none; }
 }
+@media (max-width: 640px) {
+  /* Four Horsemen right column: after a tap closes a bubble, a touch leaves :hover stuck on the
+     label, and the plain :hover rule anchors left:0 — the 240px bubble ran off the right edge and
+     widened the page to 476px for good. Anchor the hovered bubble like the open one (right:0). */
+  .horse-stats > :nth-child(even) .tooltip-trigger:hover::after { left: auto; right: 0; }
+  .horse-stats > :nth-child(even) .tooltip-trigger:hover::before { left: auto; right: 15px; }
+}
