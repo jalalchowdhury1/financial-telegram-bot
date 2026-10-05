@@ -552,9 +552,9 @@ export default function Dashboard() {
                                 <div className="hero-price-section">
                                     <HeroValue markKey="yieldCurve" raw={fred.yieldCurve.current}
                                         stale={fred.yieldCurve.stale}
-                                        format={(v) => `${v >= 0 ? '+' : ''}${v.toFixed(3)}%`}
+                                        format={(v) => `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`}
                                         style={{ fontSize: '2.2rem', color: fred.yieldCurve.stale ? 'var(--orange)' : fred.yieldCurve.current >= 0 ? 'var(--green)' : 'var(--red)' }}>
-                                        {fred.yieldCurve.stale ? '🕐 ' : ''}{fred.yieldCurve.current >= 0 ? '+' : ''}{fred.yieldCurve.current.toFixed(3)}%
+                                        {fred.yieldCurve.stale ? '🕐 ' : ''}{fred.yieldCurve.current >= 0 ? '+' : ''}{fred.yieldCurve.current.toFixed(2)}%
                                     </HeroValue>
                                     {fred.yieldCurve.stale && (
                                         <div className="hero-change" style={{ color: 'var(--text-muted)', fontSize: '0.72rem', marginTop: '4px' }}>
