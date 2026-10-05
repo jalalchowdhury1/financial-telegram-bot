@@ -2281,3 +2281,17 @@ html { overscroll-behavior-y: contain; } /* Android's own pull = full reload; ou
   pointer-events: none;
 }
 .band-legend { margin-top: 4px; font-size: 10px; line-height: 1.35; color: var(--text-muted); text-align: right; }
+
+/* 🔔 Next releases under the market clock (components/NextEvents.js): its own full-width
+   row inside the centred .mkt-clock-row; quiet muted text, only the release-day countdown amber. */
+.mkt-clock-row { flex-wrap: wrap; row-gap: 4px; }
+.econ-line {
+  flex-basis: 100%;
+  padding: 0 8px;
+  text-align: center;
+  font-size: 0.68rem;
+  line-height: 1.35;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.econ-hot { color: var(--orange); font-weight: 600; } /* release day, before the time */
