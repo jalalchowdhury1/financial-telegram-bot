@@ -5,7 +5,8 @@
  * MORT30 and the mortgage payment per week, ZRI rent per month, ATNHPI per quarter.
  * Here the change comes from the row's own last two history points and is tagged
  * from the gap between their dates:
- *   1-4 days -> that session's weekday ("Thu"), 6-8 -> "1w", 28-31 -> "1mo",
+ *   1-4 days -> that session's weekday ("Thu") when no session sits between the two bars,
+ *   else the day count ("2d": a skipped bar), 6-8 -> "1w", 28-31 -> "1mo",
  *   89-92 -> "3mo", anything else -> no tag (the number stays, the window is unknown).
  * Rate rows print basis points like What moved ("−5bp"); prices print % ("+0.23%").
  *
@@ -27,9 +28,20 @@ const ALWAYS_TRADES = new Set(['BTC']);
 const toNum = (v) => (v == null || v === '' ? NaN : Number(v));
 const dayGap = (a, b) => Math.round((Date.parse(`${b}T12:00:00Z`) - Date.parse(`${a}T12:00:00Z`)) / DAY_MS);
 
-function tagFor(prevDate, lastDate) {
+const addDays = (date, k) => new Date(Date.parse(`${date}T12:00:00Z`) + k * DAY_MS).toISOString().slice(0, 10);
+
+/** True when no session sits strictly between the two bars (BTC: every day is a session). */
+function adjacent(prevDate, g, everyDay) {
+    if (everyDay) return g === 1;
+    for (let k = 1; k < g; k++) if (sessionOf(addDays(prevDate, k)) != null) return false;
+    return true;
+}
+
+function tagFor(prevDate, lastDate, everyDay) {
     const g = dayGap(prevDate, lastDate);
-    if (g >= 1 && g <= 4) return weekdayOf(lastDate);
+    // A skipped bar (BTC's missing Sunday, a dropped Friday) makes the move span more than one
+    // session: say how many days it covers ("2d") instead of naming one weekday.
+    if (g >= 1 && g <= 4) return adjacent(prevDate, g, everyDay) ? weekdayOf(lastDate) : `${g}d`;
     if (g >= 6 && g <= 8) return '1w';
     if (g >= 28 && g <= 31) return '1mo';
     if (g >= 89 && g <= 92) return '3mo';
@@ -85,7 +97,7 @@ export function marketWindow(d, { rate = false, ticker } = {}) {
         if (prev.v === 0) return null;
         delta = 100 * (last.v / prev.v - 1);
     }
-    return { ...format(delta, rate), tag: tagFor(prev.date, last.date) };
+    return { ...format(delta, rate), tag: tagFor(prev.date, last.date, ALWAYS_TRADES.has(ticker)) };
 }
 
 /** What a row with no history says instead of a change. */
