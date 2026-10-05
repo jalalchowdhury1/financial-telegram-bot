@@ -2239,11 +2239,11 @@ html { overscroll-behavior-y: contain; } /* Android's own pull = full reload; ou
 /* 👆 Thumb-sized taps. The drawn controls keep their look; an invisible ::before widens
    what a finger hits (never ::after: on a .tooltip-trigger that is the tooltip bubble).
    Chart timeframe pills (MiniChart 28×17, SpyChart 32×20): a 44px-tall hit band. Sideways
-   it reaches exactly half the 3–4px gap, so neighbours meet but never overlap. Up it stops
-   12px above the pill (the tappable hero number starts ~13px higher); down it takes the
-   empty margin + the chart's blank top padding. z-index on the BUTTON (not the ::before)
-   lifts the band over the chart's edge — a disabled pill's opacity makes the button its
-   own stacking context, which would trap a z-index set on the ::before. */
+   it reaches exactly half the 3–4px gap, so neighbours meet but never overlap. Up it reaches
+   12px; down it takes the empty margin + the chart's blank top padding (the line starts 10px
+   in, so it stays tappable). z-index on the BUTTON (not the ::before) lifts the band over the
+   chart's edge — a disabled pill's opacity makes the button its own stacking context, which
+   would trap a z-index set on the ::before. The hero number above sits higher still (next rule). */
 .tf-btn { position: relative; z-index: 1; }
 .tf-btn::before {
   content: '';
@@ -2254,6 +2254,11 @@ html { overscroll-behavior-y: contain; } /* Android's own pull = full reload; ou
   bottom: -15px; /* 17 + 12 + 15 = 44 */
 }
 .tf-btn-spy::before { left: -2px; right: -2px; bottom: -12px; } /* 20 + 12 + 12 = 44 */
+/* On the phone the tappable hero number's box hangs ~4px into that band (Yield curve, Profit margin
+   cards: 8px gap, 12px reach). Its own pixels must open the 90-day chart, not switch the timeframe,
+   so it stacks above the band. The card (backdrop-filter) is the stacking context: the lift never
+   leaves the card, and the chart popover is portalled to <body>. */
+.hero-price-section :is(.chartable, .mark) { position: relative; z-index: 2; }
 
 /* Sheet × (Jev pills, Polymarket): 32px drawn, 46px to the thumb (≥44 after subpixel rounding). */
 .sheet-x { position: relative; }
