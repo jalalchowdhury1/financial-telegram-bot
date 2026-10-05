@@ -64,7 +64,8 @@ const LIVE_TESTS = {
     fred: (d) => hasKeys(d.yieldCurve) || hasKeys(d.indicators),
     extra: (d) => ['fx', 'commodities', 'rates'].some((k) => hasKeys(d[k])),
     history: (d) => hasKeys(d.metrics),
-    jev: (d) => d.enabled === false || Array.isArray(d.pills),
+    // pills is an object keyed regime/recession/… (JevPills reads pills?.[key]), not an array
+    jev: (d) => d.enabled === false || (hasKeys(d.pills) && !Array.isArray(d.pills)),
     vol: (d) => Array.isArray(d.tickers) && d.tickers.length > 0,
 };
 export function isLiveAnswer(key, d) {

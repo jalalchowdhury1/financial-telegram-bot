@@ -110,3 +110,127 @@ it('👋 since last visit: compares against the last visit, and a tab coming bac
     await act(async () => { land({ status: 200, json: async () => ({ ...spyPayload, current: 624.58 }) }); });
     await waitFor(() => expect(screen.getByRole('note').textContent).toMatch(/SPY \+2\.0%/)); // 612.34 → 624.58
 });
+
+const jevLive = require('../../lib/__tests__/fixtures/jev-pills-2026-10-04.json');
+
+it('⚡ the Jev card is saved when it lands, and the next open paints it from that copy with its 🕐 tag', async () => {
+    const { SNAP_PREFIX } = require('../../lib/snapshot');
+    mockRoutes({ '/api/jev-pills': Promise.resolve({ status: 200, json: async () => jevLive }) });
+    const first = render(<Dashboard />);
+    await waitFor(() => expect(screen.getByText('🧪 Jev Regime Pills')).toBeInTheDocument());
+    await waitFor(() => expect(window.localStorage.getItem(`${SNAP_PREFIX}jev`)).not.toBeNull());
+    first.unmount();
+
+    // Warm second open: /api/jev-pills is slow, the saved copy paints at once, tagged.
+    mockRoutes({ '/api/jev-pills': never });
+    render(<Dashboard />);
+    const h = screen.getByText('🧪 Jev Regime Pills'); // synchronously: painted before any feed answered
+    expect(h.closest('.saved-wrap')).toHaveAttribute('data-cached');
+});
+
+describe('honest labels on the SPY and Fear & Greed cards', () => {
+    const { todayET } = require('../../lib/marks');
+    const withChart = (lastDate) => ({
+        ...spyPayload,
+        chartHistory: [
+            { date: '2026-10-01', price: 606.1, ma50: 600, ma200: 580 },
+            { date: lastDate, price: 612.34, ma50: 601, ma200: 580.1 },
+        ],
+    });
+    const ok = (body) => Promise.resolve({ status: 200, json: async () => body });
+    const badge = () => document.querySelector('.daily-change-badge');
+
+    it('the SPY move names its session like What moved: "Fri" on a weekend, not "today"', async () => {
+        mockRoutes({ '/api/spy': ok(withChart('2026-10-02')), '/api/spy-daily-move': ok({ value: '0.74%' }) });
+        render(<Dashboard />);
+        await waitFor(() => expect(badge()).not.toBeNull());
+        expect(badge().textContent).toBe('▲ 0.74% Fri');
+        // the floating glance bar names the session too
+        expect(document.querySelector('.glance-main').textContent).toBe('SPY 612.34 ▲0.74% Fri');
+    });
+
+    it('during the session it still says "today"; with no market date it keeps "today"', async () => {
+        mockRoutes({ '/api/spy': ok(withChart(todayET())), '/api/spy-daily-move': ok({ value: '-0.31%' }) });
+        const r = render(<Dashboard />);
+        await waitFor(() => expect(badge()).not.toBeNull());
+        expect(badge().textContent).toBe('▼ -0.31% today');
+        expect(document.querySelector('.glance-main').textContent).toBe('SPY 612.34 ▼0.31%');
+        r.unmount();
+        // the first render's saved copies are written off the render path (setTimeout 0): flush, then forget them
+        await act(async () => { await new Promise((res) => setTimeout(res, 0)); });
+        window.localStorage.clear();
+
+        mockRoutes({ '/api/spy-daily-move': ok({ value: null }) }); // spyPayload: no chart, no vol
+        render(<Dashboard />);
+        await waitFor(() => expect(badge()).not.toBeNull());
+        expect(badge().textContent).toBe('▲ $1.20 (+0.20%) today');
+    });
+
+    it("Fear & Greed on its VIX proxy (previousYear 'N/A') shows — in that cell, never NaN", async () => {
+        mockRoutes({
+            '/api/fear-greed': ok({
+                score: 34.2, rating: 'Fear', previousClose: 36.1, previousWeek: 40.9, previousMonth: 52.3, previousYear: 'N/A',
+                _meta: { source: 'Yahoo VIX proxy', hasErrors: false },
+            }),
+        });
+        render(<Dashboard />);
+        await waitFor(() => expect(document.querySelectorAll('.fg-history-item')).toHaveLength(4));
+        const cells = [...document.querySelectorAll('.fg-history-item')].map((c) => c.textContent);
+        expect(cells).toEqual(['Prev Close36▼2', '1 Week41▼7', '1 Month52▼18', '1 Year—']);
+        expect(document.body.textContent).not.toMatch(/NaN/);
+    });
+});
+
+it('📡 Market Pulse shows the verdicts of the cards below, the Rubber Band one handed up by its own card', async () => {
+    const ok = (body) => Promise.resolve({ status: 200, json: async () => body });
+    mockRoutes({
+        '/api/fred': ok(require('../../lib/__tests__/fixtures/pulse-fred-2026-10-04.json')),
+        '/api/vol': ok(require('../../lib/__tests__/fixtures/pulse-vol-2026-10-04.json')),
+        '/api/rubber-band': ok(require('../../lib/__tests__/fixtures/pulse-rubber-band-2026-10-04.json')),
+    });
+    const { container } = render(<Dashboard />);
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Dips pay ✓/ })).toBeInTheDocument());
+    const line = container.querySelector('.market-pulse');
+    const chips = [...line.querySelectorAll('button')].map((b) => b.textContent);
+    expect(chips).toEqual(['Vol calm', 'Horsemen 1/4', 'Curve +0.45%', 'Bull 7/8', 'Dips pay ✓']);
+    expect(line.textContent).not.toMatch(/RSI|F&G|SPY/);
+});
+
+it('📡 cold open: vol answers first, fred later — Market Pulse holds its place, then paints every chip at once', async () => {
+    const ok = (body) => Promise.resolve({ status: 200, json: async () => body });
+    let fredIn;
+    mockRoutes({
+        '/api/fred': new Promise((r) => { fredIn = () => r({ status: 200, json: async () => require('../../lib/__tests__/fixtures/pulse-fred-2026-10-04.json') }); }),
+        '/api/vol': ok(require('../../lib/__tests__/fixtures/pulse-vol-2026-10-04.json')),
+        '/api/rubber-band': ok(require('../../lib/__tests__/fixtures/pulse-rubber-band-2026-10-04.json')),
+    });
+    const { container } = render(<Dashboard />);
+    await waitFor(() => expect(screen.getByText('$612.34')).toBeInTheDocument());
+    await act(async () => { await new Promise((r) => setTimeout(r, 50)); }); // vol + rubber band are in
+    const line = () => container.querySelector('.market-pulse');
+    expect(line()).toHaveClass('is-waiting');
+    expect(line().querySelectorAll('button')).toHaveLength(0); // no lone "Vol calm" for fred to land around
+    await act(async () => { fredIn(); });
+    await waitFor(() => expect(line()).not.toHaveClass('is-waiting'));
+    expect([...line().querySelectorAll('button')].map((b) => b.textContent))
+        .toEqual(['Vol calm', 'Horsemen 1/4', 'Curve +0.45%', 'Bull 7/8', 'Dips pay ✓']);
+});
+
+it('↩ after a Market Pulse chip jump, the back pill offers the way back', async () => {
+    const { clearJump } = require('../../lib/jumpBack');
+    const ok = (body) => Promise.resolve({ status: 200, json: async () => body });
+    jest.spyOn(Element.prototype, 'getClientRects').mockImplementation(() => [{ top: 0 }]);
+    Element.prototype.scrollIntoView = jest.fn();
+    window.scrollY = 0;
+    mockRoutes({
+        '/api/fred': ok(require('../../lib/__tests__/fixtures/pulse-fred-2026-10-04.json')),
+        '/api/vol': ok(require('../../lib/__tests__/fixtures/pulse-vol-2026-10-04.json')),
+    });
+    render(<Dashboard />);
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Vol calm/ })).toBeInTheDocument());
+    expect(document.querySelector('.back-pill')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /^Vol calm/ }));
+    // jsdom has no layout (every top is 0), so only the pill itself is checked here; BackPill.test checks the names
+    expect(screen.getByRole('button', { name: /^Back to / })).toHaveClass('is-on');
+    act(() => clearJump());
+});

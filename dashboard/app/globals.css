@@ -2229,3 +2229,248 @@ html { overscroll-behavior-y: contain; } /* Android's own pull = full reload; ou
   font-size: 0.68rem; color: var(--text-muted); font-variant-numeric: tabular-nums;
 }
 .series-dates { color: var(--text-primary); opacity: 0.85; }
+
+/* ===== QoL ship 6 · lane A (top of page) ===== */
+
+/* 📈 What moved on a phone: two calm rows (title + 2 chips, then 3 chips) instead of a
+   sideways scroll that hid 3 of the 5 chips (scrollWidth 598 vs 366 at 390px). Desktop
+   keeps its one line. Height = 2px + 30px chips + 6px gap + 30px chips + 2px = 70px. */
+@media (max-width: 480px) {
+  .moved-strip {
+    flex-wrap: wrap;
+    align-content: flex-start;
+    row-gap: 6px;
+    overflow: visible;
+    border-radius: 16px;
+  }
+  /* the waiting placeholder holds the same two rows, so nothing jumps when the chips land */
+  .moved-strip.is-waiting { min-height: 70px; }
+  .moved-strip.is-waiting .moved-saved { line-height: 30px; }
+  /* A saved copy gets the cards' corner tag instead of the inline one: inline, it can push
+     a chip onto a third row (and back when the live answer lands). Bottom-right, where the
+     shorter second row leaves room — above the strip sits the "Since" line. */
+  .moved-strip[data-cached] .moved-saved { display: none; }
+  .moved-strip[data-cached]::before {
+    content: "🕐 " attr(data-cached);
+    position: absolute;
+    right: 14px;
+    bottom: -10px;
+    z-index: 2;
+    padding: 1px 8px;
+    border-radius: 999px;
+    border: 1px dashed var(--text-muted);
+    background: var(--bg-primary);
+    color: var(--text-muted);
+    font-size: 0.62rem;
+    font-weight: 600;
+    line-height: 1.5;
+    letter-spacing: 0.02em;
+    pointer-events: none;
+  }
+}
+
+/* 🔝 Glance bar (components/GlanceBar.js) — a floating glass capsule at the top once Market
+   Pulse scrolls off: "SPY 769.64 ▲0.74% · F&G 31 · 3 min ago ↻". Below the 2px auto-refresh
+   bar (top 0), z 905: over the cards and the ☰ (900), under the offline banner (940), the
+   pull label (950) and every modal. Hidden while a sheet, the jump menu or the offline
+   banner is up. 44px tall: both halves are full-height tap targets. */
+.glance-bar {
+  position: fixed;
+  top: calc(8px + env(safe-area-inset-top, 0px));
+  left: 50%;
+  z-index: 905;
+  display: flex;
+  align-items: center;
+  max-width: calc(100vw - 24px);
+  height: 44px;
+  padding: 0 0 0 2px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(17, 24, 39, 0.72);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  backdrop-filter: blur(16px) saturate(150%);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  transform: translate(-50%, calc(-100% - 20px - env(safe-area-inset-top, 0px)));
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.2s ease, visibility 0s linear 0.28s;
+}
+.glance-bar.is-on {
+  transform: translate(-50%, 0);
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.2s ease, visibility 0s;
+}
+html.sheet-open .glance-bar,
+html:has(.jump-menu) .glance-bar,
+html:has(.offline-banner) .glance-bar {
+  transform: translate(-50%, calc(-100% - 20px - env(safe-area-inset-top, 0px)));
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+.glance-main {
+  display: block;
+  min-width: 0;
+  height: 44px;
+  padding: 0 6px 0 14px;
+  border: 0;
+  border-radius: 999px 0 0 999px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  line-height: 44px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.glance-main b { font-weight: 700; }
+.glance-k { color: var(--text-muted); font-size: 0.68rem; font-weight: 600; letter-spacing: 0.05em; }
+.glance-sep { color: var(--text-muted); opacity: 0.6; }
+.glance-bar > .glance-sep { flex: none; margin-right: 6px; }
+.glance-bar .upd-ago,
+.glance-saved { flex: none; color: var(--text-secondary); font-size: 0.72rem; font-weight: 600; }
+.glance-bar .upd-ago.is-old,
+.glance-saved { color: var(--orange); }
+.glance-refresh {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin-left: 2px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.glance-refresh:hover { color: var(--purple); }
+.glance-refresh:disabled { opacity: 0.55; cursor: default; }
+.glance-refresh svg.spinning { animation: spin 0.8s linear infinite; }
+.glance-main:focus-visible, .glance-refresh:focus-visible { outline: 2px solid var(--purple); outline-offset: -2px; }
+/* jump landings clear the floating bar (8px + 44px + a little air) */
+[data-jump], [data-jump] > * { scroll-margin-top: calc(64px + env(safe-area-inset-top, 0px)); }
+@media (prefers-reduced-motion: reduce) {
+  .glance-bar, .glance-bar.is-on { transition: none; }
+}
+@media print { .glance-bar { display: none; } }
+/* 📡 Market Pulse = verdict chips about the cards below the fold. 50px on a desk (one row, as
+   before). On a phone two rows of 30px chips (What moved's size) 6px apart = 74px: the old
+   line was 58px, but its 24px chips 2px apart sent a near-miss to a card far down the page. */
+.market-pulse { box-sizing: border-box; min-height: 50px; padding: 9px 24px; gap: 10px; }
+.market-pulse .pulse-label { gap: 6px; } /* "📡 MARKET PULSE": a flex item drops its leading space */
+.market-pulse .pulse-items { font-family: inherit; font-size: 0.8rem; gap: 6px; }
+.pulse-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-height: 30px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font: inherit;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+.pulse-chip.tone-good { color: var(--green); background: var(--green-bg); }
+.pulse-chip.tone-watch { color: var(--orange); background: var(--orange-bg); }
+.pulse-chip.tone-bad { color: var(--red); background: var(--red-bg); border-color: rgba(239, 68, 68, 0.45); }
+.pulse-chip.is-old { border: 1px dashed var(--text-muted); }
+/* the tap area reaches 3px past the chip's border (-4px from its padding box), into half of each
+   6px gap: 36px tall, and it never overlaps a neighbour */
+.pulse-chip::after { content: ""; position: absolute; inset: -4px; }
+.pulse-chip:hover { filter: brightness(1.25); }
+.pulse-chip:focus-visible { outline: 2px solid var(--purple); outline-offset: 1px; }
+.pulse-old { font-size: 0.85em; }
+.market-pulse.is-waiting .pulse-wait { color: var(--text-muted); }
+/* narrow screens: the label shrinks to 📡 and the chips' text, so 600–800px stays one 50px row
+   (chips stay 30px tall: tablets are touch screens too) */
+@media (max-width: 800px) {
+  .market-pulse .pulse-label { font-size: 0.9rem; }
+  .market-pulse .pulse-label-text {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+  }
+  .pulse-chip { padding: 0 9px; font-size: 0.72rem; }
+}
+@media (max-width: 500px) {
+  .market-pulse {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-content: center;
+    justify-content: flex-start;
+    gap: 6px;
+    min-height: 74px; /* the waiting "📡 …" holds the same two rows */
+    padding: 3px 10px;
+  }
+  .market-pulse .pulse-items { display: contents; }
+}
+/* 320px on a bad day ("Dips: watch", "Vol stress", stale sources): the 🕐 on a chip pushed the
+   line to a third row. The dashed border still marks it; the chip's label still says "stale". */
+@media (max-width: 340px) {
+  .pulse-chip .pulse-old { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pulse-chip { transition: none; }
+}
+/* ↩ Back pill: left of the ☰ button after any jump (BackPill.js · lib/jumpBack.js) */
+.back-pill {
+  position: fixed;
+  right: calc(16px + 44px + 8px + env(safe-area-inset-right, 0px));
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  z-index: 900;
+  display: block;
+  max-width: calc(100vw - 68px - 16px - env(safe-area-inset-right, 0px));
+  height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--border-glow);
+  border-radius: 999px;
+  background: rgba(17, 24, 39, 0.72);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  backdrop-filter: blur(16px) saturate(150%);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 42px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(8px);
+  transition: opacity 0.2s ease, transform 0.2s ease, visibility 0s linear 0.2s;
+}
+.back-pill.is-on {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: none;
+  transition: opacity 0.2s ease, transform 0.2s ease, visibility 0s;
+}
+html.sheet-open .back-pill,
+html:has(.jump-menu) .back-pill { opacity: 0; visibility: hidden; pointer-events: none; }
+/* near the top (☰ ↑ Top, or a tap on the glance bar) the ☰ hides: take its corner, no gap */
+html:not(:has(.jump-fab)) .back-pill {
+  right: calc(16px + env(safe-area-inset-right, 0px));
+  max-width: calc(100vw - 32px - env(safe-area-inset-right, 0px));
+}
+.back-pill:hover { border-color: var(--purple); }
+.back-pill:focus-visible { outline: 2px solid var(--purple); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  .back-pill, .back-pill.is-on { transition: none; }
+}
+@media print { .back-pill { display: none; } }

@@ -62,4 +62,23 @@ describe('RubberBandRadar', () => {
         render(<RubberBandRadar />);
         await waitFor(() => expect(screen.getByText(/unavailable/i)).toBeInTheDocument());
     });
+
+    test('📡 hands its answer to Market Pulse once (null when it fails); a throwing callback never breaks the card', async () => {
+        mockFetch(snap);
+        const onVerdict = jest.fn();
+        const first = render(<RubberBandRadar onVerdict={onVerdict} />);
+        await waitFor(() => expect(onVerdict).toHaveBeenCalledWith(snap));
+        expect(onVerdict).toHaveBeenCalledTimes(1);
+        first.unmount();
+
+        mockFetch({ _meta: { source: 'Unavailable', hasErrors: true, messages: ['boom'] } });
+        const onFail = jest.fn();
+        const second = render(<RubberBandRadar onVerdict={onFail} />);
+        await waitFor(() => expect(onFail).toHaveBeenCalledWith(null));
+        second.unmount();
+
+        mockFetch(snap);
+        render(<RubberBandRadar onVerdict={() => { throw new Error('pulse bug'); }} />);
+        await waitFor(() => expect(screen.getByText(/rubber band is working/i)).toBeInTheDocument());
+    });
 });

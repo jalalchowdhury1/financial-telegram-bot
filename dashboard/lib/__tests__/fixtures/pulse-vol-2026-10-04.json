@@ -1,0 +1,148 @@
+{
+ "updated_at": "2026-10-02",
+ "live_at": null,
+ "tickers": [
+  {
+   "ticker": "SPY",
+   "proxy": "VIX",
+   "iv": 15.31,
+   "ivRank1y": 10.466439135381115,
+   "ivPctile1y": 15.079365079365079,
+   "rv21": 10.71457369325851,
+   "vrp": 4.595426306741491,
+   "live": false,
+   "asOf": "2026-10-02"
+  },
+  {
+   "ticker": "QQQ",
+   "proxy": "VXN",
+   "iv": 21.2,
+   "ivRank1y": 24.479804161566708,
+   "ivPctile1y": 24.206349206349206,
+   "rv21": 14.977483676633172,
+   "vrp": 6.222516323366827,
+   "live": false,
+   "asOf": "2026-10-02"
+  },
+  {
+   "ticker": "TQQQ",
+   "proxy": "3×VXN",
+   "iv": 63.599999999999994,
+   "ivRank1y": 24.479804161566708,
+   "ivPctile1y": 24.206349206349206,
+   "rv21": 44.994855097912925,
+   "vrp": 18.60514490208707,
+   "live": false,
+   "asOf": "2026-10-02"
+  },
+  {
+   "ticker": "SQQQ",
+   "proxy": "3×VXN",
+   "iv": 63.599999999999994,
+   "ivRank1y": 24.479804161566708,
+   "ivPctile1y": 24.206349206349206,
+   "rv21": 45.682349142764636,
+   "vrp": 17.91765085723536,
+   "live": false,
+   "asOf": "2026-10-02"
+  },
+  {
+   "ticker": "UVXY",
+   "proxy": "VVIX",
+   "iv": 87.02,
+   "ivRank1y": 8.636907815973998,
+   "ivPctile1y": 9.126984126984127,
+   "rv21": 47.72761108356723,
+   "vrp": 39.29238891643276,
+   "live": false,
+   "asOf": "2026-10-02"
+  }
+ ],
+ "regime": {
+  "curve": {
+   "points": [
+    {
+     "tenor": "9D",
+     "index": "VIX9D",
+     "value": 12.06,
+     "asOf": "2026-10-02",
+     "source": "cboe",
+     "live": false
+    },
+    {
+     "tenor": "1M",
+     "index": "VIX",
+     "value": 15.31,
+     "asOf": "2026-10-02",
+     "source": "cboe",
+     "live": false
+    },
+    {
+     "tenor": "3M",
+     "index": "VIX3M",
+     "value": 18.01,
+     "asOf": "2026-10-02",
+     "source": "cboe",
+     "live": false
+    },
+    {
+     "tenor": "6M",
+     "index": "VIX6M",
+     "value": 20.15,
+     "asOf": "2026-10-02",
+     "source": "cboe",
+     "live": false
+    }
+   ],
+   "ratio": 0.85,
+   "state": "calm",
+   "frontInverted": false,
+   "asOf": "2026-10-02",
+   "live": false,
+   "complete": true,
+   "stale": false
+  },
+  "decay": {
+   "leverage": 3,
+   "realizedVol": 14.98,
+   "impliedVol": 21.2,
+   "realized": 6.51,
+   "implied": 12.61
+  },
+  "moves": {
+   "days": 5,
+   "SPY": 2.16,
+   "QQQ": 2.99
+  }
+ },
+ "vixDay": {
+  "value": 15.31,
+  "asOf": "2026-10-02",
+  "live": false,
+  "prev": 16.39,
+  "prevDate": "2026-10-01",
+  "sigma": 6.3757101567977985
+ },
+ "_meta": {
+  "source": "VIX:cboe · VXN:cboe · VVIX:cboe · SPY:cnbc · QQQ:cnbc · TQQQ:cnbc · SQQQ:cnbc · UVXY:cnbc",
+  "curveSource": "VIX9D:cboe · VIX:cboe · VIX3M:cboe · VIX6M:cboe",
+  "hasErrors": false,
+  "fallback": false,
+  "incomplete": [],
+  "tried": [
+   "VIX[cboe:ok]",
+   "VXN[cboe:ok]",
+   "VVIX[cboe:ok]",
+   "VIX9D[cboe:ok]",
+   "VIX3M[cboe:ok]",
+   "VIX6M[cboe:ok]",
+   "SPY[cnbc:ok]",
+   "QQQ[cnbc:ok]",
+   "TQQQ[cnbc:ok]",
+   "SQQQ[cnbc:ok]",
+   "UVXY[cnbc:ok]"
+  ],
+  "messages": []
+ },
+ "_note": "Real GET /api/vol on 2026-10-04."
+}

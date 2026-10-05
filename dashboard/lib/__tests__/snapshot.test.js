@@ -80,3 +80,30 @@ test('isLiveAnswer: each route\'s 200-with-fallback body is not a live answer', 
     expect(isLiveAnswer('spy', { current: 771.35 })).toBe(true);
     expect(isLiveAnswer('fred', { yieldCurve: { current: 0.36 } })).toBe(true);
 });
+
+// The real /api/jev-pills answer, saved 2026-10-04: `pills` is an OBJECT keyed by pill
+// (regime/recession/breadth/hedging/conflict), not an array. An Array.isArray test never
+// passed, so the Jev card was never saved and the page jumped ~525px on every warm open.
+const jevLive = require('./fixtures/jev-pills-2026-10-04.json');
+
+test('isLiveAnswer(jev): the real payload is live, so it is saved and painted on the next open', () => {
+    expect(Array.isArray(jevLive.pills)).toBe(false);
+    expect(Object.keys(jevLive.pills)).toEqual(['regime', 'recession', 'breadth', 'hedging', 'conflict']);
+    expect(isLiveAnswer('jev', jevLive)).toBe(true);
+    const s = memStore();
+    expect(writeSnap('jev', jevLive, NOW, s)).toBe(true);
+    const back = readSnap('jev', NOW + 1000, s);
+    expect(back.savedAt).toBe(NOW);
+    expect(isLiveAnswer('jev', back.data)).toBe(true); // the saved copy reads back as the same live shape
+});
+
+test('isLiveAnswer(jev): no pills, empty pills or a junk value are not live; the kill switch is', () => {
+    expect(isLiveAnswer('jev', { ...jevLive, pills: null })).toBe(false);
+    expect(isLiveAnswer('jev', { ...jevLive, pills: {} })).toBe(false);
+    expect(isLiveAnswer('jev', { ...jevLive, pills: [] })).toBe(false);
+    expect(isLiveAnswer('jev', { ...jevLive, pills: 'x' })).toBe(false);
+    expect(isLiveAnswer('jev', { enabled: true })).toBe(false);
+    expect(isLiveAnswer('jev', {})).toBe(false);
+    expect(isLiveAnswer('jev', { ...jevLive, error: 'down' })).toBe(false);
+    expect(isLiveAnswer('jev', { enabled: false })).toBe(true); // JEV_PILLS=off: hide the row
+});

@@ -22,12 +22,16 @@ import Delta from '../components/Delta';
 import MarkChip from '../components/MarkChip';
 import { MarkProvider, useMark, collectLiveValues } from '../components/MarkProvider';
 import JumpNav from '../components/JumpNav';
+import GlanceBar from '../components/GlanceBar';
+import BackPill from '../components/BackPill';
 import WhatMoved from '../components/WhatMoved';
 import { UpdatedAgo, OfflineBanner, PullToRefresh } from '../components/PhonePolish';
 import { readSnap, writeSnap, savedLabel, purgeOldSnaps, isLiveAnswer } from '../lib/snapshot';
 import { readSeen, writeSeen, mergeSeen, pickSeen, SINCE_MIN_GAP_MS } from '../lib/lastVisit';
 import SinceLastVisit from '../components/SinceLastVisit';
 import MarketClock from '../components/MarketClock';
+import { movedWhen } from '../lib/whatMoved';
+import { fgHistoryCells } from '../lib/fgHistory';
 
 // useLayoutEffect warns during the static prerender; on the server nothing runs anyway.
 const useIsoLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
@@ -91,6 +95,9 @@ export default function Dashboard() {
     // component renders nothing — the page then reads exactly as it did before.
     const [jevPills, setJevPills] = useState(null);
     const [vol, setVol] = useState(null);
+    // 📡 Rubber Band verdict for Market Pulse: undefined = not answered yet, null = failed.
+    // RubberBandRadar fetches its own route and hands its answer up (no extra FEEDS row).
+    const [rubberBand, setRubberBand] = useState(undefined);
     // ⚡ Instant open: feed key → savedAt (ms) while that feed is showing this device's
     // saved copy (lib/snapshot.js). A key leaves the map when its live answer lands.
     const [savedAt, setSavedAt] = useState({});
@@ -322,6 +329,9 @@ export default function Dashboard() {
         writeSeen(mergeSeen(readSeen(), seenNow, Date.now(), landedAt));
     }, [seenNow, updatedAt]); // eslint-disable-line react-hooks/exhaustive-deps
     const marksOff = MARK_INPUTS.some((k) => k in savedAt);
+    // The SPY move's session, named the way What moved names it: "today" during the
+    // session, "Fri" all weekend and before Monday's open. Unknown market date = "today".
+    const spyWhen = useMemo(() => { try { return movedWhen({ spy, vol }) || 'today'; } catch { return 'today'; } }, [spy, vol]);
 
     return (
         <MarkProvider history={marksOff ? null : history} series={history?.series || null}>
@@ -393,8 +403,13 @@ export default function Dashboard() {
             </ErrorBoundary>
 
             {/* MARKET PULSE - Quick summary at top */}
-            <div className="saved-wrap" data-cached={saved('spy', 'spyDailyMove', 'fg', 'fred')} style={{ display: 'contents', ...savedVar('spy', 'spyDailyMove', 'fg', 'fred') }}>
-                <ErrorBoundary resetKey={refreshTick}><MarketPulse spy={spy} spyDailyMove={spyDailyMove} fg={fg} fred={fred} loading={(pending.spy && !spy) || (pending.fg && !fg)} fgColor={fgColor} /></ErrorBoundary>
+            <div className="saved-wrap" data-cached={saved('fred', 'vol')} style={{ display: 'contents', ...savedVar('fred', 'vol') }}>
+                {/* hold = a cold open where fred or vol has nothing on screen yet: paint the chips in
+                    one go, never one landing in front of another under his thumb */}
+                <ErrorBoundary resetKey={refreshTick}><MarketPulse fred={fred} vol={vol} rubberBand={rubberBand}
+                    saved={{ fred: saved('fred'), vol: saved('vol') }}
+                    waiting={pending.fred || pending.vol}
+                    hold={(pending.fred && !fred) || (pending.vol && !vol)} /></ErrorBoundary>
             </div>
 
             {/* JEV REGIME PILLS — hidden entirely when JEV_PILLS=off or the route is unreachable.
@@ -423,11 +438,11 @@ export default function Dashboard() {
                                     <div className="hero-price">${spy.current.toFixed(2)}</div>
                                     {spyDailyMove?.value ? (
                                         <div className={`daily-change-badge ${parseFloat(spyDailyMove.value) >= 0 ? 'daily-up' : 'daily-down'}`}>
-                                            {parseFloat(spyDailyMove.value) >= 0 ? '▲' : '▼'} {spyDailyMove.value} today
+                                            {parseFloat(spyDailyMove.value) >= 0 ? '▲' : '▼'} {spyDailyMove.value} {spyWhen}
                                         </div>
                                     ) : spy.dailyChange && (
                                         <div className={`daily-change-badge ${spy.dailyChange.pct >= 0 ? 'daily-up' : 'daily-down'}`}>
-                                            {spy.dailyChange.pct >= 0 ? '▲' : '▼'} ${Math.abs(spy.dailyChange.value).toFixed(2)} ({spy.dailyChange.pct >= 0 ? '+' : ''}{spy.dailyChange.pct.toFixed(2)}%) today
+                                            {spy.dailyChange.pct >= 0 ? '▲' : '▼'} ${Math.abs(spy.dailyChange.value).toFixed(2)} ({spy.dailyChange.pct >= 0 ? '+' : ''}{spy.dailyChange.pct.toFixed(2)}%) {spyWhen}
                                         </div>
                                     )}
                                     <div className={`hero-change ${spy.ma200.pct >= 0 ? 'stat-positive' : 'stat-negative'}`} style={{ marginTop: '6px' }}>
@@ -493,26 +508,21 @@ export default function Dashboard() {
                                     <Gauge score={fg.score} segments={fgSegments} labels={[0, 25, 50, 75, 100]} />
                                 </div>
 
-                                {/* Historical */}
+                                {/* Historical — a cell the backup tiers leave empty ('N/A', null) reads "—" */}
                                 <div className="fg-history">
-                                    {[
-                                        { label: 'Prev Close', val: Math.round(fg.previousClose) },
-                                        { label: '1 Week', val: Math.round(fg.previousWeek) },
-                                        { label: '1 Month', val: Math.round(fg.previousMonth) },
-                                        { label: '1 Year', val: Math.round(fg.previousYear) }
-                                    ].map(h => {
-                                        const current = Math.round(fg.score);
-                                        const diff = current - h.val;
+                                    {fgHistoryCells(fg).map(({ label, val, diff }) => {
                                         const arrow = diff > 0 ? '▲' : diff < 0 ? '▼' : '—';
                                         const arrowColor = diff > 0 ? 'var(--green)' : diff < 0 ? 'var(--red)' : 'var(--text-muted)';
                                         return (
-                                            <div key={h.label} className="fg-history-item">
-                                                <div className="fg-history-label">{h.label}</div>
+                                            <div key={label} className="fg-history-item">
+                                                <div className="fg-history-label">{label}</div>
                                                 <div className="fg-history-value">
-                                                    {h.val}
-                                                    <span style={{ marginLeft: '6px', fontSize: '0.7rem', color: arrowColor, fontWeight: 600 }}>
-                                                        {arrow}{Math.abs(diff)}
-                                                    </span>
+                                                    {val ?? '—'}
+                                                    {diff != null && (
+                                                        <span style={{ marginLeft: '6px', fontSize: '0.7rem', color: arrowColor, fontWeight: 600 }}>
+                                                            {arrow}{Math.abs(diff)}
+                                                        </span>
+                                                    )}
                                                 </div>
                                             </div>
                                         );
@@ -634,7 +644,7 @@ export default function Dashboard() {
                 <div className="saved-wrap" data-jump="Recession watch" data-cached={saved('fred')} style={{ display: 'contents', ...savedVar('fred') }}><ErrorBoundary resetKey={refreshTick}><FourHorsemen fred={fred} loading={pending.fred && !fred} /></ErrorBoundary></div>
 
                 {/* RUBBER BAND RADAR — is the dip-buying regime alive? (full width, nightly from the Mac mini) */}
-                <div data-jump="Rubber band" style={{ display: 'contents' }}><ErrorBoundary resetKey={refreshTick}><RubberBandRadar /></ErrorBoundary></div>
+                <div data-jump="Rubber band" style={{ display: 'contents' }}><ErrorBoundary resetKey={refreshTick}><RubberBandRadar onVerdict={setRubberBand} /></ErrorBoundary></div>
 
                 {/* SPY HISTORICAL CHART */}
                 <div className="card" style={{ animationDelay: '0.55s' }} data-jump="SPY chart" data-cached={saved('spy')}>
@@ -678,6 +688,17 @@ export default function Dashboard() {
 
             {/* 🧭 Jump menu — floating, appears once you scroll past the first screen */}
             <JumpNav />
+
+            {/* 🔝 Glance bar — SPY · F&G · age · ↻, floats in once Market Pulse scrolls off */}
+            <ErrorBoundary resetKey={refreshTick}>
+                <GlanceBar
+                    spy={spy} spyDailyMove={spyDailyMove} fg={fg} fgColor={fgColor} when={spyWhen}
+                    updatedAt={updatedAt} saved={anySaved} loading={loading}
+                    onRefresh={refreshNow} busy={refreshing}
+                />
+            </ErrorBoundary>
+            {/* ↩ Back pill — after any jump, one tap back to where he was */}
+            <ErrorBoundary resetKey={refreshTick}><BackPill /></ErrorBoundary>
 
             {/* FOOTER */}
             <footer className="dashboard-footer">
