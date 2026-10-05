@@ -21,7 +21,7 @@ test('one chip per verdict, coloured by meaning; no repeated SPY / F&G / RSI num
     const { container } = render(<MarketPulse fred={FRED} vol={VOL} rubberBand={RB} />);
     expect(chips().map((c) => c.textContent)).toEqual(['Vol calm', 'Horsemen 1/4', 'Curve +0.45%', 'Bull 7/8', 'Dips pay ✓']);
     expect(chips().map((c) => c.className)).toEqual([
-        'pulse-chip tone-good', 'pulse-chip tone-watch', 'pulse-chip tone-good', 'pulse-chip tone-good', 'pulse-chip tone-good',
+        'pulse-chip tone-good', 'pulse-chip tone-caution', 'pulse-chip tone-good', 'pulse-chip tone-good', 'pulse-chip tone-good',
     ]);
     const line = container.querySelector('.market-pulse');
     expect(line).not.toBeNull();                          // the glance bar anchors on this class
