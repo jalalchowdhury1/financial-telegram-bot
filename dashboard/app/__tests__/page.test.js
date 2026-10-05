@@ -189,8 +189,28 @@ it('📡 Market Pulse shows the verdicts of the cards below, the Rubber Band one
     await waitFor(() => expect(screen.getByRole('button', { name: /^Dips pay ✓/ })).toBeInTheDocument());
     const line = container.querySelector('.market-pulse');
     const chips = [...line.querySelectorAll('button')].map((b) => b.textContent);
-    expect(chips).toEqual(['Dips pay ✓', 'Vol calm', 'Horsemen 1/4', 'Curve +0.45%', 'Bull 7/8']);
+    expect(chips).toEqual(['Vol calm', 'Horsemen 1/4', 'Curve +0.45%', 'Bull 7/8', 'Dips pay ✓']);
     expect(line.textContent).not.toMatch(/RSI|F&G|SPY/);
+});
+
+it('📡 cold open: vol answers first, fred later — Market Pulse holds its place, then paints every chip at once', async () => {
+    const ok = (body) => Promise.resolve({ status: 200, json: async () => body });
+    let fredIn;
+    mockRoutes({
+        '/api/fred': new Promise((r) => { fredIn = () => r({ status: 200, json: async () => require('../../lib/__tests__/fixtures/pulse-fred-2026-10-04.json') }); }),
+        '/api/vol': ok(require('../../lib/__tests__/fixtures/pulse-vol-2026-10-04.json')),
+        '/api/rubber-band': ok(require('../../lib/__tests__/fixtures/pulse-rubber-band-2026-10-04.json')),
+    });
+    const { container } = render(<Dashboard />);
+    await waitFor(() => expect(screen.getByText('$612.34')).toBeInTheDocument());
+    await act(async () => { await new Promise((r) => setTimeout(r, 50)); }); // vol + rubber band are in
+    const line = () => container.querySelector('.market-pulse');
+    expect(line()).toHaveClass('is-waiting');
+    expect(line().querySelectorAll('button')).toHaveLength(0); // no lone "Vol calm" for fred to land around
+    await act(async () => { fredIn(); });
+    await waitFor(() => expect(line()).not.toHaveClass('is-waiting'));
+    expect([...line().querySelectorAll('button')].map((b) => b.textContent))
+        .toEqual(['Vol calm', 'Horsemen 1/4', 'Curve +0.45%', 'Bull 7/8', 'Dips pay ✓']);
 });
 
 it('↩ after a Market Pulse chip jump, the back pill offers the way back', async () => {

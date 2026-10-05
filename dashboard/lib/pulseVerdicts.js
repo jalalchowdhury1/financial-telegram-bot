@@ -3,11 +3,11 @@
  * glance at the top answers "is anything wrong down there?". Tap a chip = jump to its card.
  *
  * Every chip is built from the SAME answer and the SAME threshold its card uses:
- *   Dips      ← /api/rubber-band verdict.colour (RubberBandRadar's OK / WATCH / STOP badge)
  *   Vol       ← /api/vol regime.curve.state     (VolMetricsTable's 🟢 Calm / 🟡 Watch / 🔴 Stress pill)
  *   Horsemen  ← /api/fred, FourHorsemen's "N of 4 riding" rules (a parity test renders the card)
  *   Curve     ← /api/fred yieldCurve.current    (FourHorsemen's 10Y−2Y row; < 0 = inverted)
  *   Bull      ← /api/fred checklist              (BullChecklist's "7/8" badge and its colours)
+ *   Dips      ← /api/rubber-band verdict.colour (RubberBandRadar's OK / WATCH / STOP badge)
  * A missing or failed source leaves its chip out — never a guessed 0. A saved copy (this
  * device) or a stale source (the route says so) keeps the chip but marks it `old`.
  */
@@ -103,7 +103,8 @@ function curveChip(fred, savedLabel) {
     const c = num(yc.current);
     if (c == null) return null;
     return {
-        key: 'curve', jump: 'Yield curve', text: `Curve ${c >= 0 ? '+' : ''}${c.toFixed(2)}%`,
+        // a real minus (U+2212), as What moved prints "VIX −6.6%"
+        key: 'curve', jump: 'Yield curve', text: `Curve ${c >= 0 ? '+' : '−'}${Math.abs(c).toFixed(2)}%`,
         tone: c >= 0 ? 'good' : 'bad',
         why: `10Y−2Y yield curve ${c >= 0 ? 'positive' : 'inverted'}${yc.asOf ? ` (${yc.asOf})` : ''}`,
         old: yc.stale ? { kind: 'stale', note: `stale · as of ${yc.asOf || '?'}` } : savedMark(savedLabel),
@@ -131,12 +132,14 @@ function bullChip(fred, savedLabel) {
  */
 export function pulseVerdicts({ fred, vol, rubberBand, saved = {} } = {}) {
     const s = isObj(saved) ? saved : {};
+    // Dips goes LAST: its card fetches it after mount, so it lands after fred + vol (which
+    // paint from saved copies at once). Appended, it never slides a chip under a thumb.
     const make = [
-        () => dipsChip(rubberBand),
         () => volChip(vol, s.vol),
         () => horsemenChip(fred, s.fred),
         () => curveChip(fred, s.fred),
         () => bullChip(fred, s.fred),
+        () => dipsChip(rubberBand),
     ];
     const chips = [];
     for (const m of make) {

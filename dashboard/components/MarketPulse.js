@@ -5,12 +5,23 @@
  * SPY / F&G live in What moved and the glance bar, so they are no longer repeated here.
  * Chips come from lib/pulseVerdicts.js: same numbers and thresholds as each card, a missing
  * source = no chip, a saved/stale source = a dashed chip that says so.
+ * Chips never slide under a thumb: on a cold open the line holds its placeholder until fred
+ * AND vol are in (`hold`), then paints them in one go; Dips, fetched by its own card, lands last.
  */
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { pulseVerdicts } from '../lib/pulseVerdicts';
 import { jumpToCard } from './WhatMoved';
 
-export default function MarketPulse({ fred, vol, rubberBand, saved = null, waiting = false }) {
+// Cap on holding / waiting. RubberBandRadar hands its verdict up from an effect, so a card that
+// crashed into its ErrorBoundary never answers; a hung feed has the page's 60 s fetch limit.
+export const PULSE_WAIT_MS = 15000;
+
+export default function MarketPulse({ fred, vol, rubberBand, saved = null, waiting = false, hold = false }) {
+    const [late, setLate] = useState(false);
+    useEffect(() => {
+        const t = setTimeout(() => setLate(true), PULSE_WAIT_MS);
+        return () => clearTimeout(t);
+    }, []);
     const savedFred = saved?.fred || null;
     const savedVol = saved?.vol || null;
     const chips = useMemo(
@@ -22,9 +33,10 @@ export default function MarketPulse({ fred, vol, rubberBand, saved = null, waiti
             <span aria-hidden="true">📡</span><span className="pulse-label-text"> Market Pulse</span>
         </span>
     );
-    if (!chips.length) {
+    const holding = hold && !late;
+    if (holding || !chips.length) {
         // Hold the line while its feeds load, so the cards below do not jump when it fills.
-        return waiting ? (
+        return holding || waiting || (rubberBand === undefined && !late) ? (
             <nav className="market-pulse is-waiting" aria-label="Market Pulse" aria-busy="true">
                 {label}
                 <span className="pulse-items"><span className="pulse-wait">…</span></span>

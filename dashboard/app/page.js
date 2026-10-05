@@ -404,9 +404,12 @@ export default function Dashboard() {
 
             {/* MARKET PULSE - Quick summary at top */}
             <div className="saved-wrap" data-cached={saved('fred', 'vol')} style={{ display: 'contents', ...savedVar('fred', 'vol') }}>
+                {/* hold = a cold open where fred or vol has nothing on screen yet: paint the chips in
+                    one go, never one landing in front of another under his thumb */}
                 <ErrorBoundary resetKey={refreshTick}><MarketPulse fred={fred} vol={vol} rubberBand={rubberBand}
                     saved={{ fred: saved('fred'), vol: saved('vol') }}
-                    waiting={pending.fred || pending.vol || rubberBand === undefined} /></ErrorBoundary>
+                    waiting={pending.fred || pending.vol}
+                    hold={(pending.fred && !fred) || (pending.vol && !vol)} /></ErrorBoundary>
             </div>
 
             {/* JEV REGIME PILLS — hidden entirely when JEV_PILLS=off or the route is unreachable.

@@ -17,9 +17,9 @@ const texts = (chips) => chips.map((c) => c.text);
 
 test('the real answers of 4 Oct give the five verdicts in a fixed order, each pointing at its card', () => {
     const chips = pulseVerdicts({ fred: FRED, vol: VOL, rubberBand: RB });
-    expect(texts(chips)).toEqual(['Dips pay ✓', 'Vol calm', 'Horsemen 1/4', 'Curve +0.45%', 'Bull 7/8']);
-    expect(chips.map((c) => c.tone)).toEqual(['good', 'good', 'watch', 'good', 'good']);
-    expect(chips.map((c) => c.jump)).toEqual(['Rubber band', 'Volatility', 'Recession watch', 'Yield curve', 'Bull checklist']);
+    expect(texts(chips)).toEqual(['Vol calm', 'Horsemen 1/4', 'Curve +0.45%', 'Bull 7/8', 'Dips pay ✓']);
+    expect(chips.map((c) => c.tone)).toEqual(['good', 'watch', 'good', 'good', 'good']);
+    expect(chips.map((c) => c.jump)).toEqual(['Volatility', 'Recession watch', 'Yield curve', 'Bull checklist', 'Rubber band']);
     expect(chips.every((c) => c.old === null)).toBe(true);
     expect(chips.every((c) => typeof c.why === 'string' && c.why.length > 0)).toBe(true);
     expect(horsemenRiding(FRED)).toEqual({ riding: 1, known: 4 });
@@ -42,7 +42,7 @@ test('tones follow each card\'s own colour rule', () => {
     f.yieldCurve.current = -0.12;                       // inverted: also a horseman riding
     f.indicators.sahmRule.value = 0.5;                  // Sahm rule triggered
     const chips = pulseVerdicts({ fred: f });
-    expect(texts(chips)).toEqual(['Horsemen 3/4', 'Curve -0.12%', 'Bull 7/8']);
+    expect(texts(chips)).toEqual(['Horsemen 3/4', 'Curve −0.12%', 'Bull 7/8']); // a real minus, as What moved prints it
     expect(chips.map((c) => c.tone)).toEqual(['bad', 'bad', 'good']);
 
     const calm = clone(FRED);
@@ -56,6 +56,15 @@ test('tones follow each card\'s own colour rule', () => {
     };
     expect(bull(4)).toMatchObject({ text: 'Bull 4/8', tone: 'watch' }); // 50 %
     expect(bull(3)).toMatchObject({ text: 'Bull 3/8', tone: 'bad' });
+});
+
+test('the Rubber Band verdict arrives after the others (its card fetches it): it lands at the END, never in front of a chip on screen', () => {
+    // On a warm open fred + vol paint from saved copies at once; Dips comes ~0.2 s later.
+    // Inserted first, it slid every chip sideways under a thumb aimed at "Vol calm".
+    const before = texts(pulseVerdicts({ fred: FRED, vol: VOL, rubberBand: undefined }));
+    const after = texts(pulseVerdicts({ fred: FRED, vol: VOL, rubberBand: RB }));
+    expect(after.slice(0, before.length)).toEqual(before);
+    expect(after[after.length - 1]).toBe('Dips pay ✓');
 });
 
 test('missing or failed sources leave their chip out — never a guessed 0 or NaN', () => {
