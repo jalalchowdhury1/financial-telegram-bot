@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import useSheetLock from './useSheetLock';
+import useSheetLock, { useSheetFocus } from './useSheetLock';
 import { PILL_EXPLAIN, INPUT_EXPLAIN, FEED_NAMES, PILL_FEEDS } from './jevExplain';
 
 const FRIENDLY = {
@@ -56,9 +56,12 @@ function trimSource(val) {
 
 export default function JevPillModal({ pillKey, data, onClose }) {
     const backdropRef = useRef(null);
+    const sheetRef = useRef(null);
     const pillOpen = !!data?.pills?.[pillKey];
-    // the page underneath holds still while the sheet is open (and html gets .sheet-open)
+    // the page underneath holds still while the sheet is open (and html gets .sheet-open);
+    // focus moves to the ×, Tab stays in the sheet, and close hands focus back to the pill
     useSheetLock(pillOpen);
+    useSheetFocus(pillOpen, sheetRef);
 
     // close on Escape
     useEffect(() => {
@@ -149,7 +152,7 @@ export default function JevPillModal({ pillKey, data, onClose }) {
             aria-modal="true"
             aria-labelledby="jev-modal-title"
         >
-            <div className="jev-modal" data-sheet-scroll="" onClick={(e) => e.stopPropagation()}>
+            <div className="jev-modal" ref={sheetRef} data-sheet-scroll="" onClick={(e) => e.stopPropagation()}>
                 {/* Header */}
                 <div className="jev-modal-header">
                     <div>
