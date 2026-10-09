@@ -24,7 +24,8 @@ on:
 
 permissions:
   contents: write            # push a branch (NOT main — branch protection blocks that)
-  pull-requests: write       # open the PR for review
+  pull-requests: write       # open + merge the PR (owner OK'd self-merge 9 Oct 2026)
+  actions: write             # dispatch CI on the bot branch (see ci.yml)
 
 concurrency:
   group: rebake-bankruptcies
@@ -101,7 +102,27 @@ jobs:
               --title "chore(data): refresh baked bankruptcies history" \
               --body "Automated monthly rebake of the Four Horsemen bankruptcies fallback: **${QUARTERS} quarters**. The script refuses to shrink the file, so this only ever adds or corrects quarters." 2>&1); then
               URL=$(printf '%s\n' "$PR_OUT" | tail -1)
-              MSG="🐎 Bankruptcies rebake: new quarter(s) available (${QUARTERS} total) — PR opened: ${URL}"
+              # Self-merge: a GITHUB_TOKEN PR never triggers CI, so dispatch it on the
+              # branch, wait for the two required checks, then merge. Any failure
+              # leaves the PR open and says so — never merges on red.
+              MERGED=""; CHECKS=""
+              if gh workflow run ci.yml --ref "$BRANCH"; then
+                for _ in $(seq 1 60); do        # up to ~20 min
+                  sleep 20
+                  CHECKS=$(gh pr checks "$BRANCH" --required 2>/dev/null || true)
+                  if printf '%s\n' "$CHECKS" | grep -qE $'\t(fail|cancel)'; then break; fi
+                  if [ "$(printf '%s\n' "$CHECKS" | grep -cE $'^(backend|dashboard)-tests\tpass')" = 2 ]; then
+                    gh pr merge "$BRANCH" --squash --delete-branch && MERGED=1
+                    break
+                  fi
+                done
+              fi
+              if [ -n "$MERGED" ]; then
+                MSG="🐎 Bankruptcies rebake: new quarter(s) added (${QUARTERS} total) — tests passed, merged automatically: ${URL}"
+              else
+                printf '%s\n' "${CHECKS:-no checks seen}"
+                MSG="🐎 Bankruptcies rebake: new quarter(s) available (${QUARTERS} total) — PR opened but NOT auto-merged (CI not green in time). Review: ${URL}"
+              fi
             else
               # Surface the real reason in the job log instead of swallowing it into $URL.
               # First thing to check: Settings ▸ Actions ▸ General ▸ "Allow GitHub Actions

@@ -7,6 +7,11 @@ name: CI
 on:
   pull_request:
     branches: [main]
+  # Bot PRs (opened with GITHUB_TOKEN) never fire pull_request, so the required
+  # checks would sit at "expected" forever. workflow_dispatch is the one event a
+  # GITHUB_TOKEN may trigger: rebake-bankruptcies.yml dispatches CI on its own
+  # branch, the job results land on the PR's head commit, and it can self-merge.
+  workflow_dispatch:
 
 jobs:
   backend-tests:
