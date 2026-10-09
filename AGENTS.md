@@ -477,6 +477,8 @@ service-account key leaked; the sheet stays as frozen history — **never read i
   sentiment-scraper Tier 0 / Tier 2. **Proven reachable from Vercel 2026-09-27.**
   Substack prose has no date: survey date = the last Wednesday before the post day.
 - **Cache:** 3 h per instance (`/tmp` `lg-aaii-live`), then live, then last good ≤ 21 d
+  (`_meta.lastGood`). Edge row `aaii` in `lib/cdn.js`. `stale` is recomputed from
+  `as_of` on every read (> 9 days = a missed week).
 - **Never goes backwards (2026-10-09):** the newest survey ever served lives in Upstash KV
   `ftb:aaii:newest`. A live tier answering with an OLDER survey week loses to it, and KV is read
   before the 3 h instance cache. Why: aaii.com 503'd the day after printing 7 Oct (−1.3), the
@@ -491,8 +493,6 @@ service-account key leaked; the sheet stays as frozen history — **never read i
   Sensitive KV vars EMPTY — paste real values from the Upstash/Vercel Storage page). Log:
   `~/Library/Logs/aaii-macromicro.log`. `--dry-run` reads only. Tests: `node --test` there.
   Pin playwright-core to a version that drives the installed Chrome (1.48 did not drive Chrome 154).
-  (`_meta.lastGood`). Edge row `aaii` in `lib/cdn.js`. `stale` is recomputed from
-  `as_of` on every read (> 9 days = a missed week).
 - **Contract (other repos read it — do not rename):** `GET /api/aaii` → 200
   `{bull, neutral, bear, diff, as_of, source: 'aaii.com'|'substack', stale, _meta}`;
   `diff` = bear − bull as `"15.40%"` (the exact string the sheet's E2 held). Total
