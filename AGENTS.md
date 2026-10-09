@@ -477,6 +477,20 @@ service-account key leaked; the sheet stays as frozen history — **never read i
   sentiment-scraper Tier 0 / Tier 2. **Proven reachable from Vercel 2026-09-27.**
   Substack prose has no date: survey date = the last Wednesday before the post day.
 - **Cache:** 3 h per instance (`/tmp` `lg-aaii-live`), then live, then last good ≤ 21 d
+- **Never goes backwards (2026-10-09):** the newest survey ever served lives in Upstash KV
+  `ftb:aaii:newest`. A live tier answering with an OLDER survey week loses to it, and KV is read
+  before the 3 h instance cache. Why: aaii.com 503'd the day after printing 7 Oct (−1.3), the
+  Substack still had 30 Sep (11.9), and the pill silently reverted while the history sheet kept
+  −1.3 (which also hid the pill's tap chart: chartFor refuses when sheet ≠ screen).
+- **🍎 Mac backup tier:** `scripts/aaii-mac/aaii-macromicro.mjs`, launchd
+  `com.jalal.aaii-macromicro` (Thu 13:30 + 17:30, Fri 09:30 + 14:00). Opens MacroMicro chart
+  20828 in REAL Chrome (headless and Vercel both get Cloudflare's challenge; a parked headful
+  window passes), parses "Latest Stats", converts release Thursday → survey Wednesday, rounds to
+  AAII's one decimal, pushes to KV only when the week is strictly newer. Pill label then reads
+  `· macromicro`. KV creds: `~/.config/ftb-kv.env` (chmod 600; `vercel env pull` writes the
+  Sensitive KV vars EMPTY — paste real values from the Upstash/Vercel Storage page). Log:
+  `~/Library/Logs/aaii-macromicro.log`. `--dry-run` reads only. Tests: `node --test` there.
+  Pin playwright-core to a version that drives the installed Chrome (1.48 did not drive Chrome 154).
   (`_meta.lastGood`). Edge row `aaii` in `lib/cdn.js`. `stale` is recomputed from
   `as_of` on every read (> 9 days = a missed week).
 - **Contract (other repos read it — do not rename):** `GET /api/aaii` → 200
