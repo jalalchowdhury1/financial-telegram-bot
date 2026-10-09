@@ -190,15 +190,35 @@ export async function fetchAaiiLive({ fetchText, trip = () => {}, now = new Date
     return { payload: null, messages };
 }
 
+export const AAII_KV_KEY = 'ftb:aaii:newest';
+
+/** The KV copy of the newest survey ever seen, or null. Never throws. */
+async function loadKv(kv, now) {
+    if (!kv) return null;
+    try {
+        const raw = await kv.get(AAII_KV_KEY);
+        const p = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        if (!p?.data?.as_of) return null;
+        if (!(now.getTime() - Date.parse(p.savedAt || '') <= LAST_GOOD_MAX_MS)) return null;
+        return p;
+    } catch { return null; }
+}
+
 /**
  * Cached resolver used by /api/aaii and /api/sheets.
  *   fresh cache (< 3 h, this instance) → live tiers → last good (≤ 21 d, real past
  *   numbers; `stale` recomputed, `_meta.lastGood` set) → { payload: null }.
+ * NEVER GOES BACKWARDS (9 Oct 2026): aaii.com 503'd the day after printing the 8 Oct
+ * survey (−1.3); the Substack tier still had the 30 Sep one (11.9) and the pill silently
+ * reverted to it, while the history sheet kept −1.3. So the newest survey ever served is
+ * kept in Upstash KV (`ftb:aaii:newest`, survives cold instances) and in this instance's
+ * /tmp copy; a live tier answering with an OLDER survey week loses to it.
  * Fault-test calls (`testMode`) neither read the fresh cache nor write anything; the
- * `aaii_lastgood` fault disables the last-good read.
+ * `aaii_lastgood` fault disables the last-good and KV reads.
  * `store` = { load(key, maxAgeMs) → {data, savedAt}|null, save(key, data) } (lib/store.js).
+ * `kv` = { get, set } (lib/factorStore defaultKv) or null.
  */
-export async function resolveAaii({ fetchText, store, faults = new Set(), now = new Date() }) {
+export async function resolveAaii({ fetchText, store, kv = null, faults = new Set(), now = new Date() }) {
     const testMode = faults.size > 0;
     const trip = (name) => { if (faults.has(name)) throw new Error(`[injected fault: ${name}]`); };
 
@@ -210,21 +230,38 @@ export async function resolveAaii({ fetchText, store, faults = new Set(), now = 
     }
 
     const { payload, messages } = await fetchAaiiLive({ fetchText, trip, now });
+    const useBackups = !faults.has('aaii_lastgood');
+    const lg = useBackups ? store.load('aaii-live', LAST_GOOD_MAX_MS) : null;
+    const kvCopy = useBackups ? await loadKv(kv, now) : null;
+    // the newest saved survey week across both backups
+    const saved = [lg, kvCopy].filter((x) => x?.data?.as_of)
+        .sort((a, b) => (a.data.as_of < b.data.as_of ? 1 : -1))[0] || null;
+
     if (payload) {
-        if (!testMode) store.save('aaii-live', payload);
+        if (saved && saved.data.as_of > payload.as_of) {
+            if (!testMode) store.save('aaii-live', saved.data); // keep the newer copy warm here
+            return {
+                payload: toPayload(saved.data, saved.data.source, now),
+                cachedAt: saved.savedAt,
+                messages: [...messages, `live tier had an older survey (${payload.as_of}); keeping ${saved.data.as_of} from ${saved.savedAt}`],
+            };
+        }
+        if (!testMode) {
+            store.save('aaii-live', payload);
+            if (kv && kvCopy?.data?.as_of !== payload.as_of) {
+                try { await kv.set(AAII_KV_KEY, { data: payload, savedAt: now.toISOString() }); } catch { /* KV down: /tmp still has it */ }
+            }
+        }
         return { payload, cachedAt: null, messages };
     }
 
-    if (!faults.has('aaii_lastgood')) {
-        const lg = store.load('aaii-live', LAST_GOOD_MAX_MS);
-        if (lg?.data?.as_of) {
-            return {
-                payload: toPayload(lg.data, lg.data.source, now),
-                cachedAt: lg.savedAt,
-                lastGood: true,
-                messages: [...messages, `every tier failed; serving last good from ${lg.savedAt}`],
-            };
-        }
+    if (saved) {
+        return {
+            payload: toPayload(saved.data, saved.data.source, now),
+            cachedAt: saved.savedAt,
+            lastGood: true,
+            messages: [...messages, `every tier failed; serving last good from ${saved.savedAt}`],
+        };
     }
     return { payload: null, cachedAt: null, messages };
 }

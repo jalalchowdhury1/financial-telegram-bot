@@ -18,6 +18,7 @@ import { faultsFrom } from '../../../lib/faults';
 import { loadLastGood, saveLastGood } from '../../../lib/store';
 import { cacheHeaders } from '../../../lib/cdn';
 import { resolveAaii } from '../../../lib/aaii';
+import { defaultKv } from '../../../lib/factorStore';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,6 +30,7 @@ export async function GET(request) {
         const { payload, cachedAt, lastGood, messages } = await resolveAaii({
             fetchText,
             store: { load: loadLastGood, save: saveLastGood },
+            kv: defaultKv,
             faults,
         });
         if (!payload) {

@@ -152,6 +152,28 @@ describe('resolveAaii caching', () => {
         const none = await resolveAaii({ fetchText: down, store, faults: new Set(['aaii_lastgood']), now: NOW });
         expect(none.payload).toBeNull();
     });
+    test('never goes backwards: a live tier with an OLDER survey loses to the newest one in KV', async () => {
+        const store = memStore();
+        const kvMap = new Map();
+        const kv = { get: async (k) => kvMap.get(k) ?? null, set: async (k, v) => { kvMap.set(k, v); return true; } };
+        const later = new Date('2026-10-09T18:00:00Z');
+        kvMap.set('ftb:aaii:newest', { data: { bull: 40, neutral: 21.3, bear: 38.7, diff: '-1.30%', as_of: '2026-10-07', source: 'aaii.com', stale: false }, savedAt: '2026-10-08T20:00:00Z' });
+        // live answers with the 23 Sep survey (the fixtures): older than KV's 7 Oct
+        const r = await resolveAaii({ fetchText: fakeFetch(), store, kv, now: later });
+        expect(r.payload.as_of).toBe('2026-10-07');
+        expect(r.payload.diff).toBe('-1.30%');
+        expect(r.messages.join(' ')).toMatch(/older survey \(2026-09-23\)/);
+        expect(kvMap.get('ftb:aaii:newest').data.as_of).toBe('2026-10-07'); // not overwritten
+    });
+    test('a NEWER live survey replaces the KV copy; KV also backs a cold instance when every tier is down', async () => {
+        const kvMap = new Map();
+        const kv = { get: async (k) => kvMap.get(k) ?? null, set: async (k, v) => { kvMap.set(k, v); return true; } };
+        await resolveAaii({ fetchText: fakeFetch(), store: memStore(), kv, now: NOW });
+        expect(kvMap.get('ftb:aaii:newest').data.as_of).toBe('2026-09-23');
+        const cold = await resolveAaii({ fetchText: fakeFetch({ fail: ['https://'] }), store: memStore(), kv, now: NOW });
+        expect(cold.lastGood).toBe(true);
+        expect(cold.payload.diff).toBe('15.40%');
+    });
     test('fault-test calls never write the cache', async () => {
         const store = memStore();
         await resolveAaii({ fetchText: fakeFetch(), store, faults: new Set(['aaii_http']), now: NOW });
