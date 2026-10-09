@@ -1,0 +1,8 @@
+{
+  "name": "aaii-mac-backup",
+  "private": true,
+  "type": "module",
+  "description": "Mac mini backup tier for the dashboard's AAII pill: reads MacroMicro in real Chrome, pushes a NEWER survey to Upstash KV.",
+  "scripts": { "run": "node aaii-macromicro.mjs", "test": "node --test" },
+  "dependencies": { "playwright-core": "1.62.1" }
+}
