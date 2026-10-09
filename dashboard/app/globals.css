@@ -2376,6 +2376,27 @@ html:has(.offline-banner) .glance-bar {
   cursor: pointer;
 }
 .glance-refresh:hover { color: var(--purple); }
+/* ● N — the "new prints" chip in miniature; small and quiet, cyan like every mark */
+.glance-mark {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  margin-left: 6px;
+  padding: 0 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(34, 211, 238, 0.26);
+  background: rgba(34, 211, 238, 0.09);
+  color: var(--mark);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.glance-mark:hover { background: rgba(34, 211, 238, 0.18); }
+.glance-mark .mark-chip-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--mark); }
+.glance-mark:focus-visible { outline: 2px solid var(--mark); outline-offset: 1px; }
 .glance-refresh:disabled { opacity: 0.55; cursor: default; }
 .glance-refresh svg.spinning { animation: spin 0.8s linear infinite; }
 .glance-main:focus-visible, .glance-refresh:focus-visible { outline: 2px solid var(--purple); outline-offset: -2px; }

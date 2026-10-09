@@ -9,6 +9,8 @@
  *    the page shows a saved copy and nothing live has landed.
  *  - Tap the numbers → back to the top, noted like ☰ → ↑ Top so the ↩ pill can bring him
  *    back. ↻ = the header's refresh (skips the edge cache).
+ *  - ● N (cyan) = the header's "new prints" chip in miniature: each tap walks to the next
+ *    marked number, sharing the chip's cursor. Only there when something is lit.
  *  - Hidden near the top; CSS also hides it while a sheet (html.sheet-open), the jump menu
  *    or the offline banner is up. Reduced motion: no slide.
  */
@@ -16,12 +18,15 @@ import { useEffect, useState } from 'react';
 import { UpdatedAgo } from './PhonePolish';
 import { glanceNumbers, glanceAge, shouldShowGlance } from '../lib/glance';
 import { noteJumpFrom } from './JumpNav';
+import { useMarkCounts } from './MarkProvider';
+import { jumpToNextMark, markSummary } from './MarkChip';
 
 // Market Pulse is the anchor; if it is not on the page (a crashed card), the header is.
 const ANCHORS = ['.market-pulse', '.dashboard-header'];
 
-export default function GlanceBar({ spy, spyDailyMove, fg, fgColor, when, updatedAt, saved, loading, onRefresh, busy }) {
+export default function GlanceBar({ spy, spyDailyMove, fg, fgColor, when, updatedAt, saved, loading, onRefresh, busy, markValues }) {
     const [on, setOn] = useState(false);
+    const marks = useMarkCounts(markValues);
 
     useEffect(() => {
         // one layout read per frame, however many scroll events fire
@@ -76,6 +81,18 @@ export default function GlanceBar({ spy, spyDailyMove, fg, fgColor, when, update
                     <span className="glance-sep" aria-hidden="true"> · </span>
                     {age.saved ? <span className="glance-saved">🕐 <span className="glance-saved-word">Saved </span>{age.saved}</span> : <UpdatedAgo at={age.at} />}
                 </>
+            )}
+            {marks.total > 0 && (
+                <button
+                    type="button"
+                    className="glance-mark"
+                    onClick={jumpToNextMark}
+                    tabIndex={on ? 0 : -1}
+                    aria-label={`Jump to the next changed number (${markSummary(marks)})`}
+                    title={`${markSummary(marks)} — tap for the next one`}
+                >
+                    <span className="mark-chip-dot" aria-hidden="true" />{marks.total}
+                </button>
             )}
             <button
                 type="button"

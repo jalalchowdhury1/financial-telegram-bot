@@ -695,6 +695,7 @@ export default function Dashboard() {
                     spy={spy} spyDailyMove={spyDailyMove} fg={fg} fgColor={fgColor} when={spyWhen}
                     updatedAt={updatedAt} saved={anySaved} loading={loading}
                     onRefresh={refreshNow} busy={refreshing}
+                    markValues={collectLiveValues(fred, extraMarkets, sheets)}
                 />
             </ErrorBoundary>
             {/* ↩ Back pill — after any jump, one tap back to where he was */}
