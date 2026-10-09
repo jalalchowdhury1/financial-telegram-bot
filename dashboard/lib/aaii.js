@@ -222,17 +222,20 @@ export async function resolveAaii({ fetchText, store, kv = null, faults = new Se
     const testMode = faults.size > 0;
     const trip = (name) => { if (faults.has(name)) throw new Error(`[injected fault: ${name}]`); };
 
+    const useBackups = !faults.has('aaii_lastgood');
+    // read first: a newer survey pushed to KV (e.g. by the Mac MacroMicro job) must beat
+    // this instance's 3 h cache too, or a warm instance keeps the old week for hours
+    const kvCopy = useBackups ? await loadKv(kv, now) : null;
+
     if (!testMode) {
         const fresh = store.load('aaii-live', FRESH_CACHE_MS);
-        if (fresh?.data?.as_of) {
+        if (fresh?.data?.as_of && !(kvCopy && kvCopy.data.as_of > fresh.data.as_of)) {
             return { payload: toPayload(fresh.data, fresh.data.source, now), cachedAt: fresh.savedAt, messages: [`cached from ${fresh.savedAt}`] };
         }
     }
 
     const { payload, messages } = await fetchAaiiLive({ fetchText, trip, now });
-    const useBackups = !faults.has('aaii_lastgood');
     const lg = useBackups ? store.load('aaii-live', LAST_GOOD_MAX_MS) : null;
-    const kvCopy = useBackups ? await loadKv(kv, now) : null;
     // the newest saved survey week across both backups
     const saved = [lg, kvCopy].filter((x) => x?.data?.as_of)
         .sort((a, b) => (a.data.as_of < b.data.as_of ? 1 : -1))[0] || null;

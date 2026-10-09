@@ -174,6 +174,14 @@ describe('resolveAaii caching', () => {
         expect(cold.lastGood).toBe(true);
         expect(cold.payload.diff).toBe('15.40%');
     });
+    test('a newer KV survey beats this instance\'s 3 h cache', async () => {
+        const store = memStore();
+        await resolveAaii({ fetchText: fakeFetch(), store, now: NOW }); // caches 23 Sep here
+        const kv = { get: async () => ({ data: { bull: 40.3, neutral: 20.8, bear: 39, diff: '-1.30%', as_of: '2026-09-25', source: 'macromicro', stale: false }, savedAt: NOW.toISOString() }), set: async () => true };
+        const r = await resolveAaii({ fetchText: fakeFetch(), store, kv, now: NOW });
+        expect(r.payload.diff).toBe('-1.30%');
+        expect(r.payload.source).toBe('macromicro');
+    });
     test('fault-test calls never write the cache', async () => {
         const store = memStore();
         await resolveAaii({ fetchText: fakeFetch(), store, faults: new Set(['aaii_http']), now: NOW });
