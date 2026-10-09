@@ -488,9 +488,11 @@ service-account key leaked; the sheet stays as frozen history — **never read i
   `com.jalal.aaii-macromicro` (Thu 13:30 + 17:30, Fri 09:30 + 14:00). Opens MacroMicro chart
   20828 in REAL Chrome (headless and Vercel both get Cloudflare's challenge; a parked headful
   window passes), parses "Latest Stats", converts release Thursday → survey Wednesday, rounds to
-  AAII's one decimal, pushes to KV only when the week is strictly newer. Pill label then reads
-  `· macromicro`. KV creds: `~/.config/ftb-kv.env` (chmod 600; `vercel env pull` writes the
-  Sensitive KV vars EMPTY — paste real values from the Upstash/Vercel Storage page). Log:
+  AAII's one decimal, and — only when the week is strictly newer — commits
+  `dashboard/lib/data/aaiiNewest.json` to main via the GitHub contents API (`gh`, the Mac's own
+  login; no KV/Vercel secrets on the Mac — `vercel env pull` blanks the Sensitive KV vars anyway).
+  The push redeploys Vercel; `resolveAaii({ baked })` serves the file over any older live week
+  (ignored once its week is > 21 days old). Pill label then reads `· macromicro`. Log:
   `~/Library/Logs/aaii-macromicro.log`. `--dry-run` reads only. Tests: `node --test` there.
   Pin playwright-core to a version that drives the installed Chrome (1.48 did not drive Chrome 154).
 - **Contract (other repos read it — do not rename):** `GET /api/aaii` → 200

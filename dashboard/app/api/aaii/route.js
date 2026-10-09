@@ -19,6 +19,7 @@ import { loadLastGood, saveLastGood } from '../../../lib/store';
 import { cacheHeaders } from '../../../lib/cdn';
 import { resolveAaii } from '../../../lib/aaii';
 import { defaultKv } from '../../../lib/factorStore';
+import bakedAaii from '../../../lib/data/aaiiNewest.json';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,6 +32,7 @@ export async function GET(request) {
             fetchText,
             store: { load: loadLastGood, save: saveLastGood },
             kv: defaultKv,
+            baked: bakedAaii,
             faults,
         });
         if (!payload) {

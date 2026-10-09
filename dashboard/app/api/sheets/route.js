@@ -7,6 +7,7 @@ import { resolveVixFearGreedTag } from '../../../lib/vixFearGreed';
 import { loadLastGood, saveLastGood } from '../../../lib/store';
 import { resolveAaii } from '../../../lib/aaii';
 import { defaultKv } from '../../../lib/factorStore';
+import bakedAaii from '../../../lib/data/aaiiNewest.json';
 
 export const dynamic = 'force-dynamic';
 const CACHE_FILE = '/tmp/financial-dashboard-sheets-cache.json';
@@ -147,7 +148,7 @@ export async function GET(request) {
     const faults = faultsFrom(request);
     // AAII straight from AAII (lib/aaii.js), in parallel with the sheet cascade. Never
     // throws out of here: any failure = 'N/A' + hasErrors, never an old sheet value.
-    const aaiiPromise = resolveAaii({ fetchText, store: { load: loadLastGood, save: saveLastGood }, kv: defaultKv, faults })
+    const aaiiPromise = resolveAaii({ fetchText, store: { load: loadLastGood, save: saveLastGood }, kv: defaultKv, baked: bakedAaii, faults })
         .catch((e) => ({ payload: null, messages: [`aaii resolver threw: ${String(e?.message).slice(0, 120)}`] }));
     const [cascade, aaii] = await Promise.all([resolveSheetsCascade(), aaiiPromise]);
     const { results: sheetResults, source, messages } = cascade;

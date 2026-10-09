@@ -182,6 +182,13 @@ describe('resolveAaii caching', () => {
         expect(r.payload.diff).toBe('-1.30%');
         expect(r.payload.source).toBe('macromicro');
     });
+    test('the baked file from the Mac job wins over an older live week, and is ignored once old', async () => {
+        const baked = { data: { bull: 40.3, neutral: 20.8, bear: 39, diff: '-1.30%', as_of: '2026-09-25', source: 'macromicro', stale: false }, savedAt: '2026-09-26T13:00:00Z' };
+        const r = await resolveAaii({ fetchText: fakeFetch(), store: memStore(), baked, now: NOW });
+        expect(r.payload.source).toBe('macromicro');
+        const old = await resolveAaii({ fetchText: fakeFetch(), store: memStore(), baked: { ...baked, data: { ...baked.data, as_of: '2026-08-01' } }, now: NOW });
+        expect(old.payload.source).toBe('aaii.com');
+    });
     test('fault-test calls never write the cache', async () => {
         const store = memStore();
         await resolveAaii({ fetchText: fakeFetch(), store, faults: new Set(['aaii_http']), now: NOW });

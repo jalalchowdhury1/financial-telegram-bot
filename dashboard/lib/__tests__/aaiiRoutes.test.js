@@ -11,6 +11,8 @@ const TABLE = fs.readFileSync(path.join(__dirname, 'fixtures', 'aaii-sent-result
 let mode = 'ok';          // 'ok' | 'down'
 const seen = [];
 
+// the baked Mac-job file is real data; these tests pin the live tiers, so it is empty here
+jest.mock('../data/aaiiNewest.json', () => ({}));
 jest.mock('../fetcher', () => ({
     fetchText: jest.fn(async (url) => {
         seen.push(url);

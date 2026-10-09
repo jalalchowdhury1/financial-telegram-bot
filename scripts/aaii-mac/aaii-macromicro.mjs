@@ -5,24 +5,26 @@
  * Why: aaii.com 503s for days at a time and AAII's Substack lags a week; Vercel cannot read
  * MacroMicro (Cloudflare challenge), but a real Chrome on the Mac can. So this opens
  * MacroMicro in real Google Chrome (own throwaway profile, window parked off-screen, always
- * closed), reads "Latest Stats", and writes the survey to Upstash KV `ftb:aaii:newest` —
- * ONLY when its survey week is newer than what KV holds. The dashboard's AAII resolver
- * (dashboard/lib/aaii.js) serves that copy whenever its live tiers have an older week.
+ * closed), reads "Latest Stats", and — ONLY when its survey week is newer than the committed
+ * one — updates `dashboard/lib/data/aaiiNewest.json` on main through the GitHub contents API
+ * (the Mac's existing `gh` login; no KV or Vercel secrets on this machine). The push makes
+ * Vercel redeploy; the dashboard's AAII resolver (dashboard/lib/aaii.js) serves that file
+ * whenever its live tiers have an older week. About one commit a week, at most.
  *
- * Reads ONLY KV_REST_API_URL / KV_REST_API_TOKEN from ~/.config/ftb-kv.env (chmod 600,
- * written by `vercel env pull`). Logs one line per run to ~/Library/Logs/aaii-macromicro.log.
- * `--dry-run` reads and prints, writes nothing.
+ * Logs one line per run to ~/Library/Logs/aaii-macromicro.log. `--dry-run` reads only.
  */
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { chromium } from 'playwright-core';
 import { parseLatestStats, toPayload, shouldPush } from './parse.mjs';
 
 const URL = 'https://en.macromicro.me/charts/20828/us-aaii-sentimentsurvey';
-const KEY = 'ftb:aaii:newest';
+const REPO = 'jalalchowdhury1/financial-telegram-bot';
+const FILE = 'dashboard/lib/data/aaiiNewest.json';
+const GH = fs.existsSync('/opt/homebrew/bin/gh') ? '/opt/homebrew/bin/gh' : 'gh'; // native arm64 gh (Rosetta gh froze)
 const HOME = os.homedir();
-const ENV_FILE = path.join(HOME, '.config/ftb-kv.env');
 const PROFILE = path.join(HOME, '.cache/aaii-macromicro-profile');
 const LOG = path.join(HOME, 'Library/Logs/aaii-macromicro.log');
 const DRY = process.argv.includes('--dry-run');
@@ -33,24 +35,24 @@ const log = (msg) => {
     try { fs.appendFileSync(LOG, `${line}\n`); } catch { /* console still has it */ }
 };
 
-function kvCreds() {
-    const out = {};
-    for (const line of fs.readFileSync(ENV_FILE, 'utf8').split('\n')) {
-        const m = /^(KV_REST_API_URL|KV_REST_API_TOKEN)=(.*)$/.exec(line.trim());
-        if (m) out[m[1]] = m[2].replace(/^["']|["']$/g, '');
-    }
-    if (!out.KV_REST_API_URL || !out.KV_REST_API_TOKEN) throw new Error(`KV creds missing in ${ENV_FILE}`);
-    return { base: out.KV_REST_API_URL.replace(/\/$/, ''), token: out.KV_REST_API_TOKEN };
+const gh = (args, input) => execFileSync(GH, args, { input, encoding: 'utf8', timeout: 60000, stdio: ['pipe', 'pipe', 'pipe'] });
+
+/** The committed file: { sha, value } (value null when missing). */
+function readCommitted() {
+    const out = JSON.parse(gh(['api', `repos/${REPO}/contents/${FILE}?ref=main`]));
+    const text = Buffer.from(out.content, 'base64').toString('utf8');
+    return { sha: out.sha, value: JSON.parse(text) };
 }
 
-async function kv(creds, pathPart, init = {}) {
-    const res = await fetch(`${creds.base}${pathPart}`, {
-        ...init,
-        headers: { Authorization: `Bearer ${creds.token}`, ...(init.headers || {}) },
-        signal: AbortSignal.timeout(15000),
+function commit(value, sha, message) {
+    const body = JSON.stringify({
+        message,
+        content: Buffer.from(`${JSON.stringify(value, null, 2)}\n`).toString('base64'),
+        sha,
+        branch: 'main',
     });
-    if (!res.ok) throw new Error(`KV ${pathPart.split('/')[1]} HTTP ${res.status}`);
-    return res.json();
+    const out = JSON.parse(gh(['api', '-X', 'PUT', `repos/${REPO}/contents/${FILE}`, '--input', '-'], body));
+    return out.commit?.sha?.slice(0, 7);
 }
 
 async function readMacroMicro() {
@@ -85,20 +87,15 @@ try {
     const payload = toPayload(stats);
     const said = `macromicro ${stats.released} → week ${payload.as_of}: bull ${payload.bull} neutral ${payload.neutral} bear ${payload.bear} diff ${payload.diff}`;
     if (DRY) { log(`DRY ${said}`); process.exit(0); }
-    const creds = kvCreds();
-    const got = await kv(creds, `/get/${encodeURIComponent(KEY)}`);
-    const cur = typeof got?.result === 'string' ? JSON.parse(got.result) : got?.result;
+    const { sha, value: cur } = readCommitted();
     if (!shouldPush(cur, payload)) {
-        log(`OK ${said} | KV already has ${cur?.data?.as_of} (${cur?.data?.source}) — no write`);
+        log(`OK ${said} | repo already has ${cur?.data?.as_of} (${cur?.data?.source}) — no commit`);
         process.exit(0);
     }
-    await kv(creds, `/set/${encodeURIComponent(KEY)}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ data: payload, savedAt: new Date().toISOString() }),
-    });
-    log(`PUSHED ${said} | replaced ${cur?.data?.as_of || 'nothing'}`);
+    const c = commit({ data: payload, savedAt: new Date().toISOString() }, sha,
+        `AAII backup: survey week ${payload.as_of} (diff ${payload.diff}) from MacroMicro\n\nWritten by scripts/aaii-mac on the Mac mini (launchd com.jalal.aaii-macromicro).`);
+    log(`PUSHED ${said} | replaced ${cur?.data?.as_of || 'nothing'} | commit ${c}`);
 } catch (e) {
-    log(`FAIL ${String(e?.message || e).slice(0, 200)}`);
+    log(`FAIL ${String(e?.stderr || e?.message || e).replace(/\s+/g, ' ').slice(0, 200)}`);
     process.exit(1);
 }

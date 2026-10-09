@@ -217,8 +217,9 @@ async function loadKv(kv, now) {
  * `aaii_lastgood` fault disables the last-good and KV reads.
  * `store` = { load(key, maxAgeMs) → {data, savedAt}|null, save(key, data) } (lib/store.js).
  * `kv` = { get, set } (lib/factorStore defaultKv) or null.
+ * `baked` = lib/data/aaiiNewest.json ({ data, savedAt }), written by the Mac job via a GitHub commit.
  */
-export async function resolveAaii({ fetchText, store, kv = null, faults = new Set(), now = new Date() }) {
+export async function resolveAaii({ fetchText, store, kv = null, baked = null, faults = new Set(), now = new Date() }) {
     const testMode = faults.size > 0;
     const trip = (name) => { if (faults.has(name)) throw new Error(`[injected fault: ${name}]`); };
 
@@ -226,10 +227,13 @@ export async function resolveAaii({ fetchText, store, kv = null, faults = new Se
     // read first: a newer survey pushed to KV (e.g. by the Mac MacroMicro job) must beat
     // this instance's 3 h cache too, or a warm instance keeps the old week for hours
     const kvCopy = useBackups ? await loadKv(kv, now) : null;
+    // lib/data/aaiiNewest.json, committed by the Mac MacroMicro job (scripts/aaii-mac)
+    const bakedCopy = useBackups && baked?.data?.as_of && ageDays(baked.data.as_of, now) <= LAST_GOOD_MAX_MS / 864e5 ? baked : null;
+    const pushed = [kvCopy, bakedCopy].filter(Boolean).sort((a, b) => (a.data.as_of < b.data.as_of ? 1 : -1))[0] || null;
 
     if (!testMode) {
         const fresh = store.load('aaii-live', FRESH_CACHE_MS);
-        if (fresh?.data?.as_of && !(kvCopy && kvCopy.data.as_of > fresh.data.as_of)) {
+        if (fresh?.data?.as_of && !(pushed && pushed.data.as_of > fresh.data.as_of)) {
             return { payload: toPayload(fresh.data, fresh.data.source, now), cachedAt: fresh.savedAt, messages: [`cached from ${fresh.savedAt}`] };
         }
     }
@@ -237,7 +241,7 @@ export async function resolveAaii({ fetchText, store, kv = null, faults = new Se
     const { payload, messages } = await fetchAaiiLive({ fetchText, trip, now });
     const lg = useBackups ? store.load('aaii-live', LAST_GOOD_MAX_MS) : null;
     // the newest saved survey week across both backups
-    const saved = [lg, kvCopy].filter((x) => x?.data?.as_of)
+    const saved = [lg, kvCopy, bakedCopy].filter((x) => x?.data?.as_of)
         .sort((a, b) => (a.data.as_of < b.data.as_of ? 1 : -1))[0] || null;
 
     if (payload) {
