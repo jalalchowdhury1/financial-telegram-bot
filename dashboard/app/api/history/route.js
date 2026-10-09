@@ -17,7 +17,7 @@
  * feature must fail invisible — a wrong mark is far worse than a missing one.
  *
  * Also serves `moves` — backup σ (VIX, F&G) for the "What moved" strip (lib/whatMoved.js),
- * and `series` — 90 days of every sheet metric for the tap-a-number chart (~20 KB;
+ * and `series` — every day of every sheet metric (≤2 years) for the tap-a-number chart and its 1M·3M·6M·ALL chips (~47 KB at 7 months;
  * lib/marks.js buildChartSeries). Both ride the same last-known-good as the digest.
  *
  * Fault gate: `?_fail=history_sheet`.
@@ -86,7 +86,7 @@ export async function GET(request) {
             ...digest,
             // "What moved" strip: backup σ for VIX and F&G.
             moves: buildMoveDigest(rows),
-            // Tap a number → its 90-day chart. A failure here costs only the charts, never
+            // Tap a number → its chart (range chips slice it on the device). A failure here costs only the charts, never
             // the fresh digest above (no charts = plain, untappable numbers).
             series: (() => { try { return buildChartSeries(rows); } catch { return null; } })(),
             _meta: {

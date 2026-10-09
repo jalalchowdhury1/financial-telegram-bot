@@ -193,6 +193,26 @@ describe('📈 tap for the 90-day chart', () => {
         expect(document.querySelector('.mark-pop')).toBeNull();
     });
 
+    test('range chips: 3M by default, a tap re-slices without closing, and the pick carries to the next popover', () => {
+        require('../../lib/chartRange').resetRange();
+        window.localStorage.clear();
+        wrap(<Delta mark={null} chartKey="claims" raw={204}>204</Delta>);
+        const btn = document.querySelector('.chartable');
+        fireEvent.click(btn);
+        const on = () => document.querySelector('.series-tf.is-on').textContent;
+        expect(on()).toBe('3M');
+        fireEvent.click(screen.getByRole('button', { name: '1M' }));
+        expect(document.querySelector('.mark-pop')).not.toBeNull();
+        expect(on()).toBe('1M');
+        expect(document.querySelector('.mark-pop').textContent).toMatch(/· 30 days/);
+        fireEvent.click(screen.getByRole('button', { name: 'ALL' }));
+        expect(document.querySelector('.mark-pop').textContent).toMatch(/· since Jun 29/);
+        fireEvent.click(btn); fireEvent.click(btn); // close, reopen
+        expect(on()).toBe('ALL');
+        require('../../lib/chartRange').resetRange();
+        window.localStorage.clear();
+    });
+
     test('a marked number opens with a single tap and shows the chart under the mark', () => {
         const { container } = wrap(<Delta mark={printMark} chartKey="claims" raw={204}>204</Delta>);
         fireEvent.click(container.querySelector('[data-mark]'));

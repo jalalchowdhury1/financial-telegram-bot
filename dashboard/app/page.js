@@ -374,7 +374,7 @@ export default function Dashboard() {
                 <div className="mkt-clock-row"><ErrorBoundary><MarketClock /></ErrorBoundary></div>
                 {fred?._meta?.fetchedAt && (
                     <p className="subtitle" style={{ fontSize: '0.7rem', opacity: 0.6, marginTop: '6px' }}>
-                        Economic data as of {new Date(fred._meta.fetchedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}<span className="hide-sm"> · refreshes every 30 min</span> · tap a label for its date, a number for its 90-day chart
+                        Economic data as of {new Date(fred._meta.fetchedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}<span className="hide-sm"> · refreshes every 30 min</span> · tap a label for its date, a number for its chart
                     </p>
                 )}
             </header>

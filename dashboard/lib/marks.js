@@ -332,30 +332,40 @@ export function buildDigest(rows, now = new Date()) {
     return { today, metrics: out };
 }
 
-// ── 📈 Tap a number → its 90-day chart ────────────────────────────────────────────
+// ── 📈 Tap a number → its chart (1M · 3M · 6M · ALL chips in the popover) ──────────
 
-export const CHART_DAYS = 90;
+export const CHART_DAYS = 90;        // the default view (the 3M chip)
+export const CHART_MAX_DAYS = 730;   // the most the payload ever carries (ALL is capped at 2 years)
 export const CHART_MIN_POINTS = 10;
 const plusDays = (date, n) => new Date(Date.parse(`${date}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}/;
 
 /**
- * 90 days of every sheet metric, for /api/history `series`. One shared day axis keeps it
- * small (~20 KB for ~40 metrics): `v[key][i]` is the value on `from + i days`, null where
- * the sheet has none. A date's value is its LAST row — the 10:00 ET run (the Date column
- * is the runner's UTC date, see AGENTS.md), so market series are daily snapshots, not
- * closes. A point that is a ×1000 unit jump against the latest value (the sheet once held
- * housing starts in units, not thousands) is dropped, never drawn. A metric with fewer
- * than CHART_MIN_POINTS points is left out: its number simply is not tappable.
+ * Every sheet metric's daily history (from the sheet's first row, at most CHART_MAX_DAYS),
+ * for /api/history `series`. The popover's chips slice it on the device (lib/chartRange.js).
+ * One shared day axis keeps it small (~47 KB at 7 months): `v[key][i]` is the value on
+ * `from + i days`, null where the sheet has none. A date's value is its LAST row — the
+ * 10:00 ET run (the Date column is the runner's UTC date, see AGENTS.md), so market series
+ * are daily snapshots, not closes. A point that is a ×1000 unit jump against the latest value
+ * (the sheet once held housing starts in units, not thousands) is dropped, never drawn. A
+ * metric with fewer than CHART_MIN_POINTS points is left out: its number simply is not tappable.
  */
 export function buildChartSeries(rows, now = new Date()) {
     const today = todayET(now);
-    const from = plusDays(today, -(CHART_DAYS - 1));
+    let from = plusDays(today, -(CHART_MAX_DAYS - 1));
+    let first = null;
+    for (const r of rows || []) {
+        const d = typeof r?.[0] === 'string' && ISO_DAY.test(r[0]) ? r[0].slice(0, 10) : null;
+        if (d && d >= from && d <= today && (!first || d < first)) first = d;
+    }
+    if (first) from = first;
+    const days = daysBetween(from, today) + 1;
     const v = {};
     for (const [key, meta] of Object.entries(SHEET_METRICS)) {
         const s = buildSeries(rows || [], meta.col).filter((p) => p.date >= from && p.date <= today);
         if (!s.length) continue;
         const last = s[s.length - 1].value;
-        const arr = new Array(CHART_DAYS).fill(null);
+        const arr = new Array(days).fill(null);
         let n = 0;
         for (const p of s) {
             if (isUnitJump(p.value, last)) continue;
@@ -364,7 +374,7 @@ export function buildChartSeries(rows, now = new Date()) {
         }
         if (n >= CHART_MIN_POINTS) v[key] = arr;
     }
-    return { from, days: CHART_DAYS, v };
+    return { from, days, v };
 }
 
 /**

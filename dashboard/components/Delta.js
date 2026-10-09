@@ -11,7 +11,7 @@
  * and nothing pulses forever, so a page with four marks never strobes.
  *
  * Tap / click the value (or the dot) to see what it was before — and, for any number
- * with history-sheet data (`chartKey`), its 90-day chart (2026-09-26). A number with a
+ * with history-sheet data (`chartKey`), its chart (2026-09-26; range chips 2026-10-09). A number with a
  * chart but no mark gets a faint dotted underline so it reads as tappable.
  *
  * THE POPOVER IS PORTALLED TO document.body AND POSITIONED FIXED. It must not live
@@ -22,6 +22,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useChart } from './MarkProvider';
+import { RANGES, getRange, setRange, sliceRange, rangeLabel } from '../lib/chartRange';
 
 const MAX_SPARK = 8;
 
@@ -58,7 +59,7 @@ function Spark({ runs, dir }) {
 const fmtNum = (v) => v.toLocaleString('en-US', { maximumFractionDigits: Math.abs(v) >= 100 ? 0 : 2 });
 
 /**
- * 90-day line of daily sheet snapshots: low / high, first → last, and the dates. Drawn in a
+ * Line of daily sheet snapshots (the window the range chips picked): low / high, first → last, and the dates. Drawn in a
  * neutral colour: "up" is bad news for VIX, claims or spreads, so green/red would mislead.
  */
 export function SeriesChart({ chart, format }) {
@@ -121,6 +122,39 @@ function fmtDelta(mark) {
 }
 
 /**
+ * The popover's chart section: 1M · 3M · 6M · ALL chips (styled like the cards' timeframe
+ * pills), the eyebrow, the line. Mounts only while the popover is open, so it reads the
+ * remembered pick fresh each time — a chip picked on one number carries to the next.
+ */
+export function ChartBlock({ chart, format, marked, onRangeChange }) {
+    const [range, setLocal] = useState(getRange);
+    const pts = sliceRange(chart.points, range);
+    const pick = (id) => {
+        setRange(id);
+        setLocal(id);
+        if (onRangeChange) window.requestAnimationFrame?.(onRangeChange);
+    };
+    return (
+        <>
+            {marked && <div className="mark-pop-sep" />}
+            <div className="series-head">
+                <div className="mark-pop-eyebrow">{chart.label} · {rangeLabel(pts, range)}</div>
+                <div className="series-tfs" role="group" aria-label="Chart range">
+                    {RANGES.map((r) => (
+                        <button key={r.id} type="button"
+                            className={`series-tf${r.id === range ? ' is-on' : ''}`}
+                            aria-pressed={r.id === range}
+                            onClick={(e) => { e.stopPropagation(); pick(r.id); }}>{r.id}</button>
+                    ))}
+                </div>
+            </div>
+            <SeriesChart chart={{ ...chart, points: pts }} format={format} />
+            <div className="mark-pop-foot">daily snapshots · history sheet</div>
+        </>
+    );
+}
+
+/**
  * @param {object}   props
  * @param {object=}  props.mark      a `markFor` result, or null/undefined for no mark
  * @param {string=}  props.format    how the PREVIOUS value should be rendered (defaults to toString)
@@ -179,20 +213,13 @@ export default function Delta({ mark, format, className, children, chartKey, raw
     // One tap toggles. The 2nd/3rd click of a double/triple click is ignored (e.detail), so a
     // double-click opens once instead of open → close (→ open, replaying the animation).
     const toggle = (e) => { if (e?.detail > 1) return; setOpen((o) => !o); };
-    const chartBlock = chart && (
-        <>
-            {marked && <div className="mark-pop-sep" />}
-            <div className="mark-pop-eyebrow">{chart.label} · 90 days</div>
-            <SeriesChart chart={chart} format={format} />
-            <div className="mark-pop-foot">daily snapshots · history sheet</div>
-        </>
-    );
+    const chartBlock = chart && <ChartBlock chart={chart} format={format} marked={marked} onRangeChange={reposition} />;
     const popover = (body) => (open && typeof document !== 'undefined' ? createPortal(
         <div
             ref={popRef}
             className="mark-pop"
             role="dialog"
-            aria-label={chart ? `${chart.label}, last 90 days` : 'Previous value'}
+            aria-label={chart ? `${chart.label} chart` : 'Previous value'}
             onClick={(e) => e.stopPropagation()}
         >
             {body}
@@ -210,7 +237,7 @@ export default function Delta({ mark, format, className, children, chartKey, raw
                 data-open={open ? 'true' : undefined}
                 aria-haspopup="dialog"
                 aria-expanded={open}
-                title="Tap for the 90-day chart"
+                title="Tap for its chart"
                 onClick={toggle}
                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } }}
             >
@@ -234,7 +261,7 @@ export default function Delta({ mark, format, className, children, chartKey, raw
             className={`mark ${className || ''}`}
             data-mark={mark.kind}
             data-open={open ? 'true' : undefined}
-            aria-label={`${prevText} before this change. Activate to see details${chart ? ' and the 90-day chart' : ''}.`}
+            aria-label={`${prevText} before this change. Activate to see details${chart ? ' and its chart' : ''}.`}
             aria-expanded={open}
             onClick={toggle}
             onKeyDown={(e) => {

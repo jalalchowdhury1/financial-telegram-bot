@@ -2239,6 +2239,26 @@ html { overscroll-behavior-y: contain; } /* Android's own pull = full reload; ou
 .chartable:hover, .chartable[data-open] { text-decoration-color: rgba(34, 211, 238, 0.8); }
 .chartable:focus-visible { outline: 2px solid rgba(34, 211, 238, 0.6); outline-offset: 2px; border-radius: 3px; }
 .mark-pop-sep { height: 1px; margin: 10px 0 8px; background: rgba(255, 255, 255, 0.08); }
+/* 📈 range chips — the cards' timeframe pills, in the popover's cyan */
+.series-head .mark-pop-eyebrow { margin-bottom: 8px; }
+.series-tfs { display: flex; gap: 3px; }
+.series-tf {
+  position: relative;
+  padding: 2px 6px;
+  border: none;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.56rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.series-tf::before { content: ''; position: absolute; left: -1.5px; right: -1.5px; top: -10px; bottom: -10px; } /* finger-sized */
+.series-tf:hover { color: var(--text-secondary); }
+.series-tf.is-on { background: rgba(34, 211, 238, 0.2); color: var(--mark); }
+.series-tf:focus-visible { outline: 2px solid var(--mark); outline-offset: 1px; }
 .series-chart svg { display: block; width: 100%; height: 64px; margin: 6px 0 4px; }
 .series-range, .series-dates {
   display: flex; justify-content: space-between; gap: 8px;
