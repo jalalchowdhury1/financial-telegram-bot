@@ -94,6 +94,16 @@ describe('serve() KV last-good tier', () => {
         expect(kv.get).not.toHaveBeenCalled();
     });
 
+    test('?_fail=tmplg skips a warm /tmp copy so the KV tier answers', async () => {
+        const key = uniq('kvtmp');
+        saveLastGood(key, { v: 1, _meta: { source: 'tmp' } });
+        const kv = fakeKv({ [`ftb:lg:${key}`]: { data: good, savedAt: new Date().toISOString() } });
+        const b = await (await serve(key, boom, { kv, faults: faults('tmplg') })).json();
+        expect(b.v).toBe(42);
+        expect(b._meta.source).toMatch(/^KV last-good/);
+        rmTmp(key);
+    });
+
     test('?_fail=lastgood disables the KV read too', async () => {
         const key = uniq('kvlg');
         const kv = fakeKv({ [`ftb:lg:${key}`]: { data: good, savedAt: new Date().toISOString() } });

@@ -141,7 +141,8 @@ export async function serve(key, produce, opts = {}) {
     // real data) and `?_fail=lastgood` also disables READING both (to reach the default).
     // `?_fail=kvlg` disables only the KV read, so a test can prove the KV tier alone.
     const testMode = faults && faults.size > 0;
-    const readLG = (testMode && faults.has('lastgood')) ? () => null : (k, m) => loadLastGood(k, m);
+    // `?_fail=tmplg` disables only the /tmp read, so a warm instance can still prove the KV tier.
+    const readLG = (testMode && (faults.has('lastgood') || faults.has('tmplg'))) ? () => null : (k, m) => loadLastGood(k, m);
     const readKV = (testMode && (faults.has('lastgood') || faults.has('kvlg')))
         ? async () => null
         : (k, m) => loadLastGoodKV(k, m, { kv });

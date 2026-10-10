@@ -226,7 +226,9 @@ export async function mergeLastGood(out, { key, paths, faults = new Set(), maxSt
             }
         };
         let tmp = null;
-        try { tmp = await loadLastGood(key); } catch { tmp = null; }
+        if (!(faults && faults.has('tmplg'))) {
+            try { tmp = await loadLastGood(key); } catch { tmp = null; }
+        }
         fillFrom(tmp, 'last-known-good');
         if (missing().length && !(faults && faults.has('kvlg'))) {
             fillFrom(await loadLastGoodKV(key, maxStaleMs, { kv, now }), 'KV last-known-good');
