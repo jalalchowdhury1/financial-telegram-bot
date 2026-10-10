@@ -210,7 +210,7 @@ function spEpsSources({ fredKey, pe, peSource }) {
             return { current: last.value, currentDate: last.date, historyAsc: hist };
         } },
         { name: 'derived', freshnessDays: 7, fetch: async () => {
-            if (!pe || peSource === 'cape') throw new Error('derived EPS: no TTM P/E to divide by');
+            if (!pe || peSource === 'cape' || peSource === 'computed') throw new Error('derived EPS: no independent TTM P/E to divide by');
             if (!fredKey) throw new Error('derived EPS: no FRED key');
             const spx = await fredObservations('SP500', fredKey, { limit: 5 }); // newest-first daily closes
             return { current: spx[0].value / pe, currentDate: spx[0].date, historyAsc: [] };
@@ -581,7 +581,31 @@ export async function GET(request) {
         let pe = await budget.race(resolvePeRatio({
             multplHtml: () => cachedText('multpl', EXTERNAL_URLS.MULTPL_PE, 8000),
             yahooHtml: () => cachedText('yahoo-pe', EXTERNAL_URLS.YAHOO_PE, 8000),
-            capeObs: () => fetchSeries('PE10', liveKey, 3),
+            // S&P close: CNBC .SPX (same-day) → FRED SP500. EPS: multpl's EPS table (a
+            // different page from its P/E) → this route's own saved spEps (EPS moves quarterly).
+            computed: async () => {
+                let spx = null;
+                try {
+                    const q = (await cnbcQuotes(['.SPX'], { revalidate: 600 }))['.SPX'];
+                    if (q?.price > 0) spx = { v: q.price, d: q.asOf };
+                } catch (e) { messages.push(`P/E computed: CNBC .SPX failed: ${maskKey(e.message)}`); }
+                if (!spx) {
+                    const o = await fredObservations('SP500', liveKey, { limit: 5 });
+                    spx = { v: o[0].value, d: o[0].date };
+                }
+                let eps = null;
+                try {
+                    const hist = parseMultplEps(await cachedText('multpl-eps', EXTERNAL_URLS.MULTPL_EPS, 8000));
+                    const last = hist[hist.length - 1];
+                    if (last?.value > 0) eps = { v: last.value, d: last.date };
+                } catch (e) { messages.push(`P/E computed: multpl EPS failed: ${maskKey(e.message)}`); }
+                if (!eps) {
+                    const lg = loadLastGood('fred', 200 * 864e5)?.data?.spEps;
+                    if (lg?.current > 0) eps = { v: lg.current, d: lg.asOf };
+                }
+                if (!eps) throw new Error('no EPS leg');
+                return { spx: spx.v, spxDate: spx.d, eps: eps.v, epsDate: eps.d };
+            },
         }, faults, { maskKey }));
         if (pe === TIMED_OUT) pe = { peRatio: null, peSource: null, peAsOf: null, messages: [overBudget('P/E')] };
         const peRatio = pe.peRatio;
