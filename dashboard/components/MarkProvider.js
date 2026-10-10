@@ -97,7 +97,8 @@ export function collectLiveValues(fred, extra, sheets) {
         creditSpread: fresh(i.creditSpread),
         realYields: fresh(i.realYields),
         copperGold: fresh(i.copperGold),
-        peRatio: fred?.peRatio,
+        // CAPE (FRED PE10 fallback) is a different metric — never mark it as a P/E move.
+        peRatio: fred?.peIsCape ? undefined : fred?.peRatio,
         nfci: fresh(c.nfci), m2: fresh(c.m2), retail: fresh(c.retail),
         housing: fresh(c.housing), indpro: fresh(c.indpro), jolts: fresh(c.jolts),
         durable: fresh(c.durable), savings: fresh(c.savings),

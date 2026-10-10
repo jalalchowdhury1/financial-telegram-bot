@@ -27,6 +27,33 @@ function copperGoldTooltip(base, m) {
 }
 
 /**
+ * The Market Valuation row. When the P/E cascade fell all the way to FRED PE10
+ * (`peIsCape`), the number is Shiller CAPE — a 10-yr smoothed ratio that runs ~40%
+ * above trailing P/E — so it is LABELLED CAPE, judged against CAPE's own norm, and
+ * kept out of the since-last-visit mark and the P/E history chart (comparing a
+ * CAPE against yesterday's P/E would invent a huge "move").
+ */
+export function valuationRow(fred) {
+    const pe = fred?.peRatio;
+    if (fred?.peIsCape && pe) {
+        return {
+            icon: '💎', label: 'Market Valuation',
+            tooltip: 'Shiller CAPE (P/E10): S&P 500 price over 10-year average inflation-adjusted earnings. Shown because the trailing P/E sources failed; CAPE runs well above trailing P/E, so it is not comparable to the usual P/E reading.',
+            value: `CAPE ~${pe.toFixed(1)}`,
+            status: pe > 30 ? 'restrictive' : 'neutral',
+            benchmark: 'CAPE, not P/E · avg ~17',
+            metric: { value: pe, asOf: fred.peRatioAsOf, stale: false },
+            markKey: null, raw: undefined, fmtPrev: (v) => `CAPE ~${v.toFixed(1)}`,
+        };
+    }
+    return {
+        icon: '💎', label: 'Market Valuation', tooltip: 'Current S&P 500 P/E Ratio. A measure of how expensive the market is historically.',
+        value: pe ? `P/E ~${pe.toFixed(1)}` : 'P/E N/A', status: pe > 25 ? 'restrictive' : 'neutral', benchmark: 'Fair at ~20',
+        metric: { value: pe ?? null, asOf: fred?.peRatioAsOf, stale: false }, markKey: 'peRatio', raw: pe, fmtPrev: (v) => `P/E ~${v.toFixed(1)}`,
+    };
+}
+
+/**
  * One indicator row. Split out of the map so it can call `useMark` — hooks cannot
  * run inside a callback. `markKey` is the lib/marks.js key; rows without one are
  * never marked (P/E is a move metric, the rest of the grid is print or none).
@@ -70,7 +97,7 @@ export default function EconomicIndicatorGrid({ fred, loading, statusColor }) {
                             { icon: '🏦', label: 'BBB Credit Spread', tooltip: "The premium corporations pay over Treasuries to borrow. Widening indicates market stress.", value: fred.indicators.creditSpread?.value ? `${fred.indicators.creditSpread.value.toFixed(2)}%` : 'N/A', status: fred.indicators.creditSpread?.status, benchmark: '< 1.5% tight', metric: fred.indicators.creditSpread, markKey: 'creditSpread', raw: fred.indicators.creditSpread?.value, fmtPrev: (v) => `${v.toFixed(2)}%` },
                             { icon: '💵', label: 'Real Yields (10Y TIPS)', tooltip: "10-Year Treasury Inflation-Indexed Security. Shows the true inflation-adjusted cost of capital.", value: fred.indicators.realYields?.value ? `${fred.indicators.realYields.value.toFixed(2)}%` : 'N/A', status: fred.indicators.realYields?.status, benchmark: '< 0% easy', metric: fred.indicators.realYields, markKey: 'realYields', raw: fred.indicators.realYields?.value, fmtPrev: (v) => `${v.toFixed(2)}%` },
                             { icon: '🟠', label: 'Copper/Gold Ratio', tooltip: copperGoldTooltip("Dr. Copper vs. safe-haven gold — a leading gauge of growth & rate expectations. Rising = risk-on/expansion; falling = risk-off.", fred.indicators.copperGold), value: fred.indicators.copperGold?.value != null ? fred.indicators.copperGold.value.toFixed(2) : 'N/A', status: fred.indicators.copperGold?.status === 'rising' ? 'strong' : (fred.indicators.copperGold?.status === 'falling' ? 'weak' : 'neutral'), benchmark: copperGoldBenchmark(fred.indicators.copperGold), metric: fred.indicators.copperGold, markKey: 'copperGold', raw: fred.indicators.copperGold?.value, fmtPrev: (v) => v.toFixed(2) },
-                            { icon: '💎', label: 'Market Valuation', tooltip: "Current S&P 500 P/E Ratio. A measure of how expensive the market is historically.", value: fred.peRatio ? `P/E ~${fred.peRatio.toFixed(1)}` : 'P/E N/A', status: fred.peRatio > 25 ? 'restrictive' : 'neutral', benchmark: 'Fair at ~20', metric: { value: fred.peRatio ?? null, asOf: fred.peRatioAsOf, stale: false }, markKey: 'peRatio', raw: fred.peRatio, fmtPrev: (v) => `P/E ~${v.toFixed(1)}` },
+                            valuationRow(fred),
                         ].map(ind => <IndicatorRow key={ind.label} ind={ind} statusColor={statusColor} />)}
                     </>
                 )}

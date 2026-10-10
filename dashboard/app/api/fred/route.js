@@ -4,12 +4,13 @@ import { withFreshness } from '../../../lib/freshness';
 import { serve, loadLastGood } from '../../../lib/store';
 import { fetchSheetLkg } from '../../../lib/sheetLkg';
 import { faultsFrom } from '../../../lib/faults';
-import { resolveLeg, buildCopperGold } from '../../../lib/copperGold';
+import { resolvePeRatio } from '../../../lib/peRatio';
+import { resolveLeg, buildCopperGold, westmetallCopperLeg, LB_PER_TONNE } from '../../../lib/copperGold';
 import { resolveSpEps, parseMultplEps, parseShillerCsv, toMonthlyHistory } from '../../../lib/spEps';
 import { resolveBankruptcies } from '../../../lib/bankruptcies';
 import bakedBankruptcies from '../../../lib/data/bankruptciesBaked.json';
-import { cnbcQuotes, cnbcHistory, goldApiSpot, polygonDaily, fredObservations, yahooChart, treasuryYieldCurveCsv, blsSeries, fredGraphCsv } from '../../../lib/sources';
-import { resolveHorseman, buildHorseman, needsRepair, isUpgrade, mergeHorsemenOverBase, parseTreasuryCsv, parseBlsSeries, parseFredGraphCsv } from '../../../lib/horsemen';
+import { cnbcQuotes, cnbcHistory, goldApiSpot, polygonDaily, fredObservations, yahooChart, treasuryYieldCurveCsv, blsSeries, fredGraphCsv, dolWeeklyClaimsXml, westmetallTable } from '../../../lib/sources';
+import { resolveHorseman, buildHorseman, needsRepair, isUpgrade, mergeHorsemenOverBase, parseTreasuryCsv, parseBlsSeries, parseFredGraphCsv, parseDolClaimsXml } from '../../../lib/horsemen';
 
 // In Next 13.5 the route's default fetchCache is 'only-no-store', which ERRORS
 // on cached fetches. 'default-cache' permits caching (and never errors), so the
@@ -85,25 +86,35 @@ const dateOf = (arr) => arr?.[0]?.date ?? null;
 // datacenter-reachable sources, all normalized to the same unit (copper $/lb, gold
 // $/oz) so the ratio (~1.4) is consistent regardless of which source answered:
 //
-//   COPPER $/lb : CNBC @HG.1 (keyless, daily history) → FRED PCOPPUSDM (key)
+//   COPPER $/lb : CNBC @HG.1 (keyless, daily history) → Westmetall LME cash
+//                 (keyless, daily history, $/t÷2204.62) → FRED PCOPPUSDM (key)
 //                 → gold-api.com HG (keyless spot) → Yahoo HG=F (self-heal)
 //   GOLD   $/oz : CNBC @GC.1 (keyless, daily history) → Polygon C:XAUUSD (key)
 //                 → gold-api.com XAU → Yahoo GC=F   (FRED's GOLDPMGBD228NLBM is discontinued)
 //
 // Each source can be fault-injected for testing the cascade end-to-end, e.g.
-// `?_fail=cg_cnbc` forces both legs past CNBC; `?_fail=cg_cnbc,cg_fred,cg_polygon`
+// `?_fail=cg_cnbc` forces both legs past CNBC; `?_fail=cg_cnbc,cg_westmetall,cg_fred,cg_polygon`
 // forces them all the way down to the keyless gold-api spot tier.
+//
+// A STALE source is DEMOTED, never served: resolveLeg skips any leg whose newest
+// point is past its freshnessDays (`cnbc:stale(2026-05-27)` in `tried`) and falls
+// through — CNBC's @HG.1/@GC.1 quotes froze in mid-2026 while still answering 200.
 //
 // Sources that expose history give a real 1-month AND 3-month change (the "trend"
 // the owner cares about, not just the level). Spot-only sources still give the
 // current ratio. Never throws; a miss → unavailable (the daily health-check flags
 // an unexpected N/A here).
 // ─────────────────────────────────────────────────────────────────────────────
-const LB_PER_TONNE = 2204.6226;     // FRED PCOPPUSDM is USD per metric ton → ÷ this = $/lb
+// LB_PER_TONNE (lib/copperGold): FRED PCOPPUSDM and Westmetall LME are USD per metric ton → ÷ this = $/lb
+
+// Westmetall serves one calendar year per page (lib/copperGold westmetallCopperLeg
+// adds the prior year early in January-March so the 3-month window still spans).
+const westmetallCopper = (now) =>
+    westmetallCopperLeg((year) => westmetallTable('LME_Cu_cash', year ? { year, revalidate: REVALIDATE_SECONDS } : { revalidate: REVALIDATE_SECONDS }), now);
 
 // A "source" knows its fault name, how stale its newest point may be, and how to
 // fetch { current, currentDate, historyAsc:[{date,price}] } in the canonical unit.
-function copperSources(fredKey) {
+function copperSources(fredKey, now = new Date()) {
     return [
         { name: 'cnbc', freshnessDays: 7, fetch: async () => {
             // Quote is required (gives the current price); history is best-effort (gives the delta).
@@ -112,6 +123,10 @@ function copperSources(fredKey) {
             const last = hist[hist.length - 1];
             return { current: cur?.price ?? last?.price, currentDate: cur?.asOf ?? last?.date, historyAsc: hist };
         } },
+        // LME copper cash-settlement, daily, WITH history (so 1mo/3mo deltas survive a
+        // dead CNBC feed — goldapi below is spot-only). $/tonne → $/lb in the parser.
+        // LME cash runs within ~0.5% of COMEX HG; same unit, so the ratio is consistent.
+        { name: 'westmetall', freshnessDays: 7, fetch: () => westmetallCopper(now) },
         { name: 'fred', freshnessDays: 80, fetch: async () => {  // monthly series, reported weeks late
             if (!fredKey) throw new Error('no FRED key');
             const obs = await fredObservations('PCOPPUSDM', fredKey, { limit: 60 }); // newest-first $/tonne
@@ -169,8 +184,9 @@ function goldSources(fredKey, polyKey) {
 //                CAPE (10-yr smoothed earnings → dividing by it isn't TTM EPS)
 //   3. datahub — GitHub-raw mirror of Shiller's dataset ('Real Earnings' column,
 //                matching multpl's units). Ultra-reliable CDN, but its earnings
-//                run years behind → in practice the graceful-staleness fallback
-//                that keeps the CHART rendering when multpl is down.
+//                froze at 2023-06-01 — so it carries a 183-day HARD CEILING
+//                (maxAgeDays): older than that it is rejected outright (level AND
+//                chart), leaving the card N/A rather than a 3-year-old number.
 //
 // Fault gates for testing: ?_fail=eps_multpl / eps_derived / eps_datahub.
 // resolveSpEps is pure (lib/spEps.js) and never throws.
@@ -190,7 +206,9 @@ function spEpsSources({ fredKey, pe, peSource }) {
             const spx = await fredObservations('SP500', fredKey, { limit: 5 }); // newest-first daily closes
             return { current: spx[0].value / pe, currentDate: spx[0].date, historyAsc: [] };
         } },
-        { name: 'datahub', freshnessDays: 400, fetch: async () => {
+        // maxAgeDays: past ~6 months the mirror is REJECTED, not served stale — it froze
+        // at 2023-06-01 (181.77 vs 295.36 live), which would be a wrong headline.
+        { name: 'datahub', freshnessDays: 400, maxAgeDays: 183, fetch: async () => {
             const csv = await cachedText('datahub-eps', EXTERNAL_URLS.DATAHUB_SHILLER, 8000);
             const hist = parseShillerCsv(csv);
             const last = hist[hist.length - 1];
@@ -205,7 +223,7 @@ function spEpsSources({ fredKey, pe, peSource }) {
 // (pure, unit-tested); here we only wire the network-bound sources + keys.
 async function fetchCopperGold(now, { fredKey, polyKey, faults }) {
     const [copper, gold] = await Promise.all([
-        resolveLeg(copperSources(fredKey), faults, now),
+        resolveLeg(copperSources(fredKey, now), faults, now),
         resolveLeg(goldSources(fredKey, polyKey), faults, now),
     ]);
     return buildCopperGold(copper, gold);
@@ -221,7 +239,7 @@ async function fetchCopperGold(now, { fredKey, polyKey, faults }) {
 // decisions. BLS and Treasury are the ORIGIN publishers of two of the three, so
 // they survive a total FRED outage, not merely a bad key.
 //
-// Fault gates: hm_treasury, hm_bls, hm_fredcsv (and `fred` kills the primary).
+// Fault gates: hm_treasury, hm_bls, hm_dol, hm_fredcsv (and `fred` kills the primary).
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Treasury serves one calendar year per request. Two years is enough to draw a
@@ -263,13 +281,23 @@ function unemploymentSources(now, blsKey) {
     ];
 }
 
-function claimsSources() {
-    // No non-FRED provider publishes seasonally-adjusted weekly claims in a form
-    // light enough for a serverless route (DOL's ETA r539 extract is a 13MB
-    // state-level NSA file, which would not equal ICSA anyway). The keyless FRED
-    // CSV still buys independence from the api key; below that the /tmp and
-    // Sheet last-known-good tiers carry the line.
+// DOL lags FRED by ~2-4 weeks, so its ACCEPTANCE window is wider than ICSA's
+// 14-day deadline. buildHorseman then stamps it against ICSA's 14 days, so a
+// lagging DOL week is served with its own as-of date and stale:true (orange 🕐),
+// never as this week's print.
+const DOL_ACCEPT_DAYS = 35;
+const DOL_YEARS_BACK = 2;
+
+function claimsSources(now) {
+    // Tier 2 is the ORIGIN publisher: DOL ETA's national weekly-claims report —
+    // the SEASONALLY ADJUSTED initial claims FRED republishes as ICSA (matched
+    // FRED on every overlapping week, verified 2026-10-09). The 13MB state-major
+    // ar539.csv is NSA and still NOT a substitute. Below DOL, the keyless FRED
+    // CSV (a phantom on Vercel) and the /tmp + Sheet last-known-good tiers.
+    const endYear = now.getUTCFullYear();
     return [
+        { name: 'dol', freshnessDays: DOL_ACCEPT_DAYS, fetch: async () =>
+            parseDolClaimsXml(await dolWeeklyClaimsXml({ startYear: endYear - DOL_YEARS_BACK, endYear })) },
         { name: 'fredcsv', freshnessDays: FRED_FRESHNESS.ICSA, fetch: async () => parseFredGraphCsv(await fredGraphCsv('ICSA')) },
     ];
 }
@@ -296,7 +324,7 @@ async function repairHorsemen(responseData, { now, faults, blsKey, messages }) {
         }));
     };
 
-    repair('claims', claimsSources(), responseData.horsemen.claims,
+    repair('claims', claimsSources(now), responseData.horsemen.claims,
         (r) => (responseData.horsemen.claims = buildHorseman(r, FRED_FRESHNESS.ICSA, now)));
 
     repair('unemployment', unemploymentSources(now, blsKey), responseData.horsemen.unemployment,
@@ -323,7 +351,7 @@ async function repairHorsemen(responseData, { now, faults, blsKey, messages }) {
 // so the UI shows N/A — never a misleadingly old number.
 // ─────────────────────────────────────────────────────────────────────────────
 
-function buildResponse(series, peRatio, now, peSource = null) {
+function buildResponse(series, peRatio, now, peSource = null, peAsOf = null) {
     const {
         T10Y2Y: t10y2y, UNRATE: unrate, UMCSENT: umcsent, ICSA: icsa, BAMLC0A4CBBB: bbb,
         DFII10: dfii10, NFCI: nfci, M2SL: m2sl, RSXFS: rsxfs,
@@ -422,7 +450,9 @@ function buildResponse(series, peRatio, now, peSource = null) {
         profitMargin,
         horsemen,
         peRatio,
-        peRatioAsOf: now.toISOString(), // scraped live each cache cycle
+        // Scraped live each cache cycle — except CAPE, a MONTHLY FRED series whose own
+        // observation date is the honest as-of (never `now`).
+        peRatioAsOf: peAsOf || now.toISOString(),
         // WHICH layer won. Must be exposed: the last tier is FRED `PE10`, i.e.
         // Shiller CAPE — a 10-yr smoothed ratio, NOT the trailing-twelve-month P/E
         // the tile claims to show (CAPE runs ~40 vs TTM ~30). Tier 2 (Yahoo) is
@@ -534,36 +564,19 @@ export async function GET(request) {
         }
         if (failed.length) console.warn(`[FRED] ${failed.length} series unavailable this load:`, failed.join(', '));
 
-        // P/E ratio — layered, cached scrapes. peSource records which layer won so
-        // the derived-EPS leg below can refuse CAPE (a 10-yr smoothed P/E).
-        let peRatio = null;
-        let peSource = null;
-        try {
-            const peHtml = await cachedText('multpl', EXTERNAL_URLS.MULTPL_PE, 8000);
-            const m = peHtml.match(/Current S&P 500 PE Ratio[^\d]*(\d+\.\d+)/);
-            if (m) { peRatio = parseFloat(m[1]); peSource = 'multpl'; }
-        } catch (e) { messages.push(`P/E multpl failed: ${maskKey(e.message)}`); }
-        if (!peRatio) {
-            try {
-                const yHtml = await cachedText('yahoo-pe', EXTERNAL_URLS.YAHOO_PE, 8000);
-                const m = yHtml.match(/PE Ratio \(TTM\)[\s\S]*?(\d+\.\d+)/i);
-                if (m) { peRatio = parseFloat(m[1]) * 1.07; peSource = 'yahoo'; }
-            } catch (e) { messages.push(`P/E Yahoo failed: ${maskKey(e.message)}`); }
-        }
-        if (!peRatio) {
-            try {
-                const cape = await fetchSeries('PE10', liveKey, 3);
-                if (cape.length > 0) { peRatio = cape[0].value; peSource = 'cape'; }
-            } catch (e) { messages.push(`P/E CAPE failed: ${maskKey(e.message)}`); }
-        }
+        // P/E ratio — layered, cached scrapes (lib/peRatio.js; gates pe_multpl /
+        // pe_yahoo / pe_fred). peSource records which layer won so the derived-EPS
+        // leg below can refuse CAPE (a 10-yr smoothed P/E) and the tile can label it.
+        const pe = await resolvePeRatio({
+            multplHtml: () => cachedText('multpl', EXTERNAL_URLS.MULTPL_PE, 8000),
+            yahooHtml: () => cachedText('yahoo-pe', EXTERNAL_URLS.YAHOO_PE, 8000),
+            capeObs: () => fetchSeries('PE10', liveKey, 3),
+        }, faults, { maskKey });
+        const peRatio = pe.peRatio;
+        const peSource = pe.peSource;
+        messages.push(...pe.messages);
 
-        if (peSource === 'cape') {
-            messages.push('P/E is Shiller CAPE (10-yr smoothed), NOT trailing-twelve-month — multpl scrape failed');
-        } else if (!peRatio) {
-            messages.push('P/E unavailable — all layers failed');
-        }
-
-        const responseData = buildResponse(series, peRatio, now, peSource);
+        const responseData = buildResponse(series, peRatio, now, peSource, pe.peAsOf);
 
         // Four Horsemen: back the three FRED-fed lines with independent providers
         // (Treasury / BLS / keyless FRED CSV) whenever the primary left one empty

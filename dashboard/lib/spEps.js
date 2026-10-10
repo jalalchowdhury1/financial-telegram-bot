@@ -14,6 +14,12 @@
  * EPS level is still served — marked stale:true → orange 🕐 in the UI — because
  * TTM as-reported earnings inherently lag ~2-3 quarters and an old real number
  * beats an N/A. Fresh sources are still preferred over stale ones.
+ *
+ * HARD CEILING (2026-10-09): a source may declare `maxAgeDays`. Past it, the source
+ * is REJECTED outright — neither its level nor its chart is used (`tried` shows
+ * `<name>:tooold(<date>)`). This exists for datahub, whose Shiller mirror stopped at
+ * 2023-06-01 (181.77 vs multpl's 295.36): a 3-year-old level is not "graceful
+ * staleness", it is a wrong number, and its chart would end in 2023 looking current.
  */
 import { isStale, withFreshness } from './freshness';
 
@@ -102,6 +108,13 @@ export async function resolveSpEps(sources, faults, now = new Date()) {
         let r;
         try { r = await s.fetch(); } catch (e) { tried.push(`${s.name}:err`); continue; }
         if (!r) { tried.push(`${s.name}:empty`); continue; }
+        // Too old to show at all (see HARD CEILING above) — reject before harvesting
+        // anything from it. Older-than-ceiling is judged on the source's own newest
+        // date; a missing date with a ceiling declared is treated as too old.
+        if (s.maxAgeDays != null && (!r.currentDate || isStale(r.currentDate, s.maxAgeDays, now))) {
+            tried.push(`${s.name}:tooold(${r.currentDate || 'no date'})`);
+            continue;
+        }
         // A date meaningfully in the future means the source mangled its dates —
         // don't let it pass as "fresh" forever (isStale can only catch OLD dates).
         const ts = r.currentDate ? new Date(r.currentDate).getTime() : NaN;

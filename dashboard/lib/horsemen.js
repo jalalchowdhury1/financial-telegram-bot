@@ -17,7 +17,9 @@
  *                     one request per calendar year) → FRED keyless graph CSV
  *   UNEMPLOYMENT    : FRED UNRATE → BLS API v2 LNS14000000 (keyless) → FRED
  *                     keyless graph CSV
- *   CLAIMS          : FRED ICSA → FRED keyless graph CSV
+ *   CLAIMS          : FRED ICSA → DOL ETA weekly-claims report (keyless, the
+ *                     ORIGIN publisher, seasonally adjusted, lags ~2-4 weeks)
+ *                     → FRED keyless graph CSV
  *
  * PHANTOM TIER WARNING: the keyless `fredgraph.csv` was meant to survive a revoked
  * api key (it shares FRED's servers but not its key). It works in local `next dev`
@@ -27,12 +29,15 @@
  * harmless best-effort last attempt, but do NOT count it as redundancy: the real
  * backups are Treasury and BLS.
  *
- * CLAIMS THEREFORE HAS ONLY ONE LIVE PUBLISHER — a known, accepted limit. No one
- * else publishes seasonally-adjusted weekly claims in a serverless-friendly form,
- * and DOL's NSA state-major extract is not a substitute (it swings ±30% seasonally,
- * so charting it on the same line would manufacture false recession signals). Claims
- * is protected by the PERSISTENCE layers instead — /tmp last-known-good plus the
- * twice-daily sheet snapshot with history — served frozen and flagged stale.
+ * CLAIMS TIER 2 = DOL ETA's national weekly-claims report (added 2026-10-09).
+ * `oui.doleta.gov/unemploy/wkclaims/report.asp` (POST level=nation, filetype=xml)
+ * returns a small (~19KB/yr) NATIONAL file with the SEASONALLY ADJUSTED initial
+ * claims per week — the same SA series FRED republishes as ICSA (matched FRED
+ * exactly on every overlapping week, 2026-07-18 … 2026-09-12, verified 2026-10-09).
+ * (The 13MB state-major ar539.csv is NSA and still NOT a substitute.) It lags FRED
+ * by ~2-4 weeks, so it is accepted on its own 35-day window and then stamped with
+ * ICSA's 14-day deadline: a lagging DOL week shows its own as-of date and the
+ * orange 🕐 stale flag, never passes as this week's print.
  *
  * COST ON THE HAPPY PATH IS ZERO. The route only builds these cascades when its
  * primary FRED series came back empty, so a healthy load makes no extra calls.
@@ -43,7 +48,7 @@
  * tabs just draw a shorter line. A short real chart beats a blank card.
  *
  * Fault gates for end-to-end testing:
- *   ?_fail=hm_treasury, hm_bls, hm_fredcsv   (disable a fallback provider)
+ *   ?_fail=hm_treasury, hm_bls, hm_dol, hm_fredcsv   (disable a fallback provider)
  *   ?_fail=fred                              (kills the primary — existing gate)
  * e.g. `?_fail=fred` alone should show all three lines resolving from the
  * fallback tiers; `?_fail=fred,hm_treasury,hm_bls,hm_fredcsv` should show them
@@ -172,6 +177,35 @@ export function parseFredGraphCsv(csv) {
         const value = parseFloat((f[1] || '').trim());
         if (!finite(value)) continue; // covers the '.' missing marker
         out.push({ date, value });
+    }
+    return ascendUnique(out);
+}
+
+/**
+ * DOL ETA weekly-claims report (national, XML) → ascending SA initial claims.
+ *
+ * Shape: `<r539cyNational><week><weekEnded>09/12/2026</weekEnded><InitialClaims>
+ * <NSA>…</NSA><SF>…</SF><SA>198,000</SA><SA4WK>…</SA4WK></InitialClaims>
+ * <ContinuedClaims>…<SA>…</SA>…</ContinuedClaims>…</week>`. FIELD-ANCHORED: the SA
+ * value is read only from inside each week's <InitialClaims> block, so the
+ * continued-claims <SA> (≈1.9M) can never be mistaken for initial claims, and the
+ * NSA value (seasonally ±30%) is never used. Weeks without an SA value are skipped.
+ */
+export function parseDolClaimsXml(xml) {
+    if (!xml || typeof xml !== 'string') return [];
+    const out = [];
+    const weekRe = /<week>([\s\S]*?)<\/week>/g;
+    let w;
+    while ((w = weekRe.exec(xml)) !== null) {
+        const block = w[1];
+        const d = /<weekEnded>\s*(\d{1,2})\/(\d{1,2})\/(\d{4})\s*<\/weekEnded>/.exec(block);
+        const ic = /<InitialClaims>([\s\S]*?)<\/InitialClaims>/.exec(block);
+        if (!d || !ic) continue;
+        const sa = /<SA>\s*([\d,]+)\s*<\/SA>/.exec(ic[1]);
+        if (!sa) continue;
+        const value = parseInt(sa[1].replace(/,/g, ''), 10);
+        if (!finite(value) || value <= 0) continue;
+        out.push({ date: `${d[3]}-${d[1].padStart(2, '0')}-${d[2].padStart(2, '0')}`, value });
     }
     return ascendUnique(out);
 }
