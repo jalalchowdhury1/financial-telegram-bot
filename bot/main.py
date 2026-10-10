@@ -10,12 +10,9 @@ import time
 import pytz
 import logging
 from datetime import datetime
-from threading import Thread
 from typing import Dict, Any, Optional
 
 from flask import Flask
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
@@ -31,7 +28,7 @@ global_scheduler: Optional[BackgroundScheduler] = None
 
 @flask_app.route('/')
 def health_check():
-    return {'status': 'running', 'bot': 'financial-telegram-bot-lite'}, 200
+    return {'status': 'running', 'bot': 'financial-telegram-bot-lite', 'telegram_polling': False}, 200
 
 @flask_app.route('/health')
 def health():
@@ -72,25 +69,6 @@ def run_report():
         print(report_marker(False, reason="exception"))
         return False
 
-async def report_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /report command"""
-    env_vars = load_environment_variables()
-    if str(update.effective_chat.id) != env_vars['TELEGRAM_CHAT_ID']:
-        return
-
-    # Removed "Generating" reply per user request
-    # await update.message.reply_text("🔄 Generating your financial summary...")
-    
-    # Run in a separate thread to avoid blocking the bot's event loop
-    def job():
-        run_report()
-    
-    Thread(target=job).start()
-
-async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /start command"""
-    await update.message.reply_text("👋 Financial Report Bot (Lite)\n\nUse /report for a quick market summary.")
-
 def run_flask():
     """Run Flask server for health checks"""
     port = int(os.environ.get('PORT', 10000))
@@ -103,7 +81,7 @@ def main():
     global global_scheduler
     print("Starting Lightweight Financial Bot Service...")
 
-    env_vars = load_environment_variables()
+    load_environment_variables()  # fail fast on missing env, as before
     tz = pytz.timezone(TIMEZONE)
 
     # 1. Start Scheduler
@@ -119,18 +97,15 @@ def main():
     scheduler.start()
     print(f"✓ Scheduler started (Daily at {REPORT_TIME['hour']}:{REPORT_TIME['minute']})")
 
-    # 2. Start Flask
-    flask_thread = Thread(target=run_flask, daemon=True)
-    flask_thread.start()
-    print("✓ Flask health-check server started")
-
-    # 3. Start Telegram Bot
-    telegram_app = Application.builder().token(env_vars['TELEGRAM_TOKEN']).job_queue(None).build()
-    telegram_app.add_handler(CommandHandler("start", start_command))
-    telegram_app.add_handler(CommandHandler("report", report_command))
-    
-    print("✓ Telegram bot is polling...")
-    telegram_app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
+    # 2. Flask in the foreground keeps the web process (Render) alive.
+    # NO Telegram polling here, ever (removed 2026-10-10). TELEGRAM_TOKEN is @TweetSyn_bot,
+    # the alerts bot, whose updates belong to health-hub's webhook (/api/defensive: the
+    # Silent-digest card buttons). run_polling() calls deleteWebhook on start, and Render
+    # re-ran this on EVERY push to main: 26 wiped webhooks 26 Sep-10 Oct, each one a
+    # dead-button window until health-hub's 5-min tick re-set it. /report and /start never
+    # got an update anyway (the webhook owns them). tests/test_no_telegram_polling.py guards it.
+    print("✓ Flask health-check server starting (no Telegram polling)")
+    run_flask()
 
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == 'report':
