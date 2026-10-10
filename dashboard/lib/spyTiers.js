@@ -26,7 +26,7 @@ import { etParts, sessionOf } from './marketClock';
 const r2 = (x) => (x == null ? null : Math.round(x * 100) / 100);
 const sma = (arr, i, p) => (i >= p - 1 ? arr.slice(i - p + 1, i + 1).reduce((s, v) => s + v, 0) / p : null);
 const addDays = (date, n) => new Date(Date.parse(`${date}T12:00:00Z`) + n * 864e5).toISOString().slice(0, 10);
-const RETURN_3Y_BARS = 756;
+const RETURN_3Y_DAYS = 1095; // calendar days — the Sheet/Lambda rule (756 bars overshoots by ~4 days)
 // A spot more than 15% off the newest bar is a vendor glitch, not a SPY move.
 const plausible = (spot, ref) => Number.isFinite(spot) && spot > 0 && (!ref || Math.abs(spot / ref - 1) < 0.15);
 const fmtPct = (p) => `${p >= 0 ? '+' : ''}${p.toFixed(2)}%`;
@@ -61,9 +61,16 @@ export function spyPreferNewer(payload, savedAt) {
 }
 
 /** 3Y price return from oldest->newest bars, or null when they span < 3 years (never a shorter window labelled 3Y). */
-export function return3yFrom(prices, current) {
-    const n = prices.length;
-    const px3y = n >= RETURN_3Y_BARS ? prices[n - RETURN_3Y_BARS] : null;
+export function return3yFrom(history, current) {
+    // Base = first close on/after (last bar's date − 1095 days). Null unless the
+    // bars reach back that far, so a 2-year history never passes as a 3Y return.
+    const n = history.length;
+    if (!n) return null;
+    const last = Date.parse(`${history[n - 1].date}T00:00:00Z`);
+    const target = new Date(last - RETURN_3Y_DAYS * 864e5).toISOString().slice(0, 10);
+    if (!(history[0].date <= target)) return null;
+    const base = history.find((b) => b.date >= target);
+    const px3y = base?.price;
     return px3y ? ((current - px3y) / px3y) * 100 : null;
 }
 
@@ -82,7 +89,7 @@ export function buildSpy(history, current, prevClose, source, extra = {}) {
     const wkHigh = Math.max(...last252);
     // A 3Y return needs 3Y of bars. Polygon's free tier serves ~2y, and clamping the
     // index to 0 used to show that 2-YEAR return as "3Y" (2026-09-26). null = N/A.
-    const return3y = return3yFrom(prices, current) ?? extra.return3y ?? null;
+    const return3y = return3yFrom(history, current) ?? extra.return3y ?? null;
     const rsi = calculateRSI(history, 9);
 
     const chartHistory = [];
@@ -164,7 +171,7 @@ async function nasdaq3y(current, lastBar, ctx) {
         if (!tail || tail.date !== lastBar.date || Math.abs(tail.price / lastBar.price - 1) > 0.005) {
             throw new Error(`bars do not line up (${tail?.date} ${tail?.price} vs ${lastBar.date} ${lastBar.price})`);
         }
-        const r = return3yFrom(upto.map((b) => b.price), current);
+        const r = return3yFrom(upto, current);
         if (r == null) throw new Error(`only ${upto.length} bars`);
         return r;
     } catch (e) { ctx.messages.push(`3Y from Nasdaq unavailable: ${e.message}`); return null; }
@@ -193,7 +200,7 @@ export async function fallbackSpy(messages, faults = new Set(), { env = process.
             const p = await gate('polygon', faults, () => polygonDaily('SPY', env.POLYGON_KEY, { years: 5, revalidate: 1800 }));
             const lastBar = p.history[p.history.length - 1];
             const extra = {};
-            if (p.history.length < RETURN_3Y_BARS) {
+            if (return3yFrom(p.history, lastBar.price) == null) {
                 const spot = await spotOnce(ctx);
                 const cur = spot && plausible(spot.current, lastBar.price) ? spot.current : lastBar.price;
                 extra.return3y = await nasdaq3y(cur, lastBar, ctx);

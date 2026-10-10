@@ -713,9 +713,17 @@ def _return_3y_from_rows(rows: List[Dict], current: float) -> Optional[float]:
     Polygon's free tier serves only ~2 years (~500 rows) however many days are asked
     for. The old `min(756, len(rows))` quietly turned that into a 2-YEAR return shown
     as "3Y Return" (2026-09-26: +34.8% on the dashboard vs the true ~+81%)."""
-    if len(rows) < RETURN_3Y_DAYS:
+    from datetime import datetime, timedelta
+    if not rows:
         return None
-    base = rows[-RETURN_3Y_DAYS].get('close')
+    try:
+        last = datetime.strptime(str(rows[-1]['date'])[:10], '%Y-%m-%d')
+    except (KeyError, ValueError):
+        return None
+    target = (last - timedelta(days=RETURN_3Y_DAYS)).strftime('%Y-%m-%d')
+    if not str(rows[0].get('date', ''))[:10] <= target:
+        return None
+    base = next((r.get('close') for r in rows if str(r.get('date', ''))[:10] >= target), None)
     return _calc_pct(current, base) if base else None
 
 

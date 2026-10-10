@@ -5,18 +5,25 @@ whatever it got and labelled it "3Y" (2026-09-26: +34.8% shown vs the true ~+81%
 import bot.fetchers as f
 
 
-def _rows(n, start=100.0, step=1.0):
-    return [{'date': f'd{i}', 'close': start + i * step} for i in range(n)]
+def _rows(n, last='2026-10-09'):
+    from datetime import date, timedelta
+    end = date.fromisoformat(last)
+    days = [end - timedelta(days=i) for i in range(n)][::-1]
+    return [{'date': d.isoformat(), 'close': 100.0 + i} for i, d in enumerate(days)]
 
 
-def test_three_full_years_gives_the_real_return():
-    rows = _rows(800)
-    base = rows[-756]['close']
-    assert f._return_3y_from_rows(rows, 200.0) == f._calc_pct(200.0, base)
+def test_three_full_years_uses_1095_calendar_days():
+    # Real SPY 2026-10-09: 1095 days back = 2023-10-10 (434.54) -> 79.17%, matching
+    # the Sheet; 756 rows back was 2023-10-05 (424.5) -> 83.41%.
+    rows = [{'date': '2023-10-05', 'close': 424.5}, {'date': '2023-10-09', 'close': 432.29},
+            {'date': '2023-10-10', 'close': 434.54}, {'date': '2026-10-09', 'close': 778.57}]
+    assert round(f._return_3y_from_rows(rows, 778.57), 2) == 79.17
 
 
 def test_two_years_of_bars_is_not_a_three_year_return():
-    assert f._return_3y_from_rows(_rows(501), 771.35) is None
+    assert f._return_3y_from_rows(_rows(730), 771.35) is None
+    assert f._return_3y_from_rows([], 771.35) is None
+    assert f._return_3y_from_rows(_rows(1200), 771.35) is not None
 
 
 def test_pct_cell_parses_sheet_formats():

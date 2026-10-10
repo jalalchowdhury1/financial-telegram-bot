@@ -57,9 +57,20 @@ describe('latestSessionDate', () => {
 });
 
 describe('buildSpy / return3yFrom', () => {
-    test('3Y is null below 756 bars (never a 2Y return labelled 3Y)', () => {
-        expect(return3yFrom(new Array(755).fill(100), 120)).toBeNull();
-        expect(return3yFrom(new Array(756).fill(100), 120)).toBeCloseTo(20);
+    test('3Y = first close on/after last date − 1095 days (the Sheet/Lambda rule)', () => {
+        // Real SPY 2026-10-09: 1095 days back = 2023-10-10 (434.54) → 79.17%, not
+        // the 756-bars-back 2023-10-05 (424.5) → 83.41% the backups used to show.
+        const h = [
+            { date: '2023-10-05', price: 424.5 }, { date: '2023-10-06', price: 429.54 },
+            { date: '2023-10-09', price: 432.29 }, { date: '2023-10-10', price: 434.54 },
+            { date: '2023-10-11', price: 436.32 }, { date: '2026-10-09', price: 778.57 },
+        ];
+        expect(return3yFrom(h, 778.57)).toBeCloseTo(79.17, 2);
+    });
+    test('3Y is null when the bars do not reach 3 years back (never a 2Y return labelled 3Y)', () => {
+        expect(return3yFrom(bars(500, '2026-10-08'), 120)).toBeNull();
+        expect(return3yFrom([], 120)).toBeNull();
+        expect(return3yFrom(bars(800, '2026-10-08'), 120)).not.toBeNull();
     });
     test('extra.return3y fills only a missing 3Y', () => {
         const h = bars(300, '2026-10-08');
@@ -80,7 +91,7 @@ describe('fallbackSpy (/api/spy direct tiers)', () => {
         expect(out._meta.source).toBe('Polygon + Finnhub (fallback)');
         expect(out.current).toBe(700);
         const upto = nq.filter((b) => b.date <= '2026-10-08');
-        const base = upto[upto.length - 756].price;
+        const base = upto.find((b) => b.date >= '2023-10-09').price; // 2026-10-08 − 1095 d
         expect(out.return3y).toBeCloseTo(((700 - base) / base) * 100, 6);
         expect(out._meta.stale).toBeUndefined();
     });
