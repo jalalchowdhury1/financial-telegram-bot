@@ -175,6 +175,12 @@ close on/before the SAME DATE 3 years earlier (Feb 29→28)**, as-of = the live 
 - Guard: `scripts/fault_matrix.py sheets_3y_agree` — each sheet's 3Y within ±0.6 pt of the dashboard;
   TODAY()-pinned sheets are only checked on a session day.
 (Stooq was removed 2026-09-01: its download endpoint sits behind a JS proof-of-work wall.)
+**Bars without a real close are dropped (2026-10-10).** yfinance's `keepna=False` only drops a bar
+when every column is NaN/0, so an evening bar with a NaN close + real volume got through; one NaN
+poisoned the rolling MA50/MA200 and `/api/spy` died with `cannot convert float NaN to integer`
+(CloudWatch 2026-10-09 00:34, 2026-10-10 01:23–01:29 UTC — the dashboard silently used its own
+tiers). `_fetch_yfinance` skips such bars and `fetch_spy_with_fallback` filters every tier's rows;
+never invent a price. Test: `tests/test_spy_nan_bars.py`.
 Whichever wins, the result is normalized to the `/api/spy` shape and **chart history +
 MA50/MA200 are computed from FRED `SP500`** when only pre-computed indicators are available.
 Finnhub spot overrides the latest price (gotcha #3). `_meta.source` records the winning tier.
@@ -1431,8 +1437,13 @@ Now: fewer than 756 bars → the Sheet's own 3Y return (`_sheet_return_3y`) → 
   retry + >4096 chunking), `report_marker` (the `REPORT_DELIVERED`/`REPORT_FAILED` CloudWatch line).
 - `bot/main.py` — local/runner entry: `python -m bot.main report` → `run_report()`
   (Google-Sheet text only; SPY summary commented out). Bare `python -m bot.main` runs a
-  Flask health server + APScheduler + a Telegram polling bot (`/report`, `/start`) — the
-  long-running mode used by Render (`render.yaml`, `startCommand: python -m bot.main`).
+  Flask health server (foreground) + APScheduler — the long-running mode used by Render
+  (`render.yaml`, `startCommand: python -m bot.main`; Render redeploys it on EVERY push to
+  main). **It must never poll Telegram (2026-10-10).** `TELEGRAM_TOKEN` is @TweetSyn_bot, whose
+  webhook is health-hub's `/api/defensive` (digest-card + defensive buttons); the old
+  `run_polling()` deleted that webhook on every start → 26 wipes 26 Sep–10 Oct, each within
+  ~1 min of a push. `tests/test_no_telegram_polling.py` fails on any `run_polling` /
+  `deleteWebhook` / `getUpdates` / `Application.builder` in `bot/`, `scripts/`, `lambda_handler.py`.
 - `bot/assessment.py` — rule-based + multi-LLM macro assessment (used by the bot path; the
   dashboard has its own `/api/assessment`). Not on the Lambda's daily path.
 - `aws/template.yaml` — SAM template (reference only; **not** applied by CI — see §2).
@@ -1683,6 +1694,10 @@ Each finding has an `id`. Map id → meaning → fix:
 - The daily report (Lambda `handle_eventbridge` and the `bot.main report` backstop) is sent with
   `disable_notification=True` (`send_to_telegram(..., silent=True)`): it lands ~04:15 ET, so no buzz.
   Alerts (health check, failures) stay loud — `silent` defaults to False.
+- `keepalive.yml` (2026-10-10, 1st + 15th 03:23 UTC) calls the enable-workflow API for every
+  active workflow so GitHub's 60-day inactivity rule can't switch the crons off (a disabled
+  workflow also rejects One Clock's dispatch). API mode, not an empty commit: `main` is protected.
+  Failure alert = inline curl (public repo).
 - `health-check.yml` has a `gate` job: the 14:00 UTC cron backstop yields when a One Clock
   `workflow_dispatch` run already succeeded in the last 20 h (both used to run at 10:00 EDT and
   both alerted on a bad day). Manual runs are never gated.

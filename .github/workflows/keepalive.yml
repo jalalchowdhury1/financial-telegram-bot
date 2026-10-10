@@ -1,0 +1,69 @@
+name: Keepalive
+
+# Why this exists (adapted from github-notion-sync's keepalive, 2026-10-10):
+# GitHub auto-disables a public repo's scheduled (cron) workflows after 60 days
+# with no repository activity — and a disabled workflow also rejects One Clock's
+# workflow_dispatch. This repo's crons (daily_report, health-check, self-improve,
+# rebake-bankruptcies) only talk to Telegram / AWS, so a quiet spell would kill them.
+#
+# NOT the empty-commit variant: `main` here is a PROTECTED branch (PR + the
+# backend-tests/dashboard-tests checks), so a github-actions[bot] `git push` to main
+# is rejected. Instead this calls the "enable workflow" API for every workflow that
+# is active (or was auto-disabled for inactivity) — the API-mode keepalive: it
+# resets the inactivity timer without a commit, and revives any workflow GitHub
+# already switched off. A workflow Jalal disabled BY HAND (disabled_manually) is
+# never touched.
+
+on:
+  schedule:
+    # 03:23 UTC on the 1st and 15th of every month — far inside the 60-day window.
+    - cron: '23 3 1,15 * *'
+  workflow_dispatch:
+
+# Grant only what this job needs; the repo-wide default stays read-only.
+permissions:
+  actions: write
+
+concurrency:
+  group: keepalive
+  cancel-in-progress: false
+
+jobs:
+  keepalive:
+    name: Keep scheduled workflows alive
+    runs-on: ubuntu-latest
+    timeout-minutes: 5  # guard against silent hangs
+    steps:
+      - name: Re-enable every active / inactivity-disabled workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/workflows" --paginate \
+            --jq '.workflows[] | select(.path | startswith(".github/workflows/")) | [.id, .path, .state] | @tsv' > wfs.tsv
+          ok=0; bad=0
+          while IFS=$'\t' read -r id path state; do
+            case "$state" in
+              active|disabled_inactivity)
+                if gh api -X PUT "repos/$GITHUB_REPOSITORY/actions/workflows/$id/enable" >/dev/null; then
+                  echo "enabled  $path (was $state)"; ok=$((ok+1))
+                else
+                  echo "FAILED   $path (was $state)"; bad=$((bad+1))
+                fi ;;
+              *) echo "skipped  $path ($state)" ;;
+            esac
+          done < wfs.tsv
+          echo "keepalive: $ok enabled, $bad failed"
+          [ "$ok" -gt 0 ] && [ "$bad" -eq 0 ]
+
+      - name: Failure alert to Telegram
+        # Inline curl, not the shared gh-actions action: this repo is PUBLIC and a
+        # private action repo is only shared with private repos.
+        if: failure() || cancelled()
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          curl -s -m 20 -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
+            --data-urlencode chat_id="${TELEGRAM_CHAT_ID}" \
+            --data-urlencode text="⚠️ financial-telegram-bot keepalive FAILED: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
