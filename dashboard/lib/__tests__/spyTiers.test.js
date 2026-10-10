@@ -248,6 +248,21 @@ describe('routes: fault names reach the tiers; stale builds are not "good"', () 
         expect(src.polygonDaily).not.toHaveBeenCalled();
     });
 
+    test('/api/spy: a stale build newer than the last-good copy is preferred (spyPreferNewer)', () => {
+        const { spyPreferNewer } = require('../../app/api/spy/route');
+        const h = bars(300, '2025-08-01');
+        const asOf = h[h.length - 1].date;
+        const stale = buildSpy(h, 600, 599, `Polygon (fallback, last close ${asOf})`, { meta: { stale: true, hasErrors: true, asOf } });
+        const dayBefore = new Date(Date.parse(`${asOf}T20:00:00Z`) - 3 * 864e5).toISOString();
+        const sameDayIntraday = `${asOf}T15:00:00.000Z`;
+        const dayAfter = new Date(Date.parse(`${asOf}T20:00:00Z`) + 864e5).toISOString();
+        expect(spyPreferNewer(stale, dayBefore)).toBe(true);       // KV copy 3 days older → serve yesterday's close
+        expect(spyPreferNewer(stale, sameDayIntraday)).toBe(true); // close beats that day's intraday copy
+        expect(spyPreferNewer(stale, dayAfter)).toBe(false);       // a newer copy keeps winning
+        expect(spyPreferNewer({ ...stale, _meta: { ...stale._meta, stale: false } }, dayBefore)).toBe(false); // only flagged builds
+        expect(spyPreferNewer(stale, 'garbage')).toBe(false);
+    });
+
     test('/api/spy-daily-move?_fail=finnhub → CNBC', async () => {
         const { GET } = require('../../app/api/spy-daily-move/route');
         src.cnbcQuotes.mockResolvedValue({ SPY: { price: 778.57, change: 4.64, changePct: 0.5995, asOf: latestSessionDate() } });

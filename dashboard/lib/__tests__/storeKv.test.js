@@ -5,7 +5,8 @@
  * live → /tmp → KV `ftb:lg:<key>` → lastResort → fallback.
  */
 import fs from 'fs';
-import { serve, saveLastGood, saveLastGoodKV, loadLastGoodKV, kvKeyFor, KV_REWRITE_MS, KV_MIN_GAP_MS, KV_MAX_BYTES } from '../store';
+import { serve, saveLastGood, saveLastGoodKV, loadLastGoodKV, kvKeyFor, isPartialPayload, KV_REWRITE_MS, KV_MIN_GAP_MS, KV_MAX_BYTES } from '../store';
+import { runInBackground } from '../background';
 import { kvCall, defaultKv, parseEnvelope } from '../kv';
 
 const fakeKv = (seed = {}) => {
@@ -118,8 +119,77 @@ describe('serve() KV last-good tier', () => {
     });
 });
 
+describe('serve(): KV completeness gate + background write', () => {
+    test('a full KV copy survives a partial run (served, /tmp kept, KV untouched)', async () => {
+        const key = uniq('surv'); const kv = fakeKv();
+        await serve(key, async () => good, { kv });
+        await new Promise((r) => setImmediate(r));
+        expect(kv.set).toHaveBeenCalledTimes(1);
+        rmTmp(key); // new instance → no throttle marker either
+        const partial = { v: 1, _meta: { source: 'Live API', hasErrors: true, messages: ['unavailable: 3 metrics'] } };
+        const b = await (await serve(key, async () => partial, { kv })).json();
+        await new Promise((r) => setImmediate(r));
+        expect(b.v).toBe(1);
+        expect(kv.set).toHaveBeenCalledTimes(1);
+        expect(kv.m.get(kvKeyFor(key)).data.v).toBe(42);
+        rmTmp(key);
+    });
+
+    test('the response does not wait for a slow KV SET', async () => {
+        const key = uniq('slow');
+        const kv = { get: async () => null, set: jest.fn(() => new Promise(() => {})) }; // never settles
+        const res = await serve(key, async () => good, { kv });
+        expect((await res.json()).v).toBe(42);
+        expect(kv.set).toHaveBeenCalledTimes(1);
+        rmTmp(key);
+    });
+
+    test('runInBackground hands the task to Vercel\'s waitUntil when the request context exists', async () => {
+        const sym = Symbol.for('@vercel/request-context');
+        const waitUntil = jest.fn();
+        globalThis[sym] = { get: () => ({ waitUntil }) };
+        try {
+            await runInBackground(async () => { throw new Error('boom'); }); // never rejects
+            expect(waitUntil).toHaveBeenCalledTimes(1);
+        } finally { delete globalThis[sym]; }
+        await expect(runInBackground(() => { throw new Error('sync boom'); })).resolves.toBeUndefined();
+    });
+});
+
+describe('serve(): preferNewer (a flagged build newer than the cache)', () => {
+    const staleBuild = { v: 9, _meta: { source: 'Polygon (fallback, last close 2026-10-08)', stale: true, hasErrors: true, asOf: '2026-10-08', messages: [] } };
+    const preferNewer = (p, savedAt) => p._meta.asOf >= savedAt.slice(0, 10);
+    const notGood = (x) => x && !x._meta?.stale;
+
+    test('older KV copy loses to the newer flagged build (still flagged stale)', async () => {
+        const key = uniq('pn');
+        const kv = fakeKv({ [`ftb:lg:${key}`]: { data: good, savedAt: '2026-10-03T20:00:00.000Z' } });
+        const b = await (await serve(key, async () => staleBuild, { kv, isGood: notGood, preferNewer })).json();
+        expect(b.v).toBe(9);
+        expect(b._meta.stale).toBe(true);
+        expect(b._meta.messages.join(' ')).toMatch(/KV last-known-good \(2026-10-03.*older/);
+    });
+
+    test('newer /tmp copy still wins over an older flagged build', async () => {
+        const key = uniq('pn2');
+        saveLastGood(key, good); // savedAt = now (newer than 2026-10-08)
+        const b = await (await serve(key, async () => staleBuild, { kv: fakeKv(), isGood: notGood, preferNewer })).json();
+        expect(b.v).toBe(42);
+        expect(b._meta.stale).toBe(true);
+        rmTmp(key);
+    });
+
+    test('without preferNewer the copy is served (old behaviour); a throwing hook is ignored', async () => {
+        const key = uniq('pn3');
+        const kv = fakeKv({ [`ftb:lg:${key}`]: { data: good, savedAt: '2026-10-03T20:00:00.000Z' } });
+        expect((await (await serve(key, async () => staleBuild, { kv, isGood: notGood })).json()).v).toBe(42);
+        const bad = () => { throw new Error('x'); };
+        expect((await (await serve(key, async () => staleBuild, { kv, isGood: notGood, preferNewer: bad })).json()).v).toBe(42);
+    });
+});
+
 describe('saveLastGoodKV throttle', () => {
-    test('unchanged payload is not rewritten within 30 min, is after', async () => {
+    test('unchanged payload is not rewritten within the rewrite window (1 h), is after', async () => {
         const key = uniq('thr'); const kv = fakeKv(); const t0 = Date.now();
         expect(await saveLastGoodKV(key, good, { kv, now: t0 })).toBe(true);
         expect(await saveLastGoodKV(key, good, { kv, now: t0 + 5 * 60e3 })).toBe(false);
@@ -128,7 +198,7 @@ describe('saveLastGoodKV throttle', () => {
         rmTmp(key);
     });
 
-    test('changed payload is rewritten (after the 1-minute floor)', async () => {
+    test('changed payload is rewritten only after the gap (1 h)', async () => {
         const key = uniq('chg'); const kv = fakeKv(); const t0 = Date.now();
         await saveLastGoodKV(key, good, { kv, now: t0 });
         expect(await saveLastGoodKV(key, { ...good, v: 43 }, { kv, now: t0 + 1000 })).toBe(false);
@@ -141,6 +211,23 @@ describe('saveLastGoodKV throttle', () => {
         const kv = fakeKv();
         expect(await saveLastGoodKV(uniq('big'), { blob: 'x'.repeat(KV_MAX_BYTES + 1) }, { kv })).toBe(false);
         expect(await saveLastGoodKV(uniq('stl'), { v: 1, _meta: { stale: true } }, { kv })).toBe(false);
+        expect(kv.set).not.toHaveBeenCalled();
+    });
+
+    test('a last-good copy needs no 10-min freshness: both windows are >= 60 min', () => {
+        expect(KV_MIN_GAP_MS).toBeGreaterThanOrEqual(60 * 60e3);
+        expect(KV_REWRITE_MS).toBeGreaterThanOrEqual(60 * 60e3);
+    });
+
+    test('partial payloads (hasErrors / staleFields / staleMetrics) are never written', async () => {
+        const kv = fakeKv();
+        for (const meta of [{ hasErrors: true }, { staleFields: ['vixCurrent'] }, { staleMetrics: ['tnx'] }, { stale: true }]) {
+            expect(isPartialPayload({ v: 1, _meta: meta })).toBe(true);
+            expect(await saveLastGoodKV(uniq('part'), { v: 1, _meta: meta }, { kv })).toBe(false);
+        }
+        expect(isPartialPayload(good)).toBe(false);
+        expect(isPartialPayload({ v: 1, _meta: { staleFields: [], staleMetrics: [] } })).toBe(false);
+        expect(isPartialPayload({ v: 1 })).toBe(false);
         expect(kv.set).not.toHaveBeenCalled();
     });
 

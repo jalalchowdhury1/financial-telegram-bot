@@ -8,7 +8,8 @@
  * Storage is best-effort and layered, each wrapped so it can never throw:
  *   1. /tmp file (survives for the life of a warm serverless instance)
  *   2. Upstash KV `ftb:lg:<key>` (lib/kv.js; survives cold starts). Read only after
- *      the /tmp copy misses; written on a healthy answer, throttled (see saveLastGoodKV).
+ *      the /tmp copy misses; written in the background on a COMPLETE healthy answer,
+ *      throttled (see saveLastGoodKV / isPartialPayload).
  *      No KV env → silently skipped, so a missing/broken KV cannot break a request.
  * Reads/writes are always guarded; any failure degrades silently.
  */
@@ -17,6 +18,7 @@ import fs from 'fs';
 import crypto from 'crypto';
 import { cacheHeaders } from './cdn';
 import { defaultKv, parseEnvelope } from './kv';
+import { runInBackground } from './background';
 
 const tmpPath = (key) => `/tmp/lg-${key.replace(/[^a-z0-9_-]/gi, '_')}.json`;
 
@@ -43,23 +45,42 @@ export function loadLastGood(key, maxAgeMs) {
 
 // ---- Durable KV last-known-good (`ftb:lg:<key>`) --------------------------------------
 export const kvKeyFor = (key) => `ftb:lg:${key}`;
-export const KV_REWRITE_MS = 30 * 60e3;   // unchanged payload: refresh the KV copy at most every 30 min
-export const KV_MIN_GAP_MS = 10 * 60e3;   // changed payload: at most one SET per 10 min per key per instance (~11 keys → ≤1.6k SETs/day per warm instance, worst case)
+// A durable last-good copy is the floor for a total outage, not a live feed: hourly is
+// plenty. The throttle marker lives in /tmp, so each cold instance writes once per key on
+// its first healthy answer; with a 60-min gap a warm instance does ≤ 24 SETs/day per key.
+export const KV_REWRITE_MS = 60 * 60e3;   // unchanged payload: refresh the KV copy at most hourly
+export const KV_MIN_GAP_MS = 60 * 60e3;   // changed payload: at most one SET per hour per key per instance
 export const KV_MAX_BYTES = 900 * 1024;   // Upstash caps a value at 1 MB; never try to write near it
 
 const markKey = (key) => `kvmark-${key}`;
 const hashOf = (str) => crypto.createHash('sha1').update(str).digest('hex');
 
 /**
+ * A payload that is not a COMPLETE live answer: flagged stale, carrying errors, or
+ * holding borrowed / stale fields or metrics (`_meta.staleFields` / `_meta.staleMetrics`).
+ * Such a payload may be served (and kept in the per-instance /tmp copy, whose semantics
+ * routes like /api/fred rely on via `shouldStore`), but must never overwrite the durable
+ * KV copy: one partial run would otherwise replace a full copy with blanks.
+ */
+export function isPartialPayload(data) {
+    const m = data?._meta;
+    if (!m || typeof m !== 'object') return false;
+    return !!(m.stale || m.hasErrors
+        || (Array.isArray(m.staleFields) && m.staleFields.length)
+        || (Array.isArray(m.staleMetrics) && m.staleMetrics.length));
+}
+
+/**
  * Write a healthy payload to KV — throttled by a /tmp marker {hash, at}: only when its
  * JSON changed since the last KV write (and ≥ KV_MIN_GAP_MS passed), or the last write
- * is older than KV_REWRITE_MS. Never writes a payload already flagged stale (a durable
- * copy must only ever hold real live data) or one over KV_MAX_BYTES.
+ * is older than KV_REWRITE_MS. Never writes a partial payload (isPartialPayload: stale,
+ * hasErrors, stale fields/metrics — a durable copy must only ever hold a complete live
+ * answer) or one over KV_MAX_BYTES.
  * @returns {Promise<boolean>} true when a KV write happened and succeeded. Never throws.
  */
 export async function saveLastGoodKV(key, data, { kv = defaultKv, now = Date.now() } = {}) {
     try {
-        if (!data || data?._meta?.stale) return false;
+        if (!data || isPartialPayload(data)) return false;
         const body = JSON.stringify(data);
         if (body.length > KV_MAX_BYTES) return false;
         const hash = hashOf(body);
@@ -105,6 +126,13 @@ const json = (body, status = 200, headers = { 'cache-control': 'no-store' }) => 
  *        largely stale content and let it outlive the 7-day window indefinitely.
  * @param {any} [opts.fallback]          safe default if there is no last-good either
  * @param {number} [opts.maxStaleMs]     max age of a last-good copy to serve (default 7 days)
+ * @param {(payload:any, savedAt:string)=>boolean} [opts.preferNewer]  for a payload that
+ *        is NOT good (e.g. /api/spy's flagged-stale build holding yesterday's close):
+ *        return true when it is newer than a last-good copy saved at `savedAt`, and it is
+ *        served (already flagged stale by the route) instead of that older copy.
+ *
+ * The /tmp copy is written before responding; the KV copy is written in the background
+ * (lib/background.js) so a slow KV never adds latency to the response.
  */
 export async function serve(key, produce, opts = {}) {
     const { isGood = (x) => !!x, fallback = null, maxStaleMs = 7 * 864e5, faults = null, lastResort = null, kv = defaultKv } = opts;
@@ -117,9 +145,9 @@ export async function serve(key, produce, opts = {}) {
     const readKV = (testMode && (faults.has('lastgood') || faults.has('kvlg')))
         ? async () => null
         : (k, m) => loadLastGoodKV(k, m, { kv });
-    const writeLG = testMode ? async () => {} : async (k, p) => {
+    const writeLG = testMode ? () => {} : (k, p) => {
         saveLastGood(k, p);
-        await saveLastGoodKV(k, p, { kv });
+        runInBackground(() => saveLastGoodKV(k, p, { kv }));
     };
     // Last-resort durable fallback (e.g. the Google-Sheet helper tab), tried ONLY
     // after live + /tmp + KV last-good are all unavailable. Never-throws; `?_fail=sheetlkg`
@@ -128,11 +156,23 @@ export async function serve(key, produce, opts = {}) {
         ? async () => { try { return await lastResort(); } catch { return null; } }
         : async () => null;
     // Order after live: /tmp → KV → lastResort. Returns a Response, or null if all miss.
-    const degraded = async (why) => {
+    // `candidate` = a live payload that failed isGood; with opts.preferNewer it beats an
+    // OLDER last-good copy (it is already flagged stale by the route, so never "live").
+    const newerThan = (candidate, copy) => {
+        if (!candidate || !opts.preferNewer) return false;
+        try { return !!opts.preferNewer(candidate, copy.savedAt); } catch { return false; }
+    };
+    const serveCandidate = (candidate, copy, tier) => json(addMeta(candidate, {
+        ...(candidate._meta || {}),
+        stale: true,
+        hasErrors: true,
+        messages: [...(candidate._meta?.messages || []), `${tier} last-known-good (${copy.savedAt}) is older; serving the newer flagged build`],
+    }));
+    const degraded = async (why, candidate = null) => {
         const lg = readLG(key, maxStaleMs);
-        if (lg) return json(withStale(lg, `${why}; serving last-known-good`));
+        if (lg) return newerThan(candidate, lg) ? serveCandidate(candidate, lg, '/tmp') : json(withStale(lg, `${why}; serving last-known-good`));
         const kvlg = await readKV(key, maxStaleMs);
-        if (kvlg) return json(withStaleKV(kvlg, `${why}; /tmp copy missing; serving KV last-known-good`));
+        if (kvlg) return newerThan(candidate, kvlg) ? serveCandidate(candidate, kvlg, 'KV') : json(withStaleKV(kvlg, `${why}; /tmp copy missing; serving KV last-known-good`));
         const lr = await runLastResort();
         if (lr) return json(asStale(lr, `${why} + no cache; serving last-resort fallback`));
         return null;
@@ -140,10 +180,10 @@ export async function serve(key, produce, opts = {}) {
     try {
         const payload = await produce();
         if (isGood(payload)) {
-            if (shouldStore(payload)) await writeLG(key, payload);
+            if (shouldStore(payload)) writeLG(key, payload);
             return json(payload, 200, cacheHeaders(key, { payload, testMode }));
         }
-        return (await degraded('live produced empty')) || json(payload ?? fallback);
+        return (await degraded('live produced empty', payload)) || json(payload ?? fallback);
     } catch (e) {
         const why = `live sources failed (${String(e?.message).slice(0, 120)})`;
         try {
