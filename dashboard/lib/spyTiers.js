@@ -234,9 +234,10 @@ export async function fallbackSpy(messages, faults = new Set(), { env = process.
         if (out) return out;
     } catch (e) { messages.push(`Nasdaq fallback failed: ${e.message}`); }
 
-    // 3) Yahoo 5y — best effort (429s from Vercel/cloud IPs; fine locally).
+    // 3) Yahoo 5y — best effort (429s from Vercel/cloud IPs; fine locally). Raw closes: adjusted
+    //    ones fold dividends into old prices (3Y 86.75% vs 80.10%, 2026-10-10).
     try {
-        const y = await gate('yahoo', faults, () => yahooChart('SPY', { range: '5y', interval: '1d', revalidate: 300 }));
+        const y = await gate('yahoo', faults, () => yahooChart('SPY', { range: '5y', interval: '1d', revalidate: 300, adjusted: false }));
         const last = y.history[y.history.length - 1];
         const quoteDay = y.meta?.regularMarketTime ? etParts(y.meta.regularMarketTime * 1000).date : last.date;
         if (quoteDay >= ctx.expected) return buildSpy(y.history, y.current, yahooPrev(y), 'Yahoo Finance (fallback)', { asOf3y: quoteDay });
@@ -283,7 +284,7 @@ export async function fallbackMove(messages, faults = new Set(), { env = process
         } catch (e) { messages.push(`Polygon failed: ${e.message}`); }
     }
     try {
-        const y = await gate('yahoo', faults, () => yahooChart('SPY', { range: '5d', interval: '1d', revalidate: 300 }));
+        const y = await gate('yahoo', faults, () => yahooChart('SPY', { range: '5d', interval: '1d', revalidate: 300, adjusted: false }));
         const last = y.history[y.history.length - 1];
         const quoteDay = y.meta?.regularMarketTime ? etParts(y.meta.regularMarketTime * 1000).date : last.date;
         if (quoteDay < expected) throw new Error(`quote dated ${quoteDay} is not the latest session ${expected}; skipped`);

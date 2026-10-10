@@ -144,6 +144,43 @@ def spy_3y_agrees():
     return abs(ra - rb) <= 0.6, f'3Y main {ra:.2f}% vs backup {rb:.2f}%'
 
 
+SHEET_3Y = [
+    # (name, csv url, row label, pinned to TODAY()?) — the bot's last-resort 3Y layers (bot/fetchers.py
+    # _sheet_return_3y). A TODAY()-pinned sheet only lines up on a trading day's evening.
+    ('SPY_INDICATORS', 'https://docs.google.com/spreadsheets/d/1FPxydetBtxFIm-qxrF5BR-sMZAUnbdA09LPbSu5lUCs/export?format=csv&gid=941079229',
+     'Three-Year Return', False),
+    ('SPY_DAILY_MOVE', 'https://docs.google.com/spreadsheets/d/1T99550TEo19JB6I3aKnRRGXAblB8mWNBsM-48jrDGe4/export?format=csv&gid=0',
+     '3 YR Return', True),
+]
+
+
+def sheets_3y_agree():
+    """Each Google Sheet's 3Y must match the dashboard's (±0.6 pt), so a sheet fallback never
+    shows a different number. -> [(ok, msg)]"""
+    _, d, _, _ = fetch('spy', '')
+    main_3y = (d or {}).get('return3y')
+    session = (((d or {}).get('chartHistory') or [{}])[-1]).get('date')
+    ny_today = time.strftime('%Y-%m-%d', time.gmtime(time.time() - 4 * 3600))  # EDT; EST shifts it an hour, fine at 21:40
+    out = []
+    for name, url, label, pinned in SHEET_3Y:
+        if pinned and session != ny_today:
+            out.append((True, f'{name} 3Y skipped (TODAY()-pinned, no session today)'))
+            continue
+        try:
+            body = urllib.request.urlopen(urllib.request.Request(url + f'&_t={random.randint(1, 10 ** 9)}',
+                                                                 headers={'user-agent': 'fault-matrix/1.0'}), timeout=30).read().decode()
+            cell = next(l.split(',', 1)[1] for l in body.splitlines() if l.split(',', 1)[0].strip() == label)
+            v = float(cell.strip().strip('"').rstrip('%'))
+        except Exception as e:
+            out.append((False, f'{name} 3Y unreadable ({str(e)[:60]})'))
+            continue
+        if not isinstance(main_3y, (int, float)):
+            out.append((False, f'{name} {v:.2f}% but dashboard 3Y missing'))
+            continue
+        out.append((abs(v - main_3y) <= 0.6, f'{name} 3Y {v:.2f}% vs dashboard {main_3y:.2f}%'))
+    return out
+
+
 def main():
     alert = '--no-alert' not in sys.argv
     # normal loads first (warms caches), then fault cases in modest parallel
@@ -155,18 +192,24 @@ def main():
     with cf.ThreadPoolExecutor(4) as ex:
         results += list(zip(rest, ex.map(lambda c: check(*c), rest)))
     ok3, msg3 = spy_3y_agrees()
+    sheet_checks = sheets_3y_agree()
 
     fails = [(c, r) for c, r in results if not r[0]]
     for (route, faults, expect), (ok, msg, secs) in results:
         print(f"{'PASS' if ok else 'FAIL'} {route:15} {expect:5} {faults[:48]:48} {secs:5}s  {msg}")
     print(f"{'PASS' if ok3 else 'FAIL'} spy-3y-agree  {msg3}")
-    total, bad = len(results) + 1, len(fails) + (0 if ok3 else 1)
+    for ok, msg in sheet_checks:
+        print(f"{'PASS' if ok else 'FAIL'} sheet-3y      {msg}")
+    sheet_bad = [m for ok, m in sheet_checks if not ok]
+    total = len(results) + 1 + len(sheet_checks)
+    bad = len(fails) + (0 if ok3 else 1) + len(sheet_bad)
     print(f'=== {total - bad}/{total} passed ===')
 
     if bad and alert:
         lines = [f'• <b>{c[0]}</b> <code>{c[1] or "normal"}</code>: {r[1][:120]}' for c, r in fails[:8]]
         if not ok3:
             lines.append(f'• <b>spy 3Y</b>: {msg3}')
+        lines += [f'• <b>sheet 3Y</b>: {m}' for m in sheet_bad]
         send(f'🧪 <b>Dashboard backup test: {bad} of {total} failed</b>\n' + '\n'.join(lines)
              + '\n<blockquote><i>scripts/fault_matrix.py · nightly · run it again to recheck</i></blockquote>')
     return 1 if bad else 0

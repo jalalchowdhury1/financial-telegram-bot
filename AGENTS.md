@@ -163,8 +163,17 @@ the sheet's 63 was right).
 own bar tiers go first; the sheet answer is served only if they fail or are stale-only.
 **3Y rule everywhere (bot + `lib/spyTiers.js return3yFrom`), owner pick 2026-10-09: base = last
 close on/before the SAME DATE 3 years earlier (Feb 29→28)**, as-of = the live spot's session date
-(2026-10-09: 80.10%). `SPY_DAILY_MOVE` row 11 uses the same rule (80.17%, its own spot);
-`SPY_INDICATORS` still uses `TODAY()-1095` (79.17%) until its formula is changed.
+(2026-10-09: 80.10%). **Sheets (last-resort 3Y layers, read-only for us — only the owner can edit):**
+- `SPY_DAILY_MOVE` row 11 = IMPORTRANGE of sheet `1zQQ2am1…` Sheet2!D2: S&P 500 **index** 3Y,
+  `DATE(YEAR(TODAY())-3,…)` — right on trading days (80.17% on 10-09), drifts on weekends/holidays.
+- `SPY_INDICATORS` (`1FPxyd…`, Sheet2) B5 was `INDEX(GOOGLEFINANCE("SPY","price",TODAY()-3*365),2,2)`
+  (78.44% on Sat 10-10). Replacement, tested 2026-10-10 in a scratch sheet against Nasdaq closes
+  (weekday 432.29, weekend → Fri 429.54, Jul 4 → Jul 3 443.79, Feb 29 → Feb 28):
+  `=LET(t, EDATE(INT(GOOGLEFINANCE("SPY","tradetime")), -36), raw, GOOGLEFINANCE("SPY","close", t-10, t+1), d, INDEX(raw,0,1), c, INDEX(raw,0,2), ok, FILTER(c, IFERROR(INT(d)<=t, FALSE)), INDEX(ok, ROWS(ok)))`
+  (anchored on the last trade's date, last close on/before the same date 3y back). For the index
+  sheet swap `"SPY"` for `"INDEXSP:.INX"` in the `close` call, keep SPY's `tradetime`.
+- Guard: `scripts/fault_matrix.py sheets_3y_agree` — each sheet's 3Y within ±0.6 pt of the dashboard;
+  TODAY()-pinned sheets are only checked on a session day.
 (Stooq was removed 2026-09-01: its download endpoint sits behind a JS proof-of-work wall.)
 Whichever wins, the result is normalized to the `/api/spy` shape and **chart history +
 MA50/MA200 are computed from FRED `SP500`** when only pre-computed indicators are available.
@@ -565,8 +574,8 @@ Rule: every number has ≥2 independent live sources, then saved copies, then an
   market-extra, fred, sheets, fear-greed (`lib/servedFreshness.js servedCopyItem`): a saved copy
   older than the newest NYSE close (past 6 h grace) or nothing served → red in the fleet row.
 - **3Y convention (decided 2026-10-09): same date 3 years back.** `SPY_DAILY_MOVE` (n8n) already
-  uses it; `SPY_INDICATORS` still says 1095 days until its formula is changed (only read when the
-  Lambda's yfinance AND Polygon both fail).
+  uses it; `SPY_INDICATORS` B5 needs the owner to paste the formula in "SPY waterfall" above (only
+  read when the Lambda's yfinance, Polygon AND Nasdaq all fail).
 - **Proof:** live fault matrix 2026-10-09 (each route: one tier off, all live off, + /tmp,
   + KV) → every row either a real number with the right label, or "Unavailable".
 

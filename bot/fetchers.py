@@ -774,7 +774,7 @@ def _daily_move_3y(tries: int = 1, timeout: int = 5) -> Optional[float]:
 def _sheet_return_3y() -> Optional[float]:
     """A Google Sheet's own 3-year return, for when the price history is too short.
     SPY_DAILY_MOVE first: it counts from the same date 3 years back, the owner's pick
-    (2026-10-09); SPY_INDICATORS counts 1095 days (a day late after a leap year).
+    (2026-10-09); SPY_INDICATORS counts 3*365 days until its formula is replaced (AGENTS.md).
     One quick try per sheet (inside API Gateway's 30 s budget); None if both fail."""
     v = _daily_move_3y()
     if v is not None:
@@ -858,7 +858,7 @@ def fetch_spy_with_fallback(fred_api_key: Optional[str] = None,
                             parsed[parts[0].strip()] = v
                 required = ['200d MA SPY', '9d RSI SPY', 'SPY 52 week high', 'Current SPY']
                 if all(k in parsed for k in required):
-                    # same-date rule (daily-move sheet) first, the indicators' 1095-day value second
+                    # same-date rule (daily-move sheet) first, the indicators' own value second
                     return3y_val = _daily_move_3y(tries=2, timeout=10)
                     if return3y_val is None:
                         return3y_val = parsed.get('Three-Year Return')

@@ -203,6 +203,8 @@ describe('fallbackSpy (/api/spy direct tiers)', () => {
         const out = await fallbackSpy([], F('polygon', 'nasdaq', 'finnhub', 'cnbc'), { env: ENV, now: OPEN });
         expect(out._meta.source).toBe('Yahoo Finance (fallback)');
         expect(out.dailyChange.value).toBeCloseTo(0.5);
+        // raw closes like every other vendor: adjusted ones folded dividends in (3Y 86.75% vs 80.10%)
+        expect(src.yahooChart).toHaveBeenCalledWith('SPY', expect.objectContaining({ adjusted: false }));
     });
 
     test('everything down → throws (serve() then uses last-known-good)', async () => {
