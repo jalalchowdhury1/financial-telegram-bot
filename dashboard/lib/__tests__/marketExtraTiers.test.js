@@ -361,3 +361,47 @@ describe('per-metric last-known-good (the 12-blanks bug)', () => {
         } finally { global.fetch = realFetch; }
     });
 });
+
+describe('/api/market-extra timing budget', () => {
+    test('Lambda hop carries a <=12 s abort signal and runs in parallel with the FX rates; a timeout degrades to direct', async () => {
+        process.env.LAMBDA_URL = 'https://lambda.test';
+        const realFetch = global.fetch;
+        const timeouts = [];
+        const spy = jest.spyOn(AbortSignal, 'timeout').mockImplementation((ms) => {
+            timeouts.push(ms);
+            const c = new AbortController();
+            setTimeout(() => c.abort(new DOMException('timed out', 'TimeoutError')), 5);
+            return c.signal;
+        });
+        let erStartedBeforeLambdaSettled = false, lambdaSettled = false;
+        const fetcher = require('../fetcher');
+        const origJson = fetcher.fetchJson.getMockImplementation();
+        fetcher.fetchJson.mockImplementation(async (url, ...a) => {
+            if (url.includes('open.er-api.com') && !lambdaSettled) erStartedBeforeLambdaSettled = true;
+            return origJson(url, ...a);
+        });
+        global.fetch = jest.fn((url, init) => new Promise((_, rej) => {
+            init.signal.addEventListener('abort', () => { lambdaSettled = true; rej(init.signal.reason); });
+        }));
+        try {
+            const b = await get();
+            expect(timeouts).toHaveLength(1);
+            expect(timeouts[0]).toBeLessThanOrEqual(12000);
+            expect(erStartedBeforeLambdaSettled).toBe(true);
+            expect(b._meta.messages.join(' ')).toMatch(/Lambda timed out after 12 s/);
+            expect(b._meta.sourceLog.tnx).toBe('FRED');
+        } finally {
+            global.fetch = realFetch; spy.mockRestore(); fetcher.fetchJson.mockImplementation(origJson);
+        }
+    });
+
+    test('the route keeps maxDuration 30 and its comment matches the budget', () => {
+        const src = require('fs').readFileSync(require('path').join(__dirname, '../../app/api/market-extra/route.js'), 'utf8');
+        expect(src).toMatch(/export const maxDuration = 30;/);
+        const n = (name) => Number(src.match(new RegExp(`const ${name} = (\\d+);`))[1]);
+        // fill deadline + the KV GET (3 s) + headroom must fit in 30 s
+        expect(n('FILL_DEADLINE_MS') + 3000 + 2000).toBeLessThanOrEqual(30000);
+        expect(n('LAMBDA_TIMEOUT_MS')).toBeLessThan(n('FILL_DEADLINE_MS'));
+    });
+});
+

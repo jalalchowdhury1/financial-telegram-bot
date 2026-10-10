@@ -1,7 +1,6 @@
-import { fallbackSpy } from '../../../lib/spyTiers';
+import { fallbackSpy, spyPreferNewer } from '../../../lib/spyTiers';
 import { serve } from '../../../lib/store';
 import { faultsFrom } from '../../../lib/faults';
-import { etParts } from '../../../lib/marketClock';
 
 // default-cache lets the fallback source fetches use the Data Cache even though
 // the handler is dynamic (Lambda call stays no-store). See fred/route.js note.
@@ -22,18 +21,6 @@ async function lambdaSpy(messages) {
 
 const isGood = (x) => x && x.current != null && x.ma200 && x.week52High;
 
-/**
- * A flagged-stale build (`_meta.asOf` = its last close, YYYY-MM-DD) beats a last-good
- * copy saved on an EARLIER New York day: e.g. the build holds yesterday's close while the
- * KV copy is 5 days old. A copy saved on the same day or later (intraday or after that
- * close) is at least as new, so it keeps winning. Exported for tests.
- */
-export function spyPreferNewer(payload, savedAt) {
-    const asOf = payload?._meta?.stale ? payload._meta.asOf : null;
-    const t = Date.parse(savedAt);
-    if (!isGood(payload) || !asOf || !Number.isFinite(t)) return false;
-    return asOf >= etParts(t).date;
-}
 
 export async function GET(request) {
     request.headers.get('user-agent'); // keep handler dynamic

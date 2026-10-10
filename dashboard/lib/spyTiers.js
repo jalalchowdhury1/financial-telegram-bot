@@ -46,6 +46,20 @@ export function latestSessionDate(now = Date.now()) {
     return d;
 }
 
+/**
+ * A flagged-stale build (`_meta.asOf` = its last close, YYYY-MM-DD) beats a last-good
+ * copy saved on the same or an EARLIER New York day: e.g. the build holds yesterday's
+ * close while the KV copy is 5 days old (or was saved intraday on that same day, before
+ * the close). A copy saved on a LATER day is newer and keeps winning. The build stays
+ * flagged stale either way (serve() opts.preferNewer).
+ */
+export function spyPreferNewer(payload, savedAt) {
+    const asOf = payload?._meta?.stale ? payload._meta.asOf : null;
+    const t = Date.parse(savedAt);
+    if (!payload || payload.current == null || !asOf || !Number.isFinite(t)) return false;
+    return asOf >= etParts(t).date;
+}
+
 /** 3Y price return from oldest->newest bars, or null when they span < 3 years (never a shorter window labelled 3Y). */
 export function return3yFrom(prices, current) {
     const n = prices.length;

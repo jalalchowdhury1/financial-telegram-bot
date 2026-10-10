@@ -6,12 +6,16 @@ import { makeTiers, mergeLastGood } from '../../../lib/marketExtraTiers';
 export const fetchCache = 'default-cache';
 export const maxDuration = 30;
 
-// Timing budget (maxDuration 30 s). The Lambda hop can take up to API Gateway's 30 s
-// cap, so the direct-source fill phase gets whatever is left of FILL_DEADLINE_MS from
-// request start (each metric's chain races it -> null). The last-good merge after it
-// is a local read, so even a Lambda that eats the whole budget still yields
-// yesterday's numbers instead of blanks.
-const FILL_DEADLINE_MS = 24000;
+// Timing budget (maxDuration 30 s; the project default under Fluid compute is 300 s, but
+// a dashboard card should degrade long before that). Everything is measured from request
+// start and bounded so the last-good fill + a KV read always fit before 30 s:
+//   0-12 s   Lambda hop (AbortSignal at LAMBDA_TIMEOUT_MS) IN PARALLEL with usdRates
+//            (raced against the same 12 s; its 3 sources x retries could run far longer)
+//   ..20 s   direct-source fill: each metric's chain races FILL_DEADLINE_MS -> null
+//   +<=3 s   per-metric last-good merge: /tmp read + one KV GET (lib/kv.js 3 s timeout)
+// The KV last-good SET runs in the background (serve() -> lib/background.js), never inline.
+const LAMBDA_TIMEOUT_MS = 12000;
+const FILL_DEADLINE_MS = 20000;
 const MIN_FILL_MS = 1500;
 
 /** USD-base FX rates with a 3-source fallback: ER-API -> Frankfurter -> Fawaz. */
@@ -158,13 +162,20 @@ async function lambdaExtra(messages) {
     const lambdaUrl = process.env.LAMBDA_URL;
     if (!lambdaUrl) { messages.push('LAMBDA_URL not configured'); return null; }
     try {
-        const res = await fetch(`${lambdaUrl}/api/market-extra`, { cache: 'no-store' });
+        const res = await fetch(`${lambdaUrl}/api/market-extra`, { cache: 'no-store', signal: AbortSignal.timeout(LAMBDA_TIMEOUT_MS) });
         if (!res.ok) { messages.push(`Lambda HTTP ${res.status}`); return null; }
         const j = await res.json();
         if (j && (j.fx || j.commodities)) return j;
         messages.push('Lambda returned no usable market data');
-    } catch (e) { messages.push(`Lambda failed: ${e.message}`); }
+    } catch (e) { messages.push(e?.name === 'TimeoutError' ? `Lambda timed out after ${LAMBDA_TIMEOUT_MS / 1000} s` : `Lambda failed: ${e.message}`); }
     return null;
+}
+
+/** Resolve within `ms` or give null (never rejects). */
+function within(promise, ms) {
+    let t;
+    const timer = new Promise((r) => { t = setTimeout(() => r(null), ms); });
+    return Promise.race([Promise.resolve(promise).catch(() => null), timer]).finally(() => clearTimeout(t));
 }
 
 export async function GET(request) {
@@ -178,8 +189,11 @@ export async function GET(request) {
     const tiers = makeTiers();
     const deadlineAt = startedAt + FILL_DEADLINE_MS;
 
-    const er = await usdRates(faults);
-    const lam = faults.has('lambda') ? null : await lambdaExtra(messages);
+    // Lambda + FX rates in parallel, both bounded (see the timing budget above).
+    const [er, lam] = await Promise.all([
+        within(usdRates(faults), LAMBDA_TIMEOUT_MS),
+        faults.has('lambda') ? null : lambdaExtra(messages),
+    ]);
     const ctx = { apiKey, poly, er, faults, tiers };
 
     if (debug === 'compare') {

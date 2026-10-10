@@ -249,7 +249,7 @@ describe('routes: fault names reach the tiers; stale builds are not "good"', () 
     });
 
     test('/api/spy: a stale build newer than the last-good copy is preferred (spyPreferNewer)', () => {
-        const { spyPreferNewer } = require('../../app/api/spy/route');
+        const { spyPreferNewer } = require('../spyTiers');
         const h = bars(300, '2025-08-01');
         const asOf = h[h.length - 1].date;
         const stale = buildSpy(h, 600, 599, `Polygon (fallback, last close ${asOf})`, { meta: { stale: true, hasErrors: true, asOf } });
