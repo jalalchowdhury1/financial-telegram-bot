@@ -21,6 +21,7 @@ const FRIENDLY = {
     'aligned': 'Aligned',
     'mild-divergence': 'Mild divergence',
     'major-divergence': 'Major divergence',
+    'unknown': 'No data',
 };
 
 const SEVERITY = {
@@ -28,6 +29,7 @@ const SEVERITY = {
     'low': 'badge-green', 'rising': 'badge-yellow', 'high': 'badge-red',
     'broad': 'badge-green', 'narrow': 'badge-yellow', 'rolling-over': 'badge-red',
     'cheap': 'badge-green', 'fair': 'badge-yellow', 'expensive': 'badge-red',
+    'unknown': 'badge-gray',
     'aligned': 'badge-green', 'mild-divergence': 'badge-yellow', 'major-divergence': 'badge-red',
 };
 
@@ -103,6 +105,9 @@ export default function JevPillModal({ pillKey, data, onClose }) {
     } else if (data._meta?.jev === 'off') {
         jevMessage = 'Jev off — no API key configured';
         jevKey = 'off';
+    } else if (jevBlock && jevBlock.verdict && pill.verdict === 'unknown') {
+        // Jev read the same mostly-n/a inputs; its answer is shown but never used.
+        jevMessage = `Jev said ${friendly(jevBlock.verdict)} (${(jevBlock.p ?? 0).toFixed(2)}) — not used: too few inputs measured to trust any verdict`;
     } else if (jevBlock && jevBlock.verdict) {
         if (pill.by === 'jev') {
             jevMessage = `Jev decided: ${friendly(jevBlock.verdict)} (${(jevBlock.p ?? 0).toFixed(2)})`;

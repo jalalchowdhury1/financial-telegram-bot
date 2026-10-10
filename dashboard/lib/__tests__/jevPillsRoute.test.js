@@ -380,11 +380,31 @@ describe('assemblePills — edge cases', () => {
         });
 
         expect(result.enabled).toBe(true);
-        // All rule verdicts with missing inputs should default
-        expect(result.pills.regime.verdict).toBe('neutral');
-        expect(result.pills.recession.verdict).toBe('low');
-        // No breadth data → narrow
-        expect(result.pills.breadth.verdict).toBe('narrow');
+        // Every input missing → every pill UNKNOWN, never a calm default
+        // (was: neutral / low "no recession signals" / fair "by default" / aligned).
+        for (const pill of ['regime', 'recession', 'breadth', 'hedging', 'conflict']) {
+            expect(result.pills[pill].verdict).toBe('unknown');
+            expect(result.pills[pill].reason).toContain('not enough data');
+        }
+    });
+
+    test('Jev cannot override an unknown pill, even at high confidence', () => {
+        const calm = { regime: { verdict: 'risk-on', p: 0.95 }, recession: { verdict: 'low', p: 0.95 },
+            breadth: { verdict: 'broad', p: 0.95 }, hedging: { verdict: 'fair', p: 0.95 }, conflict: { verdict: 'aligned', p: 0.95 } };
+        const result = assemblePills({ raw: {}, jevAnswers: calm, yesterday: null, mode: 'on' });
+        for (const pill of ['regime', 'recession', 'breadth', 'hedging', 'conflict']) {
+            expect(result.pills[pill].verdict).toBe('unknown');
+            expect(result.pills[pill].by).toBe('rule');
+            expect(result.pills[pill].jev).toEqual({ verdict: calm[pill].verdict, p: 0.95 }); // still shown in the modal
+        }
+    });
+
+    test('going from a real verdict to unknown is not "softening"', () => {
+        const yesterday = { date: '2026-10-08', pills: { regime: { verdict: 'risk-off' }, recession: { verdict: 'high' },
+            breadth: { verdict: 'rolling-over' }, hedging: { verdict: 'expensive' }, conflict: { verdict: 'major-divergence' } } };
+        const result = assemblePills({ raw: {}, jevAnswers: null, yesterday, mode: 'rules' });
+        expect(result.since.changed).toEqual([]);
+        expect(result.since.direction).toBe('none');
     });
 
     test('handles missing fields gracefully', () => {
@@ -401,7 +421,7 @@ describe('assemblePills — edge cases', () => {
         });
 
         // Should not throw; missing fields just become nulls in the data contract
-        expect(result.pills.regime.verdict).toBe('neutral'); // all inputs null → score 0
+        expect(result.pills.regime.verdict).toBe('unknown'); // all inputs null → no verdict, not a calm "neutral"
     });
 
     test('buildState never contains NotSoBoring or FrontRunner', () => {

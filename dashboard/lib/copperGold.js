@@ -89,3 +89,73 @@ export function buildCopperGold(copper, gold, windows = CHANGE_WINDOWS) {
         tried: { copper: copper.tried, gold: gold.tried },
     };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Westmetall LME copper (cash-settlement) — the daily copper tier WITH history.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const LB_PER_TONNE = 2204.6226;
+const WM_MONTHS = {
+    january: '01', february: '02', march: '03', april: '04', may: '05', june: '06',
+    july: '07', august: '08', september: '09', october: '10', november: '11', december: '12',
+};
+const stripTags = (h) => String(h).replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+
+/**
+ * Westmetall's table HTML → ascending [{date:'YYYY-MM-DD', price}] in $/lb.
+ *
+ * Rows: `<td>09. October 2026</td><td>14,689.00</td><td>14,570.00</td><td>233,025</td>`
+ * under a header `date | LME Copper Cash-Settlement | LME Copper 3-month | LME Copper
+ * stock` that repeats every month. COLUMN-ANCHORED: the cash column is located by
+ * its header text, never by position — reading the STOCK column (tonnes, ~240,000)
+ * by mistake would be a 16x wrong copper price. No header → [] (no data, not wrong
+ * data). USD per metric tonne ÷ 2204.6226 = USD per lb, matching COMEX/CNBC units.
+ */
+export function parseWestmetallTable(html) {
+    if (typeof html !== 'string' || !html) return [];
+    const rows = html.match(/<tr[^>]*>[\s\S]*?<\/tr>/gi) || [];
+    let dateIdx = -1, cashIdx = -1;
+    const byDate = new Map();
+    for (const row of rows) {
+        const ths = row.match(/<th[^>]*>[\s\S]*?<\/th>/gi);
+        if (ths) {
+            const h = ths.map((c) => stripTags(c).toLowerCase());
+            dateIdx = h.findIndex((x) => x === 'date');
+            cashIdx = h.findIndex((x) => /cash-settlement/.test(x));
+            continue;
+        }
+        if (dateIdx < 0 || cashIdx < 0) continue;
+        const cells = (row.match(/<td[^>]*>[\s\S]*?<\/td>/gi) || []).map(stripTags);
+        const m = /^(\d{1,2})\.\s*([a-z]+)\s+(\d{4})$/i.exec(cells[dateIdx] || '');
+        const mm = m && WM_MONTHS[m[2].toLowerCase()];
+        const perTonne = parseFloat(String(cells[cashIdx] || '').replace(/,/g, ''));
+        if (!mm || !Number.isFinite(perTonne) || perTonne <= 0) continue;
+        byDate.set(`${m[3]}-${mm}-${m[1].padStart(2, '0')}`, perTonne / LB_PER_TONNE);
+    }
+    return [...byDate.entries()]
+        .map(([date, price]) => ({ date, price }))
+        .sort((a, b) => (a.date < b.date ? -1 : 1));
+}
+
+/**
+ * Build the Westmetall copper leg `{ current, currentDate, historyAsc }` ($/lb).
+ * `fetchPage(year?)` returns one year's table HTML (no year = current year). When the
+ * current-year page spans < 100 days (January-March), the prior year is fetched too —
+ * best-effort: its failure only shortens the history, never fails the leg. Throws
+ * when the current page yields no rows (resolveLeg records `westmetall:err`).
+ */
+export async function westmetallCopperLeg(fetchPage, now = new Date()) {
+    const hist = parseWestmetallTable(await fetchPage());
+    let historyAsc = hist;
+    const oldest = hist[0]?.date;
+    if (!oldest || (now.getTime() - new Date(oldest).getTime()) / 864e5 < 100) {
+        let prev = [];
+        try { prev = parseWestmetallTable(await fetchPage(now.getUTCFullYear() - 1)); }
+        catch (e) { console.warn(`[Westmetall prior year] ${e?.message}`); }
+        const seen = new Set(hist.map((p) => p.date));
+        historyAsc = [...prev.filter((p) => !seen.has(p.date)), ...hist];
+    }
+    const last = historyAsc[historyAsc.length - 1];
+    if (!last) throw new Error('Westmetall LME_Cu_cash: no rows parsed');
+    return { current: last.price, currentDate: last.date, historyAsc };
+}

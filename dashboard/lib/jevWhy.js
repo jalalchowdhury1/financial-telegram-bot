@@ -176,6 +176,8 @@ export function pillWhy(data, pill) {
     // Does the badge show the verdict these rows give? If not, only a Jev override may keep
     // the line, and then it is labelled as the rule's.
     const shown = data?.pills?.[pill];
+    // UNKNOWN (too few inputs measured): the rule's own reason names what is n/a.
+    if (shown?.verdict === 'unknown') return typeof shown.reason === 'string' && shown.reason ? cap(shown.reason) : null;
     const ruleSays = RULE[pill](rows);
     const overridden = !!shown?.verdict && shown.verdict !== ruleSays;
     if (overridden && shown.by !== 'jev') return null;

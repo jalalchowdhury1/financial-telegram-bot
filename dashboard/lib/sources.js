@@ -303,6 +303,35 @@ export async function blsSeries(seriesId, { startYear, endYear, key = '', revali
 }
 
 /**
+ * DOL ETA weekly unemployment-insurance claims report, NATIONAL level, as XML
+ * (KEYLESS). The ORIGIN publisher of the series FRED republishes as ICSA. One POST
+ * returns every week in [startYear, endYear] (~19KB per year), each week carrying
+ * NSA, the seasonal factor, and the SA value. Parsing: lib/horsemen.js
+ * parseDolClaimsXml. revalidate 0 for the same reason as blsSeries (POST).
+ */
+export async function dolWeeklyClaimsXml({ startYear, endYear, revalidate = 0, timeout = 8000 } = {}) {
+    const body = `level=nation&strtdate=${encodeURIComponent(startYear)}&enddate=${encodeURIComponent(endYear)}&filetype=xml`;
+    return withRetry(() => fetchText('https://oui.doleta.gov/unemploy/wkclaims/report.asp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'text/xml, application/xml, */*' },
+        body,
+        revalidate,
+        timeout,
+    }), { tries: 2 });
+}
+
+/**
+ * Westmetall market-data table (KEYLESS HTML), e.g. field 'LME_Cu_cash' = LME
+ * copper cash-settlement in USD per METRIC TONNE, one row per LME trading day,
+ * newest first. One calendar year per page (`&year=YYYY`; omitted = current year).
+ * Parsing lives in lib/copperGold.js parseWestmetallTable.
+ */
+export async function westmetallTable(field, { year, revalidate = 1800, timeout = 7000, tries = 2 } = {}) {
+    const url = `https://www.westmetall.com/en/markdaten.php?action=table&field=${encodeURIComponent(field)}${year ? `&year=${year}` : ''}`;
+    return withRetry(() => fetchText(url, { revalidate, timeout, headers: { Accept: 'text/html,application/xhtml+xml,*/*' } }), { tries });
+}
+
+/**
  * FRED's keyless graph CSV for a series (full history, no api key, no quota).
  * Same servers as the JSON API, so it does NOT survive a FRED outage — but it
  * DOES survive a revoked/exhausted/misconfigured api key, which is the far more

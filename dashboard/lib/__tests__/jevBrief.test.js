@@ -113,13 +113,25 @@ describe('ruleVerdicts — regime', () => {
         expect(ruleVerdicts(d).regime.verdict).toBe('neutral');
     });
 
-    test('missing inputs count as 0', () => {
+    test('all regime inputs missing ⇒ unknown, never a calm neutral', () => {
         const d = data({ overrides: {
             spy: { ma200Pct: null },
             fg: { score: null },
             breadth: { hygLqd: { chg20Pct: null } },
         } });
-        // All 0 → neutral
+        const r = ruleVerdicts(d).regime;
+        expect(r.verdict).toBe('unknown');
+        expect(r.reason).toContain('0 of 3 inputs measured');
+    });
+
+    test('one regime vote of three ⇒ unknown (a one-vote regime is not a regime)', () => {
+        const d = data({ overrides: { spy: { ma200Pct: -3 }, fg: { score: null }, breadth: { hygLqd: { chg20Pct: null } } } });
+        expect(ruleVerdicts(d).regime.verdict).toBe('unknown');
+    });
+
+    test('missing input still counts as 0 when most inputs are present', () => {
+        // ma200 +1, fg missing (0), hyg -0.5 (0) → score 1, 2 of 3 measured → neutral
+        const d = data({ overrides: { fg: { score: null }, breadth: { hygLqd: { chg20Pct: -0.5 } } } });
         expect(ruleVerdicts(d).regime.verdict).toBe('neutral');
     });
 
@@ -169,11 +181,28 @@ describe('ruleVerdicts — recession', () => {
         expect(ruleVerdicts(d).recession.verdict).toBe('low');
     });
 
-    test('all recession inputs null ⇒ low', () => {
+    test('all recession inputs null ⇒ unknown, never "low — no signals triggered"', () => {
         const d = data({ overrides: {
             fred: { sahmRule: null, yieldCurve: null, claims: null, nfci: null },
         } });
-        // nulls don't trigger any condition, so it should be "low"
+        const r = ruleVerdicts(d).recession;
+        expect(r.verdict).toBe('unknown');
+        expect(r.reason).toContain('0 of 4 inputs measured');
+        expect(r.reason).not.toContain('no recession signals');
+    });
+
+    test('one of four recession inputs, quiet ⇒ unknown', () => {
+        const d = data({ overrides: { fred: { sahmRule: 0.1, yieldCurve: null, claims: null, nfci: null } } });
+        expect(ruleVerdicts(d).recession.verdict).toBe('unknown');
+    });
+
+    test('a FIRED warning from the one present input is still served', () => {
+        const d = data({ overrides: { fred: { sahmRule: 0.6, yieldCurve: null, claims: null, nfci: null } } });
+        expect(ruleVerdicts(d).recession.verdict).toBe('high');
+    });
+
+    test('two of four recession inputs, quiet ⇒ low (half measured is enough)', () => {
+        const d = data({ overrides: { fred: { sahmRule: 0.1, yieldCurve: 0.5, claims: null, nfci: null } } });
         expect(ruleVerdicts(d).recession.verdict).toBe('low');
     });
 });
@@ -203,13 +232,13 @@ describe('ruleVerdicts — breadth', () => {
         expect(ruleVerdicts(d).breadth.verdict).toBe('narrow');
     });
 
-    test('no breadth data at all ⇒ narrow with reason', () => {
+    test('no breadth data at all ⇒ unknown with reason', () => {
         const d = data({ overrides: {
             breadth: { rspSpy: { chg20Pct: null, vs50dPct: null }, iwmSpy: { chg20Pct: null } },
         } });
         const r = ruleVerdicts(d);
-        expect(r.breadth.verdict).toBe('narrow');
-        expect(r.breadth.reason).toContain('no breadth data');
+        expect(r.breadth.verdict).toBe('unknown');
+        expect(r.breadth.reason).toContain('not enough data');
     });
 });
 
@@ -244,11 +273,12 @@ describe('ruleVerdicts — hedging', () => {
         expect(ruleVerdicts(d).hedging.verdict).toBe('fair');
     });
 
-    test('missing vol data ⇒ fair with reason', () => {
+    test('missing vol data ⇒ unknown, never "fair by default"', () => {
         const d = data({ overrides: { vol: { spy: { ivPctile1y: null, vrp: null } } } });
         const r = ruleVerdicts(d);
-        expect(r.hedging.verdict).toBe('fair');
-        expect(r.hedging.reason).toContain('default');
+        expect(r.hedging.verdict).toBe('unknown');
+        expect(r.hedging.reason).toContain('not enough data');
+        expect(r.hedging.reason).not.toContain('fair by default');
     });
 });
 
@@ -1017,14 +1047,17 @@ describe('pillFactors — consistency with ruleVerdicts', () => {
             const implied = verdictFromFactors(pf);
 
             for (const pill of PILLS) {
-                if (rule[pill] && rule[pill].verdict && rule[pill].verdict !== 'n/a') {
+                if (rule[pill]?.verdict === 'unknown') {
+                    // Too little data: the factors must say so, not name a calm verdict.
+                    expect(pf[pill].summary).toContain('not enough data');
+                } else if (rule[pill] && rule[pill].verdict && rule[pill].verdict !== 'n/a') {
                     expect(implied[pill]).toBe(rule[pill].verdict);
                 }
             }
         });
     }
 
-    test('consistency: all-null regime is neutral (score 0)', () => {
+    test('consistency: all-null regime is unknown in both the verdict and the factor summary', () => {
         const d = data({ overrides: {
             spy: { ma200Pct: null },
             fg: { score: null },
@@ -1032,8 +1065,9 @@ describe('pillFactors — consistency with ruleVerdicts', () => {
         } });
         const rule = ruleVerdicts(d);
         const pf = pillFactors(d);
-        const implied = verdictFromFactors(pf);
-        expect(implied.regime).toBe(rule.regime.verdict);
+        expect(rule.regime.verdict).toBe('unknown');
+        expect(pf.regime.summary).toBe(rule.regime.reason);
+        expect(pf.regime.rows.length).toBeGreaterThan(0); // rows still show which inputs are n/a
     });
 });
 

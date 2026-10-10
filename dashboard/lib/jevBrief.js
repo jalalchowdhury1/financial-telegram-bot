@@ -243,6 +243,30 @@ const safeNum = (v) => (v != null && Number.isFinite(v) ? v : null);
 const zeroIfMissing = (v) => (v != null && Number.isFinite(v) ? (v > 0 ? 1 : -1) : 0);
 const ternaryMissing = (v, ifPos, ifNeg) => (v != null && Number.isFinite(v) ? (v > 0 ? ifPos : ifNeg) : 0);
 
+/**
+ * MISSING DATA MUST NEVER READ AS CALM (2026-10-09). With every input n/a the rules
+ * used to fall through to their quiet defaults — "recession: low — no recession
+ * signals triggered", "hedging: fair (fair by default)", "conflict: aligned" — so a
+ * dead feed looked like a calm market. Now a pill whose inputs are MOSTLY missing
+ * (fewer than half measured) says UNKNOWN_VERDICT instead, and Jev cannot override
+ * it (mergeVerdicts) — Jev reads the same n/a state text.
+ *
+ * A verdict that FIRED on the inputs that are present (Sahm >= 0.5, VRP > 10, a
+ * detected divergence…) is still served: an alarm from real data is real. Only the
+ * quiet/default outcomes are replaced.
+ */
+export const UNKNOWN_VERDICT = 'unknown';
+const isThin = (present, total) => present * 2 < total;
+const countPresent = (vals) => vals.filter((v) => v != null).length;
+const unknownPill = (names, vals) => {
+    const missing = names.filter((_, i) => vals[i] == null);
+    const present = names.length - missing.length;
+    return {
+        verdict: UNKNOWN_VERDICT,
+        reason: `not enough data: ${present} of ${names.length} inputs measured (${missing.join(', ')} n/a) — no verdict rather than a calm default`,
+    };
+};
+
 export function ruleVerdicts(data) {
     if (!data) {
         const r = {};
@@ -322,10 +346,14 @@ export function ruleVerdicts(data) {
     else if (regimeScore <= -1) regimeVerdict = 'risk-off';
     else regimeVerdict = 'neutral';
 
-    const regime = {
-        verdict: regimeVerdict,
-        reason: `Score ${regimeScore}: ${regimeParts.join(', ')}`,
-    };
+    const regimeIn = [ma200Pct, fgScore, hygChg20];
+    // A one-vote "regime" is not a regime: thin coverage → unknown, whatever the score.
+    const regime = isThin(countPresent(regimeIn), regimeIn.length)
+        ? unknownPill(['SPY vs 200d', 'Fear & Greed', 'HYG/LQD 20d'], regimeIn)
+        : {
+            verdict: regimeVerdict,
+            reason: `Score ${regimeScore}: ${regimeParts.join(', ')}`,
+        };
 
     // ---- recession ----
     let recessionVerdict;
@@ -354,18 +382,21 @@ export function ruleVerdicts(data) {
         recessionReasons.push('no recession signals triggered');
     }
 
-    const recession = {
-        verdict: recessionVerdict,
-        reason: recessionReasons.join('; '),
-    };
+    const recessionIn = [sahmRule, yieldCurve, claims, nfci];
+    const recession = recessionVerdict === 'low' && isThin(countPresent(recessionIn), recessionIn.length)
+        ? unknownPill(['Sahm rule', 'yield curve', 'claims', 'NFCI'], recessionIn)
+        : {
+            verdict: recessionVerdict,
+            reason: recessionReasons.join('; '),
+        };
 
     // ---- breadth ----
     let breadthVerdict;
     const breadthReasons = [];
 
     if (rspChg20 == null && iwmChg20 == null) {
-        breadthVerdict = 'narrow';
-        breadthReasons.push('no breadth data');
+        breadthVerdict = UNKNOWN_VERDICT;
+        breadthReasons.push(unknownPill(['RSP/SPY 20d', 'IWM/SPY 20d'], [rspChg20, iwmChg20]).reason);
     } else {
         if (rspChg20 != null && rspVs50d != null && rspChg20 < -1.5 && rspVs50d < 0) {
             breadthVerdict = 'rolling-over';
@@ -392,8 +423,8 @@ export function ruleVerdicts(data) {
     const hedgingReasons = [];
 
     if (ivPctile == null && vrp == null) {
-        hedgingVerdict = 'fair';
-        hedgingReasons.push('no vol data (fair by default)');
+        hedgingVerdict = UNKNOWN_VERDICT;
+        hedgingReasons.push(unknownPill(['IV percentile', 'VRP'], [ivPctile, vrp]).reason);
     } else {
         const cheap = ivPctile != null && ivPctile < 20 && vrp != null && vrp < 6;
         const expensive = (ivPctile != null && ivPctile > 70) || (vrp != null && vrp > 10);
@@ -425,12 +456,23 @@ export function ruleVerdicts(data) {
     else if (cps.length === 1) conflictVerdict = 'mild-divergence';
     else conflictVerdict = 'major-divergence';
 
-    const conflict = {
-        verdict: conflictVerdict,
-        reason: cps.length === 0
-            ? 'no divergences detected'
-            : cps.map((cp) => `${cp.pair}: ${cp.detail}`).join('; '),
-    };
+    // "aligned" is only meaningful if most of the four pairs could be checked at all.
+    const t10y3m = safeNum(data.t10y3m);
+    const pairNames = ['sentiment vs price', '2s10s vs 3m10y', 'credit vs equities', 'breadth vs index'];
+    const pairIn = [
+        fgScore != null && ma200Pct != null ? 1 : null,
+        yieldCurve != null && t10y3m != null ? 1 : null,
+        ma200Pct != null && hygChg20 != null ? 1 : null,
+        high52Pct != null && rspChg20 != null ? 1 : null,
+    ];
+    const conflict = cps.length === 0 && isThin(countPresent(pairIn), pairIn.length)
+        ? unknownPill(pairNames, pairIn)
+        : {
+            verdict: conflictVerdict,
+            reason: cps.length === 0
+                ? 'no divergences detected'
+                : cps.map((cp) => `${cp.pair}: ${cp.detail}`).join('; '),
+        };
 
     return { regime, recession, breadth, hedging, conflict };
 }
@@ -447,6 +489,12 @@ export function mergeVerdicts(rule, jev, floor = 0.6) {
         const rv = rule[pill];
         if (!rv || !rv.verdict) {
             merged[pill] = { verdict: 'n/a', p: null, by: 'rule', reason: 'no rule verdict' };
+            continue;
+        }
+
+        // Too little data for the rule → too little for Jev too (same n/a state text).
+        if (rv.verdict === UNKNOWN_VERDICT) {
+            merged[pill] = { verdict: UNKNOWN_VERDICT, p: null, by: 'rule', reason: rv.reason || '' };
             continue;
         }
 
@@ -492,6 +540,9 @@ export function diffSinceYesterday(today, yesterday) {
     for (const pill of PILLS) {
         const tV = today && today[pill] ? today[pill].verdict : undefined;
         const yV = yesterday[pill] ? yesterday[pill].verdict : undefined;
+        // unknown / n/a sit outside the severity order: going high → unknown is lost
+        // data, not "softening", so it never counts as a change in either direction.
+        if (severityOf(pill, tV) < 0 || severityOf(pill, yV) < 0) continue;
         if (tV != null && yV != null && tV !== yV) {
             changed.push({ pill, from: yV, to: tV });
         }
@@ -918,6 +969,16 @@ export function pillFactors(data) {
             summary: `${numFiring} of 4 pairs diverge → ${conflictVerdict}`,
             rows,
         };
+    }
+
+    // A pill the rules call UNKNOWN (too few inputs measured) must not carry a
+    // summary that names a calm verdict ("Hedging is fair", "Score 0 → neutral").
+    // The rows stay — they show exactly which inputs are n/a.
+    const rv = ruleVerdicts(data);
+    for (const pill of PILLS) {
+        if (rv[pill]?.verdict === UNKNOWN_VERDICT && factors[pill]) {
+            factors[pill] = { ...factors[pill], summary: rv[pill].reason };
+        }
     }
 
     return factors;
