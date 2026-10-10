@@ -538,17 +538,28 @@ Rule: every number has ≥2 independent live sources, then saved copies, then an
 - **Serve faults:** `tmplg` (/tmp only), `kvlg` (KV only), `lastgood` (both), `sheetlkg`.
 - **SPY** (`lib/spyTiers.js`): Lambda → Polygon+Finnhub spot (3Y from Nasdaq bars) →
   Nasdaq+CNBC → Nasdaq → Yahoo → saved. Faults `lambda,polygon,finnhub,nasdaq,cnbc,yahoo`.
-  Daily move: Lambda → Finnhub → CNBC → Polygon → Yahoo → saved.
+  Daily move: Lambda → Finnhub → CNBC → **Nasdaq quote** (`nasdaq`, dated) → Polygon → Yahoo → saved.
+  (Polygon free never has today's bar and Yahoo 429s Vercel, so they rarely answer.)
 - **market-extra** (`lib/marketExtraTiers.js`, per metric): fresher origin first — oil
   CNBC → FRED, 10Y/2Y US Treasury → FRED, mortgage Freddie Mac PMMS → FRED. FRED older
   than 3/4/13 days → `staleIfOld` marks it stale. Missing metrics fill from /tmp then KV.
   Faults `gold_api,treasury,pmms,cnbc_cl,cnbc_dxy,dxy_computed,fawaz_bdt,erapi,…`.
 - **fred**: claims/unemployment/curve `fred → hm_treasury → hm_bls → hm_dol → hm_fredcsv`;
   copper `cg_cnbc → cg_westmetall (LME cash) → cg_fred → …`; P/E `pe_multpl → pe_yahoo`;
+  P/E tier 3 = **computed** (`pe_computed`): CNBC `.SPX` (→ FRED SP500) ÷ multpl EPS (→ saved spEps),
+  tile says "computed"; the old FRED `PE10` CAPE tier was a phantom (no such series) and is gone.
   EPS multpl. **sheets** per field: `sheets_main → sheets_alt → sheets_cboe/vix_cboe →
   sheets_fred/vix_fred (stale-flagged) → sheets_cache → sheets_kvlg`. **fear-greed**:
-  `cnn → rapidapi → fg_yahoo/fg_cboe/fg_fred` (VIX proxy, `_meta.proxy` + UI label) →
-  `fg_cache → fg_kvlg`. **jev-pills**: missing inputs → verdict `unknown`, never a calm default.
+  `cnn → rapidapi → saved CNN index ≤24 h → fg_yahoo/fg_cboe/fg_fred` (VIX proxy, `_meta.proxy`
+  + UI label; it read 81 vs CNN 45 on 2026-10-09) → saved index ≤3 days. **jev-pills**: missing inputs → verdict `unknown`, never a calm default.
+- **Nightly guard:** `scripts/fault_matrix.py` (launchd `com.jalal.ftb-fault-matrix`, 21:40 daily,
+  log `~/Library/Logs/ftb-fault-matrix.log`) runs 53 checks on prod and pings 📡 only on a FAIL.
+  Add a case there whenever you add a tier.
+- **Freshness:** `/api/freshness` also reports `served:<route>` for spy, spy-daily-move,
+  market-extra, fred, sheets, fear-greed (`lib/servedFreshness.js servedCopyItem`): a saved copy
+  older than the newest NYSE close (past 6 h grace) or nothing served → red in the fleet row.
+- **Open question:** the two Sheets disagree on SPY 3Y by design — `SPY_INDICATORS` = 1095 days
+  back (our rule), `SPY_DAILY_MOVE` (n8n) = same date 3 years ago (80.17%). Owner to pick one.
 - **Proof:** live fault matrix 2026-10-09 (each route: one tier off, all live off, + /tmp,
   + KV) → every row either a real number with the right label, or "Unavailable".
 
