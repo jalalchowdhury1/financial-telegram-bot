@@ -1,4 +1,4 @@
-import { yahooChart, coingeckoPrice, dbnomicsFred, dailyChange, dxyFromUsdRates, polygonDaily, fredObservations, krakenSpot, fawazRates, cnbcQuotes, cnbcHistory, goldApiSpot } from '../sources';
+import { yahooChart, coingeckoPrice, dbnomicsFred, dailyChange, dxyFromUsdRates, polygonDaily, fredObservations, krakenSpot, fawazRates, cnbcQuotes, cnbcHistory, goldApiSpot, nasdaqQuote } from '../sources';
 
 // Mock the network: proxyFetch -> global.fetch. Return ok + json()/text().
 function mockFetch(payload, { text = false } = {}) {
@@ -186,5 +186,20 @@ describe('goldApiSpot', () => {
     test('throws when price missing', async () => {
         mockFetch({ symbol: 'XAU' });
         await expect(goldApiSpot('XAU')).rejects.toThrow();
+    });
+});
+
+describe('nasdaqQuote', () => {
+    test('parses price, % change and the trade date (real 2026-10-09 shape)', async () => {
+        mockFetch({ data: { primaryData: { lastSalePrice: '$778.57', percentageChange: '+0.60%', lastTradeTimestamp: 'Oct 9, 2026' } } });
+        expect(await nasdaqQuote('SPY')).toEqual({ current: 778.57, changePct: 0.6, asOf: '2026-10-09' });
+    });
+    test('intraday timestamp and a negative move', async () => {
+        mockFetch({ data: { primaryData: { lastSalePrice: '$1,012.10', percentageChange: '-1.25%', lastTradeTimestamp: 'Oct 12, 2026 10:32 AM ET' } } });
+        expect(await nasdaqQuote('SPY')).toEqual({ current: 1012.1, changePct: -1.25, asOf: '2026-10-12' });
+    });
+    test('throws without a usable date', async () => {
+        mockFetch({ data: { primaryData: { lastSalePrice: '$778.57', percentageChange: '+0.60%', lastTradeTimestamp: 'N/A' } } });
+        await expect(nasdaqQuote('SPY')).rejects.toThrow(/unusable/);
     });
 });

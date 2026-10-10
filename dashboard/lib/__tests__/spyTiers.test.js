@@ -10,6 +10,7 @@ jest.mock('../sources', () => ({
     finnhubQuote: jest.fn(),
     cnbcQuotes: jest.fn(),
     nasdaqHistory: jest.fn(),
+    nasdaqQuote: jest.fn(),
     yahooChart: jest.fn(),
 }));
 
@@ -39,7 +40,7 @@ const F = (...names) => new Set(names);
 
 beforeEach(() => {
     jest.resetAllMocks();
-    for (const k of ['polygonDaily', 'finnhubQuote', 'cnbcQuotes', 'nasdaqHistory', 'yahooChart']) {
+    for (const k of ['polygonDaily', 'finnhubQuote', 'cnbcQuotes', 'nasdaqHistory', 'nasdaqQuote', 'yahooChart']) {
         src[k].mockRejectedValue(new Error(`${k} offline`));
     }
 });
@@ -209,6 +210,15 @@ describe('fallbackMove (/api/spy-daily-move direct tiers)', () => {
     test('_fail=finnhub → CNBC change_pct for the latest session', async () => {
         src.cnbcQuotes.mockResolvedValue({ SPY: { price: 778.57, change: 4.64, changePct: 0.5995, asOf: '2026-10-09' } });
         expect(await fallbackMove([], F('finnhub'), { env: ENV, now: OPEN })).toEqual({ value: '+0.60%', source: 'CNBC (fallback)', asOf: '2026-10-09' });
+    });
+
+    test('_fail=finnhub,cnbc → Nasdaq quote for the latest session; a stale one is skipped', async () => {
+        src.nasdaqQuote.mockResolvedValue({ current: 778.57, changePct: 0.6, asOf: '2026-10-09' });
+        expect(await fallbackMove([], F('finnhub', 'cnbc'), { env: ENV, now: OPEN })).toEqual({ value: '+0.60%', source: 'Nasdaq (fallback)', asOf: '2026-10-09' });
+        src.nasdaqQuote.mockResolvedValue({ current: 773.93, changePct: -0.2, asOf: '2026-10-08' });
+        const msgs = [];
+        await expect(fallbackMove(msgs, F('finnhub', 'cnbc', 'polygon', 'yahoo'), { env: ENV, now: OPEN })).rejects.toThrow();
+        expect(msgs.join(' ')).toMatch(/Nasdaq failed: quote dated 2026-10-08 is not the latest session/);
     });
 
     test('Polygon with only YESTERDAY\'s bar is skipped, never shown as today\'s move', async () => {

@@ -18,7 +18,7 @@
  * no splits, so they line up with Polygon's split-adjusted bars to the cent.
  */
 
-import { yahooChart, polygonDaily, finnhubQuote, cnbcQuotes, nasdaqHistory, dailyChange } from './sources';
+import { yahooChart, polygonDaily, finnhubQuote, cnbcQuotes, nasdaqHistory, nasdaqQuote, dailyChange } from './sources';
 import { calculateRSI } from './finance';
 import { gate } from './faults';
 import { etParts, sessionOf } from './marketClock';
@@ -237,7 +237,7 @@ export async function fallbackSpy(messages, faults = new Set(), { env = process.
 }
 
 /**
- * /api/spy-daily-move direct tiers: Finnhub → CNBC → Polygon → Yahoo. A bar-based tier
+ * /api/spy-daily-move direct tiers: Finnhub → CNBC → Nasdaq quote → Polygon → Yahoo. A bar-based tier
  * whose newest bar is not the latest session is skipped (it would show an old day's move).
  */
 export async function fallbackMove(messages, faults = new Set(), { env = process.env, now = Date.now() } = {}) {
@@ -253,6 +253,13 @@ export async function fallbackMove(messages, faults = new Set(), { env = process
         const pct = Number.isFinite(q.changePct) ? q.changePct : dailyChange(q.current, q.prevClose).pct;
         return { value: fmtPct(pct), source: 'CNBC (fallback)', asOf: q.asOf };
     } catch (e) { messages.push(`CNBC failed: ${e.message}`); }
+    // Nasdaq quote (keyless, dated). Added 2026-10-09: Polygon's free tier never has
+    // today's bar and Yahoo 429s Vercel, so behind CNBC there was no live tier at all.
+    try {
+        const q = await gate('nasdaq', faults, () => nasdaqQuote('SPY'));
+        if (q.asOf < expected) throw new Error(`quote dated ${q.asOf} is not the latest session ${expected}; skipped`);
+        return { value: fmtPct(q.changePct), source: 'Nasdaq (fallback)', asOf: q.asOf };
+    } catch (e) { messages.push(`Nasdaq failed: ${e.message}`); }
     if (env.POLYGON_KEY) {
         try {
             const p = await gate('polygon', faults, () => polygonDaily('SPY', env.POLYGON_KEY, { years: 1, revalidate: 600 }));

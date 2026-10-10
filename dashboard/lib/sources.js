@@ -231,6 +231,26 @@ export async function nasdaqHistory(symbol, { years = 10, assetclass = 'etf', re
     return history;
 }
 
+const MONTHS = { Jan: '01', Feb: '02', Mar: '03', Apr: '04', May: '05', Jun: '06', Jul: '07', Aug: '08', Sep: '09', Oct: '10', Nov: '11', Dec: '12' };
+/**
+ * Nasdaq.com quote (KEYLESS) -> { current, changePct, asOf }. `asOf` comes from
+ * primaryData.lastTradeTimestamp ("Oct 9, 2026" or "Oct 9, 2026 10:32 AM ET"), so a
+ * caller can refuse a quote that is not today's session.
+ */
+export async function nasdaqQuote(symbol, { assetclass = 'etf', revalidate = 120, timeout = 6000, tries = 1 } = {}) {
+    const url = `https://api.nasdaq.com/api/quote/${encodeURIComponent(symbol)}/info?assetclass=${assetclass}`;
+    const data = await withRetry(() => fetchJson(url, { revalidate, timeout }), { tries });
+    const p = data?.data?.primaryData || {};
+    const num = (v) => parseFloat(String(v ?? '').replace(/[$,%+]/g, ''));
+    const current = num(p.lastSalePrice);
+    const changePct = num(p.percentageChange);
+    const m = /([A-Z][a-z]{2})\w*\.? (\d{1,2}), (\d{4})/.exec(String(p.lastTradeTimestamp || ''));
+    if (!Number.isFinite(current) || !Number.isFinite(changePct) || !m || !MONTHS[m[1]]) {
+        throw new Error(`Nasdaq quote: unusable ${symbol} (${p.lastSalePrice}, ${p.percentageChange}, ${p.lastTradeTimestamp})`);
+    }
+    return { current, changePct, asOf: `${m[3]}-${MONTHS[m[1]]}-${m[2].padStart(2, '0')}` };
+}
+
 /** gold-api.com spot (KEYLESS) -> { current, asOf }. symbol 'XAU' (gold $/oz) or 'HG' (copper $/lb). */
 export async function goldApiSpot(symbol, { revalidate = 600, timeout = 6000, tries = 2 } = {}) {
     const data = await withRetry(() => fetchJson(`https://api.gold-api.com/price/${encodeURIComponent(symbol)}`, { revalidate, timeout }), { tries });
