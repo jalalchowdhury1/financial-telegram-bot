@@ -540,6 +540,12 @@ body::before {
   color: var(--purple);
 }
 
+/* Neutral "no data" badge (Jev pill with too few inputs) — never reads as calm/green. */
+.badge-gray {
+  background: rgba(148, 163, 184, 0.14);
+  color: var(--text-secondary);
+}
+
 /* ========== STAT ROWS ========== */
 .stat-row {
   display: flex;

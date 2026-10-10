@@ -21,6 +21,8 @@ const SEVERITY = {
     'aligned':      { badge: 'badge-green',  order: 0 },
     'mild-divergence': { badge: 'badge-yellow', order: 1 },
     'major-divergence': { badge: 'badge-red',    order: 2 },
+    // Too few inputs measured — neutral grey, deliberately NOT the green of a calm verdict.
+    'unknown':      { badge: 'badge-gray',   order: -1 },
 };
 
 const FRIENDLY = {
@@ -39,6 +41,7 @@ const FRIENDLY = {
     'aligned': 'Aligned',
     'mild-divergence': 'Mild divergence',
     'major-divergence': 'Major divergence',
+    'unknown': 'No data',
 };
 
 function friendlyVerdict(v) {
