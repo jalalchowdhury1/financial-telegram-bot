@@ -1,13 +1,26 @@
 // /api/assessment - Generate AI market assessment
+//
+// 2026-10-09: Claude FIRST (claude-haiku-5-5, official SDK, paid by the Max
+// plan's API credit via env CLAUDE_CREDITS_API_KEY), the old OpenRouter/OpenAI/
+// Groq/Moonshot cascade kept as the FALLBACK on any Claude failure (timeout,
+// API error, refusal, empty text) or when the daily cap is hit. No key = the
+// old path exactly. This is a PUBLIC, unauthenticated POST on a public repo,
+// so Claude is capped per day in Upstash KV; no KV = no Claude (fails closed).
+import {
+    CLAUDE_KEY_ENV, CLAUDE_LABEL, claudeBudgetOk, claudeAssessment,
+} from '../../../lib/claudeAssessment';
+
 export const dynamic = 'force-dynamic';
+
 export async function POST(request) {
     try {
         const data = await request.json();
 
         const groqKey = process.env.GROQ_API_KEY;
         const openaiKey = process.env.OPENAI_API_KEY;
+        const claudeKey = process.env[CLAUDE_KEY_ENV];
 
-        if (!groqKey && !openaiKey) {
+        if (!groqKey && !openaiKey && !claudeKey) {
             return Response.json({ assessment: generateRuleBased(data) });
         }
 
@@ -50,6 +63,24 @@ Output the assessment now:`;
         let assessment = null;
         let lastError = 'No API keys configured.';
         let usedModel = '';
+
+        // Priority 0: Claude (capped). Any failure → the old cascade below.
+        if (claudeKey) {
+            if (await claudeBudgetOk()) {
+                try {
+                    assessment = await claudeAssessment(prompt);
+                    usedModel = CLAUDE_LABEL;
+                    console.log(`[ASSESSMENT SUCCESS] Successfully generated with ${CLAUDE_LABEL}`);
+                    return Response.json({ assessment: assessment + `\n\n*(Provider: ${usedModel})*` });
+                } catch (err) {
+                    console.warn(`[ASSESSMENT FALLBACK] ${CLAUDE_LABEL} failed:`, err?.message);
+                    lastError = `[${CLAUDE_LABEL}] ${err?.message}`;
+                    assessment = null;
+                }
+            } else {
+                console.warn('[ASSESSMENT FALLBACK] Claude daily cap reached or KV unavailable — using the old cascade');
+            }
+        }
 
         const configs = [];
 

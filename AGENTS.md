@@ -184,8 +184,20 @@ The repo is **public** — keys NEVER go in code; they live in **Vercel env vars
 - `FINNHUB_KEY` — real-time SPY spot for `/api/spy` + `/api/spy-daily-move`.
 - `RAPIDAPI_KEY` — optional, Layer 2 of `/api/fear-greed`. (A RapidAPI key was once
   committed here; don't repeat it — see §4 open items.)
+- `CLAUDE_CREDITS_API_KEY` — **primary** LLM for `/api/assessment` since 2026-10-09
+  (`claude-haiku-5-5`, Max-plan API credit, Production only, Sensitive). Never name it
+  `ANTHROPIC_API_KEY` (on the Mac that flips Claude Code to API billing; a test pins it).
 - `GROQ_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `MOONSHOT_API_KEY` — optional
-  LLM providers for `/api/assessment` (cascade in that priority; rule-based fallback if none).
+  FALLBACK LLM providers for `/api/assessment` (cascade in that priority; rule-based fallback
+  if none). They run only when Claude fails, is over its daily cap, or has no key.
+- **`/api/assessment` Claude leg (`lib/claudeAssessment.js`, 2026-10-09).** Claude first via
+  the official `@anthropic-ai/sdk` (effort `low`, 12 s timeout, `maxRetries: 0`); ANY failure
+  (error, timeout, refusal, empty text) → the old cascade unchanged. The route is a PUBLIC
+  unauthenticated POST, so Claude calls are capped at `CLAUDE_DAILY_CAP` (100) per ET day via
+  Upstash `INCR ftb:assessment:claude:<date>`; KV unreadable = no Claude (fails closed). The
+  reply's `*(Provider: …)*` tag names who answered (`Claude Haiku 5.5 (claude-haiku-5-5)`).
+  Nothing on the page calls this route today (2026-10-09). Tests:
+  `lib/__tests__/claudeAssessment.test.js`.
 - `GITHUB_TOKEN` — optional, raises the GitHub API rate limit for `/api/last-run`.
 
 ### Conventions (enforce on every change)
