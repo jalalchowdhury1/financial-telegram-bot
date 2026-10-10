@@ -1438,8 +1438,10 @@ Now: fewer than 756 bars → the Sheet's own 3Y return (`_sheet_return_3y`) → 
 - `bot/main.py` — local/runner entry: `python -m bot.main report` → `run_report()`
   (Google-Sheet text only; SPY summary commented out). Bare `python -m bot.main` runs a
   Flask health server (foreground) + APScheduler — the long-running mode used by Render
-  (`render.yaml`, `startCommand: python -m bot.main`; Render redeploys it on EVERY push to
-  main). **It must never poll Telegram (2026-10-10).** `TELEGRAM_TOKEN` is @TweetSyn_bot, whose
+  (`render.yaml`, `startCommand: python -m bot.main`; Render service `srv-d6asj3h4tr6s73evgh90`,
+  free plan, redeploys on EVERY push to main, sleeps after 15 min idle; its "deploy failed"
+  emails go to the owner's Gmail). Nothing uses it any more — suspending it in the Render
+  dashboard is the owner's call. **It must never poll Telegram (2026-10-10).** `TELEGRAM_TOKEN` is @TweetSyn_bot, whose
   webhook is health-hub's `/api/defensive` (digest-card + defensive buttons); the old
   `run_polling()` deleted that webhook on every start → 26 wipes 26 Sep–10 Oct, each within
   ~1 min of a push. `tests/test_no_telegram_polling.py` fails on any `run_polling` /
