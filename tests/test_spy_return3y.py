@@ -122,3 +122,19 @@ def test_rsi_counts_todays_spot_when_polygon_bars_end_yesterday(monkeypatch):
     want = f.calculate_rsi(pd.Series([p['price'] for p in poly] + [720.0]), period=9)
     assert out['rsi'] == want
     assert out['chartHistory'][-1]['date'] == '2026-10-09'
+
+
+def test_yfinance_uses_raw_closes_not_dividend_adjusted(monkeypatch):
+    import sys, types
+    import pandas as pd
+    seen = {}
+
+    class T:
+        def __init__(self, s): pass
+        def history(self, **kw):
+            seen.update(kw)
+            return pd.DataFrame({'Close': [1.0, 2.0]}, index=pd.to_datetime(['2026-10-08', '2026-10-09']))
+    fake = types.SimpleNamespace(Ticker=T, set_tz_cache_location=lambda *a: None)
+    monkeypatch.setitem(sys.modules, 'yfinance', fake)
+    assert f._fetch_yfinance('SPY')['current'] == 2.0
+    assert seen.get('auto_adjust') is False

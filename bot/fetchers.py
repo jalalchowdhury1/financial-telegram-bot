@@ -448,7 +448,9 @@ def _fetch_yfinance(symbol: str, invert: bool = False, days: int = 1500) -> Opti
         from datetime import datetime, timedelta
         start = (datetime.now() - timedelta(days=days + 60)).strftime('%Y-%m-%d')
         # We omit 'end' to ensure we get up to the latest available live/closed price (including today)
-        hist = yf.Ticker(symbol).history(start=start, auto_adjust=True)
+        # Raw closes (split-adjusted only), like Polygon/Nasdaq/the sheet. auto_adjust=True folds
+        # dividends into old prices: SPY 3Y showed 86.75% instead of 80.10% (2026-10-10).
+        hist = yf.Ticker(symbol).history(start=start, auto_adjust=False)
         if hist.empty or len(hist) < 2:
             return None
         rows = []

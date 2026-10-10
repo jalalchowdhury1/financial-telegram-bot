@@ -153,7 +153,7 @@ aws lambda add-permission --function-name financial-telegram-report \
 ```
 
 ### SPY waterfall (Lambda `fetch_spy_with_fallback`)
-yfinance (full history) → Polygon (full history) → Nasdaq keyless history (`_nasdaq_rows`, ~4y,
+yfinance (full history, raw closes — `auto_adjust=False` since 2026-10-10; adjusted closes gave 3Y 86.75% vs 80.10%) → Polygon (full history) → Nasdaq keyless history (`_nasdaq_rows`, ~4y,
 added 2026-10-09 so RSI/MA/3Y come from real bars before any sheet) → Google Sheet `SPY_INDICATORS`
 (pre-computed values; `Three-Year Return` parsed with `_pct_cell`) → FRED `SP500`.
 **The spot's session counts as a bar** (bot + `buildSpy`): Polygon's free bars end yesterday, so
