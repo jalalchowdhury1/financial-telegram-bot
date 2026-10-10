@@ -4,9 +4,8 @@
  * This used to be written into the VIX sheet's cell C2 once a day by a
  * separate repo (vix-fear-greed), read verbatim by app/api/sheets/route.js.
  * That repo is being deleted, so the computation is folded in here — the
- * dashboard now computes the tag itself from FRED's VIXCLS series, with the
- * sheet's C2 value kept as a transition fallback (see resolveVixFearGreedTag)
- * for as long as vix-fear-greed keeps writing it.
+ * dashboard now computes the tag itself (CBOE, then FRED's VIXCLS). The
+ * sheet's C2 value is never read any more — see resolveVixFearGreedTag.
  *
  * THE FORMULA (must match vix-fear-greed/fear_greed.py exactly):
  *   vix = ~1y of VIX daily closes, missing values dropped
@@ -24,8 +23,15 @@
  */
 import { gate } from './faults';
 import { parseCboeCsv } from './vol';
+import { isStale } from './freshness';
 
 const VIXCLS_LIMIT = 280;
+// A source whose NEWEST close is older than this is frozen, not quiet: a weekend plus a
+// holiday is the longest legit gap (FRED gets one extra day — it runs a day behind).
+// Without this a CBOE CSV that stopped updating would keep producing a weeks-old tag
+// labelled "same-day close".
+export const CBOE_FRESH_DAYS = 4;
+export const FRED_FRESH_DAYS = 5;
 
 /**
  * CBOE's own daily-history CSV for VIX — keyless, authoritative (they compute
@@ -104,12 +110,14 @@ export function fearGreedTag(closesAsc) {
  * pattern as lib/spEps.js / lib/copperGold.js source descriptors) so this is
  * unit-testable without a network call.
  */
-export async function computeVixFearGreedTag(apiKey, { fetchJson, limit = VIXCLS_LIMIT } = {}) {
+export async function computeVixFearGreedTag(apiKey, { fetchJson, limit = VIXCLS_LIMIT, now = new Date() } = {}) {
     if (!apiKey) throw new Error('FRED_API_KEY not configured');
     const data = await fetchJson(fredVixUrl(apiKey, limit), { revalidate: 0 });
     const parsed = parseVixObservations(data);
     const tag = fearGreedTag(parsed.map((o) => o.value));
     if (!tag) throw new Error(`Insufficient VIXCLS data (${parsed.length} valid closes, need >= 50)`);
+    const newest = parsed[parsed.length - 1].date;
+    if (isStale(newest, FRED_FRESH_DAYS, now)) throw new Error(`VIXCLS frozen (newest ${newest})`);
     return tag;
 }
 
@@ -119,34 +127,41 @@ export async function computeVixFearGreedTag(apiKey, { fetchJson, limit = VIXCLS
  * the fallback. `fetchText` is injected for the same testability reason as
  * `fetchJson` above.
  */
-export async function computeVixFearGreedTagFromCboe({ fetchText } = {}) {
+export async function computeVixFearGreedTagFromCboe({ fetchText, now = new Date() } = {}) {
     const text = await fetchText(CBOE_VIX_URL, { revalidate: 0 });
     const series = parseCboeCsv(text);
     const tag = fearGreedTag(series.map((o) => o.value));
     if (!tag) throw new Error(`Insufficient CBOE VIX data (${series.length} valid closes, need >= 50)`);
+    const newest = series[series.length - 1].date;
+    if (isStale(newest, CBOE_FRESH_DAYS, now)) throw new Error(`CBOE VIX history frozen (newest ${newest})`);
     return tag;
 }
 
 /**
- * The VIX pill's fear/greed source cascade: FRED-computed (primary) -> the
- * Google Sheet's C2 value already read by the sheets cascade (transition
- * fallback, while the vix-fear-greed repo that writes it still runs) ->
- * 'N/A'. Returns `{tag, message}` — `message` ALWAYS states which source won
- * (or that the fallback fired and why), so a silent slide onto the sheet
- * value is visible in `_meta.messages` rather than looking identical to a
- * healthy computed reading (AGENTS.md §7's governing principle: a fallback
- * that silently satisfies the caller is a false negative).
+ * The VIX pill's fear/greed source cascade: CBOE-computed (primary, same-day)
+ * -> FRED-computed (fallback; one trading day behind, so flagged `stale`) ->
+ * 'N/A'. Returns `{tag, message, tier, stale, fallback}` — `message` ALWAYS
+ * states which source won (or why both failed), so a fallback is visible in
+ * `_meta.messages` rather than looking identical to a healthy computed reading
+ * (AGENTS.md §7's governing principle).
  *
- * `faults` (optional Set) supports the repo's `?_fail=vix_fred` convention
- * for forcing the fallback path on prod to re-verify it.
+ * The old third tier — the Google Sheet's C2 cell — is GONE (2026-10-09). Its
+ * writer repo (vix-fear-greed) is retired, so C2 is frozen: on 2026-10-09 it
+ * still read GREED13 while the real CBOE-computed tag was GREED04. A frozen
+ * value that looks live is worse than 'N/A'. `sheetValue` is accepted and
+ * ignored so older callers can't resurrect it. /api/sheets layers its own
+ * flagged-stale last-known-good (/tmp, KV) under an 'N/A' here.
+ *
+ * `faults` (optional Set): `?_fail=vix_cboe` forces FRED, `?_fail=vix_cboe,vix_fred`
+ * forces 'N/A' (or /api/sheets' last-good tiers).
  */
-export async function resolveVixFearGreedTag({ fredApiKey, fetchJson, fetchText, sheetValue = 'N/A', faults, limit } = {}) {
+export async function resolveVixFearGreedTag({ fredApiKey, fetchJson, fetchText, faults, limit } = {}) {
     const trail = [];
 
     // Tier 1: CBOE (same-day, keyless, authoritative).
     try {
         const tag = await gate('vix_cboe', faults, () => computeVixFearGreedTagFromCboe({ fetchText }));
-        return { tag, message: 'VIX fear/greed: computed from CBOE VIX daily history (same-day close)' };
+        return { tag, tier: 'cboe', stale: false, message: 'VIX fear/greed: computed from CBOE VIX daily history (same-day close)' };
     } catch (e) {
         trail.push(`CBOE failed (${e.message})`);
     }
@@ -156,16 +171,21 @@ export async function resolveVixFearGreedTag({ fredApiKey, fetchJson, fetchText,
         const tag = await gate('vix_fred', faults, () => computeVixFearGreedTag(fredApiKey, { fetchJson, limit }));
         return {
             tag,
+            tier: 'fred',
+            stale: true,
+            fallback: true,
             message: `VIX fear/greed: ${trail.join('; ')} — computed from FRED VIXCLS instead (may lag one trading day)`,
         };
     } catch (e) {
         trail.push(`FRED failed (${e.message})`);
     }
 
-    // Tier 3: the sheet's C2, whatever last wrote it.
+    // No frozen-sheet tier: N/A beats a stale value dressed as live.
     return {
-        tag: sheetValue,
-        message: `VIX fear/greed: ${trail.join('; ')} — using sheet value (${sheetValue})`,
+        tag: 'N/A',
+        tier: 'none',
+        stale: false,
         fallback: true,
+        message: `VIX fear/greed: ${trail.join('; ')} — N/A (the retired sheet C2 value is never used)`,
     };
 }

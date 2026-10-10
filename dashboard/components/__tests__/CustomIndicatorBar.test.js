@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react';
-import CustomIndicatorBar, { aaiiAsOf, aaiiCaption } from '../CustomIndicatorBar';
+import CustomIndicatorBar, { aaiiAsOf, aaiiCaption, staleNote } from '../CustomIndicatorBar';
 
 describe('AAII as-of line', () => {
     test('fresh survey shows its date and source', () => {
@@ -61,5 +61,38 @@ describe('AAII phone caption', () => {
         expect(screen.queryByTestId('aaii-caption')).toBeNull();
         rerender(<CustomIndicatorBar loading={false} sheets={{}} />);
         expect(screen.queryByTestId('aaii-caption')).toBeNull();
+    });
+});
+
+// /api/sheets per-field last-good (lib/sheetsCascade.js): a value served from a cached
+// copy or a lagged source must carry a visible STALE line, on every screen size.
+describe('stale pill line', () => {
+    const meta = (staleFields, fields) => ({ _meta: { staleFields, fields } });
+    test('a KV/tmp copy shows "⚠ STALE · cached <date>" with its source as the tooltip', () => {
+        const s = meta(['NotSoBoring'], { NotSoBoring: { source: 'KV last-good (2026-10-08T20:00:00.000Z) ← Google Sheets (Live)', stale: true, savedAt: '2026-10-08T20:00:00.000Z' } });
+        render(<div>{staleNote(s, ['NotSoBoring'])}</div>);
+        const el = screen.getByTestId('stale-NotSoBoring');
+        expect(el.textContent).toBe('⚠ STALE · cached Oct 8');
+        expect(el.getAttribute('title')).toMatch(/^KV last-good/);
+    });
+    test('a FRED-lagged VIX says so', () => {
+        const s = meta(['vixCurrent'], { vixCurrent: { source: 'FRED VIXCLS (close 2026-10-08; lags a trading day)', stale: true } });
+        render(<div>{staleNote(s, ['vixCurrent', 'vixThreeMonth'])}</div>);
+        expect(screen.getByTestId('stale-vixCurrent').textContent).toBe('⚠ STALE · FRED, lags a day');
+    });
+    test('nothing stale (or an old payload without _meta) renders nothing', () => {
+        expect(staleNote(meta([], {}), ['FrontRunner'])).toBeNull();
+        expect(staleNote({}, ['FrontRunner'])).toBeNull();
+        expect(staleNote(null, ['FrontRunner'])).toBeNull();
+    });
+    test('the bar renders the line under the right pill', () => {
+        const sheets = {
+            NotSoBoring: 'ON', FrontRunner: 'BIL (T-Bill ETF)', AAIIDiff: 'N/A', VIX: { current: '14.84', threeMonth: '17.77', fearGreed: 'GREED04' },
+            _meta: { staleFields: ['FrontRunner'], fields: { FrontRunner: { source: '/tmp last-good (2026-10-09T13:00:00.000Z) ← Google Sheets (Live)', stale: true, savedAt: '2026-10-09T13:00:00.000Z' } } },
+        };
+        render(<CustomIndicatorBar sheets={sheets} loading={false} />);
+        expect(screen.getByTestId('stale-FrontRunner').textContent).toBe('⚠ STALE · cached Oct 9');
+        expect(screen.queryByTestId('stale-NotSoBoring')).toBeNull();
+        expect(screen.queryByTestId('stale-vixCurrent')).toBeNull();
     });
 });

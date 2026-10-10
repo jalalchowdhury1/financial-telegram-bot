@@ -179,6 +179,28 @@ describe('honest labels on the SPY and Fear & Greed cards', () => {
         expect(cells).toEqual(['Prev Close36▼2', '1 Week41▼7', '1 Month52▼18', '1 Year—']);
         expect(document.body.textContent).not.toMatch(/NaN/);
     });
+
+    it('a VIX proxy says it is not CNN; a cached copy says STALE + its date; live CNN says neither', async () => {
+        const fg = (meta) => ok({ score: 45, rating: 'FEAR', previousClose: 38, previousWeek: 40, previousMonth: 38, previousYear: 49, _meta: meta });
+        mockRoutes({ '/api/fear-greed': fg({ source: 'Yahoo ^VIX Proxy', proxy: true, hasErrors: true }) });
+        const { unmount } = render(<Dashboard />);
+        await waitFor(() => expect(document.querySelector('[data-testid="fg-provenance"]')).not.toBeNull());
+        expect(document.querySelector('[data-testid="fg-provenance"]').textContent).toBe('⚠ VIX proxy, not CNN Fear & Greed');
+        unmount();
+        window.localStorage.clear();
+
+        mockRoutes({ '/api/fear-greed': fg({ source: 'Stale KV last-good (2026-10-08T21:00:00.000Z) ← CNN', stale: true, lastGoodAt: '2026-10-08T21:00:00.000Z', hasErrors: true }) });
+        const second = render(<Dashboard />);
+        await waitFor(() => expect(document.querySelector('[data-testid="fg-provenance"]')).not.toBeNull());
+        expect(document.querySelector('[data-testid="fg-provenance"]').textContent).toBe('⚠ STALE · cached 2026-10-08');
+        second.unmount();
+        window.localStorage.clear();
+
+        mockRoutes({ '/api/fear-greed': fg({ source: 'CNN', hasErrors: false }) });
+        render(<Dashboard />);
+        await waitFor(() => expect(document.querySelectorAll('.fg-history-item')).toHaveLength(4));
+        expect(document.querySelector('[data-testid="fg-provenance"]')).toBeNull();
+    });
 });
 
 it('📡 Market Pulse shows the verdicts of the cards below, the Rubber Band one handed up by its own card', async () => {

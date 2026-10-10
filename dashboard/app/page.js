@@ -494,6 +494,12 @@ export default function Dashboard() {
                         <h2>😨 Fear & Greed Index</h2>
                         {fg && !fg.error && <span className={`badge ${fg.score < 45 ? 'badge-red' : fg.score > 55 ? 'badge-green' : 'badge-yellow'}`}>{fg.rating}</span>}
                     </div>
+                    {/* A VIX proxy is a different gauge and a cached copy is not today's: say so on the card. */}
+                    {fg && !fg.error && (fg._meta?.proxy || fg._meta?.stale) && (
+                        <div data-testid="fg-provenance" style={{ fontSize: '0.7rem', color: 'var(--orange)', fontWeight: 700, margin: '-4px 0 6px' }}>
+                            {fg._meta?.proxy ? '⚠ VIX proxy, not CNN Fear & Greed' : `⚠ STALE · cached ${String(fg._meta?.lastGoodAt || '').slice(0, 10)}`}
+                        </div>
+                    )}
                     <ErrorBoundary resetKey={refreshTick}>
                         {!fg || fg.error ? <Skeleton type="gauge" /> : (
                             <>
@@ -762,6 +768,8 @@ export default function Dashboard() {
                                 systemStatus.fg?.hasErrors ? 'status-warn' : ''
                             }`}>
                             [F&G: {
+                                // stale first: a cached copy's source still names CNN ("Stale cache (…) ← CNN")
+                                (systemStatus.fg?.stale && !systemStatus.fg?.proxy) ? 'STALE' :
                                 systemStatus.fg?.source?.includes('CNN') ? 'CNN' :
                                     systemStatus.fg?.source?.includes('RapidAPI') ? 'RapidAPI' :
                                         systemStatus.fg?.source?.includes('VIXCLS') ? 'FRED VIX' :

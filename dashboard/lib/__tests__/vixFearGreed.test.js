@@ -6,6 +6,12 @@ import {
     computeVixFearGreedTagFromCboe,
 } from '../vixFearGreed';
 
+// Fixtures below are dated from 2026-01-01; 50 daily rows end 2026-02-19. Pin "now"
+// the next evening so the frozen-source guard (CBOE_FRESH_DAYS / FRED_FRESH_DAYS)
+// sees them as current. Timers stay real.
+beforeAll(() => jest.useFakeTimers({ now: new Date('2026-02-20T22:00:00Z'), doNotFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'setImmediate', 'nextTick', 'queueMicrotask'] }));
+afterAll(() => jest.useRealTimers());
+
 // Builds a FRED /fred/series/observations-shaped payload from a plain array
 // of numbers (or the '.' missing-value sentinel), dated sequentially from
 // startDate — mirrors what api.stlouisfed.org actually returns.
@@ -139,7 +145,7 @@ describe('computeVixFearGreedTag (fetch + compute)', () => {
     });
 });
 
-describe('resolveVixFearGreedTag (fallback chain: FRED-computed -> sheet C2 -> N/A)', () => {
+describe('resolveVixFearGreedTag (fallback chain: FRED-computed -> N/A; the frozen sheet C2 is never used)', () => {
     test('prefers the FRED-computed tag when it succeeds, and says so in the message', async () => {
         const values = Array(49).fill(20).concat([15]); // -> GREED25
         const fetchJson = jest.fn().mockResolvedValue(fredPayload(values));
@@ -148,12 +154,12 @@ describe('resolveVixFearGreedTag (fallback chain: FRED-computed -> sheet C2 -> N
         expect(message).toMatch(/computed from FRED/i);
     });
 
-    test('falls back to the sheet C2 value when the FRED computation fails, and says so in the message', async () => {
+    test('N/A (never the frozen sheet C2 value) when the FRED computation fails, and says so', async () => {
         const fetchJson = jest.fn().mockRejectedValue(new Error('FRED 429'));
         const { tag, message } = await resolveVixFearGreedTag({ fredApiKey: 'k', fetchJson, sheetValue: 'GREED07' });
-        expect(tag).toBe('GREED07');
+        expect(tag).toBe('N/A');
         expect(message).toMatch(/FRED failed/i);
-        expect(message).toMatch(/GREED07/);
+        expect(message).not.toMatch(/GREED07/);
     });
 
     test('falls back to N/A when FRED fails and no sheet value is available', async () => {
@@ -163,18 +169,18 @@ describe('resolveVixFearGreedTag (fallback chain: FRED-computed -> sheet C2 -> N
         expect(message).toMatch(/N\/A/);
     });
 
-    test('falls back to the sheet value when no FRED API key is configured', async () => {
+    test('N/A when no FRED API key is configured (sheet value ignored)', async () => {
         const { tag, message } = await resolveVixFearGreedTag({ fredApiKey: undefined, fetchJson: jest.fn(), sheetValue: 'FEAR03' });
-        expect(tag).toBe('FEAR03');
+        expect(tag).toBe('N/A');
         expect(message).toMatch(/FRED failed/i);
     });
 
-    test('honors the vix_fred fault-injection gate (?_fail=vix_fred forces the sheet fallback for prod verification)', async () => {
+    test('honors the vix_fred fault-injection gate (?_fail=vix_fred forces N/A for prod verification)', async () => {
         const values = Array(50).fill(20);
         const fetchJson = jest.fn().mockResolvedValue(fredPayload(values));
         const faults = new Set(['vix_fred']);
         const { tag, message } = await resolveVixFearGreedTag({ fredApiKey: 'k', fetchJson, sheetValue: 'GREED07', faults });
-        expect(tag).toBe('GREED07');
+        expect(tag).toBe('N/A');
         expect(fetchJson).not.toHaveBeenCalled();
         expect(message).toMatch(/injected fault/i);
     });
@@ -211,41 +217,44 @@ describe('computeVixFearGreedTagFromCboe', () => {
     });
 });
 
-describe('resolveVixFearGreedTag cascade: CBOE -> FRED -> sheet', () => {
+describe('resolveVixFearGreedTag cascade: CBOE -> FRED -> N/A', () => {
     const cboeCloses = Array(49).fill(20).concat([15]);   // sma50=19.9, pct=-24.62% -> GREED25
     const fredCloses = Array(49).fill(20).concat([25]);   // FEAR24
 
     test('CBOE wins when it succeeds, and FRED is never called', async () => {
         const fetchText = jest.fn().mockResolvedValue(cboeCsv(cboeCloses));
         const fetchJson = jest.fn();
-        const { tag, message } = await resolveVixFearGreedTag({
+        const { tag, message, tier, stale } = await resolveVixFearGreedTag({
             fredApiKey: 'k', fetchJson, fetchText, sheetValue: 'GREED99',
         });
         expect(tag).toBe('GREED25');
         expect(message).toMatch(/CBOE/i);
         expect(fetchJson).not.toHaveBeenCalled();
+        expect(tier).toBe('cboe');
+        expect(stale).toBe(false);
     });
 
     test('falls back to FRED when CBOE fails, and says so', async () => {
         const fetchText = jest.fn().mockRejectedValue(new Error('CBOE down'));
         const fetchJson = jest.fn().mockResolvedValue(fredPayload(fredCloses));
-        const { tag, message } = await resolveVixFearGreedTag({
+        const { tag, message, stale } = await resolveVixFearGreedTag({
             fredApiKey: 'k', fetchJson, fetchText, sheetValue: 'GREED99',
         });
         expect(tag).toBe('FEAR24');
         expect(message).toMatch(/CBOE down/);
         expect(message).toMatch(/FRED/);
+        expect(stale).toBe(true); // FRED lags a trading day: never presented as live
     });
 
-    test('falls back to the sheet when BOTH CBOE and FRED fail', async () => {
+    test('N/A (not the frozen sheet value) when BOTH CBOE and FRED fail', async () => {
         const { tag, message, fallback } = await resolveVixFearGreedTag({
             fredApiKey: 'k',
             fetchText: jest.fn().mockRejectedValue(new Error('CBOE down')),
             fetchJson: jest.fn().mockRejectedValue(new Error('FRED down')),
             sheetValue: 'GREED99',
         });
-        expect(tag).toBe('GREED99');
-        expect(message).toMatch(/sheet value \(GREED99\)/);
+        expect(tag).toBe('N/A');
+        expect(message).toMatch(/never used/);
         expect(fallback).toBe(true); // keeps /api/sheets out of the edge cache
     });
 
@@ -260,7 +269,7 @@ describe('resolveVixFearGreedTag cascade: CBOE -> FRED -> sheet', () => {
         expect(tag).toBe('FEAR24');
     });
 
-    test('?_fail=vix_cboe,vix_fred forces the sheet tier', async () => {
+    test('?_fail=vix_cboe,vix_fred forces N/A', async () => {
         const { tag } = await resolveVixFearGreedTag({
             fredApiKey: 'k',
             fetchText: jest.fn().mockResolvedValue(cboeCsv(cboeCloses)),
@@ -268,6 +277,40 @@ describe('resolveVixFearGreedTag cascade: CBOE -> FRED -> sheet', () => {
             sheetValue: 'GREED99',
             faults: new Set(['vix_cboe', 'vix_fred']),
         });
-        expect(tag).toBe('GREED99');
+        expect(tag).toBe('N/A');
+    });
+});
+
+// --- Frozen-source guard ---------------------------------------------------
+// A CSV/series that stops updating must not keep producing an old tag labelled
+// "same-day close": it is rejected and the cascade falls through.
+describe('frozen sources are rejected', () => {
+    const closes = Array(49).fill(20).concat([15]); // GREED25
+
+    test('CBOE whose newest close is > 4 days old throws "frozen"', async () => {
+        const fetchText = jest.fn().mockResolvedValue(cboeCsv(closes, '2025-11-01'));
+        await expect(computeVixFearGreedTagFromCboe({ fetchText })).rejects.toThrow(/frozen \(newest 2025-12-20\)/);
+    });
+
+    test('FRED whose newest close is > 5 days old throws "frozen"', async () => {
+        const fetchJson = jest.fn().mockResolvedValue(fredPayload(closes, '2025-11-01'));
+        await expect(computeVixFearGreedTag('k', { fetchJson })).rejects.toThrow(/frozen/);
+    });
+
+    test('frozen CBOE falls through to FRED; frozen both → N/A', async () => {
+        const fresh = await resolveVixFearGreedTag({
+            fredApiKey: 'k',
+            fetchText: jest.fn().mockResolvedValue(cboeCsv(closes, '2025-11-01')),
+            fetchJson: jest.fn().mockResolvedValue(fredPayload(Array(49).fill(20).concat([25]))),
+        });
+        expect(fresh.tag).toBe('FEAR24');
+        expect(fresh.tier).toBe('fred');
+        const none = await resolveVixFearGreedTag({
+            fredApiKey: 'k',
+            fetchText: jest.fn().mockResolvedValue(cboeCsv(closes, '2025-11-01')),
+            fetchJson: jest.fn().mockResolvedValue(fredPayload(closes, '2025-11-01')),
+        });
+        expect(none.tag).toBe('N/A');
+        expect(none.message).toMatch(/frozen/);
     });
 });
