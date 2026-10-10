@@ -453,9 +453,14 @@ def _fetch_yfinance(symbol: str, invert: bool = False, days: int = 1500) -> Opti
         hist = yf.Ticker(symbol).history(start=start, auto_adjust=False)
         if hist.empty or len(hist) < 2:
             return None
+        import math
         rows = []
         for dt_idx, row in hist.iterrows():
             price = float(row['Close'])
+            # keepna=False only drops a bar when EVERY column is NaN/0, so an evening bar with
+            # a NaN close but a real volume got through and broke /api/spy (2026-10-09/10).
+            if not math.isfinite(price):
+                continue
             if invert and price != 0:
                 price = round(1.0 / price, 6)
             rows.append({'date': str(dt_idx.date()), 'price': price})
@@ -889,6 +894,11 @@ def fetch_spy_with_fallback(fred_api_key: Optional[str] = None,
                 print(f'[SPY] Layer 2 (FRED) loaded {len(rows)} rows')
         except Exception as e:
             print(f'[SPY] Layer 2 (FRED SP500) failed: {e}')
+
+    # Drop any bar without a real close, whichever tier gave it: one NaN poisons the rolling
+    # MA50/MA200 and round() raised "cannot convert float NaN to integer" (CloudWatch 2026-10-09/10).
+    import math
+    rows = [r for r in rows if isinstance(r.get('close'), (int, float)) and math.isfinite(r['close'])]
 
     if not indicators and len(rows) < 10:
         raise ValueError('Insufficient SPY data — all sources failed')
