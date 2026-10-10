@@ -63,6 +63,14 @@ function MarketRow({ item }) {
                     <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {item.name}
                     </span>
+                    {/* market-extra filled this row from the last-known-good copy: say so on the tile */}
+                    {d.stale && (
+                        <span className="mkt-stale" data-testid={`mkt-stale-${item.ticker}`}
+                            title={`Live sources failed — showing the last good value${d.savedAt ? ` from ${d.savedAt}` : ''}`}
+                            style={{ fontSize: '0.58rem', fontWeight: 700, color: 'var(--orange)', whiteSpace: 'nowrap' }}>
+                            🕐 {staleLabel(d.savedAt)}
+                        </span>
+                    )}
                 </div>
                 <Delta mark={mark} format={fmtOne} chartKey={item.markKey || CHART_KEYS[item.ticker]} raw={d.current}
                     className="market-row-value"
@@ -86,6 +94,12 @@ function MarketRow({ item }) {
             </div>
         </div>
     );
+}
+
+export function staleLabel(savedAt) {
+    const t = Date.parse(savedAt);
+    if (!Number.isFinite(t)) return 'old';
+    return new Date(t).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/New_York' });
 }
 
 function Column({ title, items }) {

@@ -89,7 +89,8 @@ export async function fawazRates(base = 'usd', { revalidate = 600 } = {}) {
     const b = base.toLowerCase();
     const urls = [
         `https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/${b}.json`,
-        `https://${b}.currency-api.pages.dev/v1/currencies/${b}.json`,
+        // the mirror is `latest.`, not `<base>.` (that host 404s with an HTML page — verified 2026-10-09)
+        `https://latest.currency-api.pages.dev/v1/currencies/${b}.json`,
     ];
     let last;
     for (const u of urls) {

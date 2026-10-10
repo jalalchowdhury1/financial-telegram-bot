@@ -73,3 +73,12 @@ describe('Global Markets: each change says which window it covers', () => {
         expect(c.textContent).not.toMatch(/NaN|undefined|Infinity|0\.00%/);
     });
 });
+
+describe('Global Markets: a row filled from the last-known-good copy says so', () => {
+    test('stale row shows an orange 🕐 date tag; live rows show none', () => {
+        const d = { ...live, commodities: { ...live.commodities, cl: { ...live.commodities.cl, stale: true, savedAt: '2026-10-08T20:15:00Z' } } };
+        render(<ExtraMarketsGrid data={d} loading={false} />);
+        expect(screen.getByTestId('mkt-stale-CL').textContent).toBe('🕐 Oct 8');
+        expect(screen.queryByTestId('mkt-stale-BTC')).toBeNull();
+    });
+});
