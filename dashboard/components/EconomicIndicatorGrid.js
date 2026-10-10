@@ -15,12 +15,14 @@ function copperGoldBenchmark(m) {
     const parts = [];
     if (m.changePct != null) parts.push(`${cgArrow(m.changePct)} ${cgPct(m.changePct)} 1mo`);
     if (m.changePct3mo != null) parts.push(`${cgArrow(m.changePct3mo)} ${cgPct(m.changePct3mo)} 3mo`);
+    // LME copper can sit well apart from COMEX (tariff spread): say so on the card itself.
+    if (m.copperSource === 'westmetall') parts.push('copper: LME');
     return parts.length ? parts.join(' · ') : '↑ = growth/risk-on';
 }
 function copperGoldTooltip(base, m) {
     if (!m || m.value == null) return base;
     const bits = [];
-    if (m.copper != null) bits.push(`Copper $${m.copper.toFixed(2)}/lb`);
+    if (m.copper != null) bits.push(`Copper $${m.copper.toFixed(2)}/lb${m.copperLabel ? ` (${m.copperLabel})` : ''}`);
     if (m.gold != null) bits.push(`Gold $${Math.round(m.gold)}/oz`);
     const src = m.source ? ` Sources — ${m.source}.` : '';
     return bits.length ? `${base} (${bits.join(', ')}).${src}` : base;

@@ -125,7 +125,9 @@ function copperSources(fredKey, now = new Date()) {
         } },
         // LME copper cash-settlement, daily, WITH history (so 1mo/3mo deltas survive a
         // dead CNBC feed — goldapi below is spot-only). $/tonne → $/lb in the parser.
-        // LME cash runs within ~0.5% of COMEX HG; same unit, so the ratio is consistent.
+        // CAUTION: LME cash is NOT COMEX HG — same unit ($/lb after conversion), but the two
+        // markets can differ by several percent (e.g. a US tariff premium on COMEX), so a
+        // ratio built on this leg is labelled LME (copperLabel / the card's "copper: LME").
         { name: 'westmetall', freshnessDays: 7, fetch: () => westmetallCopper(now) },
         { name: 'fred', freshnessDays: 80, fetch: async () => {  // monthly series, reported weeks late
             if (!fredKey) throw new Error('no FRED key');

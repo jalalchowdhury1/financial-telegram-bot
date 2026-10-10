@@ -35,3 +35,12 @@ test('all-fresh grid has no clocks and no N/A', () => {
     expect(screen.queryByText(/🕐/)).toBeNull();
     expect(screen.queryByText('N/A')).toBeNull();
 });
+
+test('copper/gold built on Westmetall LME copper says "copper: LME" on the card (LME ≠ COMEX)', () => {
+    const lme = { value: 1.2, asOf: '2026-10-09', stale: false, unavailable: false, status: 'rising', changePct: 1, changePct3mo: 2, copper: 4.5, gold: 4200, copperSource: 'westmetall', copperLabel: 'LME cash (Westmetall)', source: 'copper:westmetall · gold:polygon' };
+    const { unmount } = render(<EconomicIndicatorGrid fred={fredWith({ copperGold: lme })} loading={false} statusColor={statusColor} />);
+    expect(screen.getByText(/copper: LME/)).toBeInTheDocument();
+    unmount();
+    render(<EconomicIndicatorGrid fred={fredWith({})} loading={false} statusColor={statusColor} />);
+    expect(screen.queryByText(/copper: LME/)).toBeNull();     // COMEX leg: no tag
+});

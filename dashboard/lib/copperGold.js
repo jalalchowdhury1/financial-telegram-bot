@@ -16,6 +16,16 @@ import { copperGoldRatio, priceAtAgo, ratioChange } from './finance';
 
 export const CHANGE_WINDOWS = [30, 90]; // ≈ 1 month, ≈ 3 months
 
+// Human labels for the copper leg. LME cash (Westmetall) is NOT COMEX HG: the two can
+// differ by several percent (e.g. a US tariff premium on COMEX), so the card must say
+// which market the copper price came from.
+export const COPPER_LEG_LABELS = {
+    cnbc: 'COMEX HG (CNBC)',
+    westmetall: 'LME cash (Westmetall)',
+    fred: 'IMF monthly (FRED PCOPPUSDM)',
+    goldapi: 'spot (gold-api)',
+};
+
 /**
  * Try each source in order. Skip fault-injected ones; reject results that are
  * empty (no finite price/date) or whose newest point is staler than the source
@@ -84,6 +94,7 @@ export function buildCopperGold(copper, gold, windows = CHANGE_WINDOWS) {
         copper: copper.current,
         gold: gold.current,
         copperSource: copper.source,
+        copperLabel: copper.source ? (COPPER_LEG_LABELS[copper.source] || copper.source) : null,
         goldSource: gold.source,
         source: copper.source || gold.source ? `copper:${copper.source ?? 'n/a'} · gold:${gold.source ?? 'n/a'}` : null,
         tried: { copper: copper.tried, gold: gold.tried },

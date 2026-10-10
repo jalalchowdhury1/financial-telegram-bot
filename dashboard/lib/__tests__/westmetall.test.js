@@ -90,6 +90,7 @@ describe('copper cascade with Westmetall as tier 2', () => {
         expect(cg.change).not.toBeNull();
         expect(cg.change3mo).not.toBeNull();
         expect(cg.source).toBe('copper:westmetall · gold:polygon');
+        expect(cg.copperLabel).toBe('LME cash (Westmetall)'); // never passed off as COMEX
     });
 
     test('?_fail=cg_westmetall switches it off → spot-only gold-api, deltas null', async () => {
