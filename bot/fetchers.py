@@ -779,7 +779,7 @@ def _daily_move_3y(tries: int = 1, timeout: int = 5) -> Optional[float]:
 def _sheet_return_3y() -> Optional[float]:
     """A Google Sheet's own 3-year return, for when the price history is too short.
     SPY_DAILY_MOVE first: it counts from the same date 3 years back, the owner's pick
-    (2026-10-09); SPY_INDICATORS counts 3*365 days until its formula is replaced (AGENTS.md).
+    (2026-10-09); SPY_INDICATORS uses the same rule since 2026-10-10 (formula in AGENTS.md).
     One quick try per sheet (inside API Gateway's 30 s budget); None if both fail."""
     v = _daily_move_3y()
     if v is not None:

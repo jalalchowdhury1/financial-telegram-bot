@@ -167,7 +167,7 @@ close on/before the SAME DATE 3 years earlier (Feb 29→28)**, as-of = the live 
 - `SPY_DAILY_MOVE` row 11 = IMPORTRANGE of sheet `1zQQ2am1…` Sheet2!D2: S&P 500 **index** 3Y,
   `DATE(YEAR(TODAY())-3,…)` — right on trading days (80.17% on 10-09), drifts on weekends/holidays.
 - `SPY_INDICATORS` (`1FPxyd…`, Sheet2) B5 was `INDEX(GOOGLEFINANCE("SPY","price",TODAY()-3*365),2,2)`
-  (78.44% on Sat 10-10). Replacement, tested 2026-10-10 in a scratch sheet against Nasdaq closes
+  (78.44% on Sat 10-10). **Owner pasted this replacement 2026-10-10 → 80.10%**, tested in a scratch sheet against Nasdaq closes
   (weekday 432.29, weekend → Fri 429.54, Jul 4 → Jul 3 443.79, Feb 29 → Feb 28):
   `=LET(t, EDATE(INT(GOOGLEFINANCE("SPY","tradetime")), -36), raw, GOOGLEFINANCE("SPY","close", t-10, t+1), d, INDEX(raw,0,1), c, INDEX(raw,0,2), ok, FILTER(c, IFERROR(INT(d)<=t, FALSE)), INDEX(ok, ROWS(ok)))`
   (anchored on the last trade's date, last close on/before the same date 3y back). For the index
@@ -580,8 +580,8 @@ Rule: every number has ≥2 independent live sources, then saved copies, then an
   market-extra, fred, sheets, fear-greed (`lib/servedFreshness.js servedCopyItem`): a saved copy
   older than the newest NYSE close (past 6 h grace) or nothing served → red in the fleet row.
 - **3Y convention (decided 2026-10-09): same date 3 years back.** `SPY_DAILY_MOVE` (n8n) already
-  uses it; `SPY_INDICATORS` B5 needs the owner to paste the formula in "SPY waterfall" above (only
-  read when the Lambda's yfinance, Polygon AND Nasdaq all fail).
+  uses it; `SPY_INDICATORS` B5 switched 2026-10-10 (formula in "SPY waterfall" above; only read
+  when the Lambda's yfinance, Polygon AND Nasdaq all fail).
 - **Proof:** live fault matrix 2026-10-09 (each route: one tier off, all live off, + /tmp,
   + KV) → every row either a real number with the right label, or "Unavailable".
 
