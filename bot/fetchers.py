@@ -10,6 +10,7 @@ import time
 from io import StringIO
 from typing import Dict, Any, List, Optional
 from bot.config import URLS, RSI_PERIOD
+from datetime import datetime, timedelta, timezone
 
 # Optional heavy dependencies (for fetchers that need them)
 try:
@@ -539,11 +540,14 @@ def _fetch_finnhub_quote(symbol: str, api_key: str) -> Optional[Dict[str, Any]]:
         return None
     current = float(current)
     prev = float(prev) if prev else current
+    # quote time -> its US session date (UTC-5 keeps 09:30-16:00 ET on the same date in EST and EDT)
+    t = data.get('t')
+    last_date = (datetime.fromtimestamp(int(t), timezone.utc) - timedelta(hours=5)).strftime('%Y-%m-%d') if t else None
     return {
         'current': current,
         'dailyChange': {'value': round(current - prev, 4), 'pct': _calc_pct(current, prev)},
         'history': [],
-        'lastDate': None,
+        'lastDate': last_date,
     }
 
 
@@ -707,7 +711,28 @@ def _pct_cell(raw: Any) -> Optional[float]:
         return None
 
 
-def _return_3y_from_rows(rows: List[Dict], current: float) -> Optional[float]:
+def _nasdaq_rows(symbol: str, years: int = 4) -> List[Dict]:
+    """Nasdaq.com daily closes (keyless) -> ascending [{'date','close'}]; [] on any failure."""
+    try:
+        to = datetime.now(timezone.utc).date()
+        frm = to - timedelta(days=int(years * 365.25) + 14)
+        url = (f'https://api.nasdaq.com/api/quote/{symbol}/historical?assetclass=etf'
+               f'&fromdate={frm}&todate={to}&limit=9999')
+        r = requests.get(url, timeout=8, headers={**_HEADERS, 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json'})
+        r.raise_for_status()
+        out = []
+        for row in (((r.json() or {}).get('data') or {}).get('tradesTable') or {}).get('rows') or []:
+            mm, dd, yy = str(row.get('date', '')).split('/') if row.get('date') else ('', '', '')
+            close = _pct_cell(str(row.get('close', '')).replace('$', ''))
+            if yy and close:
+                out.append({'date': f'{yy}-{mm}-{dd}', 'close': close})
+        return sorted(out, key=lambda x: x['date'])
+    except Exception as e:  # noqa: BLE001
+        print(f'[SPY] Nasdaq history failed: {e}')
+        return []
+
+
+def _return_3y_from_rows(rows: List[Dict], current: float, as_of: Optional[str] = None) -> Optional[float]:
     """3-year price return (same date 3 years back) from daily rows, or None when they span less.
 
     Polygon's free tier serves only ~2 years (~500 rows) however many days are asked
@@ -717,7 +742,7 @@ def _return_3y_from_rows(rows: List[Dict], current: float) -> Optional[float]:
     # Owner's pick 2026-10-09 over "1095 days back" (which lands a day late after a leap year).
     if not rows:
         return None
-    last = str(rows[-1].get('date', ''))[:10]
+    last = str(as_of or rows[-1].get('date', ''))[:10]  # as_of = the date `current` is for
     if len(last) != 10 or last[4] != '-':
         return None
     y, m, d = last.split('-')
@@ -733,10 +758,25 @@ def _return_3y_from_rows(rows: List[Dict], current: float) -> Optional[float]:
     return _calc_pct(current, base) if base else None
 
 
+def _daily_move_3y(tries: int = 1, timeout: int = 5) -> Optional[float]:
+    """SPY_DAILY_MOVE row 11 "3 YR Return" (n8n). Uses the same-date-3-years-back rule."""
+    try:
+        rows = list(csv.reader(StringIO(_get_sheet_csv(URLS['SPY_DAILY_MOVE'], tries=tries, timeout=timeout))))
+        ok = len(rows) > 10 and len(rows[10]) > 1 and '3' in rows[10][0]  # the "3 YR Return" row
+        return _pct_cell(rows[10][1]) if ok else None
+    except Exception as e:  # noqa: BLE001
+        print(f'[SPY] sheet 3y return (daily move) failed: {e}')
+        return None
+
+
 def _sheet_return_3y() -> Optional[float]:
-    """The Google Sheet's own 3-year return, for when the price history is too short.
-    One quick try per sheet (this runs inside API Gateway's 30 s budget); None if both
-    fail, which the dashboard shows as N/A rather than a wrong number."""
+    """A Google Sheet's own 3-year return, for when the price history is too short.
+    SPY_DAILY_MOVE first: it counts from the same date 3 years back, the owner's pick
+    (2026-10-09); SPY_INDICATORS counts 1095 days (a day late after a leap year).
+    One quick try per sheet (inside API Gateway's 30 s budget); None if both fail."""
+    v = _daily_move_3y()
+    if v is not None:
+        return v
     try:
         for line in _get_sheet_csv(URLS['SPY_INDICATORS'], tries=1, timeout=5).strip().split('\n'):
             parts = line.split(',')
@@ -746,12 +786,6 @@ def _sheet_return_3y() -> Optional[float]:
                     return val
     except Exception as e:  # noqa: BLE001
         print(f'[SPY] sheet 3y return (indicators) failed: {e}')
-    try:
-        daily_rows = list(csv.reader(StringIO(_get_sheet_csv(URLS['SPY_DAILY_MOVE'], tries=1, timeout=5))))
-        if len(daily_rows) > 10 and len(daily_rows[10]) > 1 and '3' in daily_rows[10][0]:
-            return _pct_cell(daily_rows[10][1])
-    except Exception as e:  # noqa: BLE001
-        print(f'[SPY] sheet 3y return (daily move) failed: {e}')
     return None
 
 
@@ -812,15 +846,10 @@ def fetch_spy_with_fallback(fred_api_key: Optional[str] = None,
                             parsed[parts[0].strip()] = v
                 required = ['200d MA SPY', '9d RSI SPY', 'SPY 52 week high', 'Current SPY']
                 if all(k in parsed for k in required):
-                    return3y_val = parsed.get('Three-Year Return')
+                    # same-date rule (daily-move sheet) first, the indicators' 1095-day value second
+                    return3y_val = _daily_move_3y(tries=2, timeout=10)
                     if return3y_val is None:
-                        try:
-                            daily_rows = list(csv.reader(StringIO(_get_sheet_csv(URLS['SPY_DAILY_MOVE']))))
-                            raw = daily_rows[10][1].strip() if len(daily_rows) > 10 and len(daily_rows[10]) > 1 else None
-                            if raw:
-                                return3y_val = float(raw.replace('%', '').strip())
-                        except Exception:
-                            pass
+                        return3y_val = parsed.get('Three-Year Return')
                     indicators = {
                         'ma200': parsed['200d MA SPY'],
                         'rsi': parsed['9d RSI SPY'],
@@ -892,6 +921,7 @@ def fetch_spy_with_fallback(fred_api_key: Optional[str] = None,
         
         # Override with Finnhub spot price to guarantee live data if Polygon metrics are stale
         # Finnhub 'c' (current) / 'pc' (previous close)
+        spot_date = None
         if finnhub_api_key:
             try:
                 fh = _fetch_finnhub_quote('SPY', finnhub_api_key)
@@ -901,6 +931,7 @@ def fetch_spy_with_fallback(fred_api_key: Optional[str] = None,
                     # Finnhub handles "previous close" identically in `fh['dailyChange']['value']` via pc reference.
                     # so we calculate backwards from the dailyChange.value!
                     prev_close = current - fh['dailyChange']['value']
+                    spot_date = fh.get('lastDate')
                     data_source += " + Finnhub Spot"
             except Exception:
                 pass
@@ -916,7 +947,10 @@ def fetch_spy_with_fallback(fred_api_key: Optional[str] = None,
 
         rsi = float(calculate_rsi(closes, period=9))
 
-        return3y = _return_3y_from_rows(rows, current)
+        as_of = spot_date or rows[-1]['date']
+        return3y = _return_3y_from_rows(rows, current, as_of)
+        if return3y is None:  # Polygon free = ~2y of bars: take the 3Y base from Nasdaq's
+            return3y = _return_3y_from_rows(_nasdaq_rows('SPY'), current, as_of)
         if return3y is None:
             return3y = _sheet_return_3y()
 

@@ -56,9 +56,9 @@ def test_sheet_fallback_is_none_when_both_sheets_fail(monkeypatch):
     assert f._sheet_return_3y() is None
 
 
-def test_sheet_layer_reads_a_percent_3y_cell(monkeypatch):
-    # "79.17%" made float() fail, so the 3Y silently came from the daily-move sheet
-    # (80.17%, a different anchor) — 2026-10-09.
+def test_sheet_layer_prefers_the_same_date_3y_then_parses_a_percent_cell(monkeypatch):
+    # Owner's pick 2026-10-09: same date 3 years back = the daily-move sheet (80.17%).
+    # When that sheet fails, the indicators' "79.17%" must still parse (float() choked on '%').
     csv_text = ('200d MA SPY,722.9284\n9d RSI SPY,63.1\nSPY 52 week high,781.62\n'
                 'Current SPY,778.57\nPrice from Three Years Ago,434.54\nThree-Year Return,79.17%\n')
 
@@ -67,5 +67,25 @@ def test_sheet_layer_reads_a_percent_3y_cell(monkeypatch):
     monkeypatch.setattr(f, '_fetch_yfinance', lambda *a, **k: None)
     monkeypatch.setattr(f.requests, 'get', lambda *a, **k: R())
     monkeypatch.setattr(f, '_get_sheet_csv', lambda url, **kw: '\n'.join(['x,y'] * 10 + ['3 YR Return,80.17%']))
-    out = f.fetch_spy_with_fallback()
-    assert out['return3y'] == 79.17
+    assert f.fetch_spy_with_fallback()['return3y'] == 80.17
+
+    def boom(url, **kw):
+        raise TimeoutError('sheet stalled')
+    monkeypatch.setattr(f, '_get_sheet_csv', boom)
+    assert f.fetch_spy_with_fallback()['return3y'] == 79.17
+
+
+def test_short_polygon_history_takes_the_3y_base_from_nasdaq_anchored_on_the_spot_date(monkeypatch):
+    from datetime import date, timedelta
+    end = date(2026, 10, 8)                                   # Polygon ends yesterday
+    poly = [{'date': (end - timedelta(days=i)).isoformat(), 'price': 700.0} for i in range(600)][::-1]
+    monkeypatch.setattr(f, '_fetch_yfinance', lambda *a, **k: None)
+    monkeypatch.setattr(f, '_fetch_polygon_aggs', lambda *a, **k: {'history': poly})
+    monkeypatch.setattr(f, '_fetch_finnhub_quote', lambda *a, **k: {
+        'current': 778.57, 'dailyChange': {'value': 4.64, 'pct': 0.6}, 'lastDate': '2026-10-09'})
+    nq = [{'date': '2023-10-06', 'close': 429.54}, {'date': '2023-10-09', 'close': 432.29},
+          {'date': '2023-10-10', 'close': 434.54}]
+    monkeypatch.setattr(f, '_nasdaq_rows', lambda s: nq)
+    monkeypatch.setattr(f, '_sheet_return_3y', lambda: 1 / 0)  # must not be reached
+    out = f.fetch_spy_with_fallback(polygon_api_key='k', finnhub_api_key='k')
+    assert round(out['return3y'], 2) == 80.10
