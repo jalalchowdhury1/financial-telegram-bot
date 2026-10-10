@@ -6,6 +6,7 @@ import { cacheHeaders } from '../../../lib/cdn';
 import { faultsFrom, gate } from '../../../lib/faults';
 import { isStale } from '../../../lib/freshness';
 import { loadLastGood, saveLastGood, loadLastGoodKV, saveLastGoodKV } from '../../../lib/store';
+import { runInBackground } from '../../../lib/background';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,7 +22,9 @@ export const dynamic = 'force-dynamic';
  *   7. KV last-good  `ftb:lg:fear-greed`   `fg_kvlg`   ┘ `kvlg` only the KV tier
  *   8. N/A (HTTP 500 + `error`, so loadJson retries and the card shows its skeleton)
  * Only a real CNN-index answer is ever saved as last-good (a proxy must never be
- * replayed later as if it were the index), and never on a fault test.
+ * replayed later as if it were the index), and never on a fault test. CNN and RapidAPI
+ * both reject a print older than FRESH_DAYS; a RapidAPI print without a timestamp is
+ * served but never saved (its freshness can't be proven).
  */
 const LG_KEY = 'fear-greed';
 const LG_MAX_AGE_MS = 3 * 864e5;   // a weekend; older than that is not "the index" any more
@@ -76,6 +79,10 @@ async function fromRapidApi(messages) {
     const data = await res.json();
     const fg = data.fgi;
     if (!Number.isFinite(fg?.now?.value)) throw new Error('RapidAPI data malformed');
+    // Same freshness gate as the CNN tier: a frozen reseller must not pass as today's index.
+    const lu = data.lastUpdated || {};
+    const asOf = lu.humanDate || (Number.isFinite(lu.epochUnixSeconds) ? new Date(lu.epochUnixSeconds * 1000).toISOString() : null);
+    if (asOf && isStale(asOf, FRESH_DAYS)) throw new Error(`RapidAPI frozen (lastUpdated ${asOf})`);
     return {
         score: fg.now.value,
         rating: fg.now?.valueText?.toUpperCase() || getRatingFromScore(fg.now?.value),
@@ -83,7 +90,8 @@ async function fromRapidApi(messages) {
         previousWeek: fg.oneWeekAgo?.value ?? 'N/A',
         previousMonth: fg.oneMonthAgo?.value ?? 'N/A',
         previousYear: fg.oneYearAgo?.value ?? 'N/A',
-        _meta: { source: 'RapidAPI', hasErrors: false, messages: [...messages] }
+        ...(asOf ? { asOf } : {}),
+        _meta: { source: 'RapidAPI', hasErrors: false, messages: asOf ? [...messages] : [...messages, 'RapidAPI gave no lastUpdated: freshness unverified, not saved as last-good'] }
     };
 }
 
@@ -182,7 +190,7 @@ export async function GET(request) {
     const store = async (payload) => {
         if (testMode) return; // a fault test never writes /tmp or KV
         saveLastGood(LG_KEY, payload);
-        await saveLastGoodKV(LG_KEY, payload);
+        runInBackground(() => saveLastGoodKV(LG_KEY, payload)); // never holds the response
     };
 
     try {
@@ -197,7 +205,8 @@ export async function GET(request) {
         // Layer 2: RapidAPI
         try {
             const result = await gate('rapidapi', faults, () => fromRapidApi(messages));
-            await store(result);
+            // Only a print whose timestamp passed the freshness gate becomes last-good.
+            if (result.asOf) await store(result);
             return Response.json(result);
         } catch (e) { messages.push(`Layer 2 (RapidAPI) failed: ${e.message}`); }
 

@@ -18,7 +18,8 @@ jest.mock('../fetcher', () => ({
         }
         if (url.includes('rapidapi')) {
             if (mode.rapid === 'down') throw new Error('RapidAPI 403');
-            return okJson({ fgi: { now: { value: 44, valueText: 'Fear' }, previousClose: { value: 38 }, oneWeekAgo: { value: 40 }, oneMonthAgo: { value: 38 }, oneYearAgo: { value: 49 } } });
+            const lastUpdated = mode.rapidTs === null ? undefined : { epochUnixSeconds: Math.floor(Date.parse(mode.rapidTs || '2026-10-09T21:30:00Z') / 1000), humanDate: mode.rapidTs || '2026-10-09T21:30:00.000Z' };
+            return okJson({ ...(lastUpdated ? { lastUpdated } : {}), fgi: { now: { value: 44, valueText: 'Fear' }, previousClose: { value: 38 }, oneWeekAgo: { value: 40 }, oneMonthAgo: { value: 38 }, oneYearAgo: { value: 49 } } });
         }
         if (url.includes('finance.yahoo.com')) {
             if (mode.yahoo === 'down') throw new Error('Yahoo 429');
@@ -82,6 +83,29 @@ describe('/api/fear-greed', () => {
         expect(b.score).toBe(44);
         expect(b._meta.source).toBe('RapidAPI');
         expect(b._meta.messages.join(' ')).toMatch(/injected fault: cnn/);
+    });
+
+    test('RapidAPI with a frozen lastUpdated is refused (like CNN) → next layer', async () => {
+        mode.rapidTs = '2026-09-20T20:00:00.000Z';
+        const { b } = await call('?_fail=cnn');
+        expect(b._meta.source).not.toBe('RapidAPI');
+        expect(b._meta.messages.join(' ')).toMatch(/RapidAPI frozen \(lastUpdated 2026-09-20/);
+    });
+
+    test('RapidAPI fresh print is saved as last-good; one without a timestamp is served but never saved', async () => {
+        // test mode never writes, so call the store-able path through a non-fault run with CNN down
+        mode.cnn = 'down';
+        let { b } = await call();
+        expect(b._meta.source).toBe('RapidAPI');
+        expect(b.asOf).toBe('2026-10-09T21:30:00.000Z');
+        expect(store.__tmp.get('fear-greed').data.score).toBe(44);
+        store.__tmp.clear(); store.saveLastGoodKV.mockClear();
+        mode.rapidTs = null;
+        ({ b } = await call());
+        expect(b.score).toBe(44);
+        expect(b._meta.messages.join(' ')).toMatch(/freshness unverified/);
+        expect(store.__tmp.has('fear-greed')).toBe(false);
+        expect(store.saveLastGoodKV).not.toHaveBeenCalled();
     });
 
     test('?_fail=cnn,rapidapi → Yahoo VIX proxy, labelled as a proxy (not CNN), null bar skipped', async () => {
