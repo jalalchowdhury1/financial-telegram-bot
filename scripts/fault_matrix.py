@@ -150,7 +150,7 @@ SHEET_3Y = [
     ('SPY_INDICATORS', 'https://docs.google.com/spreadsheets/d/1FPxydetBtxFIm-qxrF5BR-sMZAUnbdA09LPbSu5lUCs/export?format=csv&gid=941079229',
      'Three-Year Return', False),
     ('SPY_DAILY_MOVE', 'https://docs.google.com/spreadsheets/d/1T99550TEo19JB6I3aKnRRGXAblB8mWNBsM-48jrDGe4/export?format=csv&gid=0',
-     '3 YR Return', True),
+     '3 YR Return', False),  # B11 computed in-sheet, anchored on SPY's last trade since 2026-10-10
 ]
 
 

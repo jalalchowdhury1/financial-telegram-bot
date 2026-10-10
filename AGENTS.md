@@ -164,8 +164,11 @@ own bar tiers go first; the sheet answer is served only if they fail or are stal
 **3Y rule everywhere (bot + `lib/spyTiers.js return3yFrom`), owner pick 2026-10-09: base = last
 close on/before the SAME DATE 3 years earlier (Feb 29→28)**, as-of = the live spot's session date
 (2026-10-09: 80.10%). **Sheets (last-resort 3Y layers, read-only for us — only the owner can edit):**
-- `SPY_DAILY_MOVE` row 11 = IMPORTRANGE of sheet `1zQQ2am1…` Sheet2!D2: S&P 500 **index** 3Y,
-  `DATE(YEAR(TODAY())-3,…)` — right on trading days (80.17% on 10-09), drifts on weekends/holidays.
+- `SPY_DAILY_MOVE` B11: S&P 500 **index** 3Y (≈0.07 pt above SPY's, the fund's fee). Until 2026-10-10
+  an IMPORTRANGE of "AAII - FInance" (`1zQQ2am1…`, owned by financemeisterus@, view-only for us)
+  pinned to TODAY() — drifted on weekends. Now computed in-sheet (owner pasted 2026-10-10):
+  `=TEXT(GOOGLEFINANCE("INDEXSP:.INX","price")/LET(t, EDATE(INT(GOOGLEFINANCE("SPY","tradetime")), -36), raw, GOOGLEFINANCE("INDEXSP:.INX","close", t-10, t+1), d, INDEX(raw,0,1), c, INDEX(raw,0,2), ok, FILTER(c, IFERROR(INT(d)<=t, FALSE)), INDEX(ok, ROWS(ok)))-1, "0.00%")`
+  — TEXT keeps the "%" in the CSV (`_pct_cell` would read a bare 0.8017 as 0.8%).
 - `SPY_INDICATORS` (`1FPxyd…`, Sheet2) B5 was `INDEX(GOOGLEFINANCE("SPY","price",TODAY()-3*365),2,2)`
   (78.44% on Sat 10-10). **Owner pasted this replacement 2026-10-10 → 80.10%**, tested in a scratch sheet against Nasdaq closes
   (weekday 432.29, weekend → Fri 429.54, Jul 4 → Jul 3 443.79, Feb 29 → Feb 28):
