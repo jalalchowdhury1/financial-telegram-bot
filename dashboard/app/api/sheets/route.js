@@ -5,10 +5,18 @@ import { resolveVixFearGreedTag } from '../../../lib/vixFearGreed';
 import { loadLastGood, saveLastGood } from '../../../lib/store';
 import { resolveAaii } from '../../../lib/aaii';
 import { defaultKv } from '../../../lib/kv';
+import { makeBudget } from '../../../lib/budget';
+import { runInBackground } from '../../../lib/background';
 import { resolveLiveFields, fillFromLastGood, persistLiveFields, summarize, toResults } from '../../../lib/sheetsCascade';
 import bakedAaii from '../../../lib/data/aaiiNewest.json';
 
 export const dynamic = 'force-dynamic';
+// Pinned like the other data routes (an undeclared route gets 10 s without Fluid).
+// The live tiers (sheets → alt → CBOE → FRED, AAII, the VIX tag) share SHEETS_BUDGET_MS
+// from request start; whatever is late is treated as failed and falls to the per-field
+// last-good copies (one KV GET, 3 s) — the route answers in ~25 s worst case, never a 504.
+export const maxDuration = 60;
+const SHEETS_BUDGET_MS = 20000;
 
 // One fetch per URL per request: the VIX tag and the VIX-level CBOE tier both read
 // VIX_History.csv, and a second download of ~470 KB buys nothing.
@@ -28,6 +36,7 @@ function memoFetch(fn) {
  */
 export async function GET(request) {
     request.headers.get('user-agent'); // touch the request: keeps the route dynamic (AGENTS.md §3)
+    const startedAt = Date.now();
     const faults = faultsFrom(request);
     const store = { load: loadLastGood, save: saveLastGood };
     const text = memoFetch(fetchText);
@@ -38,7 +47,13 @@ export async function GET(request) {
         const tagPromise = resolveVixFearGreedTag({ fredApiKey: process.env.FRED_API_KEY, fetchJson, fetchText: text, faults })
             .catch((e) => ({ tag: 'N/A', tier: 'none', fallback: true, message: `VIX fear/greed: resolver threw (${String(e?.message).slice(0, 120)})` }));
         const livePromise = resolveLiveFields({ faults, fetchText: text, fetchJson, fredApiKey: process.env.FRED_API_KEY });
-        const [{ fields, messages: liveMessages }, aaii, tag] = await Promise.all([livePromise, aaiiPromise, tagPromise]);
+        const budget = makeBudget(SHEETS_BUDGET_MS, { startedAt });
+        const late = `request time budget (${SHEETS_BUDGET_MS / 1000} s) spent`;
+        const [{ fields, messages: liveMessages }, aaii, tag] = await Promise.all([
+            budget.race(livePromise, { fields: { NotSoBoring: null, FrontRunner: null, vixCurrent: null, vixThreeMonth: null }, messages: [`live sheet/CBOE/FRED tiers: ${late}`] }),
+            budget.race(aaiiPromise, { payload: null, messages: [`AAII: ${late}`] }),
+            budget.race(tagPromise, { tag: 'N/A', tier: 'none', fallback: true, message: `VIX fear/greed: ${late}` }),
+        ]);
 
         if (tag.tag && tag.tag !== 'N/A') {
             fields.vixFearGreed = { value: tag.tag, source: tag.tier === 'cboe' ? 'CBOE-computed' : 'FRED-computed (lags a trading day)', tier: tag.tier, live: tag.tier === 'cboe', stale: !!tag.stale };
@@ -46,7 +61,8 @@ export async function GET(request) {
             fields.vixFearGreed = null;
         }
         const filled = await fillFromLastGood(fields, { faults, store, kv: defaultKv });
-        await persistLiveFields(fields, { faults, store, kv: defaultKv, kvRecord: filled.kvRecord });
+        // /tmp is written synchronously inside; the throttled KV SET must not hold the response.
+        runInBackground(() => persistLiveFields(fields, { faults, store, kv: defaultKv, kvRecord: filled.kvRecord }));
 
         const summary = summarize(fields);
         const messages = [...liveMessages, ...filled.messages];

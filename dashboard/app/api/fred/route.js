@@ -4,6 +4,7 @@ import { withFreshness } from '../../../lib/freshness';
 import { serve, loadLastGood } from '../../../lib/store';
 import { fetchSheetLkg } from '../../../lib/sheetLkg';
 import { faultsFrom } from '../../../lib/faults';
+import { makeBudget, TIMED_OUT } from '../../../lib/budget';
 import { resolvePeRatio } from '../../../lib/peRatio';
 import { resolveLeg, buildCopperGold, westmetallCopperLeg, LB_PER_TONNE } from '../../../lib/copperGold';
 import { resolveSpEps, parseMultplEps, parseShillerCsv, toMonthlyHistory } from '../../../lib/spEps';
@@ -17,6 +18,12 @@ import { resolveHorseman, buildHorseman, needsRepair, isUpgrade, mergeHorsemenOv
 // FRED calls below can use the 30-min Data Cache. Reading the request in GET()
 // keeps the handler running per request (fresh fetchedAt, no build-time bake).
 export const fetchCache = 'default-cache';
+// Hobby + Fluid compute defaults to 300 s, but without Fluid an undeclared route gets
+// 10 s; pin 60 s (valid either way). The optional tiers below (P/E, Horsemen repair,
+// copper/gold, S&P EPS, bankruptcies) share FRED_BUDGET_MS from request start, so the
+// route degrades (that card N/A) long before 60 s instead of a 504 that skips serve().
+export const maxDuration = 60;
+const FRED_BUDGET_MS = 40000;
 
 const REVALIDATE_SECONDS = 1800; // 30 minutes
 const RETRY_DELAYS_MS = [400, 900, 1800]; // back-off on 429
@@ -524,6 +531,7 @@ export async function GET(request) {
     // EVERYTHING runs inside serve(): any throw (missing key, all series failing,
     // buildResponse error, etc.) is caught -> last-known-good -> safe default.
     // The route can never 500 or return an empty body.
+    const budget = makeBudget(FRED_BUDGET_MS);
     return serve('fred', async () => {
         const now = new Date();
         // A missing key used to throw here. It no longer does: "FRED_API_KEY not
@@ -569,11 +577,13 @@ export async function GET(request) {
         // P/E ratio — layered, cached scrapes (lib/peRatio.js; gates pe_multpl /
         // pe_yahoo / pe_fred). peSource records which layer won so the derived-EPS
         // leg below can refuse CAPE (a 10-yr smoothed P/E) and the tile can label it.
-        const pe = await resolvePeRatio({
+        const overBudget = (what) => `${what} skipped: request time budget (${FRED_BUDGET_MS / 1000} s) spent`;
+        let pe = await budget.race(resolvePeRatio({
             multplHtml: () => cachedText('multpl', EXTERNAL_URLS.MULTPL_PE, 8000),
             yahooHtml: () => cachedText('yahoo-pe', EXTERNAL_URLS.YAHOO_PE, 8000),
             capeObs: () => fetchSeries('PE10', liveKey, 3),
-        }, faults, { maskKey });
+        }, faults, { maskKey }));
+        if (pe === TIMED_OUT) pe = { peRatio: null, peSource: null, peAsOf: null, messages: [overBudget('P/E')] };
         const peRatio = pe.peRatio;
         const peSource = pe.peSource;
         messages.push(...pe.messages);
@@ -584,25 +594,48 @@ export async function GET(request) {
         // (Treasury / BLS / keyless FRED CSV) whenever the primary left one empty
         // or stale. No-ops — and costs nothing — on a healthy load. Guarded so a
         // fallback provider being down can never break the FRED payload.
+        //
+        // Copper/Gold and Bankruptcies are independent of it, so all three start now and
+        // run in parallel under the request budget. Copper/Gold comes from price sources
+        // (not FRED series) — a failure just leaves it unavailable (which the daily
+        // health-check then flags as an unexpected N/A). The leg cascade gates Polygon on
+        // `cg_polygon` internally, so pass the real key here.
+        // Horsemen repair works on a COPY and is merged only if it finished in budget, so
+        // a late repair can never mutate an already-served payload.
+        const polyKey = process.env.POLYGON_KEY || '';
+        const horsemenWork = { ...responseData, horsemen: { ...(responseData.horsemen || {}) }, yieldCurve: responseData.yieldCurve };
+        const horsemenMsgs = [];
+        const horsemenP = budget.race(
+            repairHorsemen(horsemenWork, { now, faults, blsKey: process.env.BLS_API_KEY || '', messages: horsemenMsgs })
+                .then((r) => ({ r: r || {} }), (e) => ({ err: e })),
+        );
+        const cgP = budget.race(fetchCopperGold(now, { fredKey: apiKey, polyKey, faults }).then((cg) => ({ cg }), (e) => ({ err: e })));
+        const bkP = budget.race(resolveBankruptcies({
+            now,
+            faults,
+            fetchBuffer: async (url) => Buffer.from(await (await proxyFetch(url, { revalidate: REVALIDATE_SECONDS, timeout: 7000 })).arrayBuffer()),
+            fetchText: (url) => cachedText(`uscourts-${url.slice(-24)}`, url, 7000),
+            baked: bakedBankruptcies,
+        }).then((bk) => ({ bk }), (e) => ({ err: e })));
+
         let repairedHorsemen = {};
-        try {
-            repairedHorsemen = await repairHorsemen(responseData, { now, faults, blsKey: process.env.BLS_API_KEY || '', messages }) || {};
-        } catch (e) {
-            messages.push(`Horsemen repair failed: ${maskKey(e.message)}`);
+        const hz = await horsemenP;
+        if (hz === TIMED_OUT) messages.push(overBudget('Horsemen repair'));
+        else if (hz.err) messages.push(`Horsemen repair failed: ${maskKey(hz.err.message)}`);
+        else {
+            repairedHorsemen = hz.r;
+            responseData.horsemen = horsemenWork.horsemen;
+            responseData.yieldCurve = horsemenWork.yieldCurve;
+            messages.push(...horsemenMsgs);
         }
         const horsemenLive = Object.keys(repairedHorsemen).length;
 
-        // Copper/Gold ratio comes from price sources (not FRED series). Guarded so it
-        // can never break the FRED data: a failure just leaves it unavailable (which
-        // the daily health-check then flags as an unexpected N/A). The leg cascade gates
-        // Polygon on `cg_polygon` internally, so pass the real key here.
-        const polyKey = process.env.POLYGON_KEY || '';
-        try {
-            const cg = await fetchCopperGold(now, { fredKey: apiKey, polyKey, faults });
-            responseData.indicators.copperGold = cg;
-            messages.push(`Copper/Gold: ${cg.source || 'unavailable'}`);
-        } catch (e) {
-            messages.push(`Copper/Gold failed: ${maskKey(e.message)}`);
+        const cgr = await cgP;
+        if (cgr === TIMED_OUT) messages.push(overBudget('Copper/Gold'));
+        else if (cgr.err) messages.push(`Copper/Gold failed: ${maskKey(cgr.err.message)}`);
+        else {
+            responseData.indicators.copperGold = cgr.cg;
+            messages.push(`Copper/Gold: ${cgr.cg.source || 'unavailable'}`);
         }
 
         // S&P 500 EPS (TTM) — guarded the same way: a failure leaves the card N/A
@@ -610,9 +643,12 @@ export async function GET(request) {
         // try/catch is belt-and-braces around the source construction.
         responseData.spEps = { current: null, asOf: null, stale: false, unavailable: true, source: null, historySource: null, history: [], tried: [] };
         try {
-            const eps = await resolveSpEps(spEpsSources({ fredKey: apiKey, pe: peRatio, peSource }), faults, now);
-            responseData.spEps = { ...eps, history: toMonthlyHistory(eps.history) };
-            messages.push(`S&P EPS: ${eps.source || 'unavailable'}`);
+            const eps = await budget.race(resolveSpEps(spEpsSources({ fredKey: apiKey, pe: peRatio, peSource }), faults, now));
+            if (eps === TIMED_OUT) messages.push(overBudget('S&P EPS'));
+            else {
+                responseData.spEps = { ...eps, history: toMonthlyHistory(eps.history) };
+                messages.push(`S&P EPS: ${eps.source || 'unavailable'}`);
+            }
         } catch (e) {
             messages.push(`S&P EPS failed: ${maskKey(e.message)}`);
         }
@@ -621,18 +657,12 @@ export async function GET(request) {
         // Guarded like copperGold/spEps: live uscourts XLSX → baked history JSON
         // (lib/data/bankruptciesBaked.json); a total failure leaves the placeholder
         // (N/A panel) and can never break the FRED payload. Gates: bk_uscourts, bk_baked.
-        try {
-            const bk = await resolveBankruptcies({
-                now,
-                faults,
-                fetchBuffer: async (url) => Buffer.from(await (await proxyFetch(url, { revalidate: REVALIDATE_SECONDS, timeout: 7000 })).arrayBuffer()),
-                fetchText: (url) => cachedText(`uscourts-${url.slice(-24)}`, url, 7000),
-                baked: bakedBankruptcies,
-            });
-            responseData.horsemen.bankruptcies = bk;
-            messages.push(`Bankruptcies: ${bk.source || 'unavailable'}`);
-        } catch (e) {
-            messages.push(`Bankruptcies failed: ${maskKey(e.message)}`);
+        const bkr = await bkP;
+        if (bkr === TIMED_OUT) messages.push(overBudget('Bankruptcies'));
+        else if (bkr.err) messages.push(`Bankruptcies failed: ${maskKey(bkr.err.message)}`);
+        else {
+            responseData.horsemen.bankruptcies = bkr.bk;
+            messages.push(`Bankruptcies: ${bkr.bk.source || 'unavailable'}`);
         }
 
         const live = {

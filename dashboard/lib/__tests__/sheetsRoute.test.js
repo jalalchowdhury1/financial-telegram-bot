@@ -71,7 +71,12 @@ const store = require('../store');
 const kv = require('../kv');
 const { KV_KEY, TMP_KEY } = require('../sheetsCascade');
 const { GET } = require('../../app/api/sheets/route');
-const get = async (q = '') => (await GET(new Request(`https://x.test/api/sheets${q}`, { headers: { 'user-agent': 'jest' } }))).json();
+// The KV SET runs in the background (lib/background.js); let it settle before asserting.
+const get = async (q = '') => {
+    const b = await (await GET(new Request(`https://x.test/api/sheets${q}`, { headers: { 'user-agent': 'jest' } }))).json();
+    await new Promise((r) => setImmediate(r));
+    return b;
+};
 const kvSets = () => kv.defaultKv.set.mock.calls.filter(([k]) => k === KV_KEY).length;
 
 const NOW = new Date('2026-10-09T20:00:00Z');
@@ -117,6 +122,10 @@ describe('/api/sheets healthy path', () => {
         expect(kvSets()).toBe(1);
         jest.setSystemTime(new Date(NOW.getTime() + 31 * 60e3));
         await get();
+        expect(kvSets()).toBe(1);                    // a last-good copy is refreshed at most hourly
+        jest.setSystemTime(new Date(NOW.getTime() + 61 * 60e3));
+        await get();
+        await new Promise((r) => setImmediate(r));
         expect(kvSets()).toBe(2);
     });
 
@@ -313,6 +322,27 @@ describe('marketClock: completed sessions', () => {
         expect(dailyCloseStatus('2026-10-08', Date.parse('2026-10-09T17:00:00Z'))).toMatchObject({ current: false, inSession: true });
         expect(dailyCloseStatus('2026-10-09', Date.parse('2026-10-10T15:00:00Z'))).toMatchObject({ current: true, closeMs: Date.parse('2026-10-09T20:00:00Z') });
         expect(dailyCloseStatus(null, Date.now()).current).toBe(false);
+    });
+});
+
+describe('/api/sheets time budget', () => {
+    test('declares maxDuration and a budget that leaves room for the last-good fill', () => {
+        const src = require('fs').readFileSync(require('path').join(__dirname, '../../app/api/sheets/route.js'), 'utf8');
+        const md = Number(src.match(/export const maxDuration = (\d+);/)[1]);
+        const budget = Number(src.match(/const SHEETS_BUDGET_MS = (\d+);/)[1]);
+        expect(budget + 3000 + 5000).toBeLessThanOrEqual(md * 1000);
+    });
+
+    test('makeBudget cuts a hung tier at the budget; a rejection degrades the same way', async () => {
+        jest.useRealTimers();
+        const { makeBudget } = require('../budget');
+        const b = makeBudget(30, { minMs: 0 });
+        const t0 = Date.now();
+        expect(await b.race(new Promise(() => {}), 'late')).toBe('late');
+        expect(Date.now() - t0).toBeLessThan(1000);
+        expect(await b.race(Promise.reject(new Error('x')), 'late')).toBe('late');
+        expect(await makeBudget(5000).race(Promise.resolve(7))).toBe(7);
+        jest.useFakeTimers({ now: NOW, doNotFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'setImmediate', 'nextTick', 'queueMicrotask'] });
     });
 });
 

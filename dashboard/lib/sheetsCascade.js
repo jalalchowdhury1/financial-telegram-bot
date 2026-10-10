@@ -37,8 +37,10 @@ import { dailyCloseStatus } from './marketClock';
 export const TMP_KEY = 'sheets-fields';
 export const KV_KEY = 'ftb:lg:sheets-fields';
 const MARK_KEY = 'sheets-fields-kvmark';
-export const KV_REWRITE_MS = 30 * 60e3;
-export const KV_MIN_GAP_MS = 60e3;
+// Same rationale as lib/store.js: a durable last-good copy needs no minute-level freshness
+// (intraday VIX changes every minute, which used to mean ~1 SET/min per warm instance).
+export const KV_REWRITE_MS = 60 * 60e3;
+export const KV_MIN_GAP_MS = 60 * 60e3;
 
 // Max age of a served last-good copy. NotSoBoring/FrontRunner are daily signals
 // (a week is the store.js default); VIX values cover a weekend + holiday, no more.
@@ -238,8 +240,8 @@ export async function fillFromLastGood(fields, { faults, store, kv, now = Date.n
 }
 
 /**
- * Save every LIVE field to /tmp (always) and KV (throttled: values changed and ≥ 1 min
- * since the last write, or > 30 min since it). Merges with the existing copies so a field
+ * Save every LIVE field to /tmp (always) and KV (throttled: at most one SET per
+ * KV_MIN_GAP_MS / KV_REWRITE_MS — 60 min — per instance). Merges with the existing copies so a field
  * that wasn't live this time keeps its older entry. Skipped entirely in fault test mode.
  * `kvRecord` = the KV record if fillFromLastGood already read it (saves a GET).
  */
