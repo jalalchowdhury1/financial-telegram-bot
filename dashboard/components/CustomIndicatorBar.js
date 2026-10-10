@@ -42,6 +42,30 @@ export function aaiiCaption(aaii, diffStr) {
     );
 }
 
+/**
+ * Orange "⚠ cached Oct 8" line under a pill whose value /api/sheets served from a
+ * last-good copy or a lagged source (its field is in `_meta.staleFields`, see
+ * lib/sheetsCascade.js). Shown on desktop AND phone — an old value must never look
+ * live. Nothing stale → nothing rendered.
+ */
+export function staleNote(sheets, fields) {
+    const stale = sheets?._meta?.staleFields || [];
+    const hit = fields.filter((f) => stale.includes(f));
+    if (!hit.length) return null;
+    const info = sheets._meta.fields?.[hit[0]] || {};
+    const d = info.savedAt ? new Date(info.savedAt) : null;
+    const when = d && !Number.isNaN(d.getTime())
+        ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/New_York' })
+        : null;
+    const what = when ? `cached ${when}` : /FRED/.test(info.source || '') ? 'FRED, lags a day' : 'not live';
+    return (
+        <div data-testid={`stale-${hit[0]}`} title={info.source || ''}
+            style={{ fontSize: '0.6rem', marginTop: '2px', color: 'var(--orange)', fontWeight: 700 }}>
+            ⚠ STALE · {what}
+        </div>
+    );
+}
+
 export default function CustomIndicatorBar({ sheets, loading }) {
     // AAII is the only pill that earns a mark: it prints weekly on Thursdays.
     // VIX changes daily, and NotSoBoring / FrontRunner are not in the history sheet.
@@ -55,6 +79,7 @@ export default function CustomIndicatorBar({ sheets, loading }) {
                     </span>
                 </div>
                 <div className="value">{loading ? '...' : (sheets?.NotSoBoring || 'N/A')}</div>
+                {!loading && staleNote(sheets, ['NotSoBoring'])}
             </div>
             {/* The only pill that links out: opens the Catalyst Radar, which shows how
                 close each Frontrunner trigger is and what crossing it would do. */}
@@ -72,6 +97,7 @@ export default function CustomIndicatorBar({ sheets, loading }) {
                     <span className="pill-out" aria-hidden="true">↗</span>
                 </div>
                 <div className="value">{loading ? '...' : (sheets?.FrontRunner || 'N/A')}</div>
+                {!loading && staleNote(sheets, ['FrontRunner'])}
             </a>
             <div className={`indicator-pill${!loading && sheets?.AAIIDiff && parseFloat(sheets.AAIIDiff) > 20 ? ' pill-alert' : ''}`}>
                 <div className="label"><span className="emoji">🔸</span>AAII Diff</div>
@@ -118,6 +144,7 @@ export default function CustomIndicatorBar({ sheets, loading }) {
                         </>
                         : 'N/A')}
                 </div>
+                {!loading && staleNote(sheets, ['vixCurrent', 'vixThreeMonth', 'vixFearGreed'])}
             </div>
         </div>
     );
