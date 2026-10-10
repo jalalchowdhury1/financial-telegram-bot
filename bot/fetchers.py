@@ -9,7 +9,7 @@ import requests
 import time
 from io import StringIO
 from typing import Dict, Any, List, Optional
-from bot.config import URLS, RSI_PERIOD, RETURN_3Y_DAYS
+from bot.config import URLS, RSI_PERIOD
 
 # Optional heavy dependencies (for fetchers that need them)
 try:
@@ -708,22 +708,28 @@ def _pct_cell(raw: Any) -> Optional[float]:
 
 
 def _return_3y_from_rows(rows: List[Dict], current: float) -> Optional[float]:
-    """3-year price return from daily rows, or None when they span less than 3 years.
+    """3-year price return (same date 3 years back) from daily rows, or None when they span less.
 
     Polygon's free tier serves only ~2 years (~500 rows) however many days are asked
     for. The old `min(756, len(rows))` quietly turned that into a 2-YEAR return shown
     as "3Y Return" (2026-09-26: +34.8% on the dashboard vs the true ~+81%)."""
-    from datetime import datetime, timedelta
+    # Base = last close on/before the same date 3 years earlier (Feb 29 -> Feb 28).
+    # Owner's pick 2026-10-09 over "1095 days back" (which lands a day late after a leap year).
     if not rows:
         return None
-    try:
-        last = datetime.strptime(str(rows[-1]['date'])[:10], '%Y-%m-%d')
-    except (KeyError, ValueError):
+    last = str(rows[-1].get('date', ''))[:10]
+    if len(last) != 10 or last[4] != '-':
         return None
-    target = (last - timedelta(days=RETURN_3Y_DAYS)).strftime('%Y-%m-%d')
+    y, m, d = last.split('-')
+    target = f"{int(y) - 3}-{m}-{'28' if (m, d) == ('02', '29') else d}"
     if not str(rows[0].get('date', ''))[:10] <= target:
         return None
-    base = next((r.get('close') for r in rows if str(r.get('date', ''))[:10] >= target), None)
+    base = None
+    for r in rows:
+        if str(r.get('date', ''))[:10] <= target:
+            base = r.get('close')
+        else:
+            break
     return _calc_pct(current, base) if base else None
 
 

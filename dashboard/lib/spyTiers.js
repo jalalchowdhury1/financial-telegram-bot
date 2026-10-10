@@ -26,7 +26,6 @@ import { etParts, sessionOf } from './marketClock';
 const r2 = (x) => (x == null ? null : Math.round(x * 100) / 100);
 const sma = (arr, i, p) => (i >= p - 1 ? arr.slice(i - p + 1, i + 1).reduce((s, v) => s + v, 0) / p : null);
 const addDays = (date, n) => new Date(Date.parse(`${date}T12:00:00Z`) + n * 864e5).toISOString().slice(0, 10);
-const RETURN_3Y_DAYS = 1095; // calendar days — the Sheet/Lambda rule (756 bars overshoots by ~4 days)
 // A spot more than 15% off the newest bar is a vendor glitch, not a SPY move.
 const plausible = (spot, ref) => Number.isFinite(spot) && spot > 0 && (!ref || Math.abs(spot / ref - 1) < 0.15);
 const fmtPct = (p) => `${p >= 0 ? '+' : ''}${p.toFixed(2)}%`;
@@ -61,16 +60,24 @@ export function spyPreferNewer(payload, savedAt) {
 }
 
 /** 3Y price return from oldest->newest bars, or null when they span < 3 years (never a shorter window labelled 3Y). */
+/** Same calendar date 3 years before `date` (Feb 29 → Feb 28). Owner's pick 2026-10-09. */
+export function threeYearsBefore(date) {
+    const [y, m, d] = date.split('-');
+    const day = m === '02' && d === '29' ? '28' : d;
+    return `${Number(y) - 3}-${m}-${day}`;
+}
+
 export function return3yFrom(history, current, asOf) {
-    // Base = first close on/after (asOf − 1095 days); asOf = the date `current` is
-    // for (a live spot is today's, not the last bar's). Null unless the bars reach
-    // back that far, so a 2-year history never passes as a 3Y return.
+    // Base = last close on/before the same date 3 years earlier (the usual fund-site
+    // convention; owner chose it over "1095 days back" on 2026-10-09). asOf = the date
+    // `current` is for (a live spot is today's, not the last bar's). Null unless the
+    // bars reach back that far, so a 2-year history never passes as a 3Y return.
     const n = history.length;
     if (!n) return null;
-    const last = Date.parse(`${asOf || history[n - 1].date}T00:00:00Z`);
-    const target = new Date(last - RETURN_3Y_DAYS * 864e5).toISOString().slice(0, 10);
+    const target = threeYearsBefore(asOf || history[n - 1].date);
     if (!(history[0].date <= target)) return null;
-    const base = history.find((b) => b.date >= target);
+    let base = null;
+    for (const b of history) { if (b.date <= target) base = b; else break; }
     const px3y = base?.price;
     return px3y ? ((current - px3y) / px3y) * 100 : null;
 }

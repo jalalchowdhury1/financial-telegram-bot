@@ -15,7 +15,7 @@ jest.mock('../sources', () => ({
 }));
 
 const src = require('../sources');
-const { latestSessionDate, buildSpy, fallbackSpy, fallbackMove, return3yFrom } = require('../spyTiers');
+const { latestSessionDate, buildSpy, fallbackSpy, fallbackMove, return3yFrom, threeYearsBefore } = require('../spyTiers');
 
 // Fri 9 Oct 2026, 14:00 ET (market open) → latest session = 2026-10-09.
 const OPEN = Date.parse('2026-10-09T18:00:00Z');
@@ -58,23 +58,29 @@ describe('latestSessionDate', () => {
 });
 
 describe('buildSpy / return3yFrom', () => {
-    test('3Y = first close on/after last date − 1095 days (the Sheet/Lambda rule)', () => {
-        // Real SPY 2026-10-09: 1095 days back = 2023-10-10 (434.54) → 79.17%, not
-        // the 756-bars-back 2023-10-05 (424.5) → 83.41% the backups used to show.
+    test('3Y = last close on/before the same date 3 years earlier (owner pick 2026-10-09)', () => {
+        // Real SPY: 2026-10-09 → 2023-10-09 (432.29) → 80.10%. The Sheet's 1095-days rule
+        // landed on 2023-10-10 (79.17%) because 2024 was a leap year.
         const h = [
             { date: '2023-10-05', price: 424.5 }, { date: '2023-10-06', price: 429.54 },
             { date: '2023-10-09', price: 432.29 }, { date: '2023-10-10', price: 434.54 },
-            { date: '2023-10-11', price: 436.32 }, { date: '2026-10-09', price: 778.57 },
+            { date: '2026-10-09', price: 778.57 },
         ];
-        expect(return3yFrom(h, 778.57)).toBeCloseTo(79.17, 2);
+        expect(return3yFrom(h, 778.57)).toBeCloseTo(80.10, 2);
+        // anniversary on a weekend (2023-10-08 was a Sunday) → the Friday before
+        expect(return3yFrom(h, 778.57, '2026-10-08')).toBeCloseTo(((778.57 - 429.54) / 429.54) * 100, 6);
+    });
+    test('threeYearsBefore: same date, Feb 29 → Feb 28', () => {
+        expect(threeYearsBefore('2026-10-09')).toBe('2023-10-09');
+        expect(threeYearsBefore('2028-02-29')).toBe('2025-02-28');
     });
     test('3Y anchors on the live spot\'s date, not the last bar (Polygon ends yesterday)', () => {
         const h = [
-            { date: '2023-10-05', price: 424.5 }, { date: '2023-10-09', price: 432.29 },
+            { date: '2023-10-06', price: 429.54 }, { date: '2023-10-09', price: 432.29 },
             { date: '2023-10-10', price: 434.54 }, { date: '2026-10-08', price: 774 },
         ];
-        expect(return3yFrom(h, 778.57)).toBeCloseTo(80.10, 2);            // anchored on 10-08
-        expect(return3yFrom(h, 778.57, '2026-10-09')).toBeCloseTo(79.17, 2); // anchored on spot's day
+        expect(return3yFrom(h, 778.57)).toBeCloseTo(((778.57 - 429.54) / 429.54) * 100, 6); // anchored on 10-08
+        expect(return3yFrom(h, 778.57, '2026-10-09')).toBeCloseTo(80.10, 2);              // anchored on spot's day
     });
     test('3Y is null when the bars do not reach 3 years back (never a 2Y return labelled 3Y)', () => {
         expect(return3yFrom(bars(500, '2026-10-08'), 120)).toBeNull();
@@ -100,7 +106,7 @@ describe('fallbackSpy (/api/spy direct tiers)', () => {
         expect(out._meta.source).toBe('Polygon + Finnhub (fallback)');
         expect(out.current).toBe(700);
         const upto = nq.filter((b) => b.date <= '2026-10-08');
-        const base = upto.find((b) => b.date >= '2023-10-10').price; // spot's day 2026-10-09 − 1095 d
+        const base = upto.filter((b) => b.date <= '2023-10-09').pop().price; // spot's day 2026-10-09 → 2023-10-09
         expect(out.return3y).toBeCloseTo(((700 - base) / base) * 100, 6);
         expect(out._meta.stale).toBeUndefined();
     });

@@ -57,7 +57,6 @@ URLS = {
 # Technical Indicators Parameters
 RSI_PERIOD = 9
 MA_200_PERIOD = 200
-RETURN_3Y_DAYS = 1095  # calendar days: base = first close on/after last date - 1095 (the Sheet rule)
 WEEK_52_DAYS = 252
 
 # Chart Appearance

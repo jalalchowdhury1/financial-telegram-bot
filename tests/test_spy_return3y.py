@@ -12,12 +12,13 @@ def _rows(n, last='2026-10-09'):
     return [{'date': d.isoformat(), 'close': 100.0 + i} for i, d in enumerate(days)]
 
 
-def test_three_full_years_uses_1095_calendar_days():
-    # Real SPY 2026-10-09: 1095 days back = 2023-10-10 (434.54) -> 79.17%, matching
-    # the Sheet; 756 rows back was 2023-10-05 (424.5) -> 83.41%.
-    rows = [{'date': '2023-10-05', 'close': 424.5}, {'date': '2023-10-09', 'close': 432.29},
+def test_three_full_years_uses_the_same_date_three_years_back():
+    # Real SPY 2026-10-09 -> 2023-10-09 (432.29) -> 80.10%; a Sunday anniversary takes the Friday.
+    rows = [{'date': '2023-10-06', 'close': 429.54}, {'date': '2023-10-09', 'close': 432.29},
             {'date': '2023-10-10', 'close': 434.54}, {'date': '2026-10-09', 'close': 778.57}]
-    assert round(f._return_3y_from_rows(rows, 778.57), 2) == 79.17
+    assert round(f._return_3y_from_rows(rows, 778.57), 2) == 80.10
+    rows[-1]['date'] = '2026-10-08'
+    assert f._return_3y_from_rows(rows, 778.57) == f._calc_pct(778.57, 429.54)
 
 
 def test_two_years_of_bars_is_not_a_three_year_return():

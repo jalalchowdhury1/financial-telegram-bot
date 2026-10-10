@@ -156,7 +156,7 @@ aws lambda add-permission --function-name financial-telegram-report \
 yfinance (full history) → Polygon (full history) → Google Sheet `SPY_INDICATORS`
 (pre-computed values; its `Three-Year Return` cell is parsed with `_pct_cell` — `float('79.17%')`
 failed until 2026-10-09 and silently swapped in `SPY_DAILY_MOVE`'s 3Y, a different anchor) → FRED `SP500`.
-**3Y rule everywhere (bot + `lib/spyTiers.js return3yFrom`): base = first close on/after
+**3Y rule everywhere (bot + `lib/spyTiers.js return3yFrom`), owner pick 2026-10-09: base = last close on/before the SAME DATE 3 years earlier (Feb 29→28). Was: first close on/after
 (as-of date − 1095 calendar days)**, as-of = the live spot's session date. Matches the Sheet
 (2026-10-09: 434.54 on 2023-10-10 → 79.17%). 756 bars back overshot by ~4 days (83.41%).
 (Stooq was removed 2026-09-01: its download endpoint sits behind a JS proof-of-work wall.)
@@ -558,8 +558,9 @@ Rule: every number has ≥2 independent live sources, then saved copies, then an
 - **Freshness:** `/api/freshness` also reports `served:<route>` for spy, spy-daily-move,
   market-extra, fred, sheets, fear-greed (`lib/servedFreshness.js servedCopyItem`): a saved copy
   older than the newest NYSE close (past 6 h grace) or nothing served → red in the fleet row.
-- **Open question:** the two Sheets disagree on SPY 3Y by design — `SPY_INDICATORS` = 1095 days
-  back (our rule), `SPY_DAILY_MOVE` (n8n) = same date 3 years ago (80.17%). Owner to pick one.
+- **3Y convention (decided 2026-10-09): same date 3 years back.** `SPY_DAILY_MOVE` (n8n) already
+  uses it; `SPY_INDICATORS` still says 1095 days until its formula is changed (only read when the
+  Lambda's yfinance AND Polygon both fail).
 - **Proof:** live fault matrix 2026-10-09 (each route: one tier off, all live off, + /tmp,
   + KV) → every row either a real number with the right label, or "Unavailable".
 
