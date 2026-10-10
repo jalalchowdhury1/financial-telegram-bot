@@ -20,10 +20,14 @@ except ImportError:
     np = None
 
 def _vix_from_sheet() -> tuple:
-    """The old path: read the VIX tab's A2/B2/C2 straight off the Google Sheet."""
+    """The old path: read the VIX tab's A2/B2 straight off the Google Sheet.
+
+    C2 (the fear/greed tag) is NOT read any more: its writer, the vix-fear-greed
+    repo, is retired, so the cell is frozen (it said GREED13 on 2026-10-09 while
+    the real tag was GREED04). N/A beats a frozen value that looks live."""
     r = requests.get(URLS['VIX'], timeout=10)
     rows = list(csv.reader(StringIO(r.text)))
-    return rows[1][0].strip(), rows[1][1].strip(), rows[1][2].strip()
+    return rows[1][0].strip(), rows[1][1].strip(), 'N/A'
 
 
 def fetch_vix_row() -> tuple:
@@ -41,9 +45,9 @@ def fetch_vix_row() -> tuple:
     forever — a frozen tag with no error and no alert. A fallback that
     silently satisfies the caller is a false negative (AGENTS.md §7).
 
-    FALLBACK is the sheet, exactly as before, for a dashboard outage. That is
-    still C2 for the tag, so it can be stale post-deletion — but it only fires
-    when the dashboard is down, which fleet-health already alarms on.
+    FALLBACK is the sheet's A2/B2 for a dashboard outage; the tag is then N/A
+    (C2 is frozen — see _vix_from_sheet). A dashboard answer with usable levels
+    but no tag keeps the levels and says N/A, rather than reaching for the sheet.
     """
     def _usable(v):
         return bool(v) and str(v).strip().upper() not in ('', 'N/A', 'NONE')
@@ -51,10 +55,18 @@ def fetch_vix_row() -> tuple:
     try:
         r = requests.get(URLS['DASHBOARD_SHEETS'], timeout=15)
         r.raise_for_status()
-        vix = (r.json() or {}).get('VIX') or {}
+        body = r.json() or {}
+        vix = body.get('VIX') or {}
         current, three_m, tag = vix.get('current'), vix.get('threeMonth'), vix.get('fearGreed')
-        if _usable(current) and _usable(three_m) and _usable(tag):
-            return str(current).strip(), str(three_m).strip(), str(tag).strip()
+        if _usable(current) and _usable(three_m):
+            # The dashboard serves each VIX field on its own and lists any that came
+            # from its last-known-good copy in _meta.staleFields — say so in the brief
+            # rather than print a cached number as today's.
+            stale = set((body.get('_meta') or {}).get('staleFields') or [])
+            tag = str(tag).strip() if _usable(tag) else 'N/A'
+            if stale & {'vixCurrent', 'vixThreeMonth', 'vixFearGreed'}:
+                tag = f"{tag} (cached)"
+            return str(current).strip(), str(three_m).strip(), tag
         logging.warning("VIX: dashboard returned unusable values %r — falling back to the sheet", vix)
     except Exception as e:
         logging.warning("VIX: dashboard fetch failed (%s) — falling back to the sheet", e)

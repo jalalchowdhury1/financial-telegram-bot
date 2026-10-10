@@ -47,7 +47,8 @@ def test_falls_back_to_sheet_when_dashboard_raises():
             raise requests_exc()
         return _sheet_csv()
     with patch("bot.fetchers.requests.get", side_effect=side_effect):
-        assert fetch_vix_row() == ("11.11", "22.22", "SHEET99")
+        # levels from the sheet, but never its frozen C2 tag
+        assert fetch_vix_row() == ("11.11", "22.22", "N/A")
 
 
 def test_falls_back_to_sheet_when_dashboard_payload_is_unusable():
@@ -56,7 +57,25 @@ def test_falls_back_to_sheet_when_dashboard_payload_is_unusable():
     def side_effect(url, *a, **kw):
         return bad if "vercel.app" in url else _sheet_csv()
     with patch("bot.fetchers.requests.get", side_effect=side_effect):
-        assert fetch_vix_row() == ("11.11", "22.22", "SHEET99")
+        assert fetch_vix_row() == ("11.11", "22.22", "N/A")
+
+
+def test_dashboard_levels_without_a_tag_keep_the_levels_and_say_na():
+    """Tag N/A on the dashboard must not send us to the sheet's frozen C2."""
+    no_tag = _api({"VIX": {"current": "14.84", "threeMonth": "17.77", "fearGreed": "N/A"}})
+
+    def side_effect(url, *a, **kw):
+        return no_tag if "vercel.app" in url else _sheet_csv(tag="GREED13")
+    with patch("bot.fetchers.requests.get", side_effect=side_effect) as g:
+        assert fetch_vix_row() == ("14.84", "17.77", "N/A")
+        assert g.call_count == 1
+
+
+def test_cached_vix_fields_are_marked_cached():
+    cached = _api({"VIX": {"current": "14.84", "threeMonth": "17.77", "fearGreed": "GREED04"},
+                   "_meta": {"staleFields": ["vixCurrent"]}})
+    with patch("bot.fetchers.requests.get", return_value=cached):
+        assert fetch_vix_row() == ("14.84", "17.77", "GREED04 (cached)")
 
 
 def test_returns_dashboard_tag_even_if_sheet_would_disagree():

@@ -47,6 +47,12 @@ export const FIELD_MAX_AGE_MS = {
     vixFearGreed: 4 * 864e5,
 };
 export const FIELDS = Object.keys(FIELD_MAX_AGE_MS);
+// The FrontRunner cell arrives as "BIL (T-Bill ETF)1": an n8n artifact digit glued after the
+// closing paren (the Telegram bot's clean_val strips it too). Only digits right after ")" go.
+export function frontRunnerText(cell) {
+    return usableText((cell || '').split('\n')[0].trim().replace(/\)\d+$/, ')'));
+}
+
 const SHEET_FIELDS = ['NotSoBoring', 'FrontRunner', 'vixCurrent', 'vixThreeMonth'];
 // The newest CBOE/FRED print must be at most this old to count at all (weekend + holiday).
 const VIX_FRESH_DAYS = 4;
@@ -94,7 +100,7 @@ const usableNum = (v) => {
 
 export const SHEETS = [
     { name: 'NotSoBoring', url: GOOGLE_SHEETS.NOT_SO_BORING, parse: (rows) => ({ NotSoBoring: usableText(rows[2]?.[1]) }) },
-    { name: 'FrontRunner', url: GOOGLE_SHEETS.FRONT_RUNNER, parse: (rows) => ({ FrontRunner: usableText((rows[1]?.[0] || '').split('\n')[0]) }) },
+    { name: 'FrontRunner', url: GOOGLE_SHEETS.FRONT_RUNNER, parse: (rows) => ({ FrontRunner: frontRunnerText(rows[1]?.[0]) }) },
     // C2 (the retired fear/greed tag) is deliberately NOT parsed any more.
     { name: 'VIX', url: GOOGLE_SHEETS.VIX, parse: (rows) => ({ vixCurrent: usableNum(rows[1]?.[0]), vixThreeMonth: usableNum(rows[1]?.[1]) }) },
 ];
