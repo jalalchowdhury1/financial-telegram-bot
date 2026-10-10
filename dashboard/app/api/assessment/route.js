@@ -86,6 +86,10 @@ Output the assessment now:`;
 
         // Priority 1: Best Free Models via OpenRouter
         if (process.env.OPENROUTER_API_KEY) {
+            // #0: DeepSeek V4 Flash (paid, ~$0.0001/call) — Jalal's pick for when Claude fails,
+            // including the month the $200 Max-plan credit runs out (10 Oct 2026).
+            configs.push({ name: 'OpenRouter DeepSeek V4 Flash', url: 'https://openrouter.ai/api/v1/chat/completions', model: 'deepseek/deepseek-v4-flash', key: process.env.OPENROUTER_API_KEY });
+
             // #1: OpenRouter Free (Dynamic router that picks the smartest available free model)
             configs.push({ name: 'OpenRouter Free (Auto)', url: 'https://openrouter.ai/api/v1/chat/completions', model: 'openrouter/free', key: process.env.OPENROUTER_API_KEY });
 

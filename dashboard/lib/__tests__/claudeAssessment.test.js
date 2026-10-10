@@ -85,7 +85,7 @@ test.each([
     arrange();
     const body = await (await post()).json();
     expect(body.assessment).toContain('old cascade text');
-    expect(body.assessment).toContain('Provider: OpenRouter Free (Auto)');
+    expect(body.assessment).toContain('Provider: OpenRouter DeepSeek V4 Flash');
     expect(global.fetch).toHaveBeenCalled();
 });
 
@@ -94,7 +94,7 @@ test('over the daily cap: Claude is skipped, the old cascade serves', async () =
     kvCount = lib.CLAUDE_DAILY_CAP + 1;
     const body = await (await post()).json();
     expect(create).not.toHaveBeenCalled();
-    expect(body.assessment).toContain('Provider: OpenRouter Free (Auto)');
+    expect(body.assessment).toContain('Provider: OpenRouter DeepSeek V4 Flash');
 });
 
 test('KV unavailable: fails closed (no Claude), the old cascade serves', async () => {
@@ -110,7 +110,7 @@ test('no Claude key = the old path exactly (SDK never built)', async () => {
     process.env.OPENROUTER_API_KEY = 'sk-or-test';
     const body = await (await post()).json();
     expect(ctorArgs).toHaveLength(0);
-    expect(body.assessment).toContain('Provider: OpenRouter Free (Auto)');
+    expect(body.assessment).toContain('Provider: OpenRouter DeepSeek V4 Flash');
 });
 
 test('no keys at all = rule-based, as before', async () => {
