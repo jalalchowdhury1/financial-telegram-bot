@@ -21,6 +21,20 @@ jest.mock('fs', () => {
     };
 });
 
+// In-memory Upstash KV (lib/kv.js defaultKv) so the durable `ftb:lg:market-extra` tier is real.
+jest.mock('../kv', () => {
+    const actual = jest.requireActual('../kv');
+    const m = new Map();
+    return {
+        ...actual,
+        __m: m,
+        defaultKv: {
+            get: jest.fn(async (k) => (m.has(k) ? JSON.stringify(m.get(k)) : null)),
+            set: jest.fn(async (k, v) => { m.set(k, JSON.parse(JSON.stringify(v))); return true; }),
+        },
+    };
+});
+
 const NOW = new Date('2026-10-09T20:00:00Z');
 const down = new Set();     // hosts/keywords whose calls fail
 const seen = [];
@@ -79,6 +93,8 @@ jest.mock('../fetcher', () => ({
 }));
 
 const fs = require('fs');
+const kvMod = require('../kv');
+const flush = () => new Promise((r) => setImmediate(r)); // let serve()'s background KV write settle
 const tiers = require('../marketExtraTiers');
 const { GET } = require('../../app/api/market-extra/route');
 
@@ -88,7 +104,7 @@ const ALL_DOWN = ['erapi', 'frankfurter', 'fawaz', 'fred', 'btc', 'cnbc', 'treas
 
 beforeAll(() => jest.useFakeTimers({ now: NOW, doNotFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'setImmediate', 'nextTick', 'queueMicrotask'] }));
 afterAll(() => jest.useRealTimers());
-beforeEach(() => { down.clear(); seen.length = 0; fs.__mem.clear(); delete process.env.LAMBDA_URL; delete process.env.POLYGON_KEY; process.env.FRED_API_KEY = 'k'; });
+beforeEach(() => { down.clear(); seen.length = 0; fs.__mem.clear(); kvMod.__m.clear(); kvMod.defaultKv.set.mockClear(); delete process.env.LAMBDA_URL; delete process.env.POLYGON_KEY; process.env.FRED_API_KEY = 'k'; });
 
 describe('parsers + freshness', () => {
     test('Treasury: 2 Yr / 10 Yr by header name (never "20 Yr"), ascending across years', () => {
@@ -151,6 +167,40 @@ describe('mergeLastGood', () => {
         expect(await tiers.mergeLastGood(out, { key: 'market-extra', paths, faults: new Set(['lastgood']), now: NOW.getTime() })).toEqual([]);
         expect(out.fx.usdbdt).toBeUndefined();
     });
+
+    const kvSeed = (data, savedAt) => kvMod.__m.set('ftb:lg:market-extra', { data, savedAt });
+
+    test('cold instance (/tmp empty) -> fills from the KV copy, stale + original savedAt', async () => {
+        kvSeed({ fx: { usdbdt: { current: 121 } }, rates: { tnx: { current: 5.1, stale: true, savedAt: '2026-10-07T00:00:00.000Z' } } }, '2026-10-08T15:00:00.000Z');
+        const out = { fx: {}, rates: {}, commodities: { gc: { current: 2650 } } };
+        expect(await tiers.mergeLastGood(out, { key: 'market-extra', paths, now: NOW.getTime() })).toEqual(['usdbdt', 'tnx']);
+        expect(out.fx.usdbdt).toEqual({ current: 121, stale: true, savedAt: '2026-10-08T15:00:00.000Z' });
+        expect(out.rates.tnx.savedAt).toBe('2026-10-07T00:00:00.000Z');
+        expect(out._meta.sourceLog.usdbdt).toBe('KV last-known-good 2026-10-08T15:00:00.000Z');
+        expect(out.commodities.gc).toEqual({ current: 2650 });
+    });
+
+    test('/tmp first; KV only for what /tmp lacks', async () => {
+        save({ fx: { usdbdt: { current: 120 } } }, '2026-10-09T10:00:00.000Z');
+        kvSeed({ fx: { usdbdt: { current: 999 } }, rates: { tnx: { current: 5.1 } } }, '2026-10-08T15:00:00.000Z');
+        const out = { fx: {}, rates: {} };
+        expect(await tiers.mergeLastGood(out, { key: 'market-extra', paths, now: NOW.getTime() })).toEqual(['usdbdt', 'tnx']);
+        expect(out.fx.usdbdt.current).toBe(120);
+        expect(out._meta.sourceLog.tnx).toBe('KV last-known-good 2026-10-08T15:00:00.000Z');
+    });
+
+    test('`kvlg` disables only the KV copy; `lastgood` both; KV past maxStaleMs ignored', async () => {
+        kvSeed({ fx: { usdbdt: { current: 121 } } }, '2026-10-08T15:00:00.000Z');
+        expect(await tiers.mergeLastGood({ fx: {} }, { key: 'market-extra', paths, faults: new Set(['kvlg']), now: NOW.getTime() })).toEqual([]);
+        expect(await tiers.mergeLastGood({ fx: {} }, { key: 'market-extra', paths, faults: new Set(['lastgood']), now: NOW.getTime() })).toEqual([]);
+        kvSeed({ fx: { usdbdt: { current: 121 } } }, '2026-09-01T00:00:00.000Z');
+        expect(await tiers.mergeLastGood({ fx: {} }, { key: 'market-extra', paths, now: NOW.getTime() })).toEqual([]);
+    });
+
+    test('a throwing KV client cannot break the merge', async () => {
+        const kv = { get: async () => { throw new Error('kv down'); } };
+        expect(await tiers.mergeLastGood({ fx: {} }, { key: 'market-extra', paths, kv, now: NOW.getTime() })).toEqual([]);
+    });
 });
 
 describe('/api/market-extra direct tiers (Lambda down)', () => {
@@ -212,7 +262,9 @@ describe('/api/market-extra direct tiers (Lambda down)', () => {
 
     test('fault-test mode never writes the last-good store', async () => {
         await get('?_fail=lambda,fred');
+        await flush();
         expect(fs.__mem.size).toBe(0);
+        expect(kvMod.defaultKv.set).not.toHaveBeenCalled();
     });
 });
 
@@ -220,7 +272,7 @@ describe('per-metric last-known-good (the 12-blanks bug)', () => {
     test('only gold-api alive -> gold live + every other metric from last good, flagged stale', async () => {
         const first = await get();                 // healthy, non-test: saves last good
         expect(first._meta.stale).toBeUndefined();
-        expect(fs.__mem.size).toBe(1);
+        expect(fs.__mem.has('/tmp/lg-market-extra.json')).toBe(true);
         const savedAt = JSON.parse(fs.__mem.get('/tmp/lg-market-extra.json')).savedAt;
 
         ALL_DOWN.forEach((k) => down.add(k));
@@ -242,6 +294,48 @@ describe('per-metric last-known-good (the 12-blanks bug)', () => {
         // The re-saved copy keeps each borrowed metric's ORIGINAL savedAt.
         const stored = JSON.parse(fs.__mem.get('/tmp/lg-market-extra.json'));
         expect(stored.data.rates.tnx.savedAt).toBe(savedAt);
+    });
+
+    test('cold instance + only gold-api alive -> every other metric from the KV copy (not 12 blanks)', async () => {
+        const first = await get();
+        await flush();
+        const kvCopy = kvMod.__m.get('ftb:lg:market-extra');
+        expect(kvCopy.data.rates.tnx.current).toBe(first.rates.tnx.current);
+        fs.__mem.clear();                          // new instance: /tmp is empty
+        ALL_DOWN.forEach((k) => down.add(k));
+        const b = await get();
+        expect(b._meta.sourceLog.gc).toBe('gold-api');
+        for (const [grp, k] of [['fx', 'usdbdt'], ['fx', 'dxy'], ['rates', 'tnx'], ['rates', 'mortgageRate'], ['commodities', 'cl'], ['commodities', 'btc']]) {
+            expect(b[grp][k]).toMatchObject({ stale: true, savedAt: kvCopy.savedAt, current: first[grp][k].current });
+            expect(b._meta.sourceLog[k]).toBe(`KV last-known-good ${kvCopy.savedAt}`);
+        }
+        expect(b._meta.stale).toBe(true);
+        expect(b._meta.hasErrors).toBe(true);
+        // ...and `?_fail=kvlg` proves the KV step alone: without it those metrics are blank.
+        fs.__mem.clear();
+        const noKv = await get('?_fail=kvlg');
+        expect(noKv.rates.tnx).toBeUndefined();
+    });
+
+    test('a partial run never overwrites the full KV copy', async () => {
+        await get();
+        await flush();
+        const full = JSON.stringify(kvMod.__m.get('ftb:lg:market-extra'));
+        kvMod.defaultKv.set.mockClear();
+        fs.__mem.clear();                          // no /tmp copy -> nothing to fill from /tmp
+        kvMod.__m.clear();                         // ...nor KV: the partial run stays partial (hasErrors)
+        ALL_DOWN.forEach((k) => down.add(k));
+        const partial = await get();
+        await flush();
+        expect(partial._meta.hasErrors).toBe(true);
+        expect(kvMod.defaultKv.set).not.toHaveBeenCalled();
+        // and with the full copy in KV, the stale-filled run does not rewrite it either
+        kvMod.__m.set('ftb:lg:market-extra', JSON.parse(full));
+        fs.__mem.clear();
+        await get();
+        await flush();
+        expect(kvMod.defaultKv.set).not.toHaveBeenCalled();
+        expect(JSON.stringify(kvMod.__m.get('ftb:lg:market-extra'))).toBe(full);
     });
 
     test('Lambda up but missing real-estate prints -> filled stale from last good', async () => {

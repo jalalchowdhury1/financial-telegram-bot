@@ -23,7 +23,8 @@
 import { cnbcQuotes, cnbcHistory, treasuryYieldCurveCsv, dailyChange } from './sources';
 import { fetchJson, fetchText } from './fetcher';
 import { splitCsvLine } from './horsemen';
-import { loadLastGood } from './store';
+import { loadLastGood, loadLastGoodKV } from './store';
+import { defaultKv } from './kv';
 
 export const HIST = 260;
 const DAY_MS = 864e5;
@@ -190,34 +191,45 @@ const setPath = (o, p, v) => { const ks = p.split('.'); const last = ks.pop(); l
 const has = (o, p) => { const m = getPath(o, p); return !!m && m.current != null; };
 
 /**
- * Fill each metric the live build is missing from the last-known-good copy (read
- * through lib/store.js loadLastGood, sync or async — so any durable tier added there
- * benefits). Each borrowed metric is stamped `stale: true` + `savedAt` (when it was
- * REALLY fetched: a metric that was itself borrowed keeps its original savedAt, so a
- * re-save can't launder it fresh) and is skipped past `maxStaleMs`.
+ * Fill each metric the live build is missing from the last-known-good copies: the /tmp
+ * copy first (lib/store.js loadLastGood), then — for whatever is still missing, e.g. on a
+ * cold instance whose /tmp is empty — the durable KV copy (`ftb:lg:<key>`, loadLastGoodKV).
+ * Without the KV step a lone live print (one gold-api quote) passed serve()'s isGood on a
+ * cold instance, serve() never reached its own KV tier, and the page showed 12 blanks.
  *
- * Never fills in fault-test mode with `lastgood` in the fault set. Never throws.
- * Mutates `out`; returns the filled metric names.
+ * Each borrowed metric is stamped `stale: true` + `savedAt` (when it was REALLY fetched:
+ * a metric that was itself borrowed keeps its original savedAt, so a re-save can't
+ * launder it fresh) and is skipped past `maxStaleMs`. sourceLog says which copy it came from.
+ *
+ * Faults: `lastgood` disables both copies; `kvlg` disables only the KV copy (as in serve()).
+ * Never throws. Mutates `out`; returns the filled metric names.
  */
-export async function mergeLastGood(out, { key, paths, faults = new Set(), maxStaleMs = 7 * DAY_MS, now = Date.now() } = {}) {
+export async function mergeLastGood(out, { key, paths, faults = new Set(), maxStaleMs = 7 * DAY_MS, now = Date.now(), kv = defaultKv } = {}) {
     try {
         if (!out || !paths?.length || (faults && faults.has('lastgood'))) return [];
-        const missing = paths.filter((p) => !has(out, p));
-        if (!missing.length) return [];
-        const lg = await loadLastGood(key);
-        if (!lg?.data) return [];
+        const missing = () => paths.filter((p) => !has(out, p));
+        if (!missing().length) return [];
         const filled = [];
         const log = ((out._meta ??= {}).sourceLog ??= {});
-        for (const p of missing) {
-            const m = getPath(lg.data, p);
-            if (!m || m.current == null || !finite(Number(m.current))) continue;
-            const savedAt = (m.stale && m.savedAt) || lg.savedAt;
-            const t = Date.parse(savedAt);
-            if (!finite(t) || now - t > maxStaleMs) continue;
-            setPath(out, p, { ...m, stale: true, savedAt });
-            const name = p.split('.').pop();
-            log[name] = `last-known-good ${savedAt}`;
-            filled.push(name);
+        const fillFrom = (lg, label) => {
+            if (!lg?.data) return;
+            for (const p of missing()) {
+                const m = getPath(lg.data, p);
+                if (!m || m.current == null || !finite(Number(m.current))) continue;
+                const savedAt = (m.stale && m.savedAt) || lg.savedAt;
+                const t = Date.parse(savedAt);
+                if (!finite(t) || now - t > maxStaleMs) continue;
+                setPath(out, p, { ...m, stale: true, savedAt });
+                const name = p.split('.').pop();
+                log[name] = `${label} ${savedAt}`;
+                filled.push(name);
+            }
+        };
+        let tmp = null;
+        try { tmp = await loadLastGood(key); } catch { tmp = null; }
+        fillFrom(tmp, 'last-known-good');
+        if (missing().length && !(faults && faults.has('kvlg'))) {
+            fillFrom(await loadLastGoodKV(key, maxStaleMs, { kv, now }), 'KV last-known-good');
         }
         return filled;
     } catch { return []; }
