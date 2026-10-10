@@ -53,3 +53,18 @@ def test_sheet_fallback_is_none_when_both_sheets_fail(monkeypatch):
         raise TimeoutError('sheet stalled')
     monkeypatch.setattr(f, '_get_sheet_csv', boom)
     assert f._sheet_return_3y() is None
+
+
+def test_sheet_layer_reads_a_percent_3y_cell(monkeypatch):
+    # "79.17%" made float() fail, so the 3Y silently came from the daily-move sheet
+    # (80.17%, a different anchor) — 2026-10-09.
+    csv_text = ('200d MA SPY,722.9284\n9d RSI SPY,63.1\nSPY 52 week high,781.62\n'
+                'Current SPY,778.57\nPrice from Three Years Ago,434.54\nThree-Year Return,79.17%\n')
+
+    class R:
+        text = csv_text
+    monkeypatch.setattr(f, '_fetch_yfinance', lambda *a, **k: None)
+    monkeypatch.setattr(f.requests, 'get', lambda *a, **k: R())
+    monkeypatch.setattr(f, '_get_sheet_csv', lambda url, **kw: '\n'.join(['x,y'] * 10 + ['3 YR Return,80.17%']))
+    out = f.fetch_spy_with_fallback()
+    assert out['return3y'] == 79.17

@@ -799,10 +799,11 @@ def fetch_spy_with_fallback(fred_api_key: Optional[str] = None,
                 for line in text.strip().split('\n'):
                     parts = line.split(',')
                     if len(parts) >= 2:
-                        try:
-                            parsed[parts[0].strip()] = float(parts[1].strip())
-                        except ValueError:
-                            pass
+                        # _pct_cell, not float(): "Three-Year Return,79.17%" made float() fail,
+                        # so the 3Y silently came from the daily-move sheet (80.17%, a different anchor).
+                        v = _pct_cell(parts[1])
+                        if v is not None:
+                            parsed[parts[0].strip()] = v
                 required = ['200d MA SPY', '9d RSI SPY', 'SPY 52 week high', 'Current SPY']
                 if all(k in parsed for k in required):
                     return3y_val = parsed.get('Three-Year Return')
