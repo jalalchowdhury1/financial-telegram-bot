@@ -6,7 +6,9 @@
  *
  *   NotSoBoring / FrontRunner:  sheet (primary URL) → sheet (alt URL)
  *                               → /tmp last-good → KV last-good → 'N/A'
- *   VIX current / 3M:           sheet → alt → CBOE daily CSV (same-day)
+ *   VIX current / 3M:           sheet → alt → CBOE daily CSV (completed sessions only:
+ *                               live only when its close is the latest completed session
+ *                               AND the market is not in regular hours; else stale)
  *                               → FRED VIXCLS / VXVCLS (lags a day ⇒ stale)
  *                               → /tmp last-good → KV last-good → 'N/A'
  *   VIX fear/greed tag:         lib/vixFearGreed.js (CBOE → FRED) → /tmp → KV → 'N/A'
@@ -30,6 +32,7 @@ import { gate } from './faults';
 import { parseCboeCsv } from './vol';
 import { isStale } from './freshness';
 import { parseEnvelope } from './kv';
+import { dailyCloseStatus } from './marketClock';
 
 export const TMP_KEY = 'sheets-fields';
 export const KV_KEY = 'ftb:lg:sheets-fields';
@@ -162,8 +165,20 @@ export async function resolveLiveFields({ faults, fetchText, fetchJson, fredApiK
         const csv = CBOE_URLS[f].split('/').pop();
         try {
             const last = await gate('sheets_cboe', faults, () => cboeLatest(f, fetchText, now));
-            fields[f] = live(last.value.toFixed(2), `CBOE ${csv} (close ${last.date})`, 'cboe');
-            messages.push(`VIX ${f === 'vixCurrent' ? 'current' : '3M'} from CBOE ${csv} (${last.date})`);
+            const label = f === 'vixCurrent' ? 'current' : '3M';
+            // The CSV holds COMPLETED sessions only. Intraday its newest row is yesterday's
+            // close, not today's level: flagged stale (staleFields → pill + bot show 🕐) and
+            // never persisted, exactly like the FRED tier. When it IS current it is saved
+            // with savedAt = that session's close, so the copy can't outlive its real age.
+            const st = dailyCloseStatus(last.date, new Date(now).getTime());
+            if (st.current) {
+                fields[f] = { ...live(last.value.toFixed(2), `CBOE ${csv} (close ${last.date})`, 'cboe'), ...(st.closeMs ? { asOfMs: st.closeMs } : {}) };
+                messages.push(`VIX ${label} from CBOE ${csv} (${last.date})`);
+            } else {
+                const why = st.inSession ? 'market open: not today\'s level' : `latest completed session is ${st.expected}`;
+                fields[f] = { value: last.value.toFixed(2), source: `CBOE ${csv} (close ${last.date}; ${why})`, live: false, stale: true, tier: 'cboe' };
+                messages.push(`VIX ${label} from CBOE ${csv} close ${last.date} (STALE: ${why})`);
+            }
             continue;
         } catch (e) { messages.push(`CBOE ${csv} failed: ${String(e?.message).slice(0, 120)}`); }
         try {
@@ -233,7 +248,9 @@ export async function persistLiveFields(fields, { faults, store, kv, now = Date.
         if (faults && faults.size > 0) return false;
         const at = new Date(now).toISOString();
         const fresh = {};
-        for (const f of FIELDS) if (fields[f]?.live) fresh[f] = { value: fields[f].value, savedAt: at, source: fields[f].source };
+        // A field may carry its real as-of time (CBOE: the session close); never stamp it newer.
+        const savedAtOf = (x) => (Number.isFinite(x.asOfMs) && x.asOfMs < now ? new Date(x.asOfMs).toISOString() : at);
+        for (const f of FIELDS) if (fields[f]?.live) fresh[f] = { value: fields[f].value, savedAt: savedAtOf(fields[f]), source: fields[f].source };
         if (!Object.keys(fresh).length) return false;
 
         let tmpRec = null;

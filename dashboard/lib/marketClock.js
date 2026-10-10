@@ -109,3 +109,34 @@ export function clockLabel(st) {
     const when = st.ms <= 18 * 3600e3 ? `in ${fmtCountdown(st.ms)}` : `${weekdayOf(st.date)} 9:30 ET`;
     return `${approx}Closed${why} · opens ${when}`;
 }
+
+/**
+ * The newest NYSE session that has CLOSED (ET): today from its close (16:00, 13:00 on an
+ * early close) on a trading day, otherwise the previous trading day. A daily CSV (CBOE's
+ * VIX_History) only ever holds completed sessions, so this is the newest date it can have.
+ */
+export function latestCompletedSessionDate(now = Date.now()) {
+    const { date, min } = etParts(now);
+    const today = sessionOf(date);
+    if (today && min >= today.close) return date;
+    let d = date;
+    for (let i = 1; i <= 10; i++) { d = addDays(date, -i); if (sessionOf(d)) break; }
+    return d;
+}
+
+/**
+ * Is a daily CLOSE dated `closeDate` the current level right now? Only outside regular
+ * hours, and only when it is the latest completed session: during the session the
+ * newest close is yesterday's, not the level the market is printing.
+ * @returns {{current:boolean, expected:string, inSession:boolean, closeMs:number|null}}
+ *   closeMs = epoch ms of that session's close (an honest `savedAt` for the value).
+ */
+export function dailyCloseStatus(closeDate, now = Date.now()) {
+    const { date, min } = etParts(now);
+    const today = sessionOf(date);
+    const inSession = !!(today && min >= today.open && min < today.close);
+    const expected = latestCompletedSessionDate(now);
+    const s = closeDate ? sessionOf(closeDate) : null;
+    const closeMs = s ? etWallToMs(closeDate, s.close) : null;
+    return { current: !inSession && !!closeDate && closeDate >= expected, expected, inSession, closeMs };
+}

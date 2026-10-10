@@ -252,3 +252,67 @@ describe('/api/sheets value guards', () => {
         expect(res.headers.get('vercel-cdn-cache-control')).toBeNull();
     });
 });
+
+describe('/api/sheets CBOE VIX tier is live only when its close is current', () => {
+    // Fri 9 Oct 2026. 13:00 ET = in session; 08:00 ET = pre-open; 17:00 ET = after the close.
+    const at = (iso) => jest.setSystemTime(new Date(iso));
+
+    test('intraday: the CSV\'s newest row is yesterday\'s close → stale, in staleFields, never persisted', async () => {
+        at('2026-10-09T17:00:00Z');
+        mode = { sheets: 'down', cboeEnd: '2026-10-08' };
+        const b = await get();
+        expect(b.VIX.current).toBe('15.20');
+        expect(b._meta.fields.vixCurrent).toMatchObject({ stale: true });
+        expect(b._meta.fields.vixCurrent.source).toMatch(/close 2026-10-08; market open/);
+        expect(b._meta.staleFields).toEqual(expect.arrayContaining(['vixCurrent', 'vixThreeMonth']));
+        expect(b._meta.source).toMatch(/^Stale: /);
+        const tmp = store.__m.get(TMP_KEY)?.data || {};
+        expect(tmp.vixCurrent).toBeUndefined();
+        expect(tmp.vixThreeMonth).toBeUndefined();
+    });
+
+    test('pre-open: yesterday\'s close IS the current level → live, saved with savedAt = that close', async () => {
+        at('2026-10-09T12:00:00Z');
+        mode = { sheets: 'down', cboeEnd: '2026-10-08' };
+        const b = await get();
+        expect(b._meta.fields.vixCurrent.stale).toBe(false);
+        expect(b._meta.staleFields).not.toContain('vixCurrent');
+        const tmp = store.__m.get(TMP_KEY).data;
+        expect(tmp.vixCurrent.savedAt).toBe('2026-10-08T20:00:00.000Z'); // 16:00 ET close, not "now"
+        expect(kv.__m.get(KV_KEY).data.vixThreeMonth.savedAt).toBe('2026-10-08T20:00:00.000Z');
+    });
+
+    test('after the close but the CSV not yet updated → stale (latest completed session is today)', async () => {
+        at('2026-10-09T21:00:00Z');
+        mode = { sheets: 'down', cboeEnd: '2026-10-08' };
+        const b = await get();
+        expect(b._meta.fields.vixCurrent.stale).toBe(true);
+        expect(b._meta.fields.vixCurrent.source).toMatch(/latest completed session is 2026-10-09/);
+    });
+
+    test('mixing days is visible: intraday sheet VIX live + CBOE 3M from yesterday flagged stale', async () => {
+        at('2026-10-09T17:00:00Z');
+        mode = { vixCell: '14.84,#N/A', cboeEnd: '2026-10-08' };
+        const b = await get();
+        expect(b._meta.fields.vixCurrent.stale).toBe(false);
+        expect(b._meta.staleFields).toContain('vixThreeMonth');
+        expect(b._meta.staleFields).not.toContain('vixCurrent');
+    });
+});
+
+describe('marketClock: completed sessions', () => {
+    const { latestCompletedSessionDate, dailyCloseStatus } = require('../marketClock');
+    test('latest completed session flips at the close (16:00 ET; 13:00 on an early close)', () => {
+        expect(latestCompletedSessionDate(Date.parse('2026-10-09T19:59:00Z'))).toBe('2026-10-08');
+        expect(latestCompletedSessionDate(Date.parse('2026-10-09T20:00:00Z'))).toBe('2026-10-09');
+        expect(latestCompletedSessionDate(Date.parse('2026-10-12T14:00:00Z'))).toBe('2026-10-09'); // Monday 10:00 ET → Friday
+        expect(latestCompletedSessionDate(Date.parse('2026-11-27T18:30:00Z'))).toBe('2026-11-27'); // early close 13:00 ET
+    });
+    test('dailyCloseStatus: never current during regular hours', () => {
+        expect(dailyCloseStatus('2026-10-09', Date.parse('2026-10-09T17:00:00Z')).current).toBe(false);
+        expect(dailyCloseStatus('2026-10-08', Date.parse('2026-10-09T17:00:00Z'))).toMatchObject({ current: false, inSession: true });
+        expect(dailyCloseStatus('2026-10-09', Date.parse('2026-10-10T15:00:00Z'))).toMatchObject({ current: true, closeMs: Date.parse('2026-10-09T20:00:00Z') });
+        expect(dailyCloseStatus(null, Date.now()).current).toBe(false);
+    });
+});
+
