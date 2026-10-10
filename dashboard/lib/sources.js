@@ -187,7 +187,8 @@ export async function cnbcQuotes(symbols, { revalidate = 1800, timeout = 6000, t
 }
 
 /**
- * CNBC daily price history (KEYLESS) -> ascending [{date,price}]. The '3M.json'
+ * CNBC daily price history (KEYLESS) -> ascending [{date, price, open}] of RAW closes (equal
+ * to Nasdaq's: TMF/VIXY 500/500 bars, checked 2026-10-10). The '3M.json'
  * range actually returns ~500 DAILY bars (~2yr) — plenty for 1mo/3mo deltas.
  * tradeTime is 'YYYYMMDDhhmmss'; close is a string.
  */
@@ -200,7 +201,8 @@ export async function cnbcHistory(symbol, { range = '3M', revalidate = 1800, tim
         const price = parseFloat(b.close);
         const tt = String(b.tradeTime || '');
         if (!Number.isFinite(price) || tt.length < 8) continue;
-        history.push({ date: `${tt.slice(0, 4)}-${tt.slice(4, 6)}-${tt.slice(6, 8)}`, price });
+        const open = parseFloat(b.open);
+        history.push({ date: `${tt.slice(0, 4)}-${tt.slice(4, 6)}-${tt.slice(6, 8)}`, price, ...(Number.isFinite(open) && open > 0 ? { open } : {}) });
     }
     if (!history.length) throw new Error(`CNBC: empty history ${symbol}`);
     history.sort((a, b) => (a.date < b.date ? -1 : 1)); // ISO 'YYYY-MM-DD' sorts chronologically as strings → oldest -> newest

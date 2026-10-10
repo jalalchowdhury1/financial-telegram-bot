@@ -606,7 +606,9 @@ computes them from daily prices with the sheets' exact logic; the sheets are bac
   OFF→ON flip on 2026-10-07); TMF opens/closes equal GOOGLEFINANCE's to the cent. The sheet's
   'Original' tab only looks back ~25 calendar days, so its bottom rows use truncated windows.
   Harmless for I2, but don't validate against those rows.
-- **Prices:** Nasdaq historical (3 y, keyless) → Yahoo `adjusted:false` per ticker, plus ONE
+- **Prices:** Nasdaq historical (3 y, keyless) → CNBC daily bars (`cnbcHistory`, ~500 raw bars,
+  equal to Nasdaq's) → Yahoo `adjusted:false` (blocked from Vercel when 17 calls land at once,
+  seen 2026-10-10; kept as the last try) per ticker, plus ONE
   CNBC quote call for all 17 tickers that adds today's session as a bar (the SPY RSI rule).
   All or none: if any ticker in a signal lacks today's quote, the plain closes are used, so
   the 16 RSIs always describe the same day. A completed session's official bar is never
@@ -617,9 +619,9 @@ computes them from daily prices with the sheets' exact logic; the sheets are bac
   = built from at least the latest completed session. A close-based value is saved with
   savedAt = that close. The computed tier is capped at 12 s so it never holds the VIX answer.
   `_meta.fields.<signal>.detail` carries the 16 RSIs / TMF max, min, drawdown, watch-out level.
-- **Faults:** `?_fail=signals` (tier off → sheets), `signals_nasdaq` (→ Yahoo), `signals_yahoo`,
-  `signals_spot` (no CNBC bar). `scripts/fault_matrix.py: signals_agree()` checks nightly that
-  both are computed and current, that NotSoBoring equals the live sheet, and that the Yahoo
+- **Faults:** `?_fail=signals` (tier off → sheets), `signals_nasdaq` (→ CNBC), `signals_cnbc`,
+  `signals_yahoo`, `signals_spot` (no live today bar). `scripts/fault_matrix.py: signals_agree()` checks nightly that
+  both are computed and current, that NotSoBoring equals the live sheet, and that the CNBC
   backup gives the same answers.
 - **Telegram brief:** `bot/fetchers.py: fetch_signal_pills` reads both from `/api/sheets`
   (marked `⚠️ STALE` when the dashboard says so), sheet CSVs only as the fallback, the

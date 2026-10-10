@@ -12,16 +12,17 @@
  *    max/min drawdown vs 8.5%, an ±8% open-to-open "big move" check, and "nothing changed →
  *    keep yesterday's state".
  *
- * Price data: Nasdaq historical (keyless, reachable from Vercel) → Yahoo (raw closes), plus
+ * Price data: Nasdaq historical (keyless, reachable from Vercel) → CNBC daily bars (~2 y, raw,
+ * equal to Nasdaq's) → Yahoo (raw closes; often blocked from Vercel), plus
  * ONE CNBC quote call for all 17 tickers that adds today's session as a bar (same rule as
  * the SPY RSI: the spot's session counts). If any ticker lacks today's bar, nobody gets one,
  * so the 16 RSIs always describe the same day.
  *
- * Fault switches (`?_fail=`): signals (whole tier off), signals_nasdaq, signals_yahoo,
- * signals_spot.
+ * Fault switches (`?_fail=`): signals (whole tier off), signals_nasdaq, signals_cnbc,
+ * signals_yahoo, signals_spot.
  */
 import { calculateRSI } from './finance';
-import { nasdaqHistory, yahooChart, cnbcQuotes } from './sources';
+import { nasdaqHistory, cnbcHistory, yahooChart, cnbcQuotes } from './sources';
 import { gate } from './faults';
 import { latestCompletedSessionDate } from './marketClock';
 
@@ -128,15 +129,21 @@ export function withSpot(bars, q, expected) {
     return bars;
 }
 
-/** Daily bars for one ticker: Nasdaq → Yahoo (raw). Returns {bars, source}. */
-async function barsFor(ticker, { faults, nasdaq, yahoo, messages }) {
-    try {
-        const bars = await gate('signals_nasdaq', faults, () => nasdaq(ticker, { years: 3, revalidate: 3600, timeout: 6000 }));
-        if (bars.length >= 60) return { bars, source: 'Nasdaq' };
-        messages.push(`${ticker}: Nasdaq gave ${bars.length} bars`);
-    } catch (e) { messages.push(`${ticker}: Nasdaq failed (${String(e?.message).slice(0, 80)})`); }
-    const y = await gate('signals_yahoo', faults, () => yahoo(ticker, { range: '5y', interval: '1d', revalidate: 3600, adjusted: false, tries: 1, timeout: 6000 }));
-    return { bars: y.history, source: 'Yahoo' };
+/** Daily bars for one ticker: Nasdaq → CNBC → Yahoo (all raw closes). Returns {bars, source}. */
+async function barsFor(ticker, { faults, nasdaq, cnbcBars, yahoo, messages }) {
+    const tiers = [
+        ['Nasdaq', 'signals_nasdaq', () => nasdaq(ticker, { years: 3, revalidate: 3600, timeout: 6000 })],
+        ['CNBC', 'signals_cnbc', () => cnbcBars(ticker, { revalidate: 3600, timeout: 6000, tries: 1 })],
+        ['Yahoo', 'signals_yahoo', async () => (await yahoo(ticker, { range: '5y', interval: '1d', revalidate: 3600, adjusted: false, tries: 1, timeout: 6000 })).history],
+    ];
+    for (const [source, faultName, fetchBars] of tiers) {
+        try {
+            const bars = await gate(faultName, faults, fetchBars);
+            if (bars.length >= 60) return { bars, source };
+            messages.push(`${ticker}: ${source} gave ${bars.length} bars`);
+        } catch (e) { messages.push(`${ticker}: ${source} failed (${String(e?.message).slice(0, 80)})`); }
+    }
+    throw new Error('every price source failed');
 }
 
 const lastDate = (bars) => bars[bars.length - 1].date;
@@ -160,7 +167,7 @@ function groupBars(tickers, got, spot, expected) {
  * least the latest completed session; "intraday" = includes today's unfinished session.
  * Never throws.
  */
-export async function resolveSignals({ faults = new Set(), now = Date.now(), nasdaq = nasdaqHistory, yahoo = yahooChart, cnbc = cnbcQuotes } = {}) {
+export async function resolveSignals({ faults = new Set(), now = Date.now(), nasdaq = nasdaqHistory, cnbcBars = cnbcHistory, yahoo = yahooChart, cnbc = cnbcQuotes } = {}) {
     const messages = [];
     const out = { NotSoBoring: null, FrontRunner: null, messages };
     if (faults.has('signals')) { messages.push('computed signals: switched off (_fail=signals)'); return out; }
@@ -170,7 +177,7 @@ export async function resolveSignals({ faults = new Set(), now = Date.now(), nas
     const spotP = gate('signals_spot', faults, () => cnbc(tickers, { revalidate: 120, timeout: 5000, tries: 1 }))
         .catch((e) => { messages.push(`CNBC live quotes failed (${String(e?.message).slice(0, 80)}): closes only`); return null; });
     await Promise.all(tickers.map(async (t) => {
-        try { got[t] = await barsFor(t, { faults, nasdaq, yahoo, messages }); }
+        try { got[t] = await barsFor(t, { faults, nasdaq, cnbcBars, yahoo, messages }); }
         catch (e) { messages.push(`${t}: no daily bars (${String(e?.message).slice(0, 80)})`); }
     }));
     const spot = await spotP;

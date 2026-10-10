@@ -150,12 +150,19 @@ describe('resolveSignals', () => {
         expect(r.NotSoBoring.intraday).toBe(true); // TMF's own quote is there
     });
 
-    test('Nasdaq down for a ticker → Yahoo raw closes; CNBC down → closes only', async () => {
+    test('Nasdaq down for a ticker → CNBC bars; both down → Yahoo raw closes; quotes down → closes only', async () => {
+        const nasdaqNoSpy = async (t) => { if (t === 'SPY') throw new Error('403'); return nasdaq(t); };
+        const cnbcBars = jest.fn(async () => wavy('2026-10-09'));
         const yahoo = jest.fn(async () => ({ history: wavy('2026-10-09') }));
-        const r = await resolveSignals({ now: NOW, nasdaq: async (t) => { if (t === 'SPY') throw new Error('403'); return nasdaq(t); }, yahoo, cnbc: async () => { throw new Error('down'); } });
+        const down = async () => { throw new Error('down'); };
+        let r = await resolveSignals({ now: NOW, nasdaq: nasdaqNoSpy, cnbcBars, yahoo, cnbc: down });
+        expect(cnbcBars).toHaveBeenCalledWith('SPY', expect.any(Object));
+        expect(yahoo).not.toHaveBeenCalled();
+        expect(r.FrontRunner.source).toBe('Computed from Nasdaq+CNBC prices (2026-10-09 close)');
+        expect(r.messages.join(' | ')).toMatch(/CNBC live quotes failed/);
+        r = await resolveSignals({ now: NOW, nasdaq: nasdaqNoSpy, cnbcBars: down, yahoo, cnbc: down });
         expect(yahoo).toHaveBeenCalledWith('SPY', expect.objectContaining({ adjusted: false }));
         expect(r.FrontRunner.source).toBe('Computed from Nasdaq+Yahoo prices (2026-10-09 close)');
-        expect(r.messages.join(' | ')).toMatch(/CNBC live quotes failed/);
     });
 
     test('closes older than the latest completed session → stale', async () => {
@@ -165,16 +172,19 @@ describe('resolveSignals', () => {
     });
 
     test('a ticker with no data at all → that signal is null, the other still computes', async () => {
-        const r = await resolveSignals({ now: NOW, nasdaq: async (t) => { if (t === 'VIXY') throw new Error('x'); return nasdaq(t); }, yahoo: async () => { throw new Error('y'); }, cnbc: async () => ({}) });
+        const r = await resolveSignals({ now: NOW, nasdaq: async (t) => { if (t === 'VIXY') throw new Error('x'); return nasdaq(t); }, cnbcBars: async () => { throw new Error('c'); }, yahoo: async () => { throw new Error('y'); }, cnbc: async () => ({}) });
         expect(r.FrontRunner).toBeNull();
         expect(r.NotSoBoring.value).toBe('ON');
         expect(r.messages.join(' | ')).toMatch(/FrontRunner compute failed: no daily bars for VIXY/);
     });
 
-    test('fault switches: signals turns the tier off; signals_nasdaq forces Yahoo', async () => {
+    test('fault switches: signals turns the tier off; signals_nasdaq → CNBC; + signals_cnbc → Yahoo', async () => {
         expect(await resolveSignals({ faults: new Set(['signals']), now: NOW, nasdaq })).toMatchObject({ NotSoBoring: null, FrontRunner: null });
-        const yahoo = jest.fn(async (t) => ({ history: t === 'TMF' ? TMF : wavy('2026-10-09') }));
-        const r = await resolveSignals({ faults: new Set(['signals_nasdaq', 'signals_spot']), now: NOW, nasdaq, yahoo, cnbc: jest.fn() });
+        const bars = async (t) => (t === 'TMF' ? TMF : wavy('2026-10-09'));
+        const yahoo = jest.fn(async (t) => ({ history: await bars(t) }));
+        let r = await resolveSignals({ faults: new Set(['signals_nasdaq', 'signals_spot']), now: NOW, nasdaq, cnbcBars: bars, yahoo, cnbc: jest.fn() });
+        expect(r.FrontRunner.source).toBe('Computed from CNBC prices (2026-10-09 close)');
+        r = await resolveSignals({ faults: new Set(['signals_nasdaq', 'signals_cnbc', 'signals_spot']), now: NOW, nasdaq, cnbcBars: bars, yahoo, cnbc: jest.fn() });
         expect(r.FrontRunner.source).toBe('Computed from Yahoo prices (2026-10-09 close)');
     });
 });

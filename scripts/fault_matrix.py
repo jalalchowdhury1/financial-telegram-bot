@@ -184,7 +184,7 @@ def sheets_3y_agree():
 def signals_agree():
     """NotSoBoring/FrontRunner are computed from daily prices (dashboard lib/signals.js) with
     the sheets as backups. Checks: both computed and current; NotSoBoring equals the live
-    sheet's; the Yahoo backup gives the same answers as Nasdaq. -> [(ok, msg)]"""
+    sheet's; the CNBC backup gives the same answers as Nasdaq. -> [(ok, msg)]"""
     out = []
     _, d, _, _ = fetch('sheets', '')
     f = ((d or {}).get('_meta') or {}).get('fields') or {}
@@ -203,7 +203,7 @@ def signals_agree():
     yf = ((y or {}).get('_meta') or {}).get('fields') or {}
     via = str((yf.get('FrontRunner') or {}).get('source') or '')
     same = all((y or {}).get(k) == (d or {}).get(k) for k in ('NotSoBoring', 'FrontRunner'))
-    out.append(('Yahoo' in via and same, f'Yahoo backup: {(y or {}).get("NotSoBoring")!r}/{(y or {}).get("FrontRunner")!r} ← {via[:60]}'))
+    out.append(('CNBC prices' in via and same, f'CNBC backup: {(y or {}).get("NotSoBoring")!r}/{(y or {}).get("FrontRunner")!r} ← {via[:60]}'))
     return out
 
 
