@@ -57,7 +57,8 @@ export function staleNote(sheets, fields) {
     const when = d && !Number.isNaN(d.getTime())
         ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/New_York' })
         : null;
-    const what = when ? `cached ${when}` : /FRED/.test(info.source || '') ? 'FRED, lags a day' : 'not live';
+    const src = info.source || '';
+    const what = when ? `cached ${when}` : /FRED/.test(src) ? 'FRED, lags a day' : /stopped updating/.test(src) ? 'frozen sheet' : 'not live';
     return (
         <div data-testid={`stale-${hit[0]}`} title={info.source || ''}
             style={{ fontSize: '0.6rem', marginTop: '2px', color: 'var(--orange)', fontWeight: 700 }}>

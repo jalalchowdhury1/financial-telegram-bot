@@ -8,6 +8,7 @@ import { defaultKv } from '../../../lib/kv';
 import { makeBudget } from '../../../lib/budget';
 import { runInBackground } from '../../../lib/background';
 import { resolveLiveFields, fillFromLastGood, persistLiveFields, summarize, toResults } from '../../../lib/sheetsCascade';
+import { resolveSignals } from '../../../lib/signals';
 import bakedAaii from '../../../lib/data/aaiiNewest.json';
 
 export const dynamic = 'force-dynamic';
@@ -46,10 +47,10 @@ export async function GET(request) {
             .catch((e) => ({ payload: null, messages: [`aaii resolver threw: ${String(e?.message).slice(0, 120)}`] }));
         const tagPromise = resolveVixFearGreedTag({ fredApiKey: process.env.FRED_API_KEY, fetchJson, fetchText: text, faults })
             .catch((e) => ({ tag: 'N/A', tier: 'none', fallback: true, message: `VIX fear/greed: resolver threw (${String(e?.message).slice(0, 120)})` }));
-        const livePromise = resolveLiveFields({ faults, fetchText: text, fetchJson, fredApiKey: process.env.FRED_API_KEY });
+        const livePromise = resolveLiveFields({ faults, fetchText: text, fetchJson, fredApiKey: process.env.FRED_API_KEY, computeSignals: resolveSignals });
         const budget = makeBudget(SHEETS_BUDGET_MS, { startedAt });
         const late = `request time budget (${SHEETS_BUDGET_MS / 1000} s) spent`;
-        const [{ fields, messages: liveMessages }, aaii, tag] = await Promise.all([
+        const [{ fields, messages: liveMessages, backups }, aaii, tag] = await Promise.all([
             budget.race(livePromise, { fields: { NotSoBoring: null, FrontRunner: null, vixCurrent: null, vixThreeMonth: null }, messages: [`live sheet/CBOE/FRED tiers: ${late}`] }),
             budget.race(aaiiPromise, { payload: null, messages: [`AAII: ${late}`] }),
             budget.race(tagPromise, { tag: 'N/A', tier: 'none', fallback: true, message: `VIX fear/greed: ${late}` }),
@@ -60,7 +61,7 @@ export async function GET(request) {
         } else {
             fields.vixFearGreed = null;
         }
-        const filled = await fillFromLastGood(fields, { faults, store, kv: defaultKv });
+        const filled = await fillFromLastGood(fields, { faults, store, kv: defaultKv, backups });
         // /tmp is written synchronously inside; the throttled KV SET must not hold the response.
         runInBackground(() => persistLiveFields(fields, { faults, store, kv: defaultKv, kvRecord: filled.kvRecord }));
 

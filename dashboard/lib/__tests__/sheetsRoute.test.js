@@ -21,6 +21,19 @@ function cboeCsv(last, end = '2026-10-09', base = 16) {
 }
 
 jest.mock('../data/aaiiNewest.json', () => ({}));
+// The computed tier (lib/signals.js, unit-tested in signals.test.js). Its values differ from
+// the sheet's (OFF/UPRO vs ON/BIL) so every test shows which tier won. mode.signals:
+// 'live' (default) | 'stale' (built from an older session) | 'down'.
+const COMPUTED_SRC = (asOf) => `Computed from Nasdaq prices (${asOf} close)`;
+jest.mock('../signals', () => ({
+    resolveSignals: jest.fn(async ({ faults }) => {
+        const m = mode.signals || 'live';
+        if (faults.has('signals') || m === 'down') return { NotSoBoring: null, FrontRunner: null, messages: ['computed signals: off'] };
+        const asOf = m === 'stale' ? '2026-10-07' : '2026-10-09';
+        const mk = (value) => ({ value, source: COMPUTED_SRC(asOf), live: m !== 'stale', stale: m === 'stale', asOf, intraday: false, detail: { asOf } });
+        return { NotSoBoring: mk('OFF'), FrontRunner: mk('UPRO'), messages: ['computed: ok'] };
+    }),
+}));
 jest.mock('../fetcher', () => ({
     fetchText: jest.fn(async (url) => {
         seen.push(url);
@@ -92,15 +105,16 @@ beforeEach(() => {
 });
 
 describe('/api/sheets healthy path', () => {
-    test('all pills from the primary sheet; tag computed from CBOE, never the sheet C2', async () => {
+    test('signals computed from prices, VIX from the primary sheet; tag from CBOE, never the sheet C2', async () => {
         const b = await get();
-        expect(b.NotSoBoring).toBe('ON');
-        expect(b.FrontRunner).toBe('BIL (T-Bill ETF)');
+        expect(b.NotSoBoring).toBe('OFF');
+        expect(b.FrontRunner).toBe('UPRO');
+        expect(b._meta.fields.FrontRunner).toMatchObject({ source: COMPUTED_SRC('2026-10-09'), stale: false, detail: { asOf: '2026-10-09' } });
         expect(b.VIX.current).toBe('14.84');
         expect(b.VIX.threeMonth).toBe('17.77');
         expect(b.VIX.fearGreed).not.toBe('GREED13');
         expect(b.VIX.fearGreed).toBe('GREED05'); // 15.2 vs a 50d mean of 15.98
-        expect(b._meta.source).toBe('Google Sheets (Live)');
+        expect(b._meta.source).toBe('Computed (daily prices) + Google Sheets (Live)');
         expect(b._meta.stale).toBe(false);
         expect(b._meta.staleFields).toEqual([]);
         expect(b._meta.fields.vixFearGreed.source).toBe('CBOE-computed');
@@ -110,10 +124,11 @@ describe('/api/sheets healthy path', () => {
     test('live fields are saved per field to /tmp and KV', async () => {
         await get();
         const tmp = store.__m.get(TMP_KEY).data;
-        expect(tmp.NotSoBoring).toMatchObject({ value: 'ON', source: 'Google Sheets (Live)' });
+        expect(tmp.NotSoBoring).toMatchObject({ value: 'OFF', source: COMPUTED_SRC('2026-10-09') });
+        expect(tmp.vixCurrent).toMatchObject({ value: '14.84', source: 'Google Sheets (Live)' });
         expect(tmp.vixFearGreed.value).toBe('GREED05');
         const rec = kv.__m.get(KV_KEY);
-        expect(rec.data.FrontRunner.value).toBe('BIL (T-Bill ETF)');
+        expect(rec.data.FrontRunner.value).toBe('UPRO');
         expect(typeof rec.savedAt).toBe('string');
     });
 
@@ -136,16 +151,17 @@ describe('/api/sheets healthy path', () => {
 });
 
 describe('/api/sheets fault switches', () => {
-    test('?_fail=sheets_main → alt URL', async () => {
-        const b = await get('?_fail=sheets_main');
+    test('?_fail=sheets_main,signals → alt URL (FrontRunner sheet always flagged stale)', async () => {
+        const b = await get('?_fail=sheets_main,signals');
         expect(b.NotSoBoring).toBe('ON');
-        expect(b._meta.source).toBe('Google Sheets (Alt URL)');
+        expect(b._meta.fields.NotSoBoring).toMatchObject({ source: 'Google Sheets (Alt URL)', stale: false });
+        expect(b._meta.source).toBe('Stale: Google Sheets (Alt URL)');
         expect(b._meta.hasErrors).toBe(true);
         expect(seen.some((u) => u.includes('output=csv'))).toBe(true);
     });
 
-    test('?_fail=sheets_main,sheets_alt → VIX levels from CBOE; NotSoBoring/FrontRunner N/A with no copy', async () => {
-        const b = await get('?_fail=sheets_main,sheets_alt');
+    test('?_fail=sheets_main,sheets_alt,signals → VIX levels from CBOE; NotSoBoring/FrontRunner N/A with no copy', async () => {
+        const b = await get('?_fail=sheets_main,sheets_alt,signals');
         expect(b.VIX.current).toBe('15.20');
         expect(b.VIX.threeMonth).toBe('17.77');
         expect(b._meta.fields.vixCurrent.source).toBe('CBOE VIX_History.csv (close 2026-10-09)');
@@ -156,7 +172,7 @@ describe('/api/sheets fault switches', () => {
     });
 
     test('?_fail=sheets_main,sheets_alt,sheets_cboe → FRED VIXCLS/VXVCLS, flagged stale (lags a day)', async () => {
-        const b = await get('?_fail=sheets_main,sheets_alt,sheets_cboe');
+        const b = await get('?_fail=sheets_main,sheets_alt,sheets_cboe,signals');
         expect(b.VIX.current).toBe('15.41');
         expect(b.VIX.threeMonth).toBe('18.08');
         expect(b._meta.staleFields).toEqual(expect.arrayContaining(['vixCurrent', 'vixThreeMonth']));
@@ -165,7 +181,7 @@ describe('/api/sheets fault switches', () => {
     });
 
     test('every VIX tier off → VIX N/A', async () => {
-        const b = await get('?_fail=sheets_main,sheets_alt,sheets_cboe,sheets_fred,vix_cboe,vix_fred');
+        const b = await get('?_fail=sheets_main,sheets_alt,sheets_cboe,sheets_fred,vix_cboe,vix_fred,signals');
         expect(b.VIX).toEqual({ current: 'N/A', threeMonth: 'N/A', fearGreed: 'N/A' });
         expect(b._meta.source).toBe('Static Defaults');
     });
@@ -189,9 +205,9 @@ describe('/api/sheets per-field last-good', () => {
         await get(); // healthy load saves the copies
         jest.setSystemTime(new Date(NOW.getTime() + 864e5));
         mode.cboeEnd = '2026-10-10';
-        const b = await get('?_fail=sheets_main,sheets_alt');
-        expect(b.NotSoBoring).toBe('ON');
-        expect(b._meta.fields.NotSoBoring.source).toBe(`/tmp last-good (${NOW.toISOString()}) ← Google Sheets (Live)`);
+        const b = await get('?_fail=sheets_main,sheets_alt,signals');
+        expect(b.NotSoBoring).toBe('OFF');
+        expect(b._meta.fields.NotSoBoring.source).toBe(`/tmp last-good (${NOW.toISOString()}) ← ${COMPUTED_SRC('2026-10-09')}`);
         expect(b._meta.fields.NotSoBoring.savedAt).toBe(NOW.toISOString());
         expect(b._meta.staleFields).toEqual(expect.arrayContaining(['NotSoBoring', 'FrontRunner']));
         expect(b._meta.staleFields).not.toContain('vixCurrent'); // CBOE is live
@@ -201,9 +217,9 @@ describe('/api/sheets per-field last-good', () => {
     test('cold instance (/tmp gone) → KV copy, labelled "KV last-good (<savedAt>) ← <orig>"', async () => {
         await get();
         store.__m.clear();
-        const b = await get('?_fail=sheets_main,sheets_alt');
-        expect(b.FrontRunner).toBe('BIL (T-Bill ETF)');
-        expect(b._meta.fields.FrontRunner.source).toBe(`KV last-good (${NOW.toISOString()}) ← Google Sheets (Live)`);
+        const b = await get('?_fail=sheets_main,sheets_alt,signals');
+        expect(b.FrontRunner).toBe('UPRO');
+        expect(b._meta.fields.FrontRunner.source).toBe(`KV last-good (${NOW.toISOString()}) ← ${COMPUTED_SRC('2026-10-09')}`);
         expect(b._meta.fields.FrontRunner.stale).toBe(true);
     });
 
@@ -216,21 +232,21 @@ describe('/api/sheets per-field last-good', () => {
 
     test('?_fail=sheets_cache skips /tmp; ?_fail=kvlg / sheets_kvlg skip KV; lastgood skips both', async () => {
         await get();
-        expect((await get('?_fail=sheets_main,sheets_alt,sheets_cache'))._meta.fields.NotSoBoring.source).toMatch(/^KV last-good/);
-        expect((await get('?_fail=sheets_main,sheets_alt,kvlg'))._meta.fields.NotSoBoring.source).toMatch(/^\/tmp last-good/);
-        expect((await get('?_fail=sheets_main,sheets_alt,sheets_cache,sheets_kvlg')).NotSoBoring).toBe('N/A');
-        expect((await get('?_fail=sheets_main,sheets_alt,lastgood')).NotSoBoring).toBe('N/A');
+        expect((await get('?_fail=sheets_main,sheets_alt,signals,sheets_cache'))._meta.fields.NotSoBoring.source).toMatch(/^KV last-good/);
+        expect((await get('?_fail=sheets_main,sheets_alt,signals,kvlg'))._meta.fields.NotSoBoring.source).toMatch(/^\/tmp last-good/);
+        expect((await get('?_fail=sheets_main,sheets_alt,signals,sheets_cache,sheets_kvlg')).NotSoBoring).toBe('N/A');
+        expect((await get('?_fail=sheets_main,sheets_alt,signals,lastgood')).NotSoBoring).toBe('N/A');
     });
 
     test('copies past their max age are ignored (VIX: 4 days, NotSoBoring: 7 days)', async () => {
         await get();
         jest.setSystemTime(new Date(NOW.getTime() + 5 * 864e5));
         mode.cboe = 'down'; mode.fred = 'down';
-        const b = await get('?_fail=sheets_main,sheets_alt');
+        const b = await get('?_fail=sheets_main,sheets_alt,signals');
         expect(b.VIX.current).toBe('N/A');
-        expect(b.NotSoBoring).toBe('ON');
+        expect(b.NotSoBoring).toBe('OFF');
         jest.setSystemTime(new Date(NOW.getTime() + 8 * 864e5));
-        expect((await get('?_fail=sheets_main,sheets_alt')).NotSoBoring).toBe('N/A');
+        expect((await get('?_fail=sheets_main,sheets_alt,signals')).NotSoBoring).toBe('N/A');
     });
 });
 
@@ -251,7 +267,7 @@ describe('/api/sheets value guards', () => {
     });
 
     test('everything down + no copies → 200 with N/A, never throws', async () => {
-        mode = { sheets: 'down', cboe: 'down', fred: 'down' };
+        mode = { sheets: 'down', cboe: 'down', fred: 'down', signals: 'down' };
         const res = await GET(new Request('https://x.test/api/sheets', { headers: { 'user-agent': 'jest' } }));
         expect(res.status).toBe(200);
         const b = await res.json();
@@ -259,6 +275,42 @@ describe('/api/sheets value guards', () => {
         expect(b.VIX.fearGreed).toBe('N/A');
         expect(b._meta.hasErrors).toBe(true);
         expect(res.headers.get('vercel-cdn-cache-control')).toBeNull();
+    });
+});
+
+describe('/api/sheets computed signals tier (lib/signals.js)', () => {
+    test('a stale computed NotSoBoring loses to the live sheet; FrontRunner keeps it (beats the frozen sheet)', async () => {
+        mode.signals = 'stale';
+        const b = await get();
+        expect(b.NotSoBoring).toBe('ON');
+        expect(b._meta.fields.NotSoBoring.source).toBe('Google Sheets (Live)');
+        expect(b.FrontRunner).toBe('UPRO');
+        expect(b._meta.fields.FrontRunner).toMatchObject({ source: COMPUTED_SRC('2026-10-07'), stale: true });
+        expect(b._meta.staleFields).toEqual(['FrontRunner']);
+        expect(store.__m.get(TMP_KEY).data.FrontRunner).toBeUndefined(); // stale values are never saved
+    });
+
+    test('computed down, no copies → the FrontRunner sheet is served, flagged stale with the reason', async () => {
+        const b = await get('?_fail=signals');
+        expect(b.FrontRunner).toBe('BIL (T-Bill ETF)');
+        expect(b._meta.fields.FrontRunner.stale).toBe(true);
+        expect(b._meta.fields.FrontRunner.source).toMatch(/^Google Sheets \(Live\), backup only: its RSI inputs stopped updating on 2026-08-24$/);
+        expect(b._meta.staleFields).toEqual(['FrontRunner']);
+        expect(b._meta.messages.join(' | ')).toMatch(/FrontRunner: served the frozen sheet backup/);
+        expect(b.NotSoBoring).toBe('ON'); // the NotSoBoring sheet is live
+    });
+
+    test('a saved computed FrontRunner beats the frozen sheet when the computed tier is down', async () => {
+        await get();
+        const b = await get('?_fail=signals');
+        expect(b.FrontRunner).toBe('UPRO');
+        expect(b._meta.fields.FrontRunner.source).toMatch(/^\/tmp last-good .* ← Computed from Nasdaq prices/);
+    });
+
+    test('the computed copy is saved with savedAt = its session close, never newer', async () => {
+        jest.setSystemTime(new Date('2026-10-10T15:00:00Z')); // Saturday; data = Friday's close
+        await get();
+        expect(store.__m.get(TMP_KEY).data.NotSoBoring.savedAt).toBe('2026-10-09T20:00:00.000Z');
     });
 });
 

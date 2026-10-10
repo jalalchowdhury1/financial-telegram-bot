@@ -4,8 +4,11 @@
  * Every field resolves on its own, so one broken sheet no longer drags the others
  * down, and every field carries its own provenance in `_meta.fields`:
  *
- *   NotSoBoring / FrontRunner:  sheet (primary URL) → sheet (alt URL)
- *                               → /tmp last-good → KV last-good → 'N/A'
+ *   NotSoBoring:  computed from daily prices (lib/signals.js, live) → sheet (primary
+ *                 → alt URL) → computed (stale) → /tmp last-good → KV last-good → 'N/A'
+ *   FrontRunner:  computed (live) → computed (stale) → /tmp last-good → KV last-good
+ *                 → sheet, ALWAYS flagged stale (its RSI inputs are typed in by an n8n
+ *                 job that stopped on 2026-08-24) → 'N/A'
  *   VIX current / 3M:           sheet → alt → CBOE daily CSV (completed sessions only:
  *                               live only when its close is the latest completed session
  *                               AND the market is not in regular hours; else stale)
@@ -22,7 +25,8 @@
  *
  * Fault switches (`?_fail=`): sheets_main, sheets_alt, sheets_cboe, sheets_fred,
  * sheets_cache (/tmp tier), sheets_kvlg (KV tier); the generic `lastgood` disables
- * both last-good tiers and `kvlg` the KV tier, same as serve().
+ * both last-good tiers and `kvlg` the KV tier, same as serve(). The computed tier has
+ * signals (all of it), signals_nasdaq, signals_yahoo, signals_spot (lib/signals.js).
  *
  * Nothing here throws: every tier is wrapped and degrades to the next one.
  */
@@ -75,7 +79,11 @@ export const TIER = {
     fred: 'FRED Proxy (VIX)',
     tmp: 'Cached',
     kv: 'KV last-good',
+    computed: 'Computed (daily prices)',
 };
+// The computed tier fetches 17 tickers; it may not hold the sheets/CBOE answer hostage.
+export const SIGNALS_CAP_MS = 12000;
+const FR_SHEET_NOTE = 'backup only: its RSI inputs stopped updating on 2026-08-24';
 
 export function parseCSV(text) {
     return String(text || '').split('\n').map(row => {
@@ -140,11 +148,21 @@ async function fredLatest(field, apiKey, fetchJson, now) {
 }
 
 /**
- * Live tiers only. Returns `{fields, messages}`; a field no live tier could fill is null.
+ * Live tiers only. Returns `{fields, messages, backups}`; a field no live tier could fill is
+ * null; `backups` holds the frozen FrontRunner sheet for fillFromLastGood (last resort).
  */
-export async function resolveLiveFields({ faults, fetchText, fetchJson, fredApiKey, now = new Date() } = {}) {
+export async function resolveLiveFields({ faults, fetchText, fetchJson, fredApiKey, now = new Date(), computeSignals = null } = {}) {
     const fields = Object.fromEntries(SHEET_FIELDS.map((f) => [f, null]));
     const messages = [];
+    const nowMs = new Date(now).getTime();
+    let capTimer;
+    const signalsP = computeSignals
+        ? Promise.race([
+            Promise.resolve().then(() => computeSignals({ faults, now: nowMs })),
+            new Promise((resolve) => { capTimer = setTimeout(() => resolve({ messages: [`computed signals: over the ${SIGNALS_CAP_MS / 1000} s cap`] }), SIGNALS_CAP_MS); }),
+        ]).catch((e) => ({ messages: [`computed signals threw: ${String(e?.message).slice(0, 120)}`] }))
+            .finally(() => clearTimeout(capTimer))
+        : null;
 
     // Sheets: each sheet independently, primary URL then the alt URL.
     await Promise.all(SHEETS.map(async (sheet) => {
@@ -160,6 +178,15 @@ export async function resolveLiveFields({ faults, fetchText, fetchJson, fredApiK
             }
         }
     }));
+
+    // The FrontRunner sheet is a frozen backup (FR_SHEET_NOTE): it waits until after the
+    // last-good copies (fillFromLastGood) and is always served flagged stale.
+    const backups = {};
+    if (fields.FrontRunner) {
+        backups.FrontRunner = { ...fields.FrontRunner, source: `${fields.FrontRunner.source}, ${FR_SHEET_NOTE}`, live: false, stale: true };
+        fields.FrontRunner = null;
+    }
+    if (signalsP) applySignals(fields, await signalsP, messages, nowMs);
 
     // VIX levels the sheet couldn't give: CBOE (same-day) → FRED (lags a trading day).
     for (const f of ['vixCurrent', 'vixThreeMonth']) {
@@ -191,7 +218,24 @@ export async function resolveLiveFields({ faults, fetchText, fetchJson, fredApiK
             messages.push(`VIX ${f === 'vixCurrent' ? 'current' : '3M'} from FRED ${FRED_SERIES[f]} ${obs.date} (may lag a trading day)`);
         } catch (e) { messages.push(`FRED ${FRED_SERIES[f]} failed: ${String(e?.message).slice(0, 120)}`); }
     }
-    return { fields, messages };
+    return { fields, messages, backups };
+}
+
+/**
+ * Merge lib/signals.js output into `fields`: a live computed value beats the sheet; a
+ * stale one only fills what the sheet couldn't. A close-based value carries that close
+ * as asOfMs so its last-good copy is never stamped newer than its data.
+ */
+function applySignals(fields, sig, messages, nowMs) {
+    messages.push(...(sig?.messages || []));
+    for (const f of ['NotSoBoring', 'FrontRunner']) {
+        const c = sig?.[f];
+        const value = c ? (f === 'FrontRunner' ? frontRunnerText(c.value) : usableText(c.value)) : null;
+        if (!value) continue;
+        const closeMs = c.live && !c.intraday ? dailyCloseStatus(c.asOf, nowMs).closeMs : null;
+        const got = { value, source: c.source, tier: 'computed', live: !!c.live, stale: !c.live, detail: c.detail, ...(closeMs ? { asOfMs: closeMs } : {}) };
+        if (got.live || !fields[f]) fields[f] = got;
+    }
 }
 
 const tierOf = (field) => (field ? field.tier : null);
@@ -214,7 +258,7 @@ function fromRecord(record, f, label, now) {
  * Fill every still-null field from the per-field last-good copies: /tmp first, then KV.
  * Mutates and returns `fields`; adds a message per filled field. Never throws.
  */
-export async function fillFromLastGood(fields, { faults, store, kv, now = Date.now() } = {}) {
+export async function fillFromLastGood(fields, { faults, store, kv, now = Date.now(), backups = {} } = {}) {
     const messages = [];
     const has = (n) => !!(faults && faults.has(n));
     const missing = () => FIELDS.filter((f) => !fields[f]);
@@ -235,6 +279,10 @@ export async function fillFromLastGood(fields, { faults, store, kv, now = Date.n
             const got = fromRecord(kvRecord, f, TIER.kv, now);
             if (got) { fields[f] = got; messages.push(`${f}: served KV last-good from ${got.savedAt} (STALE)`); }
         }
+    }
+    // Last resort before N/A: a backup held back by resolveLiveFields (the frozen FrontRunner sheet).
+    for (const f of missing()) {
+        if (backups?.[f]) { fields[f] = backups[f]; messages.push(`${f}: served the frozen sheet backup (STALE)`); }
     }
     return { fields, messages, kvRecord };
 }
@@ -295,11 +343,11 @@ export function summarize(fields) {
         if (SHEET_FIELDS.some((f) => !fields[f])) source += ' (some N/A)';
         if (staleFields.length) source = `Stale: ${source}`;
     }
-    const healthy = SHEET_FIELDS.every((f) => tierOf(fields[f]) === 'main');
+    const healthy = SHEET_FIELDS.every((f) => ['main', 'computed'].includes(tierOf(fields[f])));
     const meta = {};
     for (const f of FIELDS) {
         const x = fields[f];
-        meta[f] = x ? { source: x.source, stale: !!x.stale, ...(x.savedAt ? { savedAt: x.savedAt } : {}) } : { source: 'Unavailable', stale: false };
+        meta[f] = x ? { source: x.source, stale: !!x.stale, ...(x.savedAt ? { savedAt: x.savedAt } : {}), ...(x.detail ? { detail: x.detail } : {}) } : { source: 'Unavailable', stale: false };
     }
     return { source, hasErrors: !healthy || staleFields.length > 0, stale: staleFields.length > 0, staleFields, fields: meta };
 }

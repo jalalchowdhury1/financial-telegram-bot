@@ -122,6 +122,7 @@ def test_brief_keeps_the_fear_greed_score():
         out = fetch_google_sheet_indicators()
 
     assert "GREED13" in out, f"score stripped from the tag:\n{out}"
-    # the FrontRunner artifact digit must STILL be stripped
-    assert "BIL (T-Bill ETF)\n" in out
+    # the FrontRunner artifact digit must STILL be stripped (here from the sheet fallback,
+    # which is marked frozen: DASH_OK carries no FrontRunner)
+    assert "🔑 FrontRunner : BIL (T-Bill ETF) ⚠️ frozen sheet\n" in out
     assert "BIL (T-Bill ETF)1" not in out

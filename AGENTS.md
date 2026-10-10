@@ -588,6 +588,43 @@ Rule: every number has ≥2 independent live sources, then saved copies, then an
 - **Proof:** live fault matrix 2026-10-09 (each route: one tier off, all live off, + /tmp,
   + KV) → every row either a real number with the right label, or "Unavailable".
 
+### 🧮 Computed signals: NotSoBoring + FrontRunner (`lib/signals.js`) — 2026-10-10
+
+The two strategy pills are no longer read from Google Sheets first. `lib/signals.js`
+computes them from daily prices with the sheets' exact logic; the sheets are backups.
+
+- **FrontRunner** = "Robinhood - Ultimate Frontrunners" `Sheet1!K2`, a nested IF over 16
+  RSIs (RSI 9 of QQQ SPY IOO XLP VTV XLF VOX CURE RETL LABU SOXL FNGU TQQQ TECL UPRO, RSI 50
+  of VIXY), ported verbatim (`frontRunnerDecision`). The sheet's inputs (column G) were typed
+  in by an n8n job that **stopped on 2026-08-24**, so the sheet is frozen. Wilder RSI on
+  Nasdaq raw closes reproduced all 16 of that day's inputs to the cent (2, 4 and 10 years of
+  history alike). Inputs are rounded to 2 dp before the comparisons, like the sheet's. K2 has
+  a dead branch (`H2>82.5` inside the `H4>79` arm can never fire); kept as-is.
+- **NotSoBoring** = "TMF - TQQQ - Composer Daily Triggers" `'Trading Days'!I2`: TMF's 10-day
+  max/min drawdown vs 8.5%, a ±8% open-to-open big-move flag, and "D and E unchanged on a
+  normal day → yesterday's state". Matched the sheet on every full-window day (8/8 incl. the
+  OFF→ON flip on 2026-10-07); TMF opens/closes equal GOOGLEFINANCE's to the cent. The sheet's
+  'Original' tab only looks back ~25 calendar days, so its bottom rows use truncated windows.
+  Harmless for I2, but don't validate against those rows.
+- **Prices:** Nasdaq historical (3 y, keyless) → Yahoo `adjusted:false` per ticker, plus ONE
+  CNBC quote call for all 17 tickers that adds today's session as a bar (the SPY RSI rule).
+  All or none: if any ticker in a signal lacks today's quote, the plain closes are used, so
+  the 16 RSIs always describe the same day. A completed session's official bar is never
+  overwritten by a quote. ~1 s warm.
+- **Cascade** (`lib/sheetsCascade.js`): NotSoBoring = computed (live) → sheet → computed
+  (stale) → /tmp → KV → N/A. FrontRunner = computed (live or stale) → /tmp → KV → frozen
+  sheet, **always flagged stale** (`backups`, pill says "⚠ STALE · frozen sheet") → N/A. Live
+  = built from at least the latest completed session. A close-based value is saved with
+  savedAt = that close. The computed tier is capped at 12 s so it never holds the VIX answer.
+  `_meta.fields.<signal>.detail` carries the 16 RSIs / TMF max, min, drawdown, watch-out level.
+- **Faults:** `?_fail=signals` (tier off → sheets), `signals_nasdaq` (→ Yahoo), `signals_yahoo`,
+  `signals_spot` (no CNBC bar). `scripts/fault_matrix.py: signals_agree()` checks nightly that
+  both are computed and current, that NotSoBoring equals the live sheet, and that the Yahoo
+  backup gives the same answers.
+- **Telegram brief:** `bot/fetchers.py: fetch_signal_pills` reads both from `/api/sheets`
+  (marked `⚠️ STALE` when the dashboard says so), sheet CSVs only as the fallback, the
+  FrontRunner one marked `⚠️ frozen sheet`. Don't port the math to Python: one formula, one place.
+
 ### VIX pill fear/greed tag (`/api/sheets` + `lib/vixFearGreed.js`)
 The VIX pill in `CustomIndicatorBar.js` shows a `current | threeMonth | fearGreed` triple
 (e.g. "14.43 | 17.48 | GREED13"). `current`/`threeMonth` still come straight from the

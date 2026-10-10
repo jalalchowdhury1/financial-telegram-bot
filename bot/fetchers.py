@@ -137,6 +137,57 @@ def format_aaii_line(aaii: Optional[Dict[str, Any]], clean=lambda v: v) -> str:
     return f"🔸 AAII Diff : {val} {AAII_LEGEND}"
 
 
+FR_SHEET_NOTE = "⚠️ frozen sheet"
+
+
+def fetch_signal_pills() -> tuple:
+    """
+    Return (NotSoBoring, FrontRunner) for the brief.
+
+    PRIMARY is the dashboard's /api/sheets, which computes both from daily prices
+    (dashboard/lib/signals.js: exact ports of the two sheets, proven against them on
+    2026-10-10) and keeps the sheets as its own backups — one formula, one place, like
+    the VIX tag. A value the dashboard lists in _meta.staleFields is marked STALE.
+
+    FALLBACK (dashboard unreachable or N/A) is the sheet CSVs. The FrontRunner sheet is
+    frozen — its RSI inputs were typed in by an n8n job that stopped on 2026-08-24 — so
+    it is marked FR_SHEET_NOTE. Each value fails on its own; never raises.
+    """
+    import re
+
+    def _usable(v):
+        return bool(v) and str(v).strip().upper() not in ('', 'N/A', 'NONE')
+
+    got = {}
+    try:
+        r = requests.get(URLS['DASHBOARD_SHEETS'], timeout=20)
+        r.raise_for_status()
+        body = r.json() or {}
+        stale = set((body.get('_meta') or {}).get('staleFields') or [])
+        for key in ('NotSoBoring', 'FrontRunner'):
+            if _usable(body.get(key)):
+                got[key] = str(body[key]).strip() + (' ⚠️ STALE' if key in stale else '')
+    except Exception as e:
+        logging.warning("signals: dashboard /api/sheets failed (%s); using the sheets", e)
+
+    if 'NotSoBoring' not in got:
+        try:
+            rows = list(csv.reader(StringIO(requests.get(URLS['NOT_SO_BORING'], timeout=10).text)))
+            got['NotSoBoring'] = rows[2][1].strip() if _usable(rows[2][1]) else 'N/A'
+        except Exception as e:
+            logging.warning("signals: NotSoBoring sheet failed (%s)", e)
+            got['NotSoBoring'] = 'N/A'
+    if 'FrontRunner' not in got:
+        try:
+            rows = list(csv.reader(StringIO(requests.get(URLS['FRONT_RUNNER'], timeout=10).text)))
+            cell = re.sub(r'\)\d+$', ')', rows[1][0].strip().split('\n')[0].strip())
+            got['FrontRunner'] = f"{cell} {FR_SHEET_NOTE}" if _usable(cell) else 'N/A'
+        except Exception as e:
+            logging.warning("signals: FrontRunner sheet failed (%s)", e)
+            got['FrontRunner'] = 'N/A'
+    return got['NotSoBoring'], got['FrontRunner']
+
+
 def fetch_google_sheet_indicators() -> str:
     """
     Fetch custom indicator values from assigned Google Sheets via CSV export.
@@ -144,15 +195,8 @@ def fetch_google_sheet_indicators() -> str:
     """
     print("Fetching Google Sheet custom indicators...")
     try:
-        # 1. NotSoBoring
-        r_nsb = requests.get(URLS['NOT_SO_BORING'], timeout=10)
-        reader_nsb = list(csv.reader(StringIO(r_nsb.text)))
-        not_so_boring_val = reader_nsb[2][1].strip()
-
-        # 2. FrontRunner
-        r_fr = requests.get(URLS['FRONT_RUNNER'], timeout=10)
-        reader_fr = list(csv.reader(StringIO(r_fr.text)))
-        front_runner_val = reader_fr[1][0].strip().split('\n')[0].strip()
+        # 1-2. NotSoBoring + FrontRunner — computed by the dashboard, sheets as fallback.
+        not_so_boring_val, front_runner_val = fetch_signal_pills()
 
         # 3. AAII Diff — from the dashboard's /api/aaii. Isolated: an AAII
         #    failure only degrades its own line, never the whole block.

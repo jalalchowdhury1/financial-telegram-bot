@@ -44,6 +44,7 @@ export async function yahooChart(ticker, { range = '1mo', interval = '1d', reval
     if (!r) throw new Error(`Yahoo: no result for ${ticker}`);
     const ts = r.timestamp || [];
     const closes = r.indicators?.quote?.[0]?.close || [];
+    const opens = r.indicators?.quote?.[0]?.open || [];
     const adj = r.indicators?.adjclose?.[0]?.adjclose;
     const history = [];
     for (let i = 0; i < ts.length; i++) {
@@ -51,7 +52,7 @@ export async function yahooChart(ticker, { range = '1mo', interval = '1d', reval
         // other vendors' unadjusted closes (the factor ratios), or dividends would
         // silently change the basis mid-series.
         const px = adjusted && adj && adj[i] != null ? adj[i] : closes[i];
-        if (px != null && !Number.isNaN(px)) history.push({ date: day(ts[i]), price: px });
+        if (px != null && !Number.isNaN(px)) history.push({ date: day(ts[i]), price: px, ...(opens[i] > 0 ? { open: opens[i] } : {}) });
     }
     if (!history.length) throw new Error(`Yahoo: empty history for ${ticker}`);
     const meta = r.meta || {};
@@ -157,7 +158,7 @@ export async function polygonDaily(ticker, key, { years = 2, revalidate = 1800, 
 
 /**
  * CNBC quote service (KEYLESS, datacenter-friendly JSON) -> map symbol -> {price,
- * change, changePct, asOf, lastTime}. Pass continuous front-month future symbols, e.g.
+ * change, changePct, open, asOf, lastTime}. Pass continuous front-month future symbols, e.g.
  * '@HG.1' (Copper, USD/lb) and '@GC.1' (Gold, USD/oz). Multiple symbols MUST be
  * pipe-delimited in ONE request (repeated symbols= params error). last/change/
  * change_pct come back as STRINGS.
@@ -176,6 +177,7 @@ export async function cnbcQuotes(symbols, { revalidate = 1800, timeout = 6000, t
             price,
             change: parseFloat(it.change),
             changePct: parseFloat(it.change_pct),
+            open: parseFloat(it.open),
             asOf: typeof it.last_time === 'string' ? it.last_time.slice(0, 10) : null,
             lastTime: typeof it.last_time === 'string' ? it.last_time : null,
         };
@@ -206,7 +208,7 @@ export async function cnbcHistory(symbol, { range = '3M', revalidate = 1800, tim
 }
 
 /**
- * Nasdaq.com historical quotes (KEYLESS JSON) -> ascending [{date, price}] of DAILY
+ * Nasdaq.com historical quotes (KEYLESS JSON) -> ascending [{date, price, open}] of DAILY
  * closes. One call returns up to ~10y (2,500+ rows) — so it can stand in for both
  * the recent-daily and the long-history tier. Rows are newest-first with
  * 'MM/DD/YYYY' dates and string closes (stocks may carry '$'/','). Closes match
@@ -224,7 +226,8 @@ export async function nasdaqHistory(symbol, { years = 10, assetclass = 'etf', re
         const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(String(r?.date || ''));
         const price = parseFloat(String(r?.close ?? '').replace(/[$,]/g, ''));
         if (!m || !Number.isFinite(price) || price <= 0) continue;
-        history.push({ date: `${m[3]}-${m[1]}-${m[2]}`, price });
+        const open = parseFloat(String(r?.open ?? '').replace(/[$,]/g, ''));
+        history.push({ date: `${m[3]}-${m[1]}-${m[2]}`, price, ...(Number.isFinite(open) && open > 0 ? { open } : {}) });
     }
     if (!history.length) throw new Error(`Nasdaq: empty history ${symbol}`);
     history.sort((a, b) => (a.date < b.date ? -1 : 1));

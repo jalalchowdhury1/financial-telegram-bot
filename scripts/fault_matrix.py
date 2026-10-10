@@ -35,7 +35,7 @@ ME_ALL = ('lambda,polygon,fred,treasury,pmms,cnbc,gold_api,coinbase,coingecko,kr
           'frankfurter,fawaz,fawaz_bdt,dxy_computed')
 HM_ALL = 'fred,hm_treasury,hm_bls,hm_dol,hm_fredcsv,fredcsv'
 CG_ALL = 'cg_cnbc,cg_westmetall,cg_fred,cg_goldapi,cg_yahoo,cg_polygon'
-SH_LIVE = 'sheets_main,sheets_alt,sheets_cboe,sheets_fred,vix_cboe,vix_fred'
+SH_LIVE = 'sheets_main,sheets_alt,sheets_cboe,sheets_fred,vix_cboe,vix_fred,signals'
 FG_LIVE = 'cnn,rapidapi,fg_yahoo,fg_cboe,fg_fred'
 FX_LIVE = 'fx_cnbc,fx_cnbcw,fx_nasdaq,fx_polygon,fx_yahoo'
 VOL_LIVE = 'vol_cboe,vol_cnbc,vol_fred,vol_yahoo,vol_polygon,vol_curve'
@@ -50,7 +50,7 @@ CASES = [
     ('market-extra', ME_ALL, 'copy'), ('market-extra', ME_ALL + ',lastgood', 'none'),
     ('fred', '', 'live'), ('fred', 'cg_cnbc', 'live'), ('fred', 'pe_multpl,pe_yahoo', 'live'),
     ('fred', HM_ALL, 'copy'), ('fred', HM_ALL + ',' + CG_ALL + ',lastgood,sheetlkg', 'any'),
-    ('sheets', '', 'live'), ('sheets', 'vix_cboe,vix_fred', 'any'),
+    ('sheets', '', 'live'), ('sheets', 'vix_cboe,vix_fred', 'any'), ('sheets', 'sheets_main,sheets_alt', 'any'),
     ('sheets', SH_LIVE + ',sheets_cache', 'copy'), ('sheets', SH_LIVE + ',sheets_cache,sheets_kvlg', 'none'),
     ('fear-greed', '', 'live'), ('fear-greed', 'cnn', 'any'), ('fear-greed', FG_LIVE, 'copy'),
     ('fear-greed', FG_LIVE + ',fg_cache,fg_kvlg', 'none'),
@@ -181,6 +181,32 @@ def sheets_3y_agree():
     return out
 
 
+def signals_agree():
+    """NotSoBoring/FrontRunner are computed from daily prices (dashboard lib/signals.js) with
+    the sheets as backups. Checks: both computed and current; NotSoBoring equals the live
+    sheet's; the Yahoo backup gives the same answers as Nasdaq. -> [(ok, msg)]"""
+    out = []
+    _, d, _, _ = fetch('sheets', '')
+    f = ((d or {}).get('_meta') or {}).get('fields') or {}
+    for k in ('NotSoBoring', 'FrontRunner'):
+        src = str((f.get(k) or {}).get('source') or '')
+        ok = src.startswith('Computed') and not (f.get(k) or {}).get('stale')
+        out.append((ok, f'{k} {(d or {}).get(k)!r} ← {src[:70]}'))
+    _, sh, _, _ = fetch('sheets', 'signals')
+    sh_src = str(((((sh or {}).get('_meta') or {}).get('fields') or {}).get('NotSoBoring') or {}).get('source') or '')
+    a, b = (d or {}).get('NotSoBoring'), (sh or {}).get('NotSoBoring')
+    if sh_src.startswith('Google Sheets'):
+        out.append((a == b, f'NotSoBoring computed {a!r} vs sheet {b!r}'))
+    else:
+        out.append((False, f'NotSoBoring sheet unreadable ({sh_src[:60]})'))
+    _, y, _, _ = fetch('sheets', 'signals_nasdaq')
+    yf = ((y or {}).get('_meta') or {}).get('fields') or {}
+    via = str((yf.get('FrontRunner') or {}).get('source') or '')
+    same = all((y or {}).get(k) == (d or {}).get(k) for k in ('NotSoBoring', 'FrontRunner'))
+    out.append(('Yahoo' in via and same, f'Yahoo backup: {(y or {}).get("NotSoBoring")!r}/{(y or {}).get("FrontRunner")!r} ← {via[:60]}'))
+    return out
+
+
 def main():
     alert = '--no-alert' not in sys.argv
     # normal loads first (warms caches), then fault cases in modest parallel
@@ -193,6 +219,7 @@ def main():
         results += list(zip(rest, ex.map(lambda c: check(*c), rest)))
     ok3, msg3 = spy_3y_agrees()
     sheet_checks = sheets_3y_agree()
+    signal_checks = signals_agree()
 
     fails = [(c, r) for c, r in results if not r[0]]
     for (route, faults, expect), (ok, msg, secs) in results:
@@ -200,9 +227,12 @@ def main():
     print(f"{'PASS' if ok3 else 'FAIL'} spy-3y-agree  {msg3}")
     for ok, msg in sheet_checks:
         print(f"{'PASS' if ok else 'FAIL'} sheet-3y      {msg}")
+    for ok, msg in signal_checks:
+        print(f"{'PASS' if ok else 'FAIL'} signals       {msg}")
     sheet_bad = [m for ok, m in sheet_checks if not ok]
-    total = len(results) + 1 + len(sheet_checks)
-    bad = len(fails) + (0 if ok3 else 1) + len(sheet_bad)
+    signal_bad = [m for ok, m in signal_checks if not ok]
+    total = len(results) + 1 + len(sheet_checks) + len(signal_checks)
+    bad = len(fails) + (0 if ok3 else 1) + len(sheet_bad) + len(signal_bad)
     print(f'=== {total - bad}/{total} passed ===')
 
     if bad and alert:
@@ -210,6 +240,7 @@ def main():
         if not ok3:
             lines.append(f'• <b>spy 3Y</b>: {msg3}')
         lines += [f'• <b>sheet 3Y</b>: {m}' for m in sheet_bad]
+        lines += [f'• <b>signals</b>: {m}' for m in signal_bad]
         send(f'🧪 <b>Dashboard backup test: {bad} of {total} failed</b>\n' + '\n'.join(lines)
              + '\n<blockquote><i>scripts/fault_matrix.py · nightly · run it again to recheck</i></blockquote>')
     return 1 if bad else 0

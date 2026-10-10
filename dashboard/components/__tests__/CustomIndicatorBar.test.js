@@ -80,6 +80,11 @@ describe('stale pill line', () => {
         render(<div>{staleNote(s, ['vixCurrent', 'vixThreeMonth'])}</div>);
         expect(screen.getByTestId('stale-vixCurrent').textContent).toBe('⚠ STALE · FRED, lags a day');
     });
+    test('the frozen FrontRunner sheet fallback says "frozen sheet"', () => {
+        const s = meta(['FrontRunner'], { FrontRunner: { source: 'Google Sheets (Live), backup only: its RSI inputs stopped updating on 2026-08-24', stale: true } });
+        render(<div>{staleNote(s, ['FrontRunner'])}</div>);
+        expect(screen.getByTestId('stale-FrontRunner').textContent).toBe('⚠ STALE · frozen sheet');
+    });
     test('nothing stale (or an old payload without _meta) renders nothing', () => {
         expect(staleNote(meta([], {}), ['FrontRunner'])).toBeNull();
         expect(staleNote({}, ['FrontRunner'])).toBeNull();
