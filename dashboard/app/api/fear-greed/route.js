@@ -14,11 +14,13 @@ export const dynamic = 'force-dynamic';
  * CNN's 0–100 Fear & Greed index. Layers, each behind a `?_fail=` switch:
  *   1. CNN dataviz API                     `cnn`
  *   2. RapidAPI (a CNN F&G reseller)       `rapidapi`
+ *   2b. saved CNN index ≤ 24 h old (/tmp, then KV), flagged stale — a few-hours-old real
+ *       index beats a VIX proxy (2026-10-09: proxy 81 vs CNN 45). Same switches as 6/7.
  *   3. Yahoo ^VIX proxy                    `fg_yahoo`  ┐ NOT the CNN index: a VIX level
  *   4. CBOE VIX_History.csv proxy          `fg_cboe`   │ mapped onto 0–100. `_meta.proxy`
  *   5. FRED VIXCLS proxy (lags a day)      `fg_fred`   ┘ + `_meta.note` say so, the card shows it.
  *      (CBOE added 2026-10-09: Yahoo answers Node's fetch with 429 even when curl gets 200.)
- *   6. /tmp last-good (CNN/RapidAPI only)  `fg_cache`  ┐ `lastgood` disables both,
+ *   6. /tmp last-good ≤ 3 days (CNN/RapidAPI only) `fg_cache` ┐ `lastgood` disables both,
  *   7. KV last-good  `ftb:lg:fear-greed`   `fg_kvlg`   ┘ `kvlg` only the KV tier
  *   8. N/A (HTTP 500 + `error`, so loadJson retries and the card shows its skeleton)
  * Only a real CNN-index answer is ever saved as last-good (a proxy must never be
@@ -28,6 +30,7 @@ export const dynamic = 'force-dynamic';
  */
 const LG_KEY = 'fear-greed';
 const LG_MAX_AGE_MS = 3 * 864e5;   // a weekend; older than that is not "the index" any more
+const RECENT_LG_MS = 864e5;        // saved index younger than this outranks the VIX proxies
 const FRESH_DAYS = 4;              // a source whose newest print is older than this is frozen
 const PROXY_NOTE = 'VIX-derived proxy: NOT the CNN Fear & Greed index';
 
@@ -210,6 +213,25 @@ export async function GET(request) {
             return Response.json(result);
         } catch (e) { messages.push(`Layer 2 (RapidAPI) failed: ${e.message}`); }
 
+        // Saved CNN index: /tmp, then KV (survives cold starts). Each tier has its own switch.
+        const saved = async (maxAge, tag) => {
+            if (!faults.has('lastgood') && !faults.has('fg_cache')) {
+                const lg = loadLastGood(LG_KEY, maxAge);
+                if (lg) return relabel(lg, 'cache', messages);
+                messages.push(`${tag} /tmp cache empty`);
+            } else messages.push(`${tag} /tmp cache disabled`);
+            if (!faults.has('lastgood') && !faults.has('kvlg') && !faults.has('fg_kvlg')) {
+                const lg = await loadLastGoodKV(LG_KEY, maxAge);
+                if (lg) return relabel(lg, 'KV last-good', messages);
+                messages.push(`${tag} KV last-good empty`);
+            } else messages.push(`${tag} KV last-good disabled`);
+            return null;
+        };
+
+        // Layer 2b: the real index saved within 24 h, before any VIX proxy
+        const recent = await saved(RECENT_LG_MS, 'Layer 2b (≤24 h)');
+        if (recent) return Response.json(recent);
+
         // Layer 3: Yahoo Finance ^VIX proxy (not saved as last-good)
         try {
             return Response.json(await gate('fg_yahoo', faults, () => fromYahooVix(messages)));
@@ -225,19 +247,9 @@ export async function GET(request) {
             return Response.json(await gate('fg_fred', faults, () => fromFredVix(messages)));
         } catch (e) { messages.push(`Layer 5 (FRED VIXCLS) failed: ${e.message}`); }
 
-        // Layer 6: /tmp last-good (the CNN index itself, flagged stale)
-        if (!faults.has('lastgood') && !faults.has('fg_cache')) {
-            const lg = loadLastGood(LG_KEY, LG_MAX_AGE_MS);
-            if (lg) return Response.json(relabel(lg, 'cache', messages));
-            messages.push('Layer 6 (/tmp cache) empty');
-        } else messages.push('Layer 6 (/tmp cache) disabled');
-
-        // Layer 7: KV last-good (survives cold starts)
-        if (!faults.has('lastgood') && !faults.has('kvlg') && !faults.has('fg_kvlg')) {
-            const lg = await loadLastGoodKV(LG_KEY, LG_MAX_AGE_MS);
-            if (lg) return Response.json(relabel(lg, 'KV last-good', messages));
-            messages.push('Layer 7 (KV last-good) empty');
-        } else messages.push('Layer 7 (KV last-good) disabled');
+        // Layer 6/7: the real index saved within 3 days (flagged stale)
+        const older = await saved(LG_MAX_AGE_MS, 'Layer 6/7 (≤3 d)');
+        if (older) return Response.json(older);
     } catch (e) {
         messages.push(`fear-greed route error: ${String(e?.message).slice(0, 160)}`);
     }

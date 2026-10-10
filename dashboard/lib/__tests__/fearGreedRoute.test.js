@@ -2,7 +2,7 @@
  * @jest-environment node
  *
  * /api/fear-greed layers, each behind a `?_fail=` switch:
- * cnn → rapidapi → fg_yahoo / fg_cboe / fg_fred (VIX proxies) → fg_cache (/tmp) → fg_kvlg (KV) → N/A.
+ * cnn → rapidapi → saved index ≤24 h → fg_yahoo / fg_cboe / fg_fred (VIX proxies) → fg_cache (/tmp) → fg_kvlg (KV) → N/A.
  */
 
 let mode;
@@ -190,6 +190,28 @@ describe('/api/fear-greed', () => {
         const { b } = await call();
         expect(b._meta.source).toBe('RapidAPI');
         expect(b._meta.messages.join(' ')).toMatch(/CNN frozen/);
+    });
+
+    test('a real index saved < 24 h ago beats the VIX proxy (proxy said 81 vs CNN 45, 2026-10-09)', async () => {
+        await call();
+        jest.setSystemTime(new Date(NOW.getTime() + 6 * 3600e3));
+        mode = { cnn: 'down', rapid: 'down' };
+        const { b } = await call();
+        expect(b.score).toBe(45);
+        expect(b._meta.proxy).toBeUndefined();
+        expect(b._meta.stale).toBe(true);
+        expect(b._meta.source).toMatch(/^Stale cache .* ← CNN$/);
+        jest.setSystemTime(NOW);
+    });
+
+    test('a saved index > 24 h old loses to the proxy, but still beats N/A when the proxies are down too', async () => {
+        await call();
+        jest.setSystemTime(new Date(NOW.getTime() + 30 * 3600e3));
+        mode = { cnn: 'down', rapid: 'down' };
+        expect((await call()).b._meta.proxy).toBe(true);
+        mode = { cnn: 'down', rapid: 'down', yahoo: 'down', cboe: 'down', fred: 'down' };
+        expect((await call()).b.score).toBe(45);
+        jest.setSystemTime(NOW);
     });
 
     test('a last-good copy older than 3 days is not served', async () => {
