@@ -155,8 +155,10 @@ aws lambda add-permission --function-name financial-telegram-report \
 ### SPY waterfall (Lambda `fetch_spy_with_fallback`)
 yfinance (full history) → Polygon (full history) → Nasdaq keyless history (`_nasdaq_rows`, ~4y,
 added 2026-10-09 so RSI/MA/3Y come from real bars before any sheet) → Google Sheet `SPY_INDICATORS`
-(pre-computed values; its RSI uses the sheet's own method — 63 vs 57 from bars on 2026-10-09;
-`Three-Year Return` parsed with `_pct_cell`) → FRED `SP500`.
+(pre-computed values; `Three-Year Return` parsed with `_pct_cell`) → FRED `SP500`.
+**The spot's session counts as a bar** (bot + `buildSpy`): Polygon's free bars end yesterday, so
+before 2026-10-09 RSI/MA200/52w high were YESTERDAY's (RSI 57.26 for Oct 8 vs 63.14 for Oct 9;
+the sheet's 63 was right).
 **Dashboard `/api/spy` demotes a Lambda answer whose `_meta.source` starts "Google Sheet"**: its
 own bar tiers go first; the sheet answer is served only if they fail or are stale-only.
 **3Y rule everywhere (bot + `lib/spyTiers.js return3yFrom`), owner pick 2026-10-09: base = last

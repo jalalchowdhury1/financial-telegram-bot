@@ -38,9 +38,9 @@ export async function GET(request) {
     const faults = faultsFrom(request);
     return serve('spy', async () => {
         const lam = faults.has('lambda') ? null : await lambdaSpy(messages);
-        // A Lambda answer from its Google Sheet layer carries the sheet's own RSI/MA method
-        // (RSI 63 vs 57 from bars, 2026-10-09): our bar-computed tiers go first, the sheet
-        // answer is kept only if every one of them fails.
+        // A Lambda answer from its Google Sheet layer is pre-computed elsewhere (its own
+        // formulas and refresh time): our bar-computed tiers go first, the sheet answer is
+        // kept only if every one of them fails or is stale-only.
         const fromSheet = lam && /^Google Sheet/.test(lam._meta?.source || '');
         if (lam && !fromSheet) return lam;
         if (fromSheet) messages.push('Lambda answered from its Google Sheet layer; trying bar-computed tiers first');

@@ -105,3 +105,20 @@ def test_yfinance_and_polygon_down_uses_nasdaq_bars_before_the_sheet(monkeypatch
     assert out['current'] == 700.0 and out['rsi'] is not None
     base = next(r['close'] for r in reversed(nq) if r['date'] <= '2023-10-09')
     assert round(out['return3y'], 4) == round((700.0 - base) / base * 100, 4)
+
+
+def test_rsi_counts_todays_spot_when_polygon_bars_end_yesterday(monkeypatch):
+    import pandas as pd
+    from datetime import date, timedelta
+    end = date(2026, 10, 8)
+    poly = [{'date': (end - timedelta(days=i)).isoformat(), 'price': 700.0 + (i % 7) - i * 0.1} for i in range(600)][::-1]
+    monkeypatch.setattr(f, '_fetch_yfinance', lambda *a, **k: None)
+    monkeypatch.setattr(f, '_fetch_polygon_aggs', lambda *a, **k: {'history': poly})
+    monkeypatch.setattr(f, '_fetch_finnhub_quote', lambda *a, **k: {
+        'current': 720.0, 'dailyChange': {'value': 3.0, 'pct': 0.4}, 'lastDate': '2026-10-09'})
+    monkeypatch.setattr(f, '_nasdaq_rows', lambda *a, **k: [])
+    monkeypatch.setattr(f, '_sheet_return_3y', lambda: None)
+    out = f.fetch_spy_with_fallback(polygon_api_key='k', finnhub_api_key='k')
+    want = f.calculate_rsi(pd.Series([p['price'] for p in poly] + [720.0]), period=9)
+    assert out['rsi'] == want
+    assert out['chartHistory'][-1]['date'] == '2026-10-09'

@@ -45,6 +45,17 @@ beforeEach(() => {
     }
 });
 
+test('buildSpy: a spot from a newer session is today\'s bar for RSI / MA200 / 52w high', () => {
+    const h = bars(400, '2026-10-08');
+    const withSpot = buildSpy(h, 700, h[h.length - 1].price, 'x', { asOf3y: '2026-10-09' });
+    const asBar = buildSpy([...h, { date: '2026-10-09', price: 700 }], 700, h[h.length - 1].price, 'x');
+    expect(withSpot.rsi).toBe(asBar.rsi);
+    expect(withSpot.ma200.value).toBe(asBar.ma200.value);
+    expect(withSpot.week52High.value).toBe(700);
+    const sameDay = buildSpy(h, 700, 599, 'x', { asOf3y: '2026-10-08' }); // intraday bar replaced
+    expect(sameDay.rsi).toBe(buildSpy([...h.slice(0, -1), { date: '2026-10-08', price: 700 }], 700, 599, 'x').rsi);
+});
+
 describe('latestSessionDate', () => {
     test.each([
         ['2026-10-09T18:00:00Z', '2026-10-09'], // Fri, open

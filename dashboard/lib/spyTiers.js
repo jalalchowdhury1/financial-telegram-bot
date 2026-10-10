@@ -88,6 +88,13 @@ export function return3yFrom(history, current, asOf) {
  *  `extra.return3y` fills the 3Y only when these bars are too short for it;
  *  `extra.meta` merges into _meta (stale flags). */
 export function buildSpy(history, current, prevClose, source, extra = {}) {
+    // The spot's session counts as a bar: Polygon's free bars end yesterday, and an RSI
+    // without today's price was yesterday's (57.26 for Oct 8 vs 63.14 for Oct 9, 2026-10-09).
+    const lastBar = history[history.length - 1];
+    if (extra.asOf3y && lastBar && Number.isFinite(current)) {
+        if (extra.asOf3y > lastBar.date) history = [...history, { date: extra.asOf3y, price: current }];
+        else if (extra.asOf3y === lastBar.date) history = [...history.slice(0, -1), { date: lastBar.date, price: current }];
+    }
     const prices = history.map((h) => h.price);
     const n = prices.length;
     if (n < 220) throw new Error(`${source}: insufficient history (${n} rows)`);

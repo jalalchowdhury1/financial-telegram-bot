@@ -946,6 +946,13 @@ def fetch_spy_with_fallback(fred_api_key: Optional[str] = None,
             except Exception:
                 pass
 
+        # The spot's session counts as a bar: Polygon's free bars end yesterday, and an RSI
+        # without today's price was yesterday's (57.26 for Oct 8 vs 63.14 for Oct 9, 2026-10-09).
+        if spot_date and spot_date > rows[-1]['date']:
+            rows = rows + [{'date': spot_date, 'close': current}]
+        elif spot_date and spot_date == rows[-1]['date']:
+            rows = rows[:-1] + [{'date': spot_date, 'close': current}]
+
         daily_change = {'value': current - prev_close, 'pct': _calc_pct(current, prev_close)}
 
         closes = pd.Series([row['close'] for row in rows])
