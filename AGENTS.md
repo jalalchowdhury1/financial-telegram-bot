@@ -44,7 +44,7 @@ present ⇒ HTTP, else EventBridge):
    `TELEGRAM_TOKEN` (and currently there are no such paths wired up).
 
 The **dashboard** is a Next.js app in `/dashboard`, deployed on **Vercel**
-(auto-deploys on push to `main`): <https://financial-telegram-bot-beryl.vercel.app/>.
+(deploys when a push to `main` changes `dashboard/`, via `.github/workflows/deploy-dashboard.yml`): <https://financial-telegram-bot-beryl.vercel.app/>.
 
 ### Architecture you MUST get right (this trips people up)
 
@@ -192,7 +192,13 @@ Finnhub spot overrides the latest price (gotcha #3). `_meta.source` records the 
 
 ## 3. The dashboard (`/dashboard`)
 
-Deploys to Vercel automatically on push to `main`. Tests: from `dashboard/`,
+Deploys only when a push to `main` changes `dashboard/` (10 Oct 2026). Vercel's git
+auto-deploy is OFF (`dashboard/vercel.json`: `git.deploymentEnabled: false`, never remove it):
+the account shares 100 deploys/day across all projects, and every bot-only push used to cost one.
+`.github/workflows/deploy-dashboard.yml` calls a Vercel deploy hook (secret `VERCEL_DEPLOY_HOOK`)
+90 s after a dashboard push (bursts collapse into one deploy) and after a successful bankruptcies
+rebake. Need a deploy without a dashboard change: Actions → Deploy dashboard → Run workflow.
+No PR preview deploys any more. Tests: from `dashboard/`,
 `npm test` (Jest) and `npm run build` must pass before merge; `npm run test:watch` for
 watch mode; `--testPathPattern <Name>` filters. Next.js 13.5.6, React 18 (App Router).
 

@@ -1,0 +1,61 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow
+name: Deploy dashboard
+
+# Why this exists (10 Oct 2026): Vercel's free plan allows 100 deploys a day for ALL of
+# Jalal's projects together, and that day the cap was hit (151 in 24 h). Vercel used to
+# deploy this repo on EVERY push, though its root is dashboard/: 14 of 33 deploys that
+# day changed only bot/Lambda code. A skipped "Ignored Build Step" still counts as a
+# deploy, so git auto-deploy is OFF (dashboard/vercel.json: git.deploymentEnabled false)
+# and this workflow deploys only when dashboard/ changed, through a Vercel deploy hook
+# (secret VERCEL_DEPLOY_HOOK, project financial-telegram-bot, ref main).
+#
+# - Bursts: a newer run cancels a waiting older one, and the hook always builds the newest
+#   commit on main, so several pushes inside 90 s cost ONE deploy.
+# - Bot merges: a push made with GITHUB_TOKEN (rebake-bankruptcies' self-merge) does not
+#   start push workflows, so a successful rebake run deploys through workflow_run.
+# - Manual: Actions → Deploy dashboard → Run workflow.
+
+on:
+  push:
+    branches: [main]
+    paths: ['dashboard/**']
+  workflow_run:
+    workflows: ['Rebake Bankruptcies History']
+    types: [completed]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: deploy-dashboard
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Wait 90 s so a burst of pushes becomes one deploy
+        if: github.event_name == 'push'
+        run: sleep 90
+
+      - name: Trigger the Vercel deploy hook
+        env:
+          HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK }}
+        run: |
+          set -euo pipefail
+          test -n "$HOOK" || { echo "::error::secret VERCEL_DEPLOY_HOOK is missing"; exit 1; }
+          curl -fsS -m 30 -X POST "$HOOK" -o /dev/null -w 'deploy hook HTTP %{http_code}\n'
+
+      - name: Telegram alert on failure
+        if: failure()
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          curl -sS -m 20 "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
+            -d chat_id="$TELEGRAM_CHAT_ID" -d parse_mode=HTML \
+            --data-urlencode "text=🔴 <b>Dashboard deploy did not start</b>
+          The deploy hook failed, so the dashboard is still on the previous version.
+          <blockquote><i>financial-telegram-bot · ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}</i></blockquote>" >/dev/null
