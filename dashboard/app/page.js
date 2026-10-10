@@ -353,7 +353,7 @@ export default function Dashboard() {
                             anySaved ? `🕐 Saved ${anySaved} · no live data yet` : 'No live data yet'
                         ) : (
                             <>
-                                Updated
+                                <span className="upd-word">Updated</span>
                                 {/* the clock is hidden on phones — "3 min ago" says it in less
                                     room; the full string pushed this badge into the refresh button */}
                                 <span className="upd-date">{lastUpdated} · </span>
@@ -373,8 +373,8 @@ export default function Dashboard() {
                 {/* 🕰️ NYSE open/closed + countdown, computed on the device */}
                 <div className="mkt-clock-row"><ErrorBoundary><MarketClock /></ErrorBoundary></div>
                 {fred?._meta?.fetchedAt && (
-                    <p className="subtitle" style={{ fontSize: '0.7rem', opacity: 0.6, marginTop: '6px' }}>
-                        Economic data as of {new Date(fred._meta.fetchedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}<span className="hide-sm"> · refreshes every 30 min</span> · tap a label for its date, a number for its chart
+                    <p className="subtitle data-asof" style={{ fontSize: '0.7rem', opacity: 0.6, marginTop: '6px' }}>
+                        Economic data as of {new Date(fred._meta.fetchedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}<span className="hide-sm"> · refreshes every 30 min</span><span className="hide-sm"> · tap a label for its date, a number for its chart</span>
                     </p>
                 )}
             </header>

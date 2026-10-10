@@ -2722,3 +2722,43 @@ html:not(:has(.jump-fab)) .back-pill {
 @media (max-width: 640px) {
   .jev-modal-header { top: -20px; margin: -20px -20px 24px; padding: 20px 20px 16px; }
 }
+
+/* ========== 📱 PHONE PASS (2026-10-09) ==========
+   Jalal: "fine on the Mac, not on the iPhone". Four things looked squeezed at
+   390–430pt: the header was 5 stacked lines before any number, the VIX card wrapped
+   mid-value, the factor timeline scrolled sideways with 3M clipped at the left edge,
+   and the since-line was a full-size card. Desktop is untouched (all ≤560px). */
+@media (max-width: 560px) {
+  /* Header: "● JUST NOW" + mark chip + ↻ on ONE row (the pill's dot already says live). */
+  .header-status { gap: 6px; }
+  .header-status .upd-word { display: none; }
+  .header-status .live-badge,
+  .header-status .mark-chip { padding: 0 10px; font-size: 0.64rem; }
+
+  /* Market clock and the next release share one line instead of two. */
+  .mkt-clock-row { flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 6px; min-height: 20px; }
+  .mkt-clock { font-size: 0.66rem; padding: 2px 8px; }
+  .mkt-clock-row .econ-line { flex-basis: auto; padding: 0; font-size: 0.66rem; }
+  .dashboard-header .data-asof { margin-top: 4px !important; font-size: 0.62rem !important; }
+
+  /* Since-last-visit: a slim note, not a card. */
+  .since-line { font-size: 0.74rem; padding: 6px 10px; gap: 2px 10px; margin-bottom: 8px; }
+
+  /* 2×2 cards: a touch tighter; the VIX fear/greed tag drops to a small chip. */
+  .indicator-pill { padding: 10px 12px; min-height: 64px; }
+  .indicator-pill .vix-tag {
+    display: block; width: fit-content; margin-top: 4px; padding: 1px 7px;
+    font-size: 0.6rem; letter-spacing: 0.04em; border-radius: 999px;
+    color: var(--text-muted); background: rgba(255, 255, 255, 0.06);
+  }
+  .indicator-pill .vix-tag-sep { display: none; }
+
+  /* Factor timeline: its own full-width row with all 11 windows visible — no sideways
+     scroll, no fade, nothing clipped. The 44px hit strip from the 640px block stays. */
+  .factor-head { flex-wrap: wrap; row-gap: 4px; }
+  .factor-tf {
+    flex: 1 0 100%; justify-content: space-between; padding: 0 4px;
+    overflow-x: visible; -webkit-mask-image: none; mask-image: none;
+  }
+  .factor-tf-btn { flex: 1 1 0; min-width: 0; padding: 0; }
+}

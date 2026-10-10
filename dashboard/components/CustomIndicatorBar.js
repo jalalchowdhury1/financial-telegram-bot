@@ -107,9 +107,15 @@ export default function CustomIndicatorBar({ sheets, loading }) {
                         <span className="emoji">🎢</span>VIX (Current | 3M)
                     </span>
                 </div>
+                {/* Desktop reads one line "14.84 | 17.77 | GREED01". On a phone the half-width
+                    card wrapped mid-line, so ≤560px drops the last " | " and puts the tag
+                    on its own line as a small chip (globals.css "phone pass"). */}
                 <div className="value">
                     {loading ? '...' : (sheets?.VIX?.current
-                        ? `${sheets.VIX.current} | ${sheets.VIX.threeMonth} | ${sheets.VIX.fearGreed}`
+                        ? <>
+                            {`${sheets.VIX.current} | ${sheets.VIX.threeMonth}`}
+                            <span className="vix-tag"><span className="vix-tag-sep"> | </span>{sheets.VIX.fearGreed}</span>
+                        </>
                         : 'N/A')}
                 </div>
             </div>
