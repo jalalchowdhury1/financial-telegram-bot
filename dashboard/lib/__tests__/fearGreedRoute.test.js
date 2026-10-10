@@ -2,7 +2,7 @@
  * @jest-environment node
  *
  * /api/fear-greed layers, each behind a `?_fail=` switch:
- * cnn → rapidapi → fg_yahoo (proxy) → fg_fred (proxy) → fg_cache (/tmp) → fg_kvlg (KV) → N/A.
+ * cnn → rapidapi → fg_yahoo / fg_cboe / fg_fred (VIX proxies) → fg_cache (/tmp) → fg_kvlg (KV) → N/A.
  */
 
 let mode;
@@ -25,6 +25,12 @@ jest.mock('../fetcher', () => ({
             return okJson({ chart: { result: [{ timestamp: [day(2), day(1), day(0)], indicators: { quote: [{ close: [15.08, 15.41, null] }] } }] } });
         }
         throw new Error(`offline ${url}`);
+    }),
+    fetchText: jest.fn(async (url) => {
+        if (!url.includes('cboe.com') || mode.cboe === 'down') throw new Error('CBOE offline');
+        const m = mode.cboeFrozen ? '08' : '10';
+        const rows = ['DATE,OPEN,HIGH,LOW,CLOSE', `${m}/07/2026,0,0,0,15.08`, `${m}/08/2026,0,0,0,15.41`, `${m}/09/2026,0,0,0,14.84`];
+        return rows.join('\n');
     }),
     fetchJson: jest.fn(async () => {
         if (mode.fred === 'down') throw new Error('FRED 429');
@@ -96,8 +102,24 @@ describe('/api/fear-greed', () => {
         expect(store.saveLastGoodKV).not.toHaveBeenCalled();
     });
 
-    test('?_fail=cnn,rapidapi,fg_yahoo → FRED VIXCLS proxy, flagged proxy + stale', async () => {
+    test('?_fail=cnn,rapidapi,fg_yahoo → CBOE VIX proxy (same-day), labelled proxy, not stale', async () => {
         const { b } = await call('?_fail=cnn,rapidapi,fg_yahoo');
+        expect(b._meta.source).toBe('CBOE VIX Proxy');
+        expect(b._meta.proxy).toBe(true);
+        expect(b._meta.stale).toBeUndefined();
+        expect(b.asOf).toBe('2026-10-09');
+        expect(b.score).toBeCloseTo(100 - ((14.84 - 10) / 25) * 100);
+    });
+
+    test('a frozen CBOE CSV is rejected → FRED', async () => {
+        mode.cboeFrozen = true;
+        const { b } = await call('?_fail=cnn,rapidapi,fg_yahoo');
+        expect(b._meta.source).toBe('FRED VIXCLS Proxy');
+        expect(b._meta.messages.join(' ')).toMatch(/CBOE VIX frozen/);
+    });
+
+    test('?_fail=cnn,rapidapi,fg_yahoo,fg_cboe → FRED VIXCLS proxy, flagged proxy + stale', async () => {
+        const { b } = await call('?_fail=cnn,rapidapi,fg_yahoo,fg_cboe');
         expect(b._meta.source).toBe('FRED VIXCLS Proxy');
         expect(b._meta.proxy).toBe(true);
         expect(b._meta.stale).toBe(true);
@@ -106,7 +128,7 @@ describe('/api/fear-greed', () => {
 
     test('all live layers off → /tmp copy of the real index, relabelled + stale', async () => {
         await call(); // healthy load saves it
-        const { b } = await call('?_fail=cnn,rapidapi,fg_yahoo,fg_fred');
+        const { b } = await call('?_fail=cnn,rapidapi,fg_yahoo,fg_cboe,fg_fred');
         expect(b.score).toBe(45);
         expect(b._meta.source).toMatch(/^Stale cache \(2026-10-09T22:00:00.000Z\) ← CNN$/);
         expect(b._meta.stale).toBe(true);
@@ -115,14 +137,14 @@ describe('/api/fear-greed', () => {
 
     test('?_fail=…,fg_cache → KV copy, labelled "KV last-good (<savedAt>) ← CNN"', async () => {
         await call();
-        const { b } = await call('?_fail=cnn,rapidapi,fg_yahoo,fg_fred,fg_cache');
+        const { b } = await call('?_fail=cnn,rapidapi,fg_yahoo,fg_cboe,fg_fred,fg_cache');
         expect(b._meta.source).toBe('Stale KV last-good (2026-10-09T22:00:00.000Z) ← CNN');
         expect(b._meta.stale).toBe(true);
     });
 
     test('lastgood / kvlg / fg_kvlg switches reach the N/A floor (500 + error, no-store)', async () => {
         await call();
-        for (const q of ['?_fail=cnn,rapidapi,fg_yahoo,fg_fred,lastgood', '?_fail=cnn,rapidapi,fg_yahoo,fg_fred,fg_cache,kvlg', '?_fail=cnn,rapidapi,fg_yahoo,fg_fred,fg_cache,fg_kvlg']) {
+        for (const q of ['?_fail=cnn,rapidapi,fg_yahoo,fg_cboe,fg_fred,lastgood', '?_fail=cnn,rapidapi,fg_yahoo,fg_cboe,fg_fred,fg_cache,kvlg', '?_fail=cnn,rapidapi,fg_yahoo,fg_cboe,fg_fred,fg_cache,fg_kvlg']) {
             const { res, b } = await call(q);
             expect(res.status).toBe(500);
             expect(b.score).toBe('N/A');
@@ -149,7 +171,7 @@ describe('/api/fear-greed', () => {
     test('a last-good copy older than 3 days is not served', async () => {
         await call();
         jest.setSystemTime(new Date(NOW.getTime() + 4 * 864e5));
-        mode = { cnn: 'down', rapid: 'down', yahoo: 'down', fred: 'down' };
+        mode = { cnn: 'down', rapid: 'down', yahoo: 'down', cboe: 'down', fred: 'down' };
         const { b } = await call();
         expect(b._meta.source).toBe('Failed');
         jest.setSystemTime(NOW);

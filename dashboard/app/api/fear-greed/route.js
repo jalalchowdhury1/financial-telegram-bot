@@ -1,5 +1,7 @@
 import { EXTERNAL_URLS, DEFAULT_HEADERS } from '../../../lib/constants';
-import { proxyFetch, fetchJson } from '../../../lib/fetcher';
+import { proxyFetch, fetchJson, fetchText } from '../../../lib/fetcher';
+import { parseCboeCsv } from '../../../lib/vol';
+import { CBOE_VIX_URL } from '../../../lib/vixFearGreed';
 import { cacheHeaders } from '../../../lib/cdn';
 import { faultsFrom, gate } from '../../../lib/faults';
 import { isStale } from '../../../lib/freshness';
@@ -12,11 +14,12 @@ export const dynamic = 'force-dynamic';
  *   1. CNN dataviz API                     `cnn`
  *   2. RapidAPI (a CNN F&G reseller)       `rapidapi`
  *   3. Yahoo ^VIX proxy                    `fg_yahoo`  ┐ NOT the CNN index: a VIX level
- *   4. FRED VIXCLS proxy (lags a day)      `fg_fred`   ┘ mapped onto 0–100. `_meta.proxy`
- *                                                        + `_meta.note` say so, the card shows it.
- *   5. /tmp last-good (CNN/RapidAPI only)  `fg_cache`  ┐ `lastgood` disables both,
- *   6. KV last-good  `ftb:lg:fear-greed`   `fg_kvlg`   ┘ `kvlg` only the KV tier
- *   7. N/A (HTTP 500 + `error`, so loadJson retries and the card shows its skeleton)
+ *   4. CBOE VIX_History.csv proxy          `fg_cboe`   │ mapped onto 0–100. `_meta.proxy`
+ *   5. FRED VIXCLS proxy (lags a day)      `fg_fred`   ┘ + `_meta.note` say so, the card shows it.
+ *      (CBOE added 2026-10-09: Yahoo answers Node's fetch with 429 even when curl gets 200.)
+ *   6. /tmp last-good (CNN/RapidAPI only)  `fg_cache`  ┐ `lastgood` disables both,
+ *   7. KV last-good  `ftb:lg:fear-greed`   `fg_kvlg`   ┘ `kvlg` only the KV tier
+ *   8. N/A (HTTP 500 + `error`, so loadJson retries and the card shows its skeleton)
  * Only a real CNN-index answer is ever saved as last-good (a proxy must never be
  * replayed later as if it were the index), and never on a fault test.
  */
@@ -110,6 +113,25 @@ async function fromYahooVix(messages) {
     };
 }
 
+// CBOE's own keyless daily VIX history (same CSV + parser as lib/vixFearGreed.js / /api/vol).
+async function fromCboeVix(messages) {
+    const pts = parseCboeCsv(await fetchText(CBOE_VIX_URL, { revalidate: 0 }));
+    const n = pts.length;
+    if (n < 1) throw new Error('No CBOE VIX data');
+    if (isStale(pts[n - 1].date, FRESH_DAYS)) throw new Error(`CBOE VIX frozen (newest ${pts[n - 1].date})`);
+    const score = vixToScore(pts[n - 1].value);
+    return {
+        score,
+        rating: getRatingFromScore(score),
+        previousClose: vixToScore(n > 1 ? pts[n - 2].value : null),
+        previousWeek: vixToScore(n > 5 ? pts[n - 6].value : null),
+        previousMonth: vixToScore(n > 21 ? pts[n - 22].value : null),
+        previousYear: vixToScore(n > 252 ? pts[n - 253].value : null),
+        asOf: pts[n - 1].date,
+        _meta: { source: 'CBOE VIX Proxy', proxy: true, note: PROXY_NOTE, hasErrors: true, messages: [...messages, `${PROXY_NOTE} (CBOE VIX ${pts[n - 1].date})`] }
+    };
+}
+
 async function fromFredVix(messages) {
     // FRED VIXCLS — official VIX close, uses the existing API key, one trading day behind.
     const fredKey = process.env.FRED_API_KEY;
@@ -184,24 +206,29 @@ export async function GET(request) {
             return Response.json(await gate('fg_yahoo', faults, () => fromYahooVix(messages)));
         } catch (e) { messages.push(`Layer 3 (Yahoo VIX) failed: ${e.message}`); }
 
-        // Layer 4: FRED VIXCLS proxy (not saved as last-good)
+        // Layer 4: CBOE VIX proxy (not saved as last-good)
+        try {
+            return Response.json(await gate('fg_cboe', faults, () => fromCboeVix(messages)));
+        } catch (e) { messages.push(`Layer 4 (CBOE VIX) failed: ${e.message}`); }
+
+        // Layer 5: FRED VIXCLS proxy (not saved as last-good)
         try {
             return Response.json(await gate('fg_fred', faults, () => fromFredVix(messages)));
-        } catch (e) { messages.push(`Layer 4 (FRED VIXCLS) failed: ${e.message}`); }
+        } catch (e) { messages.push(`Layer 5 (FRED VIXCLS) failed: ${e.message}`); }
 
-        // Layer 5: /tmp last-good (the CNN index itself, flagged stale)
+        // Layer 6: /tmp last-good (the CNN index itself, flagged stale)
         if (!faults.has('lastgood') && !faults.has('fg_cache')) {
             const lg = loadLastGood(LG_KEY, LG_MAX_AGE_MS);
             if (lg) return Response.json(relabel(lg, 'cache', messages));
-            messages.push('Layer 5 (/tmp cache) empty');
-        } else messages.push('Layer 5 (/tmp cache) disabled');
+            messages.push('Layer 6 (/tmp cache) empty');
+        } else messages.push('Layer 6 (/tmp cache) disabled');
 
-        // Layer 6: KV last-good (survives cold starts)
+        // Layer 7: KV last-good (survives cold starts)
         if (!faults.has('lastgood') && !faults.has('kvlg') && !faults.has('fg_kvlg')) {
             const lg = await loadLastGoodKV(LG_KEY, LG_MAX_AGE_MS);
             if (lg) return Response.json(relabel(lg, 'KV last-good', messages));
-            messages.push('Layer 6 (KV last-good) empty');
-        } else messages.push('Layer 6 (KV last-good) disabled');
+            messages.push('Layer 7 (KV last-good) empty');
+        } else messages.push('Layer 7 (KV last-good) disabled');
     } catch (e) {
         messages.push(`fear-greed route error: ${String(e?.message).slice(0, 160)}`);
     }
