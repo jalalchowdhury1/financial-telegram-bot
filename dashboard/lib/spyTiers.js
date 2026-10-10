@@ -61,12 +61,13 @@ export function spyPreferNewer(payload, savedAt) {
 }
 
 /** 3Y price return from oldest->newest bars, or null when they span < 3 years (never a shorter window labelled 3Y). */
-export function return3yFrom(history, current) {
-    // Base = first close on/after (last bar's date − 1095 days). Null unless the
-    // bars reach back that far, so a 2-year history never passes as a 3Y return.
+export function return3yFrom(history, current, asOf) {
+    // Base = first close on/after (asOf − 1095 days); asOf = the date `current` is
+    // for (a live spot is today's, not the last bar's). Null unless the bars reach
+    // back that far, so a 2-year history never passes as a 3Y return.
     const n = history.length;
     if (!n) return null;
-    const last = Date.parse(`${history[n - 1].date}T00:00:00Z`);
+    const last = Date.parse(`${asOf || history[n - 1].date}T00:00:00Z`);
     const target = new Date(last - RETURN_3Y_DAYS * 864e5).toISOString().slice(0, 10);
     if (!(history[0].date <= target)) return null;
     const base = history.find((b) => b.date >= target);
@@ -89,7 +90,7 @@ export function buildSpy(history, current, prevClose, source, extra = {}) {
     const wkHigh = Math.max(...last252);
     // A 3Y return needs 3Y of bars. Polygon's free tier serves ~2y, and clamping the
     // index to 0 used to show that 2-YEAR return as "3Y" (2026-09-26). null = N/A.
-    const return3y = return3yFrom(history, current) ?? extra.return3y ?? null;
+    const return3y = return3yFrom(history, current, extra.asOf3y) ?? extra.return3y ?? null;
     const rsi = calculateRSI(history, 9);
 
     const chartHistory = [];
@@ -148,7 +149,7 @@ async function fromBars(label, history, ctx, extra = {}) {
     const last = history[n - 1];
     const spot = await spotOnce(ctx);
     if (spot && plausible(spot.current, last.price)) {
-        return { payload: buildSpy(history, spot.current, spot.prevClose, `${label} + ${spot.label} (fallback)`, extra) };
+        return { payload: buildSpy(history, spot.current, spot.prevClose, `${label} + ${spot.label} (fallback)`, { ...extra, asOf3y: ctx.expected }) };
     }
     if (spot) ctx.messages.push(`${spot.label} spot ${spot.current} implausible vs ${label} close ${last.price}; ignored`);
     const prev = history[n - 2]?.price ?? last.price;
@@ -163,7 +164,7 @@ async function fromBars(label, history, ctx, extra = {}) {
 }
 
 /** 3Y return for a short (Polygon ~2y) series, from Nasdaq bars that line up with it. null if they don't. */
-async function nasdaq3y(current, lastBar, ctx) {
+async function nasdaq3y(current, lastBar, ctx, asOf) {
     try {
         const h = await gate('nasdaq', ctx.faults, () => nasdaqHistory('SPY', NASDAQ_OPTS));
         const upto = h.filter((b) => b.date <= lastBar.date);
@@ -171,7 +172,7 @@ async function nasdaq3y(current, lastBar, ctx) {
         if (!tail || tail.date !== lastBar.date || Math.abs(tail.price / lastBar.price - 1) > 0.005) {
             throw new Error(`bars do not line up (${tail?.date} ${tail?.price} vs ${lastBar.date} ${lastBar.price})`);
         }
-        const r = return3yFrom(upto, current);
+        const r = return3yFrom(upto, current, asOf);
         if (r == null) throw new Error(`only ${upto.length} bars`);
         return r;
     } catch (e) { ctx.messages.push(`3Y from Nasdaq unavailable: ${e.message}`); return null; }
@@ -202,8 +203,8 @@ export async function fallbackSpy(messages, faults = new Set(), { env = process.
             const extra = {};
             if (return3yFrom(p.history, lastBar.price) == null) {
                 const spot = await spotOnce(ctx);
-                const cur = spot && plausible(spot.current, lastBar.price) ? spot.current : lastBar.price;
-                extra.return3y = await nasdaq3y(cur, lastBar, ctx);
+                const live = spot && plausible(spot.current, lastBar.price);
+                extra.return3y = await nasdaq3y(live ? spot.current : lastBar.price, lastBar, ctx, live ? ctx.expected : lastBar.date);
             }
             const out = keep(await fromBars('Polygon', p.history, ctx, extra));
             if (out) return out;
@@ -224,7 +225,7 @@ export async function fallbackSpy(messages, faults = new Set(), { env = process.
         const y = await gate('yahoo', faults, () => yahooChart('SPY', { range: '5y', interval: '1d', revalidate: 300 }));
         const last = y.history[y.history.length - 1];
         const quoteDay = y.meta?.regularMarketTime ? etParts(y.meta.regularMarketTime * 1000).date : last.date;
-        if (quoteDay >= ctx.expected) return buildSpy(y.history, y.current, yahooPrev(y), 'Yahoo Finance (fallback)');
+        if (quoteDay >= ctx.expected) return buildSpy(y.history, y.current, yahooPrev(y), 'Yahoo Finance (fallback)', { asOf3y: quoteDay });
         messages.push(`Yahoo quote dated ${quoteDay} is not the latest session ${ctx.expected}`);
         stale = stale || buildSpy(y.history, y.current, yahooPrev(y), `Yahoo Finance (fallback, last close ${quoteDay})`, { meta: { stale: true, hasErrors: true, asOf: quoteDay } });
     } catch (e) { messages.push(`Yahoo fallback failed: ${e.message}`); }

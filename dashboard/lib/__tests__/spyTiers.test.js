@@ -67,6 +67,14 @@ describe('buildSpy / return3yFrom', () => {
         ];
         expect(return3yFrom(h, 778.57)).toBeCloseTo(79.17, 2);
     });
+    test('3Y anchors on the live spot\'s date, not the last bar (Polygon ends yesterday)', () => {
+        const h = [
+            { date: '2023-10-05', price: 424.5 }, { date: '2023-10-09', price: 432.29 },
+            { date: '2023-10-10', price: 434.54 }, { date: '2026-10-08', price: 774 },
+        ];
+        expect(return3yFrom(h, 778.57)).toBeCloseTo(80.10, 2);            // anchored on 10-08
+        expect(return3yFrom(h, 778.57, '2026-10-09')).toBeCloseTo(79.17, 2); // anchored on spot's day
+    });
     test('3Y is null when the bars do not reach 3 years back (never a 2Y return labelled 3Y)', () => {
         expect(return3yFrom(bars(500, '2026-10-08'), 120)).toBeNull();
         expect(return3yFrom([], 120)).toBeNull();
@@ -91,7 +99,7 @@ describe('fallbackSpy (/api/spy direct tiers)', () => {
         expect(out._meta.source).toBe('Polygon + Finnhub (fallback)');
         expect(out.current).toBe(700);
         const upto = nq.filter((b) => b.date <= '2026-10-08');
-        const base = upto.find((b) => b.date >= '2023-10-09').price; // 2026-10-08 − 1095 d
+        const base = upto.find((b) => b.date >= '2023-10-10').price; // spot's day 2026-10-09 − 1095 d
         expect(out.return3y).toBeCloseTo(((700 - base) / base) * 100, 6);
         expect(out._meta.stale).toBeUndefined();
     });
