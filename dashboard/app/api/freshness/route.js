@@ -1,12 +1,12 @@
 /**
  * GET /api/freshness — fleet freshness contract v1 (ages in hours only, no data).
  *
- * Reads the two producer -> screen pipelines through the SAME public routes the page
- * reads (/api/rubber-band, /api/history), so edge cache + last-known-good fallbacks are
+ * Reads the two producer -> screen pipelines (/api/rubber-band, /api/history) and the
+ * market routes (served:* items, lib/servedFreshness.js) through the SAME public routes the page reads, so edge cache + last-known-good fallbacks are
  * included in what is measured. Pure maths: lib/servedFreshness.js. No auth by design:
  * the body holds only pipeline names and hour counts.
  */
-import { buildFreshness } from '../../../lib/servedFreshness';
+import { buildFreshness, SERVED_ROUTES } from '../../../lib/servedFreshness';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
@@ -30,8 +30,14 @@ export async function GET(request) {
     const headers = { 'cache-control': 'no-store' };
     try {
         const origin = new URL(request.url).origin;
-        const [rubberBand, history] = await Promise.all([sibling(origin, '/api/rubber-band'), sibling(origin, '/api/history')]);
-        return Response.json(buildFreshness({ rubberBand, history }), { status: 200, headers });
+        // A market route that errors is graded (null → red), it does not 500 the whole probe.
+        const soft = (p) => sibling(origin, p).catch(() => null);
+        const [rubberBand, history, ...served] = await Promise.all([
+            sibling(origin, '/api/rubber-band'), sibling(origin, '/api/history'),
+            ...SERVED_ROUTES.map((r) => soft(`/api/${r}`)),
+        ]);
+        const servedMap = Object.fromEntries(SERVED_ROUTES.map((r, i) => [r, served[i]]));
+        return Response.json(buildFreshness({ rubberBand, history, served: servedMap }), { status: 200, headers });
     } catch (e) {
         return Response.json({ error: String(e?.message || e).slice(0, 160) }, { status: 500, headers });
     }

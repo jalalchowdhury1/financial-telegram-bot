@@ -1,5 +1,6 @@
 import {
     rubberBandItem, historyItem, newestRowOf, latestCloseMs, isRed, buildFreshness,
+    servedCopyItem, SERVED_ROUTES,
 } from '../servedFreshness';
 import { parseRows } from '../../app/api/history/route';
 
@@ -97,6 +98,37 @@ test('buildFreshness emits only names + hour counts', () => {
     const out = buildFreshness({ rubberBand: snap('2026-10-02'), history: { _meta: { newestRow: { date: '2026-10-03', rows: 1 } } } }, t('2026-10-03T02:48:00Z'));
     expect(out.app).toBe('financial-telegram-bot');
     expect(out.v).toBe(1);
-    expect(out.items.map((i) => i.name)).toEqual(['rubber-band', 'history-sheet']);
+    expect(out.items.map((i) => i.name)).toEqual(['rubber-band', 'history-sheet', ...SERVED_ROUTES.map((r) => `served:${r}`)]);
     expect(JSON.stringify(out)).not.toMatch(/\d{4}-\d{2}-\d{2}/);
+});
+
+// Real /api/* shapes from the 2026-10-09 live fault matrix (lib/store.js serve() labels).
+describe('served:* items (market routes)', () => {
+    const NOW = t('2026-10-10T02:45:00Z');           // Fri close 2026-10-09 20:00Z → input 6.75 h
+    const live = { current: 778.57, _meta: { source: 'Polygon + Finnhub Spot' } };
+    const kv = (iso) => ({ current: 778.57, _meta: { source: `KV last-good (${iso}) ← Google Sheet`, stale: true, lastGoodAt: iso } });
+    test('live payload → green, served = input', () => {
+        const it = servedCopyItem('spy', live, NOW);
+        expect(it).toEqual({ name: 'served:spy', inputAgeH: 6.8, servedAgeH: 6.8, graceH: 6 });
+        expect(isRed(it)).toBe(false);
+    });
+    test('copy saved after the close still reflects it → green', () => {
+        expect(isRed(servedCopyItem('spy', kv('2026-10-10T02:40:11.060Z'), NOW))).toBe(false);
+    });
+    test('copy saved BEFORE the newest close, input past grace → red', () => {
+        const it = servedCopyItem('spy', kv('2026-10-08T21:00:00.000Z'), NOW);
+        expect(it.servedAgeH).toBe(29.8);
+        expect(isRed(it)).toBe(true);
+    });
+    test('time read from the source label when lastGoodAt is absent (fear-greed "Stale cache (iso) ← CNN")', () => {
+        const fg = { score: 45, _meta: { source: 'Stale cache (2026-10-08T21:00:00.000Z) ← CNN', stale: true } };
+        expect(isRed(servedCopyItem('fear-greed', fg, NOW))).toBe(true);
+    });
+    test('Unavailable / error / no answer → servedAgeH null → red past grace', () => {
+        for (const p of [{ _meta: { source: 'Unavailable' } }, { score: 'N/A', error: 'Fear & Greed unavailable', _meta: { source: 'Failed' } }, null]) {
+            const it = servedCopyItem('x', p, NOW);
+            expect(it.servedAgeH).toBeNull();
+            expect(isRed(it)).toBe(true);
+        }
+    });
 });

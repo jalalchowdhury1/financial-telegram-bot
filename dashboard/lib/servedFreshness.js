@@ -102,10 +102,44 @@ export function isRed(item) {
     return false;
 }
 
+// Market stats behind serve()/route tiers (added 2026-10-09 with the KV last-good tier):
+// a route can now quietly serve a saved copy for days. Live payload → reflects the
+// newest close (servedAgeH = inputAgeH). Saved copy → servedAgeH = hours since it was
+// saved (a copy saved after the close still reflects it; one saved before goes red
+// once the input is > grace old). Nothing served (Unavailable / error) → null → red.
+export const SERVED_COPY_GRACE_H = 6;
+export const SERVED_ROUTES = ['spy', 'spy-daily-move', 'market-extra', 'fred', 'sheets', 'fear-greed'];
+const ISO_RE = /(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)/;
+
+/** null = nothing usable served; { copy:false } = live; { copy:true, savedMs } = a saved copy. */
+export function servedCopyOf(payload) {
+    if (!payload || typeof payload !== 'object' || payload.error) return null;
+    const m = payload._meta || {};
+    const src = String(m.source || payload.source || '');
+    if (/^(Unavailable|Failed|Static Defaults|none)$/i.test(src)) return null;
+    const copy = !!m.lastGoodAt || /last-good|last-known-good|^Stale/i.test(src);
+    if (!copy) return { copy: false };
+    const t = Date.parse(m.lastGoodAt || (ISO_RE.exec(src) || [])[1] || '');
+    return { copy: true, savedMs: Number.isFinite(t) ? t : null };
+}
+
+export function servedCopyItem(name, payload, now = Date.now()) {
+    const newest = latestCloseMs(now);
+    const inputAgeH = newest == null ? null : round1((now - newest) / H);
+    const s = servedCopyOf(payload);
+    let servedAgeH = null;
+    if (s && !s.copy) servedAgeH = inputAgeH;
+    else if (s && s.savedMs != null) servedAgeH = round1((now - s.savedMs) / H);
+    return { name: `served:${name}`, inputAgeH, servedAgeH, graceH: SERVED_COPY_GRACE_H };
+}
+
 export function buildFreshness(raw, now = Date.now()) {
     return {
         app: 'financial-telegram-bot',
         v: 1,
-        items: [rubberBandItem(raw.rubberBand, now), historyItem(raw.history, now)],
+        items: [
+            rubberBandItem(raw.rubberBand, now), historyItem(raw.history, now),
+            ...SERVED_ROUTES.map((r) => servedCopyItem(r, raw.served?.[r], now)),
+        ],
     };
 }
