@@ -44,7 +44,7 @@ export function loadLastGood(key, maxAgeMs) {
 // ---- Durable KV last-known-good (`ftb:lg:<key>`) --------------------------------------
 export const kvKeyFor = (key) => `ftb:lg:${key}`;
 export const KV_REWRITE_MS = 30 * 60e3;   // unchanged payload: refresh the KV copy at most every 30 min
-export const KV_MIN_GAP_MS = 60e3;        // changed payload: still at most one SET a minute per key per instance
+export const KV_MIN_GAP_MS = 10 * 60e3;   // changed payload: at most one SET per 10 min per key per instance (~11 keys → ≤1.6k SETs/day per warm instance, worst case)
 export const KV_MAX_BYTES = 900 * 1024;   // Upstash caps a value at 1 MB; never try to write near it
 
 const markKey = (key) => `kvmark-${key}`;
