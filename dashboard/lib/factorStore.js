@@ -5,7 +5,7 @@
  * instance during a CNBC + Nasdaq + Polygon + Yahoo outage would otherwise drop
  * straight to the baked floor. KV survives cold starts.
  *
- * Own tiny KV client (not lib/jevLog's) on purpose: every call here is
+ * KV client = lib/kv.js (not lib/jevLog's) on purpose: every call there is
  * `cache: 'no-store'` with a hard timeout. The route sets fetchCache
  * 'default-cache', under which a bare fetch() would be served from Next's Data
  * Cache — a last-good READ must never be a cached read.
@@ -16,49 +16,16 @@
  */
 import { loadLastGood, saveLastGood } from './store';
 import { isGoodPayload } from './factors';
+import { defaultKv } from './kv';
 
 export const KV_KEY = 'ftb:factors:lg';
 export const REWRITE_MS = 6 * 3600e3;
 export const KV_MAX_AGE_MS = 30 * 864e5;
 const MARK_KEY = 'factors-kvmark';
 
-async function kvCall(path, init = {}, timeoutMs = 3000) {
-    const base = process.env.KV_REST_API_URL || '';
-    const token = process.env.KV_REST_API_TOKEN || '';
-    if (!base || !token) return null;
-    const ctl = new AbortController();
-    const t = setTimeout(() => ctl.abort(), timeoutMs);
-    try {
-        const res = await fetch(`${base}${path}`, {
-            ...init,
-            cache: 'no-store',
-            signal: ctl.signal,
-            headers: { Authorization: `Bearer ${token}`, ...(init.headers || {}) },
-        });
-        if (!res.ok) return null;
-        const data = await res.json();
-        return data && !data.error ? data : null;
-    } catch {
-        return null;
-    } finally {
-        clearTimeout(t);
-    }
-}
-
-export const defaultKv = {
-    async get(key) {
-        const d = await kvCall(`/get/${encodeURIComponent(key)}`);
-        return d ? d.result ?? null : null;
-    },
-    async set(key, value) {
-        const d = await kvCall(`/set/${encodeURIComponent(key)}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(value),
-        });
-        return !!d;
-    },
-};
+// The KV client itself lives in lib/kv.js (shared with serve() and the legacy routes);
+// re-exported here because /api/sheets + lib/aaii callers import it from this module.
+export { defaultKv };
 
 /**
  * @returns {Promise<object|null>} the stored payload relabelled as a KV copy, or null.
