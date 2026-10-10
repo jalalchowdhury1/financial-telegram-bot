@@ -90,7 +90,7 @@ describe('/api/sheets healthy path', () => {
     test('all pills from the primary sheet; tag computed from CBOE, never the sheet C2', async () => {
         const b = await get();
         expect(b.NotSoBoring).toBe('ON');
-        expect(b.FrontRunner).toBe('BIL (T-Bill ETF)1');
+        expect(b.FrontRunner).toBe('BIL (T-Bill ETF)');
         expect(b.VIX.current).toBe('14.84');
         expect(b.VIX.threeMonth).toBe('17.77');
         expect(b.VIX.fearGreed).not.toBe('GREED13');
@@ -108,7 +108,7 @@ describe('/api/sheets healthy path', () => {
         expect(tmp.NotSoBoring).toMatchObject({ value: 'ON', source: 'Google Sheets (Live)' });
         expect(tmp.vixFearGreed.value).toBe('GREED05');
         const rec = kv.__m.get(KV_KEY);
-        expect(rec.data.FrontRunner.value).toBe('BIL (T-Bill ETF)1');
+        expect(rec.data.FrontRunner.value).toBe('BIL (T-Bill ETF)');
         expect(typeof rec.savedAt).toBe('string');
     });
 
@@ -193,7 +193,7 @@ describe('/api/sheets per-field last-good', () => {
         await get();
         store.__m.clear();
         const b = await get('?_fail=sheets_main,sheets_alt');
-        expect(b.FrontRunner).toBe('BIL (T-Bill ETF)1');
+        expect(b.FrontRunner).toBe('BIL (T-Bill ETF)');
         expect(b._meta.fields.FrontRunner.source).toBe(`KV last-good (${NOW.toISOString()}) ← Google Sheets (Live)`);
         expect(b._meta.fields.FrontRunner.stale).toBe(true);
     });
