@@ -283,6 +283,41 @@ describe('routes: fault names reach the tiers; stale builds are not "good"', () 
         expect(src.polygonDaily).not.toHaveBeenCalled();
     });
 
+    const sheetLambda = () => {
+        process.env.LAMBDA_URL = 'https://lambda.test';
+        global.fetch = jest.fn(async () => new Response(JSON.stringify({
+            current: 780, rsi: 63.15, return3y: 80.17, ma200: { value: 650 }, week52High: { value: 790 },
+            _meta: { source: 'Google Sheet' },
+        })));
+    };
+    const realFetch = global.fetch;
+    afterEach(() => { global.fetch = realFetch; });
+
+    test('/api/spy: a Lambda answer from its Google Sheet loses to the bar-computed tiers', async () => {
+        const { GET } = require('../../app/api/spy/route');
+        sheetLambda();
+        const h = bars(800, latestSessionDate());
+        src.polygonDaily.mockResolvedValue(poly(h));
+        src.finnhubQuote.mockResolvedValue({ current: h[h.length - 1].price, prevClose: h[h.length - 2].price });
+        const b = await (await GET(req('/api/spy'))).json();
+        expect(b._meta.source).not.toMatch(/Google Sheet/);
+        expect(b._meta.stale).toBeFalsy();
+        expect(b._meta.messages.join(' ')).toMatch(/Google Sheet layer/);
+        expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    test('/api/spy: the Lambda sheet answer still wins over a stale-only or failed bar build', async () => {
+        const { GET } = require('../../app/api/spy/route');
+        sheetLambda();
+        src.nasdaqHistory.mockResolvedValue(bars(1000, '2020-01-02')); // stale everywhere
+        const stale = await (await GET(req('/api/spy?_fail=polygon,finnhub,cnbc,yahoo'))).json();
+        expect(stale).toMatchObject({ rsi: 63.15, _meta: { source: 'Google Sheet' } });
+        src.nasdaqHistory.mockRejectedValue(new Error('down'));
+        const failed = await (await GET(req('/api/spy?_fail=polygon,finnhub,cnbc,yahoo'))).json();
+        expect(failed).toMatchObject({ rsi: 63.15, _meta: { source: 'Google Sheet' } });
+        expect(served.map((s) => s.good)).toEqual([true, true]);
+    });
+
     test('/api/spy: a stale build newer than the last-good copy is preferred (spyPreferNewer)', () => {
         const { spyPreferNewer } = require('../spyTiers');
         const h = bars(300, '2025-08-01');

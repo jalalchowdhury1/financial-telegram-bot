@@ -153,12 +153,16 @@ aws lambda add-permission --function-name financial-telegram-report \
 ```
 
 ### SPY waterfall (Lambda `fetch_spy_with_fallback`)
-yfinance (full history) → Polygon (full history) → Google Sheet `SPY_INDICATORS`
-(pre-computed values; its `Three-Year Return` cell is parsed with `_pct_cell` — `float('79.17%')`
-failed until 2026-10-09 and silently swapped in `SPY_DAILY_MOVE`'s 3Y, a different anchor) → FRED `SP500`.
-**3Y rule everywhere (bot + `lib/spyTiers.js return3yFrom`), owner pick 2026-10-09: base = last close on/before the SAME DATE 3 years earlier (Feb 29→28). Was: first close on/after
-(as-of date − 1095 calendar days)**, as-of = the live spot's session date. Matches the Sheet
-(2026-10-09: 434.54 on 2023-10-10 → 79.17%). 756 bars back overshot by ~4 days (83.41%).
+yfinance (full history) → Polygon (full history) → Nasdaq keyless history (`_nasdaq_rows`, ~4y,
+added 2026-10-09 so RSI/MA/3Y come from real bars before any sheet) → Google Sheet `SPY_INDICATORS`
+(pre-computed values; its RSI uses the sheet's own method — 63 vs 57 from bars on 2026-10-09;
+`Three-Year Return` parsed with `_pct_cell`) → FRED `SP500`.
+**Dashboard `/api/spy` demotes a Lambda answer whose `_meta.source` starts "Google Sheet"**: its
+own bar tiers go first; the sheet answer is served only if they fail or are stale-only.
+**3Y rule everywhere (bot + `lib/spyTiers.js return3yFrom`), owner pick 2026-10-09: base = last
+close on/before the SAME DATE 3 years earlier (Feb 29→28)**, as-of = the live spot's session date
+(2026-10-09: 80.10%). `SPY_DAILY_MOVE` row 11 uses the same rule (80.17%, its own spot);
+`SPY_INDICATORS` still uses `TODAY()-1095` (79.17%) until its formula is changed.
 (Stooq was removed 2026-09-01: its download endpoint sits behind a JS proof-of-work wall.)
 Whichever wins, the result is normalized to the `/api/spy` shape and **chart history +
 MA50/MA200 are computed from FRED `SP500`** when only pre-computed indicators are available.

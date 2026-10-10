@@ -797,8 +797,9 @@ def fetch_spy_with_fallback(fred_api_key: Optional[str] = None,
     Returns JSON matching the Next.js /api/spy response shape.
 
     Layer 0: Polygon (full history → compute all indicators)
-    Layer 1: Google Sheets pre-calculated indicators
-    Layer 2: FRED SP500 series
+    Layer 1b: Nasdaq daily closes (keyless)
+    Layer 2: Google Sheets pre-calculated indicators (last resort: the sheet's own RSI method)
+    Layer 3: FRED SP500 series
     """
     if pd is None:
         logging.warning("pandas not available, returning placeholder SPY data")
@@ -829,7 +830,16 @@ def fetch_spy_with_fallback(fred_api_key: Optional[str] = None,
         except Exception as e:
             print(f'[SPY] Layer 1 (Polygon) failed: {e}')
 
-    # Layer 2: Google Sheets (skip if yfinance or Polygon already gave us rows)
+    # Layer 1b: Nasdaq daily closes (keyless, ~4y) — computes RSI/MA/3Y from real bars, so the
+    # sheet's pre-computed values (its 9d RSI read 63 vs 57 on 2026-10-09) are a last resort.
+    if not rows:
+        nq = _nasdaq_rows('SPY')
+        if len(nq) >= 200:
+            rows = nq
+            data_source = 'Nasdaq'
+            print(f'[SPY] Layer 1b (Nasdaq) loaded {len(rows)} rows')
+
+    # Layer 2: Google Sheets (skip if yfinance, Polygon or Nasdaq already gave us rows)
     if not rows:
         try:
             r = requests.get(URLS['SPY_INDICATORS'], timeout=15, headers=_HEADERS)

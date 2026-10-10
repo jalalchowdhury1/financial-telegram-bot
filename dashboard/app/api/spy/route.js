@@ -38,10 +38,21 @@ export async function GET(request) {
     const faults = faultsFrom(request);
     return serve('spy', async () => {
         const lam = faults.has('lambda') ? null : await lambdaSpy(messages);
-        if (lam) return lam;
-        const fb = await fallbackSpy(messages, faults);
-        fb._meta.messages = [...messages, ...fb._meta.messages];
-        return fb;
+        // A Lambda answer from its Google Sheet layer carries the sheet's own RSI/MA method
+        // (RSI 63 vs 57 from bars, 2026-10-09): our bar-computed tiers go first, the sheet
+        // answer is kept only if every one of them fails.
+        const fromSheet = lam && /^Google Sheet/.test(lam._meta?.source || '');
+        if (lam && !fromSheet) return lam;
+        if (fromSheet) messages.push('Lambda answered from its Google Sheet layer; trying bar-computed tiers first');
+        try {
+            const fb = await fallbackSpy(messages, faults);
+            fb._meta.messages = [...messages, ...fb._meta.messages];
+            if (!fromSheet || !fb._meta?.stale) return fb;
+        } catch (e) {
+            if (!fromSheet) throw e;
+            messages.push(`bar-computed tiers failed: ${e.message}`);
+        }
+        return lam;
     }, {
         // A flagged-stale build (no tier had the latest session) is NOT "good": serve()
         // then prefers the last-known-good when it is newer and only falls through to the

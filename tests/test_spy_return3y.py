@@ -89,3 +89,19 @@ def test_short_polygon_history_takes_the_3y_base_from_nasdaq_anchored_on_the_spo
     monkeypatch.setattr(f, '_sheet_return_3y', lambda: 1 / 0)  # must not be reached
     out = f.fetch_spy_with_fallback(polygon_api_key='k', finnhub_api_key='k')
     assert round(out['return3y'], 2) == 80.10
+
+
+def test_yfinance_and_polygon_down_uses_nasdaq_bars_before_the_sheet(monkeypatch):
+    from datetime import date, timedelta
+    end = date(2026, 10, 9)
+    nq = [{'date': (end - timedelta(days=i)).isoformat(), 'close': 700.0 - i * 0.2} for i in range(1200)][::-1]
+    monkeypatch.setattr(f, '_fetch_yfinance', lambda *a, **k: None)
+    monkeypatch.setattr(f, '_fetch_polygon_aggs', lambda *a, **k: None)
+    monkeypatch.setattr(f, '_fetch_finnhub_quote', lambda *a, **k: None)
+    monkeypatch.setattr(f, '_nasdaq_rows', lambda *a, **k: nq)
+    monkeypatch.setattr(f, '_sheet_return_3y', lambda: 1 / 0)  # must not be reached
+    out = f.fetch_spy_with_fallback(polygon_api_key='k', finnhub_api_key='k')
+    assert out['_meta']['source'].startswith('Nasdaq')
+    assert out['current'] == 700.0 and out['rsi'] is not None
+    base = next(r['close'] for r in reversed(nq) if r['date'] <= '2023-10-09')
+    assert round(out['return3y'], 4) == round((700.0 - base) / base * 100, 4)
