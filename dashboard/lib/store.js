@@ -222,7 +222,7 @@ function withStaleKV(lg, message) {
     const d = lg.data || {};
     return addMeta(d, {
         ...(d._meta || {}),
-        source: `KV last-good (${lg.savedAt}) ← ${d._meta?.source || 'unknown'}`,
+        source: `KV last-good (${lg.savedAt}) ← ${d._meta?.source || (typeof d.source === 'string' && d.source) || 'unknown'}`,
         hasErrors: true,
         stale: true,
         lastGoodAt: lg.savedAt,

@@ -49,6 +49,16 @@ const setPath = (o, p, v) => { const ks = p.split('.'); const last = ks.pop(); l
  * The keyless backup tiers each sit behind a `?_fail=` gate: gold_api, treasury, pmms,
  * cnbc (both CNBC tiers) / cnbc_cl / cnbc_dxy, dxy_computed, fawaz_bdt.
  */
+/**
+ * A FRED copy whose newest bar is older than `days` calendar days is shown, but flagged
+ * stale (dated by its own last bar) so the tile wears the 🕐 tag instead of passing as today.
+ */
+export function staleIfOld(metric, days, now = Date.now()) {
+    const t = Date.parse(`${metric?.lastDate}T12:00:00Z`);
+    if (!Number.isFinite(t) || now - t <= days * 864e5) return metric;
+    return { ...metric, stale: true, savedAt: `${metric.lastDate}T12:00:00Z` };
+}
+
 async function directMetric(path, { apiKey, poly, er, faults = new Set(), tiers }) {
     const tier = (name, fn) => safe(() => gate(name, faults, fn));
     const cnbc = (name, fn) => safe(() => gate('cnbc', faults, () => gate(name, faults, fn)));
@@ -69,8 +79,10 @@ async function directMetric(path, { apiKey, poly, er, faults = new Set(), tiers 
         }
         case 'commodities.gc': { const p = poly && await safe(polyMetric('C:XAUUSD', poly)); if (p) return { metric: p, src: 'Polygon' }; const g = await tier('gold_api', () => goldApiSpot('XAU')); return g ? { metric: flat(g.current), src: 'gold-api' } : null; }  // FRED's GOLDPMGBD228NLBM is discontinued
         case 'commodities.cl': {
-            const f = await safe(() => fredMetric('DCOILWTICO', apiKey)); if (f) return { metric: f, src: 'FRED' };
-            const c = await cnbc('cnbc_cl', () => tiers.oil()); return c ? { metric: c, src: 'CNBC' } : null;
+            // CNBC first: FRED's DCOILWTICO runs days behind (live 2026-10-09 it held Oct 6's
+            // $96.24 while WTI was $91.66) — FRED is last, and flagged stale when it lags.
+            const c = await cnbc('cnbc_cl', () => tiers.oil()); if (c) return { metric: c, src: 'CNBC' };
+            const f = await safe(() => fredMetric('DCOILWTICO', apiKey)); return f ? { metric: staleIfOld(f, 3), src: 'FRED' } : null;
         }
         case 'commodities.btc': {
             const p = poly && await safe(polyMetric('X:BTCUSD', poly)); if (p) return { metric: p, src: 'Polygon' };
@@ -80,16 +92,18 @@ async function directMetric(path, { apiKey, poly, er, faults = new Set(), tiers 
             return null;
         }
         case 'rates.tnx': {
-            const f = await safe(() => fredMetric('DGS10', apiKey)); if (f) return { metric: f, src: 'FRED' };
-            const t = await tier('treasury', () => tiers.tnx()); return t ? { metric: t, src: 'US Treasury' } : null;
+            // Treasury publishes the yield the same evening; FRED republishes it a day later.
+            const t = await tier('treasury', () => tiers.tnx()); if (t) return { metric: t, src: 'US Treasury' };
+            const f = await safe(() => fredMetric('DGS10', apiKey)); return f ? { metric: staleIfOld(f, 4), src: 'FRED' } : null;
         }
         case 'rates.t2y': {
-            const f = await safe(() => fredMetric('DGS2', apiKey)); if (f) return { metric: f, src: 'FRED' };
-            const t = await tier('treasury', () => tiers.t2y()); return t ? { metric: t, src: 'US Treasury' } : null;
+            const t = await tier('treasury', () => tiers.t2y()); if (t) return { metric: t, src: 'US Treasury' };
+            const f = await safe(() => fredMetric('DGS2', apiKey)); return f ? { metric: staleIfOld(f, 4), src: 'FRED' } : null;
         }
         case 'rates.mortgageRate': {
-            const f = await safe(() => fredMetric('MORTGAGE30US', apiKey)); if (f) return { metric: f, src: 'FRED' };
-            const m = await tier('pmms', () => tiers.mortgage()); return m ? { metric: m, src: 'Freddie Mac PMMS' } : null;
+            // Freddie Mac is the publisher (weekly, Thursdays); FRED's MORTGAGE30US copies it.
+            const m = await tier('pmms', () => tiers.mortgage()); if (m) return { metric: m, src: 'Freddie Mac PMMS' };
+            const f = await safe(() => fredMetric('MORTGAGE30US', apiKey)); return f ? { metric: staleIfOld(f, 13), src: 'FRED' } : null;
         }
         default: return null;
     }

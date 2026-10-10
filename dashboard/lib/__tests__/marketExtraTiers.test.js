@@ -206,7 +206,7 @@ describe('mergeLastGood', () => {
 describe('/api/market-extra direct tiers (Lambda down)', () => {
     test('healthy: real DXY from CNBC, FRED rates, full build, no stale', async () => {
         const b = await get('?_fail=lambda');
-        expect(b._meta.sourceLog).toMatchObject({ dxy: 'CNBC', tnx: 'FRED', t2y: 'FRED', mortgageRate: 'FRED', cl: 'FRED', usdbdt: 'ER-API', gc: 'gold-api' });
+        expect(b._meta.sourceLog).toMatchObject({ dxy: 'CNBC', tnx: 'US Treasury', t2y: 'US Treasury', mortgageRate: 'Freddie Mac PMMS', cl: 'CNBC', usdbdt: 'ER-API', gc: 'gold-api' });
         expect(b.fx.dxy.current).toBe(102.231);
         expect(b._meta.stale).toBeUndefined();
         expect(b._meta.hasErrors).toBe(false);
@@ -389,7 +389,7 @@ describe('/api/market-extra timing budget', () => {
             expect(timeouts[0]).toBeLessThanOrEqual(12000);
             expect(erStartedBeforeLambdaSettled).toBe(true);
             expect(b._meta.messages.join(' ')).toMatch(/Lambda timed out after 12 s/);
-            expect(b._meta.sourceLog.tnx).toBe('FRED');
+            expect(b._meta.sourceLog.tnx).toBe('US Treasury');
         } finally {
             global.fetch = realFetch; spy.mockRestore(); fetcher.fetchJson.mockImplementation(origJson);
         }
@@ -405,3 +405,15 @@ describe('/api/market-extra timing budget', () => {
     });
 });
 
+
+describe('staleIfOld: a lagging FRED copy is flagged, a fresh one passes', () => {
+    const { staleIfOld } = require('../../app/api/market-extra/route');
+    const NOW = Date.parse('2026-10-09T22:00:00Z');
+    test('the live case: Oct 6 oil seen Oct 9 is flagged at oil\'s 3-day limit; Oct 8 yields pass at 4', () => {
+        expect(staleIfOld({ current: 96.24, lastDate: '2026-10-06' }, 3, NOW).stale).toBe(true);
+        expect(staleIfOld({ current: 5.22, lastDate: '2026-10-08' }, 4, NOW).stale).toBeUndefined();
+        const old = staleIfOld({ current: 90, lastDate: '2026-10-02' }, 4, NOW);
+        expect(old.stale).toBe(true);
+        expect(old.savedAt).toBe('2026-10-02T12:00:00Z');
+    });
+});
