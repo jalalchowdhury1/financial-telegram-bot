@@ -154,7 +154,11 @@ aws lambda add-permission --function-name financial-telegram-report \
 
 ### SPY waterfall (Lambda `fetch_spy_with_fallback`)
 yfinance (full history) → Polygon (full history) → Google Sheet `SPY_INDICATORS`
-(pre-computed values, plus `SPY_DAILY_MOVE` for the 3Y return) → FRED `SP500`.
+(pre-computed values; its `Three-Year Return` cell is parsed with `_pct_cell` — `float('79.17%')`
+failed until 2026-10-09 and silently swapped in `SPY_DAILY_MOVE`'s 3Y, a different anchor) → FRED `SP500`.
+**3Y rule everywhere (bot + `lib/spyTiers.js return3yFrom`): base = first close on/after
+(as-of date − 1095 calendar days)**, as-of = the live spot's session date. Matches the Sheet
+(2026-10-09: 434.54 on 2023-10-10 → 79.17%). 756 bars back overshot by ~4 days (83.41%).
 (Stooq was removed 2026-09-01: its download endpoint sits behind a JS proof-of-work wall.)
 Whichever wins, the result is normalized to the `/api/spy` shape and **chart history +
 MA50/MA200 are computed from FRED `SP500`** when only pre-computed indicators are available.
@@ -510,6 +514,32 @@ service-account key leaked; the sheet stays as frozen history — **never read i
   Tests: `lib/__tests__/aaii.test.js`, `aaiiRoutes.test.js` (fixture = the real table,
   saved 2026-09-27), `components/__tests__/CustomIndicatorBar.test.js`.
 
+### 🛟 Layered backups (every stat) — 2026-10-09
+Rule: every number has ≥2 independent live sources, then saved copies, then an honest
+"Unavailable". **A saved or lagging value is never labelled live**: it carries
+`_meta.stale` / `staleFields` / `staleMetrics` and the card shows an orange "🕐 / ⚠ STALE".
+- **`serve()` (`lib/store.js`) tiers:** live → /tmp last-good → **KV last-good**
+  (`ftb:lg:<key>`, Upstash via `KV_REST_API_URL/TOKEN`, label `KV last-good (<savedAt>) ← <origin>`)
+  → lastResort (Sheet) → fallback. KV writes: background (`lib/background.js`), ≤1 per
+  key per 60 min per instance, never for partial/stale payloads (`isPartialPayload`).
+  Test mode (`?_fail=`) never writes /tmp or KV.
+- **Serve faults:** `tmplg` (/tmp only), `kvlg` (KV only), `lastgood` (both), `sheetlkg`.
+- **SPY** (`lib/spyTiers.js`): Lambda → Polygon+Finnhub spot (3Y from Nasdaq bars) →
+  Nasdaq+CNBC → Nasdaq → Yahoo → saved. Faults `lambda,polygon,finnhub,nasdaq,cnbc,yahoo`.
+  Daily move: Lambda → Finnhub → CNBC → Polygon → Yahoo → saved.
+- **market-extra** (`lib/marketExtraTiers.js`, per metric): fresher origin first — oil
+  CNBC → FRED, 10Y/2Y US Treasury → FRED, mortgage Freddie Mac PMMS → FRED. FRED older
+  than 3/4/13 days → `staleIfOld` marks it stale. Missing metrics fill from /tmp then KV.
+  Faults `gold_api,treasury,pmms,cnbc_cl,cnbc_dxy,dxy_computed,fawaz_bdt,erapi,…`.
+- **fred**: claims/unemployment/curve `fred → hm_treasury → hm_bls → hm_dol → hm_fredcsv`;
+  copper `cg_cnbc → cg_westmetall (LME cash) → cg_fred → …`; P/E `pe_multpl → pe_yahoo`;
+  EPS multpl. **sheets** per field: `sheets_main → sheets_alt → sheets_cboe/vix_cboe →
+  sheets_fred/vix_fred (stale-flagged) → sheets_cache → sheets_kvlg`. **fear-greed**:
+  `cnn → rapidapi → fg_yahoo/fg_cboe/fg_fred` (VIX proxy, `_meta.proxy` + UI label) →
+  `fg_cache → fg_kvlg`. **jev-pills**: missing inputs → verdict `unknown`, never a calm default.
+- **Proof:** live fault matrix 2026-10-09 (each route: one tier off, all live off, + /tmp,
+  + KV) → every row either a real number with the right label, or "Unavailable".
+
 ### VIX pill fear/greed tag (`/api/sheets` + `lib/vixFearGreed.js`)
 The VIX pill in `CustomIndicatorBar.js` shows a `current | threeMonth | fearGreed` triple
 (e.g. "14.43 | 17.48 | GREED13"). `current`/`threeMonth` still come straight from the
@@ -534,9 +564,8 @@ repo is deleted (it may still exist and still be writing C2 today; treat it as g
   own keyless daily-history CSV (`cdn.cboe.com/.../VIX_History.csv`) with the SAME
   `parseCboeCsv` helper `/api/vol` already uses.
 - **Source cascade** (`resolveVixFearGreedTag`): **CBOE-computed (primary, same-day)** →
-  **FRED-computed** (fallback; correct formula but typically one trading day stale) → the
-  sheet's C2 value already parsed by whichever of the 5 sheets-cascade layers won (last
-  resort, only meaningful while something still writes C2) → `'N/A'`. **Which source won
+  **FRED-computed** (fallback; correct formula but typically one trading day stale) → `'N/A'`.
+  **C2 tier REMOVED 2026-10-09** (dashboard and bot): nothing reliable writes C2 any more. **Which source won
   is always named in `_meta.messages`** — the fallback never silently looks identical to a
   healthy computed reading (§7's governing principle: a fallback that satisfies the caller
   unnoticed is a false negative). Verify on prod after any change here with
