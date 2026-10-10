@@ -2762,3 +2762,45 @@ html:not(:has(.jump-fab)) .back-pill {
   }
   .factor-tf-btn { flex: 1 1 0; min-width: 0; padding: 0; }
 }
+
+/* ── Phone pass 2 (2026-10-09): "make everything a single line — more sleek".
+   What moved, Market Pulse and the factor caption each become ONE row on a phone.
+   The chips shrink so all five fit at 390pt; on a day with longer chips the row
+   scrolls sideways instead of wrapping (this supersedes the 480px two-row rule). */
+@media (max-width: 560px) {
+  .moved-strip {
+    flex-wrap: nowrap; overflow-x: auto; overflow-y: visible;
+    gap: 4px; padding: 2px 0; margin-bottom: 12px; border-radius: 0;
+  }
+  .moved-strip .moved-title { display: none; } /* the chips explain themselves */
+  .moved-strip.is-waiting { min-height: 30px; }
+  .moved-strip.is-waiting .moved-title { display: inline; }
+  .moved-chip { height: 26px; padding: 0 8px; gap: 4px; font-size: 0.66rem; }
+
+  /* Market Pulse: same single row as What moved, no framed box or 📡 label. */
+  .market-pulse {
+    flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none;
+    min-height: 0; padding: 2px 0; gap: 4px;
+    border: 0; background: none; box-shadow: none;
+  }
+  .market-pulse::-webkit-scrollbar { display: none; }
+  .market-pulse .pulse-label { display: none; }
+  .market-pulse.is-waiting { min-height: 30px; }
+  .market-pulse.is-waiting .pulse-label { display: inline-flex; }
+  .pulse-chip { flex: none; min-height: 26px; padding: 0 8px; font-size: 0.66rem; }
+  .pulse-chip::after { inset: -2px; }
+
+  /* Factor caption: one line, cut with … if it is long. */
+  .factor-caption { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 0; }
+}
+/* fit all five chips at 375–390pt (measured: 392px of chips in a 366px row at 0.66rem) */
+@media (max-width: 560px) {
+  .moved-chip, .pulse-chip { padding: 0 6px; font-size: 0.62rem; }
+  .moved-chip { gap: 3px; }
+}
+@media (max-width: 400px) {
+  .header-status { gap: 5px; }
+  .header-status .live-badge,
+  .header-status .mark-chip { padding: 0 8px; font-size: 0.6rem; }
+  .header-status .mark-chip { gap: 5px; }
+}
