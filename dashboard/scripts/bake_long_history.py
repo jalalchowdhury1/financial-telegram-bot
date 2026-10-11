@@ -25,7 +25,10 @@ Daily series older than 5 years are thinned to one point a week (the week's last
 Self-check (fails closed): each stat is compared with the sheet wherever both exist. A stat
 whose values do not match the sheet (a units or formula slip) is REFUSED and its old file
 kept. A bake that reaches back less far, or has far fewer points, than the file it would
-replace is refused too. BDT pairs have no long free source and stay sheet-only.
+replace is refused too, except from a ROLLING source (FRED serves only the last 3 years of
+ICE BofA series): there the file keeps its older points and the download is added after
+them, once the two agree where they overlap. BDT pairs have no long free source and stay
+sheet-only.
 
 Run (from dashboard/):  uv run scripts/bake_long_history.py [--dry] [--retry-after=SECONDS] [key ...]
 --retry-after: stats whose DOWNLOAD failed get one more try after that wait. A refused stat
@@ -61,6 +64,8 @@ MATCH_FRAC = 0.2         # refuse when the median |baked − sheet| exceeds 20% 
 CHART_DAYS = 730         # lib/marks.js CHART_MAX_DAYS: the days of sheet /api/history serves
 RUNWAY_ALERT_DAYS = 365  # RUNWAY LOW names a stat whose chart gap is nearer than this
 SHEET_WAITS = (5, 15, 30, 60, 120)   # the sheet is read once, before any stat: a Google blip must not end the run
+JOIN_FRAC = 0.05         # a ROLLING join needs the median |download − file| where they overlap within 5% of that range
+JOIN_MIN_DAYS = 90       # ...over at least this many shared days
 
 
 # ── downloads ──────────────────────────────────────────────────────────────────
@@ -282,6 +287,12 @@ SPECS = {
 # points, so the sheet's earlier snapshots (2.6-3.6) are numbers BEA has since replaced.
 SHEET_FROM = {'peRatio': date(2026, 9, 5), 'savings': date(2026, 9, 30)}
 
+# Sources that serve a moving window, not their whole history: FRED's licence for the ICE
+# BofA indices covers only the last 3 years, so creditSpread's download starts a quarter
+# later every quarter. Refused as "starts later", its file would have aged until its chart
+# opened a gap (from Jan 2027 on). Their files keep their older points (see join).
+ROLLING = {'creditSpread'}
+
 # ── the sheet (same parse as lib/marks.js buildSeries) ─────────────────────────
 
 def parse_value(raw):
@@ -357,6 +368,27 @@ def sig(v):
     return float(f'{v:.5g}')
 
 
+def file_points(body):
+    start = date.fromisoformat(body['from'])
+    return [(start + timedelta(days=t), v) for t, v in zip(body['t'], body['v'])]
+
+
+def join(old, new, spread):
+    """A ROLLING source's download `new` added after its file's points `old` that it no
+    longer serves: (points, how many old ones were kept), or (None, why) when the two do not
+    agree where they overlap (a unit or series change must not be spliced onto the old line)
+    or barely overlap (nothing to check the join against, and a hole between them)."""
+    by_day = dict(old)
+    diffs = [abs(sig(v) - by_day[d]) for d, v in new if d in by_day]
+    if len(diffs) < JOIN_MIN_DAYS:
+        return None, f'shares {len(diffs)} days with the existing file, {JOIN_MIN_DAYS} needed to join'
+    md = statistics.median(diffs)
+    if md > JOIN_FRAC * spread:
+        return None, f'differs from the existing file where they overlap (median {md:.4g}, limit {JOIN_FRAC * spread:.4g})'
+    kept = [p for p in old if p[0] < new[0][0]]
+    return thin(kept + new), len(kept)
+
+
 def runway_low(entries, keys, today):
     """Of `keys`, the stats worth the owner's time. The popover draws a baked file only
     before the sheet window, which /api/history caps at CHART_DAYS, so a file leaves a gap
@@ -400,20 +432,29 @@ def main(argv):
         pts = [(d + timedelta(days=lag), v) for d, v in raw]
         sheet = [p for p in sheet_series(rows, col) if p[0] >= SHEET_FROM.get(key, date.min)]
         md, n = median_diff(pts, sheet)
-        limit = MATCH_FRAC * spread_of(pts)
+        spread = spread_of(pts)
+        limit = MATCH_FRAC * spread
         pts = thin(pts)
-        verdict = 'ok'
+        verdict, note = 'ok', ''
         if md is not None and md > limit:
             verdict = 'REFUSED: does not match the sheet'
         prev_path = OUT_DIR / f'{key}.json'
         if prev_path.exists() and verdict == 'ok':
             prev = json.loads(prev_path.read_text())
-            if pts[0][0].isoformat() > prev['from'] and (pts[0][0] - date.fromisoformat(prev['from'])).days > 31:
+            if key in ROLLING:
+                joined, kept = join(file_points(prev), pts, spread)
+                if joined is None:
+                    verdict = f'REFUSED: {kept}'
+                else:
+                    pts, note = joined, f'kept {kept} older points' if kept else ''
+            if verdict != 'ok':
+                pass
+            elif pts[0][0].isoformat() > prev['from'] and (pts[0][0] - date.fromisoformat(prev['from'])).days > 31:
                 verdict = f'REFUSED: starts {pts[0][0]}, the existing file starts {prev["from"]}'
             elif len(pts) < 0.9 * len(prev['v']):
                 verdict = f'REFUSED: {len(pts)} points, the existing file has {len(prev["v"])}'
         mds = f'{md:9.4g}' if md is not None else '        —'
-        print(f'{key:16} {pts[0][0]} {pts[-1][0]} {len(pts):5d}  {mds} {n:4d} {limit:8.4g}  {lag:3d}  {"" if verdict == "ok" else verdict}')
+        print(f'{key:16} {pts[0][0]} {pts[-1][0]} {len(pts):5d}  {mds} {n:4d} {limit:8.4g}  {lag:3d}  {note if verdict == "ok" else verdict}')
         if verdict != 'ok':
             return 'refused'
         start = pts[0][0]

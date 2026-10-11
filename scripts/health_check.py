@@ -460,17 +460,22 @@ def check_secret_scan(gitleaks_hit_count):
 
 
 def check_ci_runs(runs):
-    """Healthy = each workflow's LATEST run passed. A workflow that failed earlier but
+    """Healthy = each workflow's LATEST run ON MAIN passed. A workflow that failed earlier but
     whose newest run succeeded is healthy (don't nag about already-fixed history). `runs`
     should already be limited to ACTIVE workflows (the gather step drops deleted one-offs);
-    each item has name + conclusion + (optional) createdAt and event. In-progress runs are
-    ignored, and so is a FAILING pull-request run: it judges the PR (its page shows it), not
-    the workflow on main — PR #61's failed dry runs once read as "Rebake Long History is
-    failing" before that workflow had ever run on main (2026-10-11)."""
+    each item has name + conclusion + (optional) createdAt, event and branch. In-progress
+    runs are ignored, and so is every run on another branch: it judges that branch, not the
+    workflow on main (a PR's checks, a dry run or test dispatched there, a bot's own CI).
+    PR #61's failed dry runs once read as "Rebake Long History is failing" before that
+    workflow had ever run on main, and a red test dispatch on a scratch branch would have
+    read the same (2026-10-11). A passing run there must not hide a failing main either.
+    A run with no branch recorded only drops out when it is a FAILING pull-request run."""
     latest = {}
     for r in runs:
         name = r.get("name", "?")
         if not r.get("conclusion"):       # skip in-progress / queued (no conclusion yet)
+            continue
+        if r.get("branch") not in (None, "", "main"):
             continue
         if r.get("event") in ("pull_request", "pull_request_target") and r.get("conclusion") == "failure":
             continue

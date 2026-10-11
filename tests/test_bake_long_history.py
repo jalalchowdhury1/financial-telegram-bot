@@ -175,3 +175,76 @@ def test_a_bug_in_one_stats_checks_does_not_sink_the_others(bake, monkeypatch, t
     assert code == 1
     assert "FAILED/REFUSED: ['empty']" in out
     assert "dry run" in out
+
+
+def _days(first, last, value=lambda d: 1 + d.toordinal() % 7 / 10):
+    """Daily points whose value depends only on the date, so two downloads agree where they overlap."""
+    return [(first + timedelta(days=i), value(first + timedelta(days=i))) for i in range((last - first).days + 1)]
+
+
+def _file(key, pts):
+    start = pts[0][0]
+    return {"key": key, "source": "test", "from": start.isoformat(), "to": pts[-1][0].isoformat(),
+            "t": [(d - start).days for d, _ in pts], "v": [v for _, v in pts]}
+
+
+def _points(body):
+    start = date.fromisoformat(body["from"])
+    return [(start + timedelta(days=t), v) for t, v in zip(body["t"], body["v"])]
+
+
+def _bake_over_a_file(bake, monkeypatch, tmp_path, key, old, new):
+    """main() for real (no --dry) for one stat whose committed file holds `old` and whose
+    source now answers `new`. Returns the exit code, the output and the file afterwards."""
+    monkeypatch.setattr(bake, "HERE", tmp_path / "scripts")   # main() prints paths relative to HERE.parent
+    monkeypatch.setattr(bake, "OUT_DIR", tmp_path / "history")
+    monkeypatch.setattr(bake, "INDEX", tmp_path / "index.json")
+    monkeypatch.setattr(bake, "SPECS", {key: (6, 0, "test", lambda: new)})
+    monkeypatch.setattr(bake, "curl", lambda url, **kw: b"Date,a,b\n")
+    (tmp_path / "history").mkdir()
+    (tmp_path / "history" / f"{key}.json").write_text(json.dumps(_file(key, old)))
+    out = io.StringIO()
+    with redirect_stdout(out):
+        code = bake.main([])
+    return code, out.getvalue(), json.loads((tmp_path / "history" / f"{key}.json").read_text())
+
+
+FILE_3Y = _days(date(2023, 10, 10), date(2026, 10, 8))         # creditSpread's file, baked 2026-10-10
+WINDOW_JAN_2027 = _days(date(2024, 1, 15), date(2027, 1, 14))   # FRED's 3-year window on 15 Jan 2027
+
+
+def test_a_rolling_source_keeps_the_files_older_points(bake, monkeypatch, tmp_path):
+    """FRED serves only the last 3 years of ICE BofA series, so creditSpread's download starts
+    a quarter later every quarter. From Jan 2027 the bake refused it as "starts later" and its
+    chart would have opened a gap in Oct 2028. Its file's older points now stay, and the
+    download is added after them."""
+    code, out, body = _bake_over_a_file(bake, monkeypatch, tmp_path, "creditSpread", FILE_3Y, WINDOW_JAN_2027)
+    assert code == 0 and "REFUSED" not in out
+    assert (body["from"], body["to"]) == ("2023-10-10", "2027-01-14")
+    assert _points(body) == _days(date(2023, 10, 10), date(2027, 1, 14))
+    assert "kept 97 older points" in out                # 2023-10-10 .. 2024-01-14
+
+
+def test_a_rolling_source_that_changed_what_it_measures_is_not_joined(bake, monkeypatch, tmp_path):
+    """Where the file and the download overlap they must agree: a source now in basis points
+    (×100) must not be spliced onto the old line. The file stays as it was."""
+    in_bps = _days(date(2024, 1, 15), date(2027, 1, 14), value=lambda d: 100 + d.toordinal() % 7 * 10)
+    code, out, body = _bake_over_a_file(bake, monkeypatch, tmp_path, "creditSpread", FILE_3Y, in_bps)
+    assert code == 1 and "REFUSED: differs from the existing file where they overlap" in out
+    assert body == _file("creditSpread", FILE_3Y)
+
+
+def test_a_rolling_source_that_no_longer_overlaps_its_file_is_not_joined(bake, monkeypatch, tmp_path):
+    """Nothing to check the join against (the file is older than the source's whole window),
+    and joining would leave a hole in the line."""
+    later = _days(date(2026, 11, 1), date(2029, 10, 31))
+    code, out, body = _bake_over_a_file(bake, monkeypatch, tmp_path, "creditSpread", FILE_3Y, later)
+    assert code == 1 and "REFUSED: shares 0 days with the existing file" in out
+    assert body == _file("creditSpread", FILE_3Y)
+
+
+def test_a_source_that_is_not_rolling_and_starts_later_is_still_refused(bake, monkeypatch, tmp_path):
+    """Every other source serves its whole history, so starting later still means it degraded."""
+    code, out, body = _bake_over_a_file(bake, monkeypatch, tmp_path, "tnx", FILE_3Y, WINDOW_JAN_2027)
+    assert code == 1 and "REFUSED: starts 2024-01-15, the existing file starts 2023-10-10" in out
+    assert body == _file("tnx", FILE_3Y)

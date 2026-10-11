@@ -251,6 +251,32 @@ def test_check_ci_runs_still_flags_main_when_a_pr_check_fails_after_it():
     assert f["evidence"]["failing"] == ["Deploy"]
 
 
+def test_check_ci_runs_ignores_runs_on_other_branches():
+    # 2026-10-11: a canary dispatched on a scratch branch ended red and became the newest
+    # "Rebake Bankruptcies History" run; the next daily check would have called it failing.
+    runs = [
+        {"name": "Rebake Bankruptcies History", "conclusion": "failure", "event": "workflow_dispatch",
+         "branch": "canary/bot-merge-test", "createdAt": "2026-10-11T15:35:56Z"},
+        {"name": "Rebake Bankruptcies History", "conclusion": "success", "event": "schedule",
+         "branch": "main", "createdAt": "2026-10-08T17:41:06Z"},
+        {"name": "CI", "conclusion": "failure", "event": "workflow_dispatch",
+         "branch": "rebake/bankruptcies-1-1", "createdAt": "2026-10-11T16:00:00Z"},
+    ]
+    assert hc.check_ci_runs(runs)["severity"] == "ok"
+
+
+def test_check_ci_runs_a_passing_branch_run_cannot_hide_a_failing_main():
+    runs = [
+        {"name": "Rebake Long History", "conclusion": "success", "event": "workflow_dispatch",
+         "branch": "fix/something", "createdAt": "2026-10-11T16:00:00Z"},
+        {"name": "Rebake Long History", "conclusion": "failure", "event": "schedule",
+         "branch": "main", "createdAt": "2026-10-11T07:00:00Z"},
+    ]
+    f = hc.check_ci_runs(runs)
+    assert f["severity"] == "warn"
+    assert f["evidence"]["failing"] == ["Rebake Long History"]
+
+
 def test_assemble_report_overall_is_worst_severity():
     findings = [{"severity": "ok"}, {"severity": "warn"}, {"severity": "critical"}]
     assert hc.assemble_report(findings)["overall"] == "critical"

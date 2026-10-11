@@ -24,8 +24,9 @@ name: Rebake Long History
 # tests/test_rebake_long_history_workflow.py runs the notify step for every one of those.
 #
 # A PR that changes this file or the bake script dry-runs the bake here: proof the
-# sources answer from GitHub's runners, nothing written. So does a dispatch on any branch
-# but main: only main ships, or the self-merge would carry that branch's commits into main.
+# sources answer from GitHub's runners (a refused stat fails it), nothing written. So does
+# a dispatch on any branch but main: only main ships, or the self-merge would carry that
+# branch's commits into main.
 
 on:
   schedule:
@@ -41,8 +42,10 @@ permissions:
   pull-requests: write       # open + merge the PR (owner OK'd self-merge 10 Oct 2026)
   actions: write             # dispatch CI on the bot branch (see ci.yml)
 
+# One group per ref: GitHub keeps one PENDING run per group and cancels the one before,
+# so with one shared group a push to a PR could cancel a pending quarterly run, silently.
 concurrency:
-  group: rebake-long-history
+  group: rebake-long-history-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -50,7 +53,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 150       # bake ≤ 75 min (its own cap), + CI wait up to 40 min, + re-cuts and retries
     steps:
+      # The ref's NEWEST commit, not the one this run was queued at, so a Re-run of a red
+      # run uses the fixed script and sees a bake the owner merged by hand meanwhile.
+      # (A Re-run still runs THIS file as it was then: the 🔴 points at Run workflow.)
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref }}
 
       - uses: actions/setup-python@v6
         with:
@@ -88,6 +96,7 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           REPO_URL: ${{ github.server_url }}/${{ github.repository }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          WF_URL: ${{ github.server_url }}/${{ github.repository }}/actions/workflows/rebake-long-history.yml
         run: |
           set -uo pipefail
           LOG="$RUNNER_TEMP/bake.log"
@@ -98,12 +107,12 @@ jobs:
           if ! grep -qE '^(wrote |dry run)' "$LOG" 2>/dev/null; then
             # Died before its summary (a crash, or the sheet unreachable for minutes): files
             # it wrote are not shipped without the index that describes them.
-            MSG="🔴 <b>Long-history rebake stopped before it finished</b> (bake: ${{ steps.bake.outcome }}); nothing shipped, charts keep the old bake. Log: ${RUN_URL}"
+            MSG="🔴 <b>Long-history rebake stopped before it finished</b> (bake: ${{ steps.bake.outcome }}); nothing shipped, charts keep the old bake. Log: ${RUN_URL} · once fixed, tap Run workflow: ${WF_URL}"
           # Judge on the stat files: the index's bakedAt changes on every run, even one
           # where every stat failed.
           elif [ -z "$(git status --porcelain -- dashboard/public/history)" ]; then
             if grep -q '^NOTHING BAKED' "$LOG"; then
-              MSG="🔴 <b>Long-history rebake baked nothing</b>: every stat failed (${FAILED#FAILED/REFUSED: }). Charts keep the old bake. Log: ${RUN_URL}"
+              MSG="🔴 <b>Long-history rebake baked nothing</b>: every stat failed (${FAILED#FAILED/REFUSED: }). Charts keep the old bake. Log: ${RUN_URL} · once fixed, tap Run workflow: ${WF_URL}"
             else
               OK=1      # every stat that baked matched its committed file (a same-day re-run)
               if [ -n "$LOW" ]; then
@@ -129,6 +138,11 @@ jobs:
             recut() {
               if ! git fetch -q --depth=1 origin main; then
                 WHY="main moved past it, and fetching main failed"
+                return 1
+              fi
+              # The stat files only: the index's bakedAt differs on every run.
+              if git diff --quiet "$BAKED" FETCH_HEAD -- dashboard/public/history; then
+                ONMAIN=1      # this exact bake reached main meanwhile
                 return 1
               fi
               if ! git diff --quiet "${BAKED}~1" FETCH_HEAD -- "${FILES[@]}"; then
@@ -169,8 +183,9 @@ jobs:
               WHY="pushed ${BRANCH}, but GitHub would not open its PR: ${REPO_URL}/compare/${BRANCH}?expand=1"
               return 1
             }
-            # A GITHUB_TOKEN PR starts no CI, so dispatch it, then merge on green. Returns 2 when
-            # main moved past the PR.
+            # A GITHUB_TOKEN PR starts no CI, so dispatch it, then merge on green: ci.yml's
+            # `report` job posts the result onto the PR's commit as the required statuses (a
+            # dispatched run's own checks never reach the PR). Returns 2 when main moved past it.
             ci_then_merge() {
               local tries=1
               until gh workflow run ci.yml --ref "$BRANCH"; do
@@ -199,7 +214,7 @@ jobs:
             }
 
             POLLS=120          # 20 s apart: ~40 min of CI wait, shared by every cut
-            URL=""; OLD=""; WHY=""; MERGED=""; CHECKS=""; BAKED=""
+            URL=""; OLD=""; WHY=""; MERGED=""; ONMAIN=""; CHECKS=""; BAKED=""
             for CUT in 1 2 3; do
               if [ "$CUT" = 1 ]; then commit_bake || break; else recut || break; fi
               push_branch || break
@@ -215,16 +230,19 @@ jobs:
               WHY="main kept moving past it"
             done
 
-            if [ -n "$MERGED" ]; then
+            if [ -n "$MERGED$ONMAIN" ]; then
               OK=1
+              if [ -n "$ONMAIN" ]; then      # the owner merged this exact bake by hand meanwhile
+                gh pr close "$OLD" --delete-branch --comment "Main already has this exact bake, so this PR has nothing left to ship." || true
+              fi
               if [ -n "$LOW" ]; then
-                MSG="🟡 <b>Long-history rebake merged, but a chart needs a new source within a year</b>: ${LOW#RUNWAY LOW: }. Log: ${RUN_URL}"
+                MSG="🟡 <b>Long-history rebake is on main, but a chart needs a new source within a year</b>: ${LOW#RUNWAY LOW: }. Log: ${RUN_URL}"
               fi
             elif [ -z "$URL" ]; then
-              MSG="🔴 <b>Long-history rebake opened no PR</b>: ${WHY}. Main untouched. Log: ${RUN_URL}"
+              MSG="🔴 <b>Long-history rebake opened no PR</b>: ${WHY}. Main untouched. Log: ${RUN_URL} · once fixed, tap Run workflow: ${WF_URL}"
             else
               printf '%s\n' "${CHECKS:-no checks seen}"
-              MSG="🔴 <b>Long-history rebake: PR opened but NOT merged</b> (${WHY}). Review: ${URL}"
+              MSG="🔴 <b>Long-history rebake: PR opened but NOT merged</b> (${WHY}). Review: ${URL} · once sorted, tap Run workflow: ${WF_URL}"
             fi
           fi
 
