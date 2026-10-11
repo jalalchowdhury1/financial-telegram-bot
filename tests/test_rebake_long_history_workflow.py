@@ -4,9 +4,10 @@ The quarterly job's whole output is silence or one Telegram line, and its produc
 had never run when the owner asked (2026-10-11) for no alerts from it unless he has to
 act. So the step's bash runs here under GitHub's own `bash -eo pipefail`, once for each
 way a run can end. Green = nothing for him to do: merged, or nothing new to ship (a
-same-day re-run), silent unless a chart is at risk (🟡). Red = he must act (🔴): the bake
-died, baked nothing at all, or its PR could not be merged. GitHub blips are retried, and a
-PR that main moved past (branch protection is strict) is re-cut on the newest main.
+same-day re-run) or main already has the bake, silent unless a chart is at risk (🟡). Red =
+he must act (🔴, with a link to run it again): the bake died, baked nothing at all, or its
+PR could not be merged. GitHub blips are retried, and a PR that main moved past (branch
+protection is strict) is re-cut on the newest main.
 """
 import os
 import re
@@ -27,7 +28,10 @@ case "$1" in
   push) if [ "$(count pushes)" -lt "${STUB_PUSH_FAILS:-0}" ]; then echo "remote: Internal Server Error"; exit 1; fi
         echo "$3" >> "$S/pushed" ;;
   fetch) [ -z "${STUB_FETCH_FAILS:-}" ] || exit 1 ;;
-  diff) [ -z "${STUB_MAIN_CHANGED_BAKE:-}" ] || exit 1 ;;     # main changed the baked files itself
+  diff) case "$3" in                                          # the bake's commit is 0123abc
+          *~1) [ -z "${STUB_MAIN_CHANGED_BAKE:-}" ] || exit 1 ;;  # main changed the baked files itself
+          *) [ -n "${STUB_MAIN_HAS_BAKE:-}" ] || exit 1 ;;          # main already has this exact bake
+        esac ;;
   rev-parse) echo 0123abc ;;
 esac
 exit 0
@@ -104,6 +108,7 @@ def run_step(tmp_path):
                "HOME": str(tmp_path), "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
                "STUB_STATE": str(state), "GH_TOKEN": "x", "TELEGRAM_TOKEN": "t",
                "TELEGRAM_CHAT_ID": "c", "RUN_URL": "https://run", "REPO_URL": "https://github.com/o/r",
+               "WF_URL": "https://wf",
                **{f"STUB_{k.upper()}": str(v) for k, v in stub.items()}}
         proc = subprocess.run(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", _script(outcome, attempt)],
                               env=env, cwd=cwd, capture_output=True, text=True, timeout=60)
@@ -276,6 +281,34 @@ def test_a_re_cut_never_overwrites_baked_files_that_changed_on_main(run_step):
     assert run_step.pushed() == ["rebake/long-history-99-1"]
 
 
+def test_a_bake_main_already_has_closes_its_pr_silently(run_step):
+    """Main moved past the PR by taking this very bake: the owner merged an older bot PR with
+    the same files while this one waited for CI. Nothing is left to ship or to tell him."""
+    assert run_step(dirty=1, behind=1, main_has_bake=1) == (0, None)
+    assert run_step.pushed() == ["rebake/long-history-99-1"]
+    [closed] = run_step.closed()
+    assert "pull/7" in closed and "already has this exact bake" in closed
+
+
+def test_a_bake_main_already_has_still_warns_of_a_chart_at_risk(run_step):
+    log = f"{WROTE}\nRUNWAY LOW: dxy (chart gap from 2027-06-01)\n"
+    code, sent = run_step(log=log, dirty=1, behind=1, main_has_bake=1)
+    assert code == 0 and sent.startswith("🟡") and "dxy (chart gap from 2027-06-01)" in sent
+
+
+@pytest.mark.parametrize("ending", [
+    dict(log="Traceback (most recent call last):\n", outcome="failure"),                     # died
+    dict(log=f"{WROTE}; FAILED/REFUSED: ['tnx']\nNOTHING BAKED: x\n", outcome="failure"),   # baked nothing
+    dict(dirty=1, push_fails=9),                                                            # opened no PR
+    dict(dirty=1, dash="fail"),                                                             # PR not merged
+])
+def test_every_red_ping_ends_with_how_to_clear_it(run_step, ending):
+    """ci_health warns while this workflow's newest run on main is red, so each 🔴 says how
+    to clear it. A Re-run would still use this file as it was, so it links Run workflow."""
+    code, sent = run_step(**ending)
+    assert code != 0 and sent.startswith("🔴") and sent.endswith("tap Run workflow: https://wf")
+
+
 def test_a_re_cut_with_real_git_is_the_newest_main_plus_the_bake_and_nothing_else(run_step, checkout):
     """Real git, stub GitHub: main moved with a workflow change (what GitHub's token could not
     merge into the old branch), so the re-cut must sit on the new main and add only the bake."""
@@ -295,6 +328,16 @@ def test_a_re_cut_with_real_git_leaves_a_bake_that_landed_on_main_alone(run_step
     checkout.main_moves("dashboard/public/history/dxy.json", "a hand bake\n")
     code, sent = run_step(behind=1, cwd=checkout.clone)
     assert code != 0 and "changed the baked files" in sent
+    assert checkout.at_origin("branch", "--format=%(refname:short)").split() == ["main", "rebake/long-history-99-1"]
+
+
+def test_a_re_cut_with_real_git_sees_that_main_already_has_the_bake(run_step, checkout):
+    """Judged on the stat files only: the index's bakedAt differs on every run."""
+    run_step.use_real_git()
+    checkout.main_moves("dashboard/public/history/dxy.json", "new bake\n")
+    checkout.main_moves("dashboard/lib/data/longHistoryIndex.json", '{"new": 1, "bakedAt": "earlier"}\n')
+    assert run_step(behind=1, cwd=checkout.clone) == (0, None)
+    assert "pull/7" in run_step.closed()[0] and "already has this exact bake" in run_step.closed()[0]
     assert checkout.at_origin("branch", "--format=%(refname:short)").split() == ["main", "rebake/long-history-99-1"]
 
 

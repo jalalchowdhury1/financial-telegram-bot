@@ -59,10 +59,11 @@ def test_notify_workflows_have_exactly_one_notifying_step():
 
 def test_the_notifying_step_runs_even_when_an_earlier_step_failed():
     """`if: always()` is the whole point — a job that only reports by Telegram must
-    still report when something upstream broke."""
+    still report when something upstream broke. (The rebake adds "and only on main":
+    see test_rebake_bankruptcies_ships_only_from_main.)"""
     for filename, job in NOTIFY_WORKFLOWS:
         step = _notifying_steps(_steps(_load(filename), job))[0]
-        assert str(step.get("if", "")).strip() == "always()", (
+        assert str(step.get("if", "")).strip() in ("always()", "always() && github.ref == 'refs/heads/main'"), (
             f"{filename}: the notifying step must be `if: always()`, got {step.get('if')!r}")
 
 
@@ -149,3 +150,79 @@ def test_rebake_long_history_ships_only_from_main():
     assert dry["if"] == "github.ref != 'refs/heads/main'"
     assert bake["if"] == "github.ref == 'refs/heads/main'"
     assert ship["if"] == "always() && github.ref == 'refs/heads/main'"
+
+
+def test_rebake_bankruptcies_ships_only_from_main():
+    """Dispatched on another branch (or run for a PR that changes it) the self-merge would
+    carry that branch's commits into main, so there the rebuild is a dry run that fails
+    the run when the rebuild failed."""
+    steps = {s.get("name", ""): s for s in _steps(_load("rebake-bankruptcies.yml"), "rebake")}
+    dry = next(s for n, s in steps.items() if n.startswith("Dry run"))
+    ship = _notifying_steps(list(steps.values()))[0]
+    assert dry["if"] == "always() && github.ref != 'refs/heads/main'"
+    assert '[ "${{ steps.rebake.outcome }}" = "success" ]' in dry["run"]
+    assert ship["if"] == "always() && github.ref == 'refs/heads/main'"
+
+
+def test_dispatched_ci_hands_its_result_to_the_pr_as_statuses():
+    """A dispatched run's checks never reach a pull request, so a bot PR stayed BLOCKED
+    after its dispatched CI passed (PR #65, 11 Oct 2026). The `report` job copies each
+    job's result onto the tested commit as a commit status of the same name: a bot PR then
+    merged (PR #67, into a branch protected like main, merged by app/github-actions)."""
+    wf = _load("ci.yml")
+    report = wf["jobs"]["report"]
+    assert report["if"] == "always() && github.event_name == 'workflow_dispatch'"
+    assert report["needs"] == ["backend-tests", "dashboard-tests"]
+    assert report["permissions"] == {"statuses": "write"}
+    run = report["steps"][0]["run"]
+    assert 'post backend-tests "$BACKEND"' in run and 'post dashboard-tests "$DASHBOARD"' in run
+    assert 'statuses/$GITHUB_SHA' in run
+    env = report["steps"][0]["env"]
+    assert env["BACKEND"] == "${{ needs.backend-tests.result }}"
+    assert env["DASHBOARD"] == "${{ needs.dashboard-tests.result }}"
+    # the context names must be the required checks' names, i.e. the job names
+    assert {"backend-tests", "dashboard-tests"} <= set(wf["jobs"])
+
+
+
+def test_only_the_two_rebakes_can_both_start_ci_and_merge():
+    """With ci.yml's `report` job, a token that can dispatch CI (`actions: write`) and merge
+    (`pull-requests: write`) can land its own PR on main once the tests pass. The owner OK'd
+    that for the two rebakes only (9 and 10 Oct 2026); self-improve's PRs wait for him. A
+    workflow with no `permissions` block gets the repo default, read-only (checked 11 Oct)."""
+    can_merge_itself = set()
+    for name in os.listdir(WORKFLOWS):
+        if not name.endswith((".yml", ".yaml")):
+            continue
+        wf = _load(name)
+        for job in wf["jobs"].values():
+            perms = job.get("permissions", wf.get("permissions"))    # a job's block replaces the top one
+            if perms == "write-all" or (isinstance(perms, dict) and perms.get("actions") == "write"
+                                        and perms.get("pull-requests") == "write"):
+                can_merge_itself.add(name)
+    assert can_merge_itself == {"rebake-bankruptcies.yml", "rebake-long-history.yml"}
+
+
+REBAKES = ["rebake-bankruptcies.yml", "rebake-long-history.yml"]
+
+
+def test_a_rebake_checks_out_the_newest_commit_of_its_ref():
+    """Without a ref, checkout takes the commit the run was queued at, and a Re-run keeps it.
+    A Re-run of a red run must use the fixed script and see a bake the owner merged by hand."""
+    for name in REBAKES:
+        checkout = next(s for s in _steps(_load(name), "rebake") if s.get("uses", "").startswith("actions/checkout@"))
+        assert checkout.get("with", {}).get("ref") == "${{ github.ref }}", name
+
+
+def test_each_ref_queues_its_rebake_runs_apart():
+    """GitHub keeps one pending run per concurrency group and cancels the one before it: with
+    one shared group, a push to a PR could cancel a pending scheduled run on main, silently."""
+    for name in REBAKES:
+        assert "${{ github.ref }}" in _load(name)["concurrency"]["group"], name
+
+
+def test_a_bankruptcies_dry_run_is_strict():
+    """The rebuild keeps each baked quarter it could not fetch, so a scraper that reads
+    nothing passes a plain run. Off main (a PR, a branch) it runs --strict and fails instead."""
+    rebuild = next(s for s in _steps(_load("rebake-bankruptcies.yml"), "rebake") if s.get("id") == "rebake")
+    assert "${{ github.ref != 'refs/heads/main' && '--strict' || '' }}" in rebuild["run"]

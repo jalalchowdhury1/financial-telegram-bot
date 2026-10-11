@@ -12,31 +12,59 @@ name: Rebake Bankruptcies History
 # AOUSC publishes F-2 quarterly, ~4-6 weeks after each quarter closes, so a
 # monthly run always lands shortly after a new print without hammering them.
 #
-# The script REFUSES to write a bake smaller than the existing one (a degraded
-# uscourts must never gut years of history) and exits non-zero if it tries, so a
-# real upstream break surfaces as a failed job + Telegram alert instead of a
-# silently shrunken chart.
+# The script never loses a quarter (one a run could not fetch keeps its baked
+# value), so a uscourts blip changes nothing, and an outage stops the run within
+# minutes (5 quarters in a row with no answer, or 30 min) instead of running past
+# the step's cap. It exits 1 only when the bake stopped GROWING (a quarter
+# published months ago is still missing) or its file is unreadable: a real
+# upstream break, which the owner must look at.
+#
+# The owner hears from it only when he must act, and the run is red exactly then
+# (his ask for these rebakes, 2026-10-11). Silent and green: no new quarter, or a
+# new one merged (the card just shows it; deploy-dashboard.yml deploys after a
+# run that moved main). 🔴 and red: the rebuild failed, or its PR could not be
+# merged. GitHub blips get three tries first, a PR that main moved past is re-cut
+# on the newest main (branch protection is strict), and once a PR merges, older
+# bot PRs a past run left open are closed as superseded.
+# tests/test_rebake_bankruptcies_workflow.py runs the ship step for each of those.
+#
+# A PR that changes this file or the script runs the rebuild here as a dry run,
+# with --strict: it fails unless the run re-read the baked quarters from GitHub's
+# runners (the never-lose merge would pass a scraper that reads nothing). Nothing
+# ships. So does a dispatch on any branch but main: only main ships, or the
+# self-merge would carry that branch's commits into main.
 
 on:
   schedule:
     - cron: '0 11 8 * *'    # 8th of each month, 11:00 UTC — after the ~6wk lag
   workflow_dispatch:         # owner's on-demand override
+  pull_request:
+    paths:
+      - '.github/workflows/rebake-bankruptcies.yml'
+      - 'scripts/build_bankruptcies_history.py'
 
 permissions:
   contents: write            # push a branch (NOT main — branch protection blocks that)
   pull-requests: write       # open + merge the PR (owner OK'd self-merge 9 Oct 2026)
   actions: write             # dispatch CI on the bot branch (see ci.yml)
 
+# One group per ref: GitHub keeps one PENDING run per group and cancels the one before,
+# so with one shared group a push to a PR could cancel a pending monthly run, silently.
 concurrency:
-  group: rebake-bankruptcies
+  group: rebake-bankruptcies-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   rebake:
     runs-on: ubuntu-latest
-    timeout-minutes: 45      # ~100 quarters x (fetch + 2s politeness sleep)
+    timeout-minutes: 110     # rebuild ≤ 45, + CI wait up to 40 min, + re-cuts and retries
     steps:
+      # The ref's NEWEST commit, not the one this run was queued at, so a Re-run of a red
+      # run uses the fixed script and sees a bake the owner merged by hand meanwhile.
+      # (A Re-run still runs THIS file as it was then: the 🔴 points at Run workflow.)
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref }}
 
       - uses: actions/setup-python@v6
         with:
@@ -48,7 +76,16 @@ jobs:
       - name: Rebuild the baked history
         id: rebake
         continue-on-error: true    # handled explicitly below so we always notify
-        run: python scripts/build_bankruptcies_history.py
+        timeout-minutes: 45        # ~6 min normally; the script stops fetching at 30
+        run: |
+          set -o pipefail
+          python scripts/build_bankruptcies_history.py ${{ github.ref != 'refs/heads/main' && '--strict' || '' }} 2>&1 | tee "$RUNNER_TEMP/rebake.log"
+
+      - name: Dry run result (pull request or another branch — nothing shipped)
+        if: always() && github.ref != 'refs/heads/main'
+        run: |
+          git diff --stat -- dashboard/lib/data/bankruptciesBaked.json
+          [ "${{ steps.rebake.outcome }}" = "success" ]
 
       # ONE step: do the git/PR work AND notify. These used to be two steps — the
       # PR step wrote MSG to $GITHUB_ENV and a second step ran `if: env.MSG != ''`.
@@ -60,84 +97,176 @@ jobs:
       # whole contract is "silence is the healthy state", i.e. silence would have
       # read as success. This is the same bug that killed self-improve.yml on
       # 2026-08-05 (run 31019492456, the "Allow GitHub Actions to create and
-      # approve pull requests" repo setting was OFF); the pattern below is ported
-      # from that workflow's fix. The branch is already pushed by the time PR
-      # creation runs, so the work is never lost — THE NOTIFY MATTERS MORE THAN
-      # THE EXIT CODE.
-      - name: Open a PR if the bake grew, then notify Telegram
+      # approve pull requests" repo setting was OFF). Every command that can fail
+      # here is the condition of an `if`, so its exit code is consumed.
+      - name: Open a PR if the bake grew, self-merge on green CI, notify only when the owner must act
         id: pr
-        if: always()
+        if: always() && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          WF_URL: ${{ github.server_url }}/${{ github.repository }}/actions/workflows/rebake-bankruptcies.yml
         run: |
           set -uo pipefail
           BAKE=dashboard/lib/data/bankruptciesBaked.json
-          MSG=""
+          MSG=""; OK=""
 
           # Test against success, not against "failure": `continue-on-error` makes a
           # broken rebuild look non-fatal, and a step SKIPPED because something
           # earlier died is not healthy either.
           if [ "${{ steps.rebake.outcome }}" != "success" ]; then
-            # Either the script refused to shrink the file, or uscourts is down.
-            # Either way the committed bake is untouched and the card is fine.
-            MSG="🔴 Bankruptcies rebake did not complete (outcome: ${{ steps.rebake.outcome }}) — the baked history was left untouched (the card still works, but the 4th horseman may be going stale). Check the Actions log."
-          elif [ -z "$(git status --porcelain -- $BAKE)" ]; then
-            MSG=""   # no new quarter — stay silent, that is the healthy state
+            # The script's own reasons; anything else is a crash or the time cap.
+            WHY=$(grep -hE '^(NOT GROWING|REFUSING TO WRITE)' "$RUNNER_TEMP/rebake.log" 2>/dev/null | head -1 || true)
+            MSG="🔴 Bankruptcies rebake did not finish (${WHY:-outcome: ${{ steps.rebake.outcome }}}). The baked history is untouched and the card still works. Log: ${RUN_URL} · once fixed, tap Run workflow: ${WF_URL}"
+          elif [ -z "$(git status --porcelain -- "$BAKE")" ]; then
+            OK=1      # no new quarter: the healthy state, and silent
           else
-            QUARTERS=$(python -c "import json;print(len(json.load(open('$BAKE'))))")
-            BRANCH="rebake/bankruptcies-${{ github.run_id }}"
-            COMPARE="${{ github.server_url }}/${{ github.repository }}/compare/${BRANCH}?expand=1"
-            git config user.name "github-actions"
-            git config user.email "actions@github.com"
-            git checkout -b "$BRANCH"
-            git add "$BAKE"
-            git commit -m "chore(data): refresh baked bankruptcies history (${QUARTERS} quarters)"
-            if ! PUSH_OUT=$(git push origin "$BRANCH" 2>&1); then
-              echo "::warning::git push failed; no branch and no PR."
-              printf '%s\n' "$PUSH_OUT"
-              MSG="⚠️ Bankruptcies rebake found ${QUARTERS} quarters but COULD NOT PUSH the branch — no PR was opened. Check the Actions log; main is untouched."
-            elif PR_OUT=$(gh pr create --base main --head "$BRANCH" \
-              --title "chore(data): refresh baked bankruptcies history" \
-              --body "Automated monthly rebake of the Four Horsemen bankruptcies fallback: **${QUARTERS} quarters**. The script refuses to shrink the file, so this only ever adds or corrects quarters." 2>&1); then
-              URL=$(printf '%s\n' "$PR_OUT" | tail -1)
-              # Self-merge: a GITHUB_TOKEN PR never triggers CI, so dispatch it on the
-              # branch, wait for the two required checks, then merge. Any failure
-              # leaves the PR open and says so — never merges on red.
-              MERGED=""; CHECKS=""
-              if gh workflow run ci.yml --ref "$BRANCH"; then
-                for _ in $(seq 1 60); do        # up to ~20 min
-                  sleep 20
-                  CHECKS=$(gh pr checks "$BRANCH" --required 2>/dev/null || true)
-                  if printf '%s\n' "$CHECKS" | grep -qE $'\t(fail|cancel)'; then break; fi
-                  if [ "$(printf '%s\n' "$CHECKS" | grep -cE $'^(backend|dashboard)-tests\tpass')" = 2 ]; then
-                    gh pr merge "$BRANCH" --squash --delete-branch && MERGED=1
-                    break
-                  fi
-                done
+            QUARTERS=$(python -c "import json;print(len(json.load(open('$BAKE'))))" 2>/dev/null || echo '?')
+            STEM="rebake/bankruptcies-${{ github.run_id }}-${{ github.run_attempt }}"   # a re-run cuts its own branch
+            BRANCH=$STEM
+            commit_bake() {
+              git config user.name "github-actions" && git config user.email "actions@github.com" &&
+                git checkout -q -b "$BRANCH" && git add "$BAKE" &&
+                git commit -qm "chore(data): refresh baked bankruptcies history (${QUARTERS} quarters)" &&
+                BAKED=$(git rev-parse HEAD) && return 0
+              WHY="could not commit the bake"
+              return 1
+            }
+            # Strict branch protection refuses a PR once main moves past it (~50 commits on a
+            # busy day). GitHub's token cannot merge main into the old branch when main brought
+            # a workflow change, so the bake's commit is re-cut on the newest main instead.
+            recut() {
+              if ! git fetch -q --depth=1 origin main; then
+                WHY="main moved past it, and fetching main failed"
+                return 1
               fi
-              if [ -n "$MERGED" ]; then
-                MSG="🐎 Bankruptcies rebake: new quarter(s) added (${QUARTERS} total) — tests passed, merged automatically: ${URL}"
-              else
-                printf '%s\n' "${CHECKS:-no checks seen}"
-                MSG="🐎 Bankruptcies rebake: new quarter(s) available (${QUARTERS} total) — PR opened but NOT auto-merged (CI not green in time). Review: ${URL}"
+              if git diff --quiet "$BAKED" FETCH_HEAD -- "$BAKE"; then
+                ONMAIN=1      # this exact bake reached main meanwhile
+                return 1
               fi
+              if ! git diff --quiet "${BAKED}~1" FETCH_HEAD -- "$BAKE"; then
+                WHY="main moved past it and changed the baked file too"   # never overwrite that
+                return 1
+              fi
+              BRANCH="${STEM}-${CUT}"
+              git checkout -q -f -B "$BRANCH" FETCH_HEAD && git checkout "$BAKED" -- "$BAKE" &&
+                git commit -qm "chore(data): refresh baked bankruptcies history (${QUARTERS} quarters)" && return 0
+              WHY="main moved past it, and the re-cut on the newest main failed"
+              return 1
+            }
+            # Every GitHub call gets three tries: a blip must not strand a good bake.
+            push_branch() {
+              for _ in 1 2 3; do
+                if git push origin "$BRANCH"; then return 0; fi
+                sleep 15
+              done
+              WHY="could not push ${BRANCH}"
+              return 1
+            }
+            open_pr() {
+              local found
+              for _ in 1 2 3; do
+                if PR_OUT=$(gh pr create --base main --head "$BRANCH" \
+                    --title "chore(data): refresh baked bankruptcies history" \
+                    --body "Automated monthly rebake of the Four Horsemen bankruptcies fallback: **${QUARTERS} quarters**. The script never drops a quarter, so this only ever adds or corrects quarters." 2>&1); then
+                  URL=$(printf '%s\n' "$PR_OUT" | tail -1)
+                  return 0
+                fi
+                # Surface the real reason in the log. First thing to check: Settings ▸ Actions ▸
+                # General ▸ "Allow GitHub Actions to create and approve pull requests".
+                printf '%s\n' "$PR_OUT"
+                found=$(gh pr view "$BRANCH" --json url --jq .url 2>/dev/null || true)   # opened despite the error?
+                if [ -n "$found" ]; then URL=$found; return 0; fi
+                sleep 15
+              done
+              WHY="pushed ${BRANCH}, but GitHub would not open its PR: ${REPO_URL}/compare/${BRANCH}?expand=1"
+              return 1
+            }
+            # A GITHUB_TOKEN PR starts no CI, so dispatch it; ci.yml's `report` job copies the
+            # result onto the PR's commit as the two required checks. Merge on green. Returns 2
+            # when main moved past the PR.
+            ci_then_merge() {
+              local tries=1
+              until gh workflow run ci.yml --ref "$BRANCH"; do
+                if [ "$tries" -ge 3 ]; then WHY="CI would not start"; return 1; fi
+                tries=$((tries + 1))
+                sleep 15
+              done
+              tries=0
+              while [ "$POLLS" -gt 0 ]; do
+                POLLS=$((POLLS - 1))
+                sleep 20
+                CHECKS=$(gh pr checks "$BRANCH" --required 2>/dev/null || true)
+                if printf '%s\n' "$CHECKS" | grep -qE $'\t(fail|cancel)'; then WHY="CI failed"; return 1; fi
+                if ! { printf '%s\n' "$CHECKS" | grep -qE $'^backend-tests\tpass' &&
+                       printf '%s\n' "$CHECKS" | grep -qE $'^dashboard-tests\tpass'; }; then continue; fi
+                if gh pr merge "$BRANCH" --squash --delete-branch; then return 0; fi
+                if [ "$(gh pr view "$URL" --json state --jq .state 2>/dev/null || true)" = MERGED ]; then return 0; fi
+                case "$(gh pr view "$URL" --json mergeStateStatus --jq .mergeStateStatus 2>/dev/null || true)" in
+                  BEHIND|DIRTY) return 2 ;;
+                esac
+                tries=$((tries + 1))      # a just-green PR can briefly read as not mergeable
+                if [ "$tries" -ge 3 ]; then WHY="GitHub refused the merge 3 times"; return 1; fi
+              done
+              WHY="CI not green within 40 min"
+              return 1
+            }
+            # Bot PRs a past run left open: main now has every quarter they carried, or the
+            # next run fetches it again. $1 = the comment each one is closed with.
+            close_superseded() {
+              local open n
+              open=$(gh pr list --state open --limit 100 --json number,headRefName \
+                --jq '.[] | select(.headRefName | startswith("rebake/bankruptcies-")) | .number' 2>/dev/null || true)
+              for n in $open; do
+                if [ "$n" = "${URL##*/}" ]; then continue; fi
+                gh pr close "$n" --delete-branch --comment "$1" || true
+              done
+            }
+
+            POLLS=120          # 20 s apart: ~40 min of CI wait, shared by every cut
+            URL=""; OLD=""; WHY=""; MERGED=""; ONMAIN=""; CHECKS=""; BAKED=""
+            for CUT in 1 2 3; do
+              if [ "$CUT" = 1 ]; then commit_bake || break; else recut || break; fi
+              push_branch || break
+              open_pr || break
+              if [ -n "$OLD" ]; then
+                gh pr close "$OLD" --delete-branch --comment "Superseded by ${URL}: main moved past this PR, so the bake was re-cut on the newest main." || true
+              fi
+              RC=0
+              ci_then_merge || RC=$?
+              if [ "$RC" = 0 ]; then MERGED=1; break; fi
+              if [ "$RC" != 2 ]; then break; fi
+              OLD=$URL
+              WHY="main kept moving past it"
+            done
+
+            if [ -n "$MERGED" ]; then
+              OK=1      # merged: the card shows the new quarter, nothing for the owner to do
+              close_superseded "Superseded by ${URL}, a newer bake of the same file."
+            elif [ -n "$ONMAIN" ]; then
+              OK=1      # the owner merged this exact bake by hand meanwhile: nothing left to ship
+              gh pr close "$OLD" --delete-branch --comment "Main already has this exact bake, so this PR has nothing left to ship." || true
+              close_superseded "Main already has a newer bake of the same file."
+            elif [ -z "$URL" ]; then
+              MSG="🔴 Bankruptcies rebake opened no PR: ${WHY}. Main untouched. Log: ${RUN_URL} · once fixed, tap Run workflow: ${WF_URL}"
             else
-              # Surface the real reason in the job log instead of swallowing it into $URL.
-              # First thing to check: Settings ▸ Actions ▸ General ▸ "Allow GitHub Actions
-              # to create and approve pull requests".
-              echo "::warning::gh pr create failed; branch is pushed, open the PR by hand."
-              printf '%s\n' "$PR_OUT"
-              MSG="⚠️ Bankruptcies rebake pushed \`${BRANCH}\` (${QUARTERS} quarters) but COULD NOT open the PR. Open it here: ${COMPARE}"
+              printf '%s\n' "${CHECKS:-no checks seen}"
+              MSG="🔴 Bankruptcies rebake: PR opened but NOT merged (${WHY}). Review: ${URL} · once sorted, tap Run workflow: ${WF_URL}"
             fi
           fi
 
+          # Silence = nothing for the owner to do. Anything else pings once.
           if [ -n "$MSG" ]; then
             export MSG
-            python - <<'PY'
+            python - <<'PY' || true
           import os
           from bot.utils import send_to_telegram
           send_to_telegram(os.environ['TELEGRAM_TOKEN'], os.environ['TELEGRAM_CHAT_ID'], caption=os.environ['MSG'])
           PY
           fi
+          # Red = he must act. Green costs no deploy unless this run merged: deploy-dashboard.yml
+          # deploys a rebake only when main moved.
+          [ -n "$OK" ]

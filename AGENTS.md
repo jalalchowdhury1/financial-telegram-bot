@@ -463,6 +463,12 @@ Rollback: tag `known-good-pre-history-2026-10-10` (= b9fd5d8; the tag message ha
   - **Self-check:** a stat is refused when the median |baked − sheet| over the overlap exceeds
     20% of its 10-year p10–p90 range, or when a re-bake starts later / has < 90% of the old
     file's points (delete the file first if a later start is on purpose, as for CNN below).
+    **Except a `ROLLING` source** (creditSpread, 11 Oct 2026): FRED serves only the last 3
+    years of the ICE BofA series, so each quarter's download starts a quarter later and was
+    going to be refused from Jan 2027. There the file keeps its older points and the download
+    goes after them, once the two share ≥ 90 days and their median gap there is ≤ 5% of the
+    range (else refused: a unit or series change). Checked on real FRED data: today's join is
+    identical to the file, and a window 97 days later kept 68 older points, same result.
   - `SHEET_FROM`: P/E (sheet switched source 2026-09-05, so multpl is drawn up to then) and
     savings (BEA's annual revision, live 2026-09-30, lifted PSAVERT ~1.5 pts).
 - **Sources** (all free, no keys): FRED `fredgraph.csv` (curl's DEFAULT user agent only — a
@@ -484,18 +490,35 @@ Rollback: tag `known-good-pre-history-2026-10-10` (= b9fd5d8; the tag message ha
   same-day re-run). 🟡, still green = the bake's last line `RUNWAY LOW`: a stat whose chart
   would show a gap within a year (file's last day + 730 < today + 365), i.e. a file kept too
   long or a source that still answers but stopped updating. Push, PR create, CI dispatch and
-  merge get 3 tries; `NOTHING BAKED` marks a run where every stat failed. **main's branch
+  merge get 3 tries; `NOTHING BAKED` marks a run where every stat failed. **A bot PR merges
+  only because `ci.yml`'s `report` job copies the dispatched run's results onto the commit as
+  `backend-tests` / `dashboard-tests` statuses** (11 Oct 2026). A GITHUB_TOKEN push starts no
+  CI, and a dispatched run's check runs never reach the PR, so until then every bot PR sat
+  BLOCKED and the self-merge had never once worked (bankruptcies PR #57 was merged by hand).
+  Proven on throwaway PRs protected exactly like main: #65 stayed BLOCKED with dispatched CI
+  green; #66 and #67 (UNSTABLE, as a real main PR is, beside its failed 0-job
+  `pull_request` run) merged once the statuses were posted. Only the two rebakes can both
+  dispatch CI (`actions: write`) and merge (`pull-requests: write`), and `test_workflows.py`
+  holds that line: self-improve has `actions: read` and no shell, so its PRs still wait for
+  the owner. **main's branch
   protection is strict** (a PR must be up to date to merge) and main takes ~50 commits on a
   busy day, so a PR that main moved past is re-cut on the newest main as a fresh PR (up to 3
   cuts, the old PR closed as superseded): GitHub's token cannot merge main into the old branch
   when main brought a workflow change. It never overwrites baked files that changed on main
-  meanwhile (🔴 instead). Branches are `rebake/long-history-<run id>-<attempt>[-<cut>]`, so a
-  Re-run cuts its own. Only `main` ships: a dispatch on another branch is a dry run (it would
+  meanwhile (🔴 instead), and if main already has the identical stat files (the owner merged
+  an older bot PR while this one waited), it closes its PR quietly. Branches are
+  `rebake/long-history-<run id>-<attempt>[-<cut>]`, so a Re-run cuts its own. Checkout takes
+  the ref's NEWEST commit, so a Re-run uses the fixed script and today's main (by default it
+  would reuse the commit the run was queued at). Each ref has its own concurrency group: with
+  one shared group, a push to a PR could cancel a pending scheduled run on main, silently.
+  Every 🔴 ends with "once fixed, tap Run workflow" and links the workflow page, because
+  `ci_health` warns until a green run on main, and a Re-run would still use this workflow
+  file as it was. Only `main` ships: a dispatch on another branch is a dry run (it would
   otherwise self-merge that branch's commits). The bake step is capped at 75 min. Why it matters:
   `/api/history` `series` holds 730 days, so a bake left alone for ~2 years (the first one
   would hit it ~2028-10) leaves a hole between the bake's last day and the sheet window. A PR
-  touching the workflow or the bake script dry-runs the bake on GitHub's runners (a failing
-  PR run is not a `ci_health` failure). A stat whose source fails is retried once 20 min
+  touching the workflow or the bake script dry-runs the bake on GitHub's runners (`ci_health`
+  judges main only, so a failing PR or branch run is not a failure). A stat whose source fails is retried once 20 min
   later (`--retry-after=1200`). **CNBC's chart API caches each answer per exact URL, errors
   too, for hours**: `.DXY` `10Y`/`ALL` replayed a 503 from 23:42 until past 09:42 the next
   day and sank all four of PR #61's dry runs, so every bake try adds a unique `&_=` and
@@ -1386,11 +1409,11 @@ Now: fewer than 756 bars → the Sheet's own 3Y return (`_sheet_return_3y`) → 
     ~150 days it takes the freshness deadline to notice. `.github/workflows/rebake-bankruptcies.yml`
     now runs monthly (8th, 11:00 UTC — after the ~6wk publish lag) and opens a PR when the
     bake grows. `quarters()` derives its end from `latest_quarter_end()` (was a HARDCODED
-    `(2026,3,31)`, which would have quietly stopped extending), and `main()` **refuses to
-    write a bake smaller than the existing one** and exits non-zero — a degraded uscourts
-    must never gut years of history that no live tier can rebuild. **SILENCE IS THE HEALTHY
-    STATE**: it Telegrams only when a PR is opened or the run fails, so no news = no new
-    quarter. Test-fired 2026-07-25 (`workflow_dispatch`): walked all 99 quarters, newest
+    `(2026,3,31)`, which would have quietly stopped extending), and `main()` **refused to
+    write a bake smaller than the existing one** and exited non-zero — a degraded uscourts
+    must never gut years of history that no live tier can rebuild (since 11 Oct 2026 it keeps
+    every quarter instead, see below). **SILENCE IS THE HEALTHY STATE**: it Telegrammed only
+    when a PR was opened or the run failed, so no news = no new quarter. Test-fired 2026-07-25 (`workflow_dispatch`): walked all 99 quarters, newest
     `2026-03-31 total=591,850 business=25,960` (matches live), printed `no change (99
     quarters)`, opened no PR, sent no Telegram — i.e. the silent-when-healthy path works.
     **The notify could not fire in the failure it exists to catch (fixed 2026-08-06).** The
@@ -1408,6 +1431,32 @@ Now: fewer than 756 bars → the Sheet's own 3Y return (`_sheet_return_3y`) → 
     "no new quarter" stays silent. It also tests `steps.rebake.outcome != "success"` rather
     than `= "failure"`, so a **skipped** rebuild is not read as healthy. Shape-tested in
     `tests/test_workflows.py` (both this and `self-improve.yml`).
+    **Since 11 Oct 2026 it self-merges and alerts only when the owner must act** (his ask),
+    on long-history's pattern (§3 "Long look-back"): rebuild → PR → dispatched CI (which can
+    merge only through `ci.yml`'s `report` statuses) → squash-merge → `deploy-dashboard.yml`.
+    Silent and green = no new quarter, or a new one merged (no 🐎 ping any more: the card
+    shows it). 🔴 and red = the rebuild failed (`NOT GROWING`: the quarter before the newest
+    is missing though uscourts published it months ago, so the scraper needs a look;
+    `REFUSING TO WRITE`: the existing bake is unreadable; or a crash), or its PR could not be
+    merged. The bake is now the UNION of the file and the fetch (a fetched quarter wins), so a
+    quarter a run could not fetch is kept and a uscourts outage changes nothing (exit 0);
+    5xx/429/network errors get 2 retries (5 s, 20 s). An outage also ends the run in minutes:
+    it fetches newest quarter first and stops after 5 quarters in a row with no answer, or
+    after 30 min (each unanswered quarter costs ≥ 27 s, so ~100 of them would hit the step's
+    45-min cap, and that timeout pings). The newest quarter missing is normal (published
+    late): next month retries it. A PR that main moved past is re-cut on the newest main (up
+    to 3 cuts), or closed quietly if main already has the identical bake; once one merges,
+    older open `rebake/bankruptcies-*` PRs are closed as superseded (#52 sat open from 8
+    Sep). Only `main` ships; a PR touching the workflow or the script runs it as a dry run
+    with `--strict` (~6 min against uscourts), which fails if the run stopped early or left
+    more than 2 baked quarters unread: the union would pass a scraper that reads nothing.
+    Checkout, concurrency and the 🔴 "Run workflow" link work as in long-history (§3 "Long
+    look-back"). Never baked: 2004-12-31 and 2005-03-31 (uscourts has no file link for
+    them). Real run 11 Oct: `no change (100 quarters)`, newest `2026-06-30 total=608,511
+    business=26,941`. Tests: `tests/test_build_bankruptcies_history.py` (union, retries,
+    NOT GROWING, outage breaker and budget, strict) and
+    `tests/test_rebake_bankruptcies_workflow.py` (the ship step against stub git/gh for every
+    ending, real-git re-cuts, and `ci.yml`'s `report` step).
   - **INDEPENDENT SOURCES for the three FRED-fed lines** (`lib/horsemen.js`, added
     2026-07-25, PRs #35+#36). Before this, claims/unemployment/spread had exactly ONE live
     provider (the FRED API) behind ONE api key — while copper/gold got 4-5 providers per leg
@@ -1676,8 +1725,9 @@ Now: fewer than 756 bars → the Sheet's own 3Y return (`_sheet_return_3y`) → 
 - `scripts/collect_health_context.py` — distills recent health reports into the weekly
   agent's digest (`health-digest.md`).
 - `scripts/build_bankruptcies_history.py` — regenerates the Four Horsemen card's baked
-  bankruptcies history from uscourts.gov F-2 tables (run with `uv run`; rarely needed —
-  the dashboard's live tier keeps the newest quarter fresh on its own).
+  bankruptcies history from uscourts.gov F-2 tables (run with `uv run`; the monthly
+  `rebake-bankruptcies.yml` runs it — the dashboard's live tier keeps the newest quarter
+  fresh on its own).
 - `tests/` — pytest: `test_polymarket_fetcher`, `test_run_report`, `test_utils`,
   `test_health_check`, `test_collect_health_context`, `test_workflows` (shape tests for the
   two "silence is healthy" workflows — needs `PyYAML`, in `requirements-dev.txt`).
@@ -1685,7 +1735,8 @@ Now: fewer than 756 bars → the Sheet's own 3Y return (`_sheet_return_3y`) → 
 - `.github/workflows/` — `deploy-lambda.yml` (auto-deploys the Lambda on `bot/**` /
   `lambda_handler.py` changes), `daily_report.yml` (09:45 UTC runner-based report backstop +
   CloudWatch skip-guard + self-retry harness), `ci.yml` (pytest + jest + build on every PR —
-  the merge gate), `health-check.yml` (14:00 UTC daily self-check + Telegram alert),
+  the merge gate; on a bot's dispatch its `report` job posts the result as commit statuses,
+  which is what lets a bot PR merge), `health-check.yml` (14:00 UTC daily self-check + Telegram alert),
   `self-improve.yml` (weekly Wed 13:00 UTC agent that opens PRs — see §7), and
   `diagnose-lambda.yml` (manual on-demand: dumps the Lambda's recent CloudWatch invocations +
   outcomes to answer "why didn't the report send?"; read-only).
@@ -1803,8 +1854,9 @@ severity. It is **never-throw** — a broken probe becomes a finding, not a cras
   auto-redispatches a **duplicate report** (happened 2026-08-07T00:02Z; the same bug class
   was fixed once before in PR #5 and reintroduced by the GHA cross-check).
 - **`known_issue_config_urls`**, **`secret_leak`** (gitleaks), **`ci_health`** (latest run
-  per **active** workflow; a FAILING pull-request run is skipped, it judges the PR, not main —
-  PR #61's failed dry runs once read as "Rebake Long History is failing", 2026-10-11) — see
+  ON MAIN per **active** workflow; a run on any other branch is skipped, it judges that
+  branch, not main — PR #61's failed dry runs once read as "Rebake Long History is failing",
+  and a red test dispatch on a scratch branch would have read the same, 2026-10-11) — see
   the table below.
 
 ### When the owner pastes you a health alert, act on it like this
@@ -1819,7 +1871,7 @@ Each finding has an `id`. Map id → meaning → fix:
 | `lambda_primary_path` | The dashboard is serving correct numbers **from its fallbacks** | `evidence.fallback_routes` names which routes fell back; `evidence.lambda_routes` names which the Lambda DID serve. **If `lambda_routes` is non-empty, the Lambda is reachable and it is NOT the invoke grant** — that route's handler errored or ran past API Gateway's **30 s integration cap** (gateway answers 503, Vercel falls back). Check CloudWatch: the route's `Trigger: HTTP` line → its `REPORT` Duration (>30000 ms = timeout) and upstream failures logged between. Seen 2026-09-01: `market-extra` at 49–59 s from a serial 25-call waterfall; fixed by running its provider chains concurrently under `MARKET_EXTRA_DEADLINE_SECONDS` (22 s). **If `lambda_routes` is empty**, the hop itself is down: check the Lambda's **resource policy** for an `apigateway.amazonaws.com` invoke grant (§2 "Wiring a new API Gateway"), that Vercel's `LAMBDA_URL` still points at the gateway base (NOT the dead Function URL), and recent CloudWatch errors. Nothing looks broken on the page — that is exactly why this check exists. |
 | `known_issue_config_urls` | `bot/config.py` `URLS` missing a required key | Add the key — the URLs live in `dashboard/lib/constants.js`. |
 | `secret_leak` | gitleaks found a credential in the repo | **Rotate it immediately**, then remove the literal (env vars only). |
-| `ci_health` | An **active** workflow's **latest** run failed | Open that run, read the failure, fix + PR. Historical/fixed failures, deleted workflows and failing pull-request runs are already excluded. A quarterly job (Rebake Long History) stays flagged until its next run: after the fix, dispatch it once. |
+| `ci_health` | An **active** workflow's **latest** run failed | Open that run, read the failure, fix + PR. Historical/fixed failures, deleted workflows and runs on other branches (PRs, dry runs, bot CI) are already excluded. A rebake (monthly Bankruptcies, quarterly Long History) stays flagged until its next run on main: after the fix, Run workflow once (its 🔴 links the page). Prefer that to Re-run, which reuses the old copy of the workflow file. |
 
 ### Conventions
 - Severity `ok` < `warn` < `critical`; a scheduled alert lists **only non-ok** findings. A
