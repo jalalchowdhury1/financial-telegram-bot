@@ -189,7 +189,7 @@ export default function PolymarketTable({ refreshKey = null, bust = false }) {
             </div>
           </div>
         )}
-        {!macro.length && sources.macro === null && (
+        {!macro.length && sources.macro == null && (
           <div className="pm-note">📈 Macro odds unavailable right now.</div>
         )}
 
@@ -245,7 +245,7 @@ export default function PolymarketTable({ refreshKey = null, bust = false }) {
               </ul>
             ) : (
               <div className="pm-note">
-                {sources.breaking === null
+                {sources.breaking == null
                   ? 'Breaking moves unavailable right now.'
                   : 'Quiet day: no market moved 5+ points in the last 24 hours.'}
               </div>

@@ -75,6 +75,11 @@ function topicOf(text) {
     for (const [name, emoji, rx] of TOPICS) if (rx.test(text || '')) return [name, emoji];
     return ['World', '🌐'];
 }
+/** A market's parent event (its slug is the one polymarket.com links to), or {}. */
+function eventOf(m) {
+    const ev = Array.isArray(m.events) ? m.events[0] : null;
+    return ev && typeof ev === 'object' ? ev : {};
+}
 /** True when the market's end date has passed (it only awaits resolution: old news). */
 function ended(iso) {
     const t = Date.parse(iso);
@@ -113,12 +118,20 @@ function spark(points, max = 48) {
     return p.map(round3);
 }
 
-/** A fetcher whose timeouts never run past the request's deadline. */
+/** A fetcher whose timeouts never run past the request's deadline. fetchJson's own timeout
+ *  stops once the headers arrive, and Next does not pre-read a revalidate-0 body (the 2.5 MB
+ *  keyset), so a second timer caps the whole call, body included: a stalled body must not
+ *  outlive the function and turn serve()'s last-good answer into a 504. */
 function makeGet(deadlineAt) {
-    return (url, ms, revalidate = 120) => fetchJson(url, {
-        revalidate,
-        timeout: Math.max(1000, Math.min(ms, deadlineAt - Date.now())),
-    });
+    return (url, ms, revalidate = 120) => {
+        const budget = Math.max(1000, Math.min(ms, deadlineAt - Date.now()));
+        let timer;
+        const cap = new Promise((_, reject) => {
+            timer = setTimeout(() => reject(new Error(`timed out after ${budget}ms: ${url}`)), budget);
+        });
+        return Promise.race([fetchJson(url, { revalidate, timeout: budget }), cap])
+            .finally(() => clearTimeout(timer));
+    };
 }
 
 /** CLOB price history for one outcome token -> sparkline; [] on any failure. */
@@ -140,7 +153,7 @@ async function trendingRows(get, limit) {
     for (const ev of events) {
         try {
             const title = String(ev.title || '').trim();
-            const slug = ev.slug || '';
+            const slug = String(ev.slug || '');
             const text = `${title} ${slug.replace(/-/g, ' ')} ${tagText(ev.tags)}`;
             // Sports, and the 5-minute "Up or Down" coin flips (pure intraday churn).
             if (!title || isSports(text, ev.tags) || slug.includes('updown') || title.toLowerCase().includes('up or down')) continue;
@@ -191,19 +204,21 @@ async function moversSite(get, limit) {
     const cands = [];
     for (const m of movers) {
         if (!m || typeof m !== 'object') continue;
-        const ev = (Array.isArray(m.events) && m.events[0]) || {};
-        const question = String(m.question || '').trim();
-        const slug = ev.slug || m.slug || '';
-        let odds = num(m.currentPrice);
-        if (odds == null) { const p = list(m.outcomePrices); odds = p.length ? num(p[0]) : null; }
-        const live = num(m.livePriceChange);   // points, e.g. -54
-        const change = live != null ? live / 100 : num(m.oneDayPriceChange);
-        const volume = num(ev.volume) || 0;
-        if (!question || odds == null || change == null || m.closed
-            || sportsIds.has(String(m.id))
-            || isSports(`${question} ${slug.replace(/-/g, ' ')}`)
-            || volume < MIN_MOVER_VOLUME || Math.abs(change) < MIN_MOVE) continue;
-        cands.push(moverRow(question, slug, odds, change, volume, spark(m.history)));
+        try {
+            const ev = eventOf(m);
+            const question = String(m.question || '').trim();
+            const slug = String(ev.slug || m.slug || '');
+            let odds = num(m.currentPrice);
+            if (odds == null) { const p = list(m.outcomePrices); odds = p.length ? num(p[0]) : null; }
+            const live = num(m.livePriceChange);   // points, e.g. -54
+            const change = live != null ? live / 100 : num(m.oneDayPriceChange);
+            const volume = num(ev.volume) || 0;
+            if (!question || odds == null || change == null || m.closed
+                || sportsIds.has(String(m.id))
+                || isSports(`${question} ${slug.replace(/-/g, ' ')}`)
+                || volume < MIN_MOVER_VOLUME || Math.abs(change) < MIN_MOVE) continue;
+            cands.push(moverRow(question, slug, odds, change, volume, spark(m.history)));
+        } catch { /* skip this market */ }
     }
     // 25 markets and not one usable: more likely a changed shape than a quiet day.
     if (!cands.length) throw new Error(`biggest-movers: none of ${movers.length} markets passed the filters`);
@@ -218,19 +233,21 @@ async function moversGamma(get, limit) {
     const cands = [];
     for (const m of pages.flatMap((pg) => (Array.isArray(pg) ? pg : []))) {
         if (!m || typeof m !== 'object') continue;
-        const ev = (Array.isArray(m.events) && m.events[0]) || {};
-        const question = String(m.question || '').trim();
-        const slug = ev.slug || m.slug || '';
-        const prices = list(m.outcomePrices);
-        const odds = prices.length ? num(prices[0]) : null;
-        const change = num(m.oneDayPriceChange);
-        const volume = num(m.volumeNum || m.volume) || 0;
-        if (!question || odds == null || change == null
-            || m.sportsMarketType || m.gameStartTime || ended(m.endDate)
-            || isSports(`${question} ${slug.replace(/-/g, ' ')}`, m.tags)
-            || volume < MIN_MOVER_VOLUME || Math.abs(change) < MIN_MOVE) continue;
-        const tokens = list(m.clobTokenIds);
-        cands.push({ ...moverRow(question, slug, odds, change, volume, []), _token: tokens.length ? String(tokens[0]) : null });
+        try {
+            const ev = eventOf(m);
+            const question = String(m.question || '').trim();
+            const slug = String(ev.slug || m.slug || '');
+            const prices = list(m.outcomePrices);
+            const odds = prices.length ? num(prices[0]) : null;
+            const change = num(m.oneDayPriceChange);
+            const volume = num(m.volumeNum || m.volume) || 0;
+            if (!question || odds == null || change == null
+                || m.sportsMarketType || m.gameStartTime || ended(m.endDate)
+                || isSports(`${question} ${slug.replace(/-/g, ' ')}`, m.tags)
+                || volume < MIN_MOVER_VOLUME || Math.abs(change) < MIN_MOVE) continue;
+            const tokens = list(m.clobTokenIds);
+            cands.push({ ...moverRow(question, slug, odds, change, volume, []), _token: tokens.length ? String(tokens[0]) : null });
+        } catch { /* skip this market */ }
     }
     const rows = pickMovers(cands, limit);
     const sparks = await Promise.all(rows.map((r) => history(get, r._token, '1d', 30, 48)));
@@ -248,7 +265,9 @@ async function breakingRows(get, limit, messages = []) {
     return [await moversGamma(get, limit), 'gamma'];
 }
 
-/** Macro dashboard tiles. Throws when every macro tag failed to load. */
+/** Macro dashboard tiles. Throws when every macro tag failed to load, or when they all
+ *  answered with nothing open: the dashboard always has tiles, so an empty strip means the
+ *  tags changed, not a quiet day (an outage the card and health check must see). */
 async function macroRows(get, limit) {
     const groups = await Promise.all(MACRO_TAGS.map((tag) =>
         get(`${GAMMA}/events?tag_slug=${tag}&active=true&closed=false&archived=false&limit=10`, 8000).catch(() => null)));
@@ -257,18 +276,21 @@ async function macroRows(get, limit) {
     for (const events of groups) {
         for (const ev of Array.isArray(events) ? events : []) {
             if (!ev || typeof ev !== 'object') continue;
-            const title = String(ev.title || '').trim();
-            const slug = ev.slug || '';
-            const text = `${title} ${slug.replace(/-/g, ' ')} ${tagText(ev.tags)}`;
-            if (!title || seen.has(slug) || isSports(text, ev.tags)) continue;
-            const outs = outcomesOf(ev);
-            if (!outs.length) continue;
-            seen.add(slug);
-            const lead = outs[0];
-            tiles.push({ title, slug, label: lead.label, odds: round3(lead.odds), change: round3(lead.change30),
-                volume: num(ev.volume) || 0, spark: [], _token: lead.token });
+            try {
+                const title = String(ev.title || '').trim();
+                const slug = String(ev.slug || '');
+                const text = `${title} ${slug.replace(/-/g, ' ')} ${tagText(ev.tags)}`;
+                if (!title || seen.has(slug) || isSports(text, ev.tags)) continue;
+                const outs = outcomesOf(ev);
+                if (!outs.length) continue;
+                seen.add(slug);
+                const lead = outs[0];
+                tiles.push({ title, slug, label: lead.label, odds: round3(lead.odds), change: round3(lead.change30),
+                    volume: num(ev.volume) || 0, spark: [], _token: lead.token });
+            } catch { /* skip this event */ }
         }
     }
+    if (!tiles.length) throw new Error('macro tags answered but held no open events');
     const top = tiles.slice(0, limit);
     const sparks = await Promise.all(top.map((t) => history(get, t._token, '1m', 720, 40)));
     return [top.map(({ _token, ...t }, i) => {
@@ -350,16 +372,26 @@ export async function GET(request) {
     return serve('polymarket', async () => {
         const lam = faults.has('lambda') ? null : await lambdaPoly(messages);
         if (lam) {
-            // Fill a list the Lambda could not load (e.g. polymarket.com refusing an AWS
-            // address) from here. An empty list WITH a source is a quiet day: leave it.
+            // Fill a list the Lambda could not load at all from here. An empty list WITH a
+            // source is a quiet day: leave it.
             const missing = ['breaking', 'macro'].filter((n) =>
                 !(Array.isArray(lam[n]) && lam[n].length) && !(lam.sources && lam.sources[n]));
-            if (missing.length && !faults.has('gamma')) {
-                const got = await directBoard(get, messages, missing);
+            // The Lambda settled for the Gamma backup for Breaking (polymarket.com may refuse
+            // an AWS address): try the site's own feed from here before keeping the backup.
+            const upgrade = lam.sources?.breaking === 'gamma';
+            if ((missing.length || upgrade) && !faults.has('gamma')) {
+                const [got, site] = await Promise.all([
+                    missing.length ? directBoard(get, messages, missing) : null,
+                    upgrade ? moversSite(get, LIMITS.breaking).catch((e) => {
+                        messages.push(`biggest-movers (direct): ${String(e?.message).slice(0, 100)}`);
+                        return null;
+                    }) : null,
+                ]);
                 for (const n of missing) {
                     const [rows, src] = got[n];
                     if (src) { lam[n] = rows; lam.sources = { ...(lam.sources || {}), [n]: `${src} (direct)` }; }
                 }
+                if (site) { lam.breaking = site; lam.sources = { ...lam.sources, breaking: 'biggest-movers (direct)' }; }
             }
             return finish(lam, messages);
         }

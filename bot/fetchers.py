@@ -1564,8 +1564,17 @@ _PM_TOPICS = (
 _PM_TOPIC_RES = tuple((n, e, re.compile(p, re.I)) for n, e, p in _PM_TOPICS)
 
 
+# The headers the dashboard sends (lib/constants.js DEFAULT_HEADERS): polymarket.com sits
+# behind Cloudflare, which trusts a bare python-requests agent less.
+_PM_HEADERS = {
+    "User-Agent": ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+                   "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
+    "Accept": "application/json, text/plain, */*",
+}
+
+
 def _pm_get(url: str, params: Optional[Dict[str, Any]] = None, timeout: int = PM_TIMEOUT):
-    resp = requests.get(url, params=params, timeout=timeout)
+    resp = requests.get(url, params=params, timeout=timeout, headers=_PM_HEADERS)
     resp.raise_for_status()
     return resp.json()
 
@@ -1592,6 +1601,13 @@ def _pm_float(raw) -> Optional[float]:
 def _pm_tag_text(tags) -> str:
     return " ".join(f"{t.get('label') or ''} {(t.get('slug') or '').replace('-', ' ')}"
                     for t in (tags or []) if isinstance(t, dict))
+
+
+def _pm_event(m: Dict[str, Any]) -> Dict[str, Any]:
+    """A market's parent event (its slug is the one polymarket.com links to), or {}."""
+    evs = m.get("events")
+    ev = evs[0] if isinstance(evs, list) and evs else None
+    return ev if isinstance(ev, dict) else {}
 
 
 def _pm_is_sports(text: str, tags=None) -> bool:
@@ -1664,9 +1680,11 @@ def _pm_trending_rows(limit: int) -> Tuple[List[Dict[str, Any]], str]:
         raise ValueError("featured keyset returned no events list")
     rows = []
     for ev in events:
+        if not isinstance(ev, dict):
+            continue
         try:
-            title = (ev.get("title") or "").strip()
-            slug = ev.get("slug") or ""
+            title = str(ev.get("title") or "").strip()
+            slug = str(ev.get("slug") or "")
             text = f"{title} {slug.replace('-', ' ')} {_pm_tag_text(ev.get('tags'))}"
             # Sports, and the 5-minute "Up or Down" coin flips (pure intraday churn).
             if not title or _pm_is_sports(text, ev.get("tags")) or "updown" in slug or "up or down" in title.lower():
@@ -1715,36 +1733,49 @@ def _pm_mover_row(question: str, slug: str, odds: float, change: float, volume: 
             "volume": volume, "spark": spark, "topic": topic, "topicEmoji": emoji}
 
 
+def _pm_sports_ids() -> set:
+    """Ids in the site's own sports bucket (dropped from "all"); empty when it fails."""
+    try:
+        data = _pm_get(f"{PM_SITE}/api/biggest-movers", {"category": "sports"}, timeout=4)
+        return {str(m.get("id")) for m in (data.get("markets") or []) if isinstance(m, dict)}
+    except Exception:
+        return set()
+
+
 def _pm_movers_site(limit: int) -> List[Dict[str, Any]]:
     """polymarket.com's own Breaking News feed (comes with each market's 24h history)."""
+    from concurrent.futures import ThreadPoolExecutor
+    ex = ThreadPoolExecutor(max_workers=1)
+    sports = ex.submit(_pm_sports_ids)   # in parallel with the main call, as route.js does
+    ex.shutdown(wait=False)              # a failed main call doesn't wait for it
     data = _pm_get(f"{PM_SITE}/api/biggest-movers", timeout=6)
     movers = data.get("markets") if isinstance(data, dict) else None
-    if not movers:
+    if not movers or not isinstance(movers, list):
         raise ValueError("biggest-movers returned no markets")
-    try:  # The site's own sports bucket: anything in it is dropped from "all".
-        sports_ids = {str(m.get("id")) for m in
-                      (_pm_get(f"{PM_SITE}/api/biggest-movers", {"category": "sports"}, timeout=4)
-                       .get("markets") or [])}
-    except Exception:
-        sports_ids = set()
+    sports_ids = sports.result()
     cands = []
     for m in movers:
-        ev = (m.get("events") or [{}])[0] or {}
-        question = (m.get("question") or "").strip()
-        slug = ev.get("slug") or m.get("slug") or ""
-        odds = _pm_float(m.get("currentPrice"))
-        if odds is None:
-            prices = _pm_list(m.get("outcomePrices"))
-            odds = _pm_float(prices[0]) if prices else None
-        live = _pm_float(m.get("livePriceChange"))   # points, e.g. -54
-        change = live / 100 if live is not None else _pm_float(m.get("oneDayPriceChange"))
-        volume = _pm_float(ev.get("volume")) or 0.0
-        if (not question or odds is None or change is None or m.get("closed")
-                or str(m.get("id")) in sports_ids
-                or _pm_is_sports(f"{question} {slug.replace('-', ' ')}")
-                or volume < PM_MIN_MOVER_VOLUME or abs(change) < PM_MIN_MOVE):
+        if not isinstance(m, dict):
             continue
-        cands.append(_pm_mover_row(question, slug, odds, change, volume, _pm_spark(m.get("history"))))
+        try:
+            ev = _pm_event(m)
+            question = str(m.get("question") or "").strip()
+            slug = str(ev.get("slug") or m.get("slug") or "")
+            odds = _pm_float(m.get("currentPrice"))
+            if odds is None:
+                prices = _pm_list(m.get("outcomePrices"))
+                odds = _pm_float(prices[0]) if prices else None
+            live = _pm_float(m.get("livePriceChange"))   # points, e.g. -54
+            change = live / 100 if live is not None else _pm_float(m.get("oneDayPriceChange"))
+            volume = _pm_float(ev.get("volume")) or 0.0
+            if (not question or odds is None or change is None or m.get("closed")
+                    or str(m.get("id")) in sports_ids
+                    or _pm_is_sports(f"{question} {slug.replace('-', ' ')}")
+                    or volume < PM_MIN_MOVER_VOLUME or abs(change) < PM_MIN_MOVE):
+                continue
+            cands.append(_pm_mover_row(question, slug, odds, change, volume, _pm_spark(m.get("history"))))
+        except Exception as e:
+            logging.warning(f"Polymarket mover skipped ({m.get('id')}): {e}")
     if not cands:   # 25 markets and not one usable: more likely a changed shape than a quiet day
         raise ValueError(f"biggest-movers: none of {len(movers)} markets passed the filters")
     return _pm_pick_movers(cands, limit)
@@ -1765,22 +1796,27 @@ def _pm_movers_gamma(limit: int) -> List[Dict[str, Any]]:
         pages = list(ex.map(page, ("false", "true")))
     cands = []
     for m in (m for pg in pages for m in (pg if isinstance(pg, list) else [])):
-        ev = (m.get("events") or [{}])[0] or {}
-        question = (m.get("question") or "").strip()
-        slug = ev.get("slug") or m.get("slug") or ""
-        prices = _pm_list(m.get("outcomePrices"))
-        odds = _pm_float(prices[0]) if prices else None
-        change = _pm_float(m.get("oneDayPriceChange"))
-        volume = _pm_float(m.get("volumeNum") or m.get("volume")) or 0.0
-        if (not question or odds is None or change is None
-                or m.get("sportsMarketType") or m.get("gameStartTime") or _pm_ended(m.get("endDate"))
-                or _pm_is_sports(f"{question} {slug.replace('-', ' ')}", m.get("tags"))
-                or volume < PM_MIN_MOVER_VOLUME or abs(change) < PM_MIN_MOVE):
+        if not isinstance(m, dict):
             continue
-        row = _pm_mover_row(question, slug, odds, change, volume, [])
-        tokens = _pm_list(m.get("clobTokenIds"))
-        row["_token"] = str(tokens[0]) if tokens else None
-        cands.append(row)
+        try:
+            ev = _pm_event(m)
+            question = str(m.get("question") or "").strip()
+            slug = str(ev.get("slug") or m.get("slug") or "")
+            prices = _pm_list(m.get("outcomePrices"))
+            odds = _pm_float(prices[0]) if prices else None
+            change = _pm_float(m.get("oneDayPriceChange"))
+            volume = _pm_float(m.get("volumeNum") or m.get("volume")) or 0.0
+            if (not question or odds is None or change is None
+                    or m.get("sportsMarketType") or m.get("gameStartTime") or _pm_ended(m.get("endDate"))
+                    or _pm_is_sports(f"{question} {slug.replace('-', ' ')}", m.get("tags"))
+                    or volume < PM_MIN_MOVER_VOLUME or abs(change) < PM_MIN_MOVE):
+                continue
+            row = _pm_mover_row(question, slug, odds, change, volume, [])
+            tokens = _pm_list(m.get("clobTokenIds"))
+            row["_token"] = str(tokens[0]) if tokens else None
+            cands.append(row)
+        except Exception as e:
+            logging.warning(f"Polymarket Gamma mover skipped ({m.get('id')}): {e}")
     rows = _pm_pick_movers(cands, limit)
     if rows:
         with ThreadPoolExecutor(max_workers=len(rows)) as ex:
@@ -1813,7 +1849,9 @@ def _pm_history(token: Optional[str], interval: str, fidelity: int, max_points: 
 
 
 def _pm_macro_rows(limit: int) -> Tuple[List[Dict[str, Any]], str]:
-    """Macro dashboard tiles. Raises when every macro tag failed to load."""
+    """Macro dashboard tiles. Raises when every macro tag failed to load, or when they all
+    answered with nothing open: the dashboard always has tiles, so an empty strip means
+    the tags changed, not a quiet day (an outage the card and health check must see)."""
     from concurrent.futures import ThreadPoolExecutor
 
     def by_tag(tag):
@@ -1832,20 +1870,27 @@ def _pm_macro_rows(limit: int) -> Tuple[List[Dict[str, Any]], str]:
     tiles, seen = [], set()
     for events in groups:
         for ev in events if isinstance(events, list) else []:
-            title = (ev.get("title") or "").strip()
-            slug = ev.get("slug") or ""
-            text = f"{title} {slug.replace('-', ' ')} {_pm_tag_text(ev.get('tags'))}"
-            if not title or slug in seen or _pm_is_sports(text, ev.get("tags")):
+            if not isinstance(ev, dict):
                 continue
-            outcomes = _pm_outcomes(ev)
-            if not outcomes:
-                continue
-            seen.add(slug)
-            lead = outcomes[0]
-            tiles.append({"title": title, "slug": slug, "label": lead["label"],
-                          "odds": _pm_round(lead["odds"]), "change": _pm_round(lead["change30"]),
-                          "volume": _pm_float(ev.get("volume")) or 0.0, "spark": [],
-                          "_token": lead["token"]})
+            try:
+                title = str(ev.get("title") or "").strip()
+                slug = str(ev.get("slug") or "")
+                text = f"{title} {slug.replace('-', ' ')} {_pm_tag_text(ev.get('tags'))}"
+                if not title or slug in seen or _pm_is_sports(text, ev.get("tags")):
+                    continue
+                outcomes = _pm_outcomes(ev)
+                if not outcomes:
+                    continue
+                seen.add(slug)
+                lead = outcomes[0]
+                tiles.append({"title": title, "slug": slug, "label": lead["label"],
+                              "odds": _pm_round(lead["odds"]), "change": _pm_round(lead["change30"]),
+                              "volume": _pm_float(ev.get("volume")) or 0.0, "spark": [],
+                              "_token": lead["token"]})
+            except Exception as e:
+                logging.warning(f"Polymarket macro event skipped ({ev.get('slug')}): {e}")
+    if not tiles:
+        raise ValueError("macro tags answered but held no open events")
     tiles = tiles[:limit]
     if tiles:
         with ThreadPoolExecutor(max_workers=len(tiles)) as ex:

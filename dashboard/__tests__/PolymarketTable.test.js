@@ -120,6 +120,9 @@ describe('PolymarketTable', () => {
     expect(within(row).getByText('Chance')).toBeInTheDocument();
     expect(within(row).getByText('62%')).toBeInTheDocument();
     expect(screen.queryByText('📈 Macro')).toBeNull();
+    // an old copy has no `sources`: unknown, so never "Quiet day"
+    expect(screen.getByText('Breaking moves unavailable right now.')).toBeInTheDocument();
+    expect(screen.queryByText(/Quiet day/)).toBeNull();
   });
 
   test('an empty Breaking list says why: quiet day vs. feed down', async () => {

@@ -111,7 +111,7 @@ def _router(overrides=None):
     """A fake requests.get. `overrides` maps a URL prefix to data, or to an Exception to raise."""
     overrides = overrides or {}
 
-    def get(url, params=None, timeout=None):
+    def get(url, params=None, timeout=None, headers=None):
         params = params or {}
         for prefix, val in overrides.items():
             if url.startswith(prefix) and (prefix != f"{f.PM_SITE}/api/biggest-movers" or "category" not in params):
@@ -191,6 +191,45 @@ def test_breaking_falls_back_when_the_feed_changes_shape(router):
     router.side_effect = _router({f"{f.PM_SITE}/api/biggest-movers": {"markets": [{"id": "9", "title": "?"}]}})
     rows, source = f._pm_breaking_rows(10)
     assert source == "gamma" and rows
+
+
+def test_one_bad_row_is_skipped_never_empties_a_list(router):
+    featured = {"events": [None, "junk", {"title": 7, "slug": ["x"]}, *FEATURED["events"]]}
+    movers = {"markets": [None, {"id": "x", "question": "Bad events?", "events": "oops", "currentPrice": 0.5,
+                                 "livePriceChange": 40}, *MOVERS["markets"]]}
+    macro = {**MACRO, "macro-graph": [None, {"title": "Broken", "slug": "broken", "markets": "nope"},
+                                       *MACRO["macro-graph"]]}
+    router.side_effect = _router({f"{f.PM_GAMMA}/events/keyset": featured, f"{f.PM_SITE}/api/biggest-movers": movers})
+    assert [r["title"] for r in f.fetch_polymarket_trending()][:1] == ["Balance of Power: 2026 Midterms"]
+    rows, source = f._pm_breaking_rows(10)
+    assert source == "biggest-movers" and rows[0]["slug"] == "putin-turkmenistan"
+    assert "Bad events?" not in [r["question"] for r in rows]   # no $50k event behind it
+
+    def macro_get(url, params=None, timeout=None, headers=None):
+        if url == f"{f.PM_GAMMA}/events":
+            return _resp(macro.get((params or {}).get("tag_slug"), []))
+        return _router()(url, params, timeout, headers)
+    router.side_effect = macro_get
+    assert f.fetch_polymarket_macro()[0]["title"] == "US recession by end of 2026?"
+
+    router.side_effect = _router({f"{f.PM_GAMMA}/markets": [None, 5, *GAMMA_UP],
+                                  f"{f.PM_SITE}/api/biggest-movers": requests.HTTPError("403")})
+    rows, source = f._pm_breaking_rows(10)
+    assert source == "gamma" and rows[0]["slug"] == "spacexai-rename"
+
+
+def test_macro_tags_with_nothing_open_are_an_outage_not_a_quiet_day(router):
+    # The dashboard always has tiles: answering with no open events means the tags moved.
+    router.side_effect = _router({f"{f.PM_GAMMA}/events": []})
+    assert f._pm_safe(f._pm_macro_rows, 6) == ([], None)
+    assert f.fetch_polymarket_board()["sources"]["macro"] is None
+
+
+def test_requests_carry_the_dashboards_browser_headers(router):
+    f.fetch_polymarket_board()
+    assert router.call_count >= 5
+    for call in router.call_args_list:
+        assert call.kwargs["headers"]["User-Agent"].startswith("Mozilla/5.0")
 
 
 def test_quiet_day_is_empty_but_still_has_a_source(router):

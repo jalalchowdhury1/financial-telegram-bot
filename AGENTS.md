@@ -746,7 +746,11 @@ together. `/api/polymarket?debug=compare` prints both side by side.
    (that order, de-duped by slug), top **6**. Tile = the leading outcome's `label` + odds + a
    ~30-day sparkline from the CLOB (`clob.polymarket.com/prices-history?market=<token>&interval=1m
    &fidelity=720`, ≤40 points). `change` = odds − the first spark point (so the number and the line
-   agree), else Gamma's `oneMonthPriceChange`.
+   agree), else Gamma's `oneMonthPriceChange`. **Tags that answer with no open event at all are
+   an outage** (`sources.macro` null → "Macro odds unavailable", `hasErrors`, health warns),
+   never a quiet day: the dashboard always has tiles. On 11 Oct 4 of the 7 tags were already
+   empty (their 2024–25 events closed) and 5 of the 6 live tiles end by Jan 2027, so expect
+   to re-point `PM_MACRO_TAGS` / `MACRO_TAGS` when Polymarket restocks the dashboard.
 2. **🔥 Trending** = the front page's hand-picked cards: Gamma `/events/keyset?…&order=featuredOrder
    &ascending=true&featured_order=true` (the exact call the homepage makes). It is ~2.5 MB, over
    Next's 2 MB data-cache limit, so the JS side fetches it with `revalidate: 0`. Kept in
@@ -775,11 +779,20 @@ So the card can say "Quiet day: no market moved 5+ points" (empty list + a sourc
 - **Missing lists are filled directly.** A list the Lambda left empty with a null source comes
   straight from Polymarket, and its source reads e.g. `biggest-movers (direct)`. The top-level
   `source` stays `Polymarket API`.
+- **Breaking upgrade.** When the Lambda settled for the Gamma backup (`sources.breaking:
+  'gamma'`; polymarket.com may refuse an AWS address), the route tries the site's own feed from
+  Vercel. If that works, the source reads `biggest-movers (direct)`. If not, the Lambda's Gamma
+  rows stay.
 - **Lambda down** → the direct board, labelled `Polymarket Gamma API (fallback)`. The
   `(fallback)` marker is what health_check's `lambda_primary_path` and `isDegraded` read.
 - **`_meta.hasErrors`** = some list had no source at all. That answer is never edge-cached and
   never stored as last-good.
 - **Total failure** → `serve()` serves the /tmp, then KV, last-good copy.
+- **Every direct call is capped as a whole** (headers + body) by `makeGet`. `fetchJson`'s own
+  timeout stops at the headers, and Next doesn't pre-read a revalidate-0 body. Without the cap,
+  a stalled 2.5 MB keyset body would outlive the function and turn serve()'s answer into a 504.
+- **Both sides skip one bad row instead of failing the whole list.** Python sends the
+  dashboard's browser headers (`_PM_HEADERS` = `DEFAULT_HEADERS`).
 - **Faults:** `?_fail=lambda,gamma,tmplg,lastgood`.
 
 **Card:**

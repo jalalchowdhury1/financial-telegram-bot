@@ -45,7 +45,7 @@ jest.mock('../fetcher', () => ({
         calls.push({ url, opts });
         const u = new URL(url);
         const q = Object.fromEntries(u.searchParams);
-        if (u.pathname === '/events/keyset') return FEATURED;
+        if (u.pathname === '/events/keyset') return mode.keyset === 'hang' ? new Promise(() => {}) : FEATURED;
         if (u.host === 'polymarket.com' && u.pathname === '/api/biggest-movers') {
             if (mode.movers === 'down') throw new Error('Fetch failed: 403');
             return q.category === 'sports' ? { markets: [{ id: 's1' }] } : MOVERS;
@@ -53,6 +53,7 @@ jest.mock('../fetcher', () => ({
         if (u.pathname === '/markets') return GAMMA[q.ascending];
         if (u.pathname === '/events') {
             if (mode.macro === 'down') throw new Error('Fetch failed: 500');
+            if (mode.macro === 'empty') return [];
             return MACRO[q.tag_slug] || [];
         }
         if (u.pathname === '/prices-history') {
@@ -164,6 +165,52 @@ describe('/api/polymarket', () => {
         expect(b._meta.hasErrors).toBe(true);
         expect(b._meta.messages).toContain('no source answered for: macro');
         expect(require('../cdn').isDegraded(b)).toBe(true);
+    });
+
+    test('macro tags that answer with nothing open are an outage, not a quiet day', async () => {
+        mode.macro = 'empty';
+        const { b } = await call('?_fail=lambda,tmplg');
+        expect(b.macro).toEqual([]);
+        expect(b.sources.macro).toBeNull();
+        expect(b._meta.hasErrors).toBe(true);
+        expect(b._meta.messages.join(' ')).toMatch(/macro tags answered but held no open events/);
+    });
+
+    test('a Lambda that settled for the Gamma backup gets the site feed from here', async () => {
+        lambdaAnswers({ ...LAMBDA_BOARD, sources: { ...LAMBDA_BOARD.sources, breaking: 'gamma' } });
+        const { b } = await call();
+        expect(b.sources.breaking).toBe('biggest-movers (direct)');
+        expect(b.breaking.map((m) => m.question)).toEqual(['Will Putin meet Lukashenko in Turkmenistan?']);
+        expect(calls.every((c) => c.url.startsWith('https://polymarket.com/api/biggest-movers'))).toBe(true);
+        expect(b.source).toBe('Polymarket API');
+        expect(b._meta.hasErrors).toBe(false);
+    });
+
+    test('...and keeps the Lambda Gamma rows when the site refuses this side too', async () => {
+        mode.movers = 'down';
+        lambdaAnswers({ ...LAMBDA_BOARD, sources: { ...LAMBDA_BOARD.sources, breaking: 'gamma' } });
+        const { b } = await call();
+        expect(b.sources.breaking).toBe('gamma');
+        expect(b.breaking[0].question).toBe('From the Lambda');
+        expect(b._meta.messages.join(' ')).toMatch(/biggest-movers \(direct\): Fetch failed: 403/);
+        expect(b._meta.hasErrors).toBe(false);
+    });
+
+    test('a feed whose body never finishes cannot hang the route', async () => {
+        jest.useFakeTimers();
+        try {
+            mode.keyset = 'hang';
+            const pending = call('?_fail=lambda,tmplg');
+            await jest.advanceTimersByTimeAsync(15000);   // the keyset's whole-call cap
+            const { res, b } = await pending;
+            expect(res.status).toBe(200);
+            expect(b.trending).toEqual([]);
+            expect(b.sources.trending).toBeNull();
+            expect(b._meta.messages.join(' ')).toMatch(/trending: timed out after 15000ms/);
+            expect(b.breaking).toHaveLength(1);   // the other lists still came through
+        } finally {
+            jest.useRealTimers();
+        }
     });
 
     test('every tier off: an empty board labelled Unavailable', async () => {
