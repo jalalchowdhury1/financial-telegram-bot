@@ -197,7 +197,8 @@ auto-deploy is OFF (`dashboard/vercel.json`: `git.deploymentEnabled: false`, nev
 the account shares 100 deploys/day across all projects, and every bot-only push used to cost one.
 `.github/workflows/deploy-dashboard.yml` calls a Vercel deploy hook (secret `VERCEL_DEPLOY_HOOK`)
 90 s after a dashboard push (bursts collapse into one deploy) and after a successful bankruptcies
-rebake. Need a deploy without a dashboard change: Actions → Deploy dashboard → Run workflow.
+or long-history rebake (never after a PR dry run). A push that changes ONLY `dashboard/scripts/`
+or `__tests__/` files deploys nothing (11 Oct 2026): neither reaches the site. Need a deploy without a dashboard change: Actions → Deploy dashboard → Run workflow.
 No PR preview deploys any more. Tests: from `dashboard/`,
 `npm test` (Jest) and `npm run build` must pass before merge; `npm run test:watch` for
 watch mode; `--testPathPattern <Name>` filters. Next.js 13.5.6, React 18 (App Router).

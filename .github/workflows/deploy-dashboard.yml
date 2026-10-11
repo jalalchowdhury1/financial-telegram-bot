@@ -19,7 +19,12 @@ name: Deploy dashboard
 on:
   push:
     branches: [main]
-    paths: ['dashboard/**']
+    # Tests and the offline bake scripts never reach the site: a push of only those costs
+    # no deploy (their output files, in public/ and lib/data/, still deploy).
+    paths:
+      - 'dashboard/**'
+      - '!dashboard/scripts/**'
+      - '!dashboard/**/__tests__/**'
   workflow_run:
     workflows: ['Rebake Bankruptcies History', 'Rebake Long History']
     types: [completed]
