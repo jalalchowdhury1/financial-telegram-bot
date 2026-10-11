@@ -19,11 +19,13 @@ name: Rebake Long History
 # still draws a full chart for ~2 years and next quarter retries it; the PR body lists
 # it), or nothing new to ship (a same-day re-run). 🟡, still green: a chart would show a
 # gap within a year (the bake's RUNWAY LOW line). 🔴 and red: the bake died or baked
-# nothing, or its PR could not be merged. GitHub blips get three tries first.
+# nothing, or its PR could not be merged. GitHub blips get three tries first, and a PR
+# that main moved past is re-cut on the newest main (branch protection is strict).
 # tests/test_rebake_long_history_workflow.py runs the notify step for every one of those.
 #
 # A PR that changes this file or the bake script dry-runs the bake here: proof the
-# sources answer from GitHub's runners, nothing written.
+# sources answer from GitHub's runners, nothing written. So does a dispatch on any branch
+# but main: only main ships, or the self-merge would carry that branch's commits into main.
 
 on:
   schedule:
@@ -46,7 +48,7 @@ concurrency:
 jobs:
   rebake:
     runs-on: ubuntu-latest
-    timeout-minutes: 120       # bake ≤ 50 min (its own cap), + CI wait up to 40 min, + retries
+    timeout-minutes: 150       # bake ≤ 75 min (its own cap), + CI wait up to 40 min, + re-cuts and retries
     steps:
       - uses: actions/checkout@v6
 
@@ -57,16 +59,18 @@ jobs:
       - name: Install deps
         run: pip install 'xlrd==2.0.1'
 
-      - name: Dry run (pull request — nothing written)
-        if: github.event_name == 'pull_request'
+      - name: Dry run (pull request or another branch — nothing written)
+        if: github.ref != 'refs/heads/main'
         working-directory: dashboard
         run: python scripts/bake_long_history.py --dry --retry-after=120
 
       - name: Re-bake
         id: bake
-        if: github.event_name != 'pull_request'
+        if: github.ref == 'refs/heads/main'
         continue-on-error: true      # some stats refused ≠ nothing to ship; handled below
-        timeout-minutes: 50          # ~1 min normally; a hung source must leave time to notify
+        # ~2 min normally. CNBC hanging through both passes (3 symbols × 3 tries × 90 s, the
+        # 20-min wait, again) takes ~50: the cap leaves room for that and still notifies.
+        timeout-minutes: 75
         working-directory: dashboard
         run: |
           set -o pipefail
@@ -77,13 +81,13 @@ jobs:
       # rebake-bankruptcies.yml: a failing assignment under bash -e used to kill the
       # step before the message was set, and silence read as success.
       - name: Open a PR, self-merge on green CI, notify only when the owner must act
-        if: always() && github.event_name != 'pull_request'
+        if: always() && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          COMPARE_URL: ${{ github.server_url }}/${{ github.repository }}/compare/rebake/long-history-${{ github.run_id }}?expand=1
         run: |
           set -uo pipefail
           LOG="$RUNNER_TEMP/bake.log"
@@ -108,70 +112,119 @@ jobs:
             fi
           else
             N=$(python -c "import json;print(len(json.load(open('dashboard/lib/data/longHistoryIndex.json'))['keys']))" 2>/dev/null || echo '?')
-            BRANCH="rebake/long-history-${{ github.run_id }}"
-            git config user.name "github-actions"
-            git config user.email "actions@github.com"
-            git checkout -b "$BRANCH"
-            git add dashboard/public/history dashboard/lib/data/longHistoryIndex.json
-            git commit -m "chore(data): refresh baked long history (${N} stats)"
-            # Every GitHub call below gets three tries: a blip must not strand a good bake.
-            PUSHED=""; URL=""; MERGED=""; CHECKS=""
-            for _ in 1 2 3; do
-              if PUSH_OUT=$(git push origin "$BRANCH" 2>&1); then PUSHED=1; break; fi
-              printf '%s\n' "$PUSH_OUT"
-              sleep 15
-            done
-            if [ -z "$PUSHED" ]; then
-              MSG="🔴 <b>Long-history rebake could not push its branch</b>; main untouched. Log: ${RUN_URL}"
-            else
+            FILES=(dashboard/public/history dashboard/lib/data/longHistoryIndex.json)
+            STEM="rebake/long-history-${{ github.run_id }}-${{ github.run_attempt }}"   # a re-run cuts its own branch
+            BRANCH=$STEM
+            commit_bake() {
+              git config user.name "github-actions" && git config user.email "actions@github.com" &&
+                git checkout -q -b "$BRANCH" && git add "${FILES[@]}" &&
+                git commit -qm "chore(data): refresh baked long history (${N} stats)" &&
+                BAKED=$(git rev-parse HEAD) && return 0
+              WHY="could not commit the bake"
+              return 1
+            }
+            # Strict branch protection refuses a PR once main moves past it (~50 commits on a
+            # busy day). GitHub's token cannot merge main into the old branch when main brought
+            # a workflow change, so the bake's commit is re-cut on the newest main instead.
+            recut() {
+              if ! git fetch -q --depth=1 origin main; then
+                WHY="main moved past it, and fetching main failed"
+                return 1
+              fi
+              if ! git diff --quiet "${BAKED}~1" FETCH_HEAD -- "${FILES[@]}"; then
+                WHY="main moved past it and changed the baked files too"   # never overwrite those
+                return 1
+              fi
+              BRANCH="${STEM}-${CUT}"
+              git checkout -q -f -B "$BRANCH" FETCH_HEAD && git checkout "$BAKED" -- "${FILES[@]}" &&
+                git commit -qm "chore(data): refresh baked long history (${N} stats)" && return 0
+              WHY="main moved past it, and the re-cut on the newest main failed"
+              return 1
+            }
+            # Every GitHub call gets three tries: a blip must not strand a good bake.
+            push_branch() {
+              local out
               for _ in 1 2 3; do
-                if PR_OUT=$(gh pr create --base main --head "$BRANCH" \
-                    --title "chore(data): refresh baked long history" \
-                    --body "Quarterly re-bake of the popovers' long history (${N} stats). ${FAILED:-Every stat refreshed.} A stat that failed keeps its old file, which still draws a full chart for ~2 years. The bake refuses any stat that disagrees with the sheet, starts later, or shrinks." 2>&1); then
-                  URL=$(printf '%s\n' "$PR_OUT" | tail -1)
-                  break
-                fi
-                printf '%s\n' "$PR_OUT"
-                URL=$(gh pr view "$BRANCH" --json url --jq .url 2>/dev/null || true)   # opened despite the error?
-                if [ -n "$URL" ]; then break; fi
+                if out=$(git push origin "$BRANCH" 2>&1); then return 0; fi
+                printf '%s\n' "$out"
                 sleep 15
               done
-              if [ -z "$URL" ]; then
-                MSG="🔴 <b>Long-history rebake pushed ${BRANCH} but could not open the PR</b>. Open it: ${COMPARE_URL}"
-              else
-                for _ in 1 2 3; do
-                  if gh workflow run ci.yml --ref "$BRANCH"; then
-                    for _ in $(seq 1 120); do      # up to ~40 min
-                      sleep 20
-                      CHECKS=$(gh pr checks "$BRANCH" --required 2>/dev/null || true)
-                      if printf '%s\n' "$CHECKS" | grep -qE $'\t(fail|cancel)'; then break; fi
-                      if printf '%s\n' "$CHECKS" | grep -qE $'^backend-tests\tpass' &&
-                         printf '%s\n' "$CHECKS" | grep -qE $'^dashboard-tests\tpass'; then
-                        for _ in 1 2 3; do       # a just-green PR can briefly read as not mergeable
-                          gh pr merge "$BRANCH" --squash --delete-branch || true
-                          if [ "$(gh pr view "$URL" --json state --jq .state 2>/dev/null || true)" = MERGED ]; then
-                            MERGED=1
-                            break
-                          fi
-                          sleep 15
-                        done
-                        break
-                      fi
-                    done
-                    break
-                  fi
-                  sleep 15
-                done
-                if [ -z "$MERGED" ]; then
-                  printf '%s\n' "${CHECKS:-no checks seen}"
-                  MSG="🔴 <b>Long-history rebake: PR opened but NOT merged</b> (CI red, or not green within 40 min). Review: ${URL}"
-                else
-                  OK=1
-                  if [ -n "$LOW" ]; then
-                    MSG="🟡 <b>Long-history rebake merged, but a chart needs a new source within a year</b>: ${LOW#RUNWAY LOW: }. Log: ${RUN_URL}"
-                  fi
+              WHY="could not push ${BRANCH}"
+              return 1
+            }
+            open_pr() {
+              local out found
+              for _ in 1 2 3; do
+                if out=$(gh pr create --base main --head "$BRANCH" \
+                    --title "chore(data): refresh baked long history" \
+                    --body "Quarterly re-bake of the popovers' long history (${N} stats). ${FAILED:-Every stat refreshed.} A stat that failed keeps its old file, which still draws a full chart for ~2 years. The bake refuses any stat that disagrees with the sheet, starts later, or shrinks." 2>&1); then
+                  URL=$(printf '%s\n' "$out" | tail -1)
+                  return 0
                 fi
+                printf '%s\n' "$out"
+                found=$(gh pr view "$BRANCH" --json url --jq .url 2>/dev/null || true)   # opened despite the error?
+                if [ -n "$found" ]; then URL=$found; return 0; fi
+                sleep 15
+              done
+              WHY="pushed ${BRANCH}, but GitHub would not open its PR: ${REPO_URL}/compare/${BRANCH}?expand=1"
+              return 1
+            }
+            # A GITHUB_TOKEN PR starts no CI, so dispatch it, then merge on green. Returns 2 when
+            # main moved past the PR.
+            ci_then_merge() {
+              local tries=1
+              until gh workflow run ci.yml --ref "$BRANCH"; do
+                if [ "$tries" -ge 3 ]; then WHY="CI would not start"; return 1; fi
+                tries=$((tries + 1))
+                sleep 15
+              done
+              tries=0
+              while [ "$POLLS" -gt 0 ]; do
+                POLLS=$((POLLS - 1))
+                sleep 20
+                CHECKS=$(gh pr checks "$BRANCH" --required 2>/dev/null || true)
+                if printf '%s\n' "$CHECKS" | grep -qE $'\t(fail|cancel)'; then WHY="CI failed"; return 1; fi
+                if ! { printf '%s\n' "$CHECKS" | grep -qE $'^backend-tests\tpass' &&
+                       printf '%s\n' "$CHECKS" | grep -qE $'^dashboard-tests\tpass'; }; then continue; fi
+                if gh pr merge "$BRANCH" --squash --delete-branch; then return 0; fi
+                if [ "$(gh pr view "$URL" --json state --jq .state 2>/dev/null || true)" = MERGED ]; then return 0; fi
+                case "$(gh pr view "$URL" --json mergeStateStatus --jq .mergeStateStatus 2>/dev/null || true)" in
+                  BEHIND|DIRTY) return 2 ;;
+                esac
+                tries=$((tries + 1))      # a just-green PR can briefly read as not mergeable
+                if [ "$tries" -ge 3 ]; then WHY="GitHub refused the merge 3 times"; return 1; fi
+              done
+              WHY="CI not green within 40 min"
+              return 1
+            }
+
+            POLLS=120          # 20 s apart: ~40 min of CI wait, shared by every cut
+            URL=""; OLD=""; WHY=""; MERGED=""; CHECKS=""; BAKED=""
+            for CUT in 1 2 3; do
+              if [ "$CUT" = 1 ]; then commit_bake || break; else recut || break; fi
+              push_branch || break
+              open_pr || break
+              if [ -n "$OLD" ]; then
+                gh pr close "$OLD" --delete-branch --comment "Superseded by ${URL}: main moved past this PR, so the bake was re-cut on the newest main." || true
               fi
+              RC=0
+              ci_then_merge || RC=$?
+              if [ "$RC" = 0 ]; then MERGED=1; break; fi
+              if [ "$RC" != 2 ]; then break; fi
+              OLD=$URL
+              WHY="main kept moving past it"
+            done
+
+            if [ -n "$MERGED" ]; then
+              OK=1
+              if [ -n "$LOW" ]; then
+                MSG="🟡 <b>Long-history rebake merged, but a chart needs a new source within a year</b>: ${LOW#RUNWAY LOW: }. Log: ${RUN_URL}"
+              fi
+            elif [ -z "$URL" ]; then
+              MSG="🔴 <b>Long-history rebake opened no PR</b>: ${WHY}. Main untouched. Log: ${RUN_URL}"
+            else
+              printf '%s\n' "${CHECKS:-no checks seen}"
+              MSG="🔴 <b>Long-history rebake: PR opened but NOT merged</b> (${WHY}). Review: ${URL}"
             fi
           fi
 

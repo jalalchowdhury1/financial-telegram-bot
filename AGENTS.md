@@ -197,7 +197,11 @@ auto-deploy is OFF (`dashboard/vercel.json`: `git.deploymentEnabled: false`, nev
 the account shares 100 deploys/day across all projects, and every bot-only push used to cost one.
 `.github/workflows/deploy-dashboard.yml` calls a Vercel deploy hook (secret `VERCEL_DEPLOY_HOOK`)
 90 s after a dashboard push (bursts collapse into one deploy) and after a successful bankruptcies
-or long-history rebake (never after a PR dry run). A push that changes ONLY `dashboard/scripts/`
+or long-history rebake on `main` that moved main (never after a PR or other-branch dry run, nor
+after a green rebake that merged nothing: for a workflow_run, `github.sha` is main's newest
+commit, 11 Oct 2026). Its concurrency group sits on the deploy JOB: at workflow level it was
+taken before the job's `if`, so a run that deployed nothing cancelled a push's deploy waiting
+out its 90 s. A push that changes ONLY `dashboard/scripts/`
 or `__tests__/` files deploys nothing (11 Oct 2026): neither reaches the site. Need a deploy without a dashboard change: Actions → Deploy dashboard → Run workflow.
 No PR preview deploys any more. Tests: from `dashboard/`,
 `npm test` (Jest) and `npm run build` must pass before merge; `npm run test:watch` for
@@ -472,17 +476,35 @@ Rollback: tag `known-good-pre-history-2026-10-10` (= b9fd5d8; the tag message ha
   (`SHEET_METRICS.cnnFearGreed`, col 66, from 2026-09-26). The VIX-proxy F&G gets no chart.
 - **Re-baked automatically every quarter** (`.github/workflows/rebake-long-history.yml`, 15
   Jan/Apr/Jul/Oct 12:00 UTC): bake → PR → CI → self-merge on green (owner OK'd 2026-10-10)
-  → `deploy-dashboard.yml` via workflow_run. Silent when every stat refreshed; one Telegram
-  line when a stat kept its old bake (🟡) or nothing merged (🔴, and the run ends red so no
-  deploy is spent). Why it matters: `/api/history` `series` holds 730 days, so a bake left
-  alone for ~2 years (the first one would hit it ~2028-10) leaves a hole between the bake's
-  last day and the sheet window. A PR touching the workflow or the bake script dry-runs the
-  bake on GitHub's runners. A stat whose source fails is retried once 20 min later
-  (`--retry-after=1200`; CNBC's backend 503s DXY/gold for minutes at a time, and each CNBC
-  series is fetched once per run). By hand: `cd dashboard && uv run scripts/bake_long_history.py
-  [--dry] [key …]`, or Actions → Rebake Long History → Run workflow. A test
-  (`longHistory.test.js`) checks every index row decodes, matches its file and ends after
-  2026-03-12.
+  → `deploy-dashboard.yml` via workflow_run (only when main moved). **It alerts only when the
+  owner must act** (his ask, 2026-10-11), and the run is red exactly then: 🔴 = the bake died
+  before its summary (nothing shipped), baked nothing at all, or its PR could not be merged.
+  Silent and green = merged, even if a stat kept its old bake (the PR body lists it; that file
+  still draws ~2 years of chart and next quarter retries it), or nothing new to ship (a
+  same-day re-run). 🟡, still green = the bake's last line `RUNWAY LOW`: a stat whose chart
+  would show a gap within a year (file's last day + 730 < today + 365), i.e. a file kept too
+  long or a source that still answers but stopped updating. Push, PR create, CI dispatch and
+  merge get 3 tries; `NOTHING BAKED` marks a run where every stat failed. **main's branch
+  protection is strict** (a PR must be up to date to merge) and main takes ~50 commits on a
+  busy day, so a PR that main moved past is re-cut on the newest main as a fresh PR (up to 3
+  cuts, the old PR closed as superseded): GitHub's token cannot merge main into the old branch
+  when main brought a workflow change. It never overwrites baked files that changed on main
+  meanwhile (🔴 instead). Branches are `rebake/long-history-<run id>-<attempt>[-<cut>]`, so a
+  Re-run cuts its own. Only `main` ships: a dispatch on another branch is a dry run (it would
+  otherwise self-merge that branch's commits). The bake step is capped at 75 min. Why it matters:
+  `/api/history` `series` holds 730 days, so a bake left alone for ~2 years (the first one
+  would hit it ~2028-10) leaves a hole between the bake's last day and the sheet window. A PR
+  touching the workflow or the bake script dry-runs the bake on GitHub's runners (a failing
+  PR run is not a `ci_health` failure). A stat whose source fails is retried once 20 min
+  later (`--retry-after=1200`). **CNBC's chart API caches each answer per exact URL, errors
+  too, for hours**: `.DXY` `10Y`/`ALL` replayed a 503 from 23:42 until past 09:42 the next
+  day and sank all four of PR #61's dry runs, so every bake try adds a unique `&_=` and
+  reaches the backend. By hand: `cd dashboard && uv run scripts/bake_long_history.py
+  [--dry] [key …]`, or Actions → Rebake Long History → Run workflow. Tests:
+  `longHistory.test.js` checks every index row decodes, matches its file and ends after
+  2026-03-12; `tests/test_rebake_long_history_workflow.py` runs the notify step against stub
+  git/gh/curl for every way a run can end; `tests/test_bake_long_history.py` covers the
+  cache-buster, the runway rule and one bad stat not ending the run.
 - **Freshness:** unchanged. Baked files are static history; the newest point on every chart
   is still the sheet's, which `/api/freshness` already grades.
 
@@ -665,7 +687,9 @@ computes them from daily prices with the sheets' exact logic; the sheets are bac
   Harmless for I2, but don't validate against those rows.
 - **Prices:** Nasdaq historical (3 y, keyless) → CNBC daily bars (`cnbcHistory`, ~500 raw bars,
   equal to Nasdaq's; CNBC's chart cache 503s per symbol+range — XLP/XLF on `3M` 2026-10-11,
-  SPY on `1Y` — so an empty answer tries `1Y` then `6M` before failing) → Yahoo `adjusted:false` (blocked from Vercel when 17 calls land at once,
+  SPY on `1Y` — so an empty answer tries `1Y` then `6M` before failing; that cache holds an
+  error per exact URL for hours and a unique `&_=` param gets past it, as the long-history
+  bake does — not used here yet) → Yahoo `adjusted:false` (blocked from Vercel when 17 calls land at once,
   seen 2026-10-10; kept as the last try) per ticker, plus ONE
   CNBC quote call for all 17 tickers that adds today's session as a bar (the SPY RSI rule).
   All or none: if any ticker in a signal lacks today's quote, the plain closes are used, so
@@ -1779,7 +1803,9 @@ severity. It is **never-throw** — a broken probe becomes a finding, not a cras
   auto-redispatches a **duplicate report** (happened 2026-08-07T00:02Z; the same bug class
   was fixed once before in PR #5 and reintroduced by the GHA cross-check).
 - **`known_issue_config_urls`**, **`secret_leak`** (gitleaks), **`ci_health`** (latest run
-  per **active** workflow) — see the table below.
+  per **active** workflow; a FAILING pull-request run is skipped, it judges the PR, not main —
+  PR #61's failed dry runs once read as "Rebake Long History is failing", 2026-10-11) — see
+  the table below.
 
 ### When the owner pastes you a health alert, act on it like this
 Each finding has an `id`. Map id → meaning → fix:
@@ -1793,7 +1819,7 @@ Each finding has an `id`. Map id → meaning → fix:
 | `lambda_primary_path` | The dashboard is serving correct numbers **from its fallbacks** | `evidence.fallback_routes` names which routes fell back; `evidence.lambda_routes` names which the Lambda DID serve. **If `lambda_routes` is non-empty, the Lambda is reachable and it is NOT the invoke grant** — that route's handler errored or ran past API Gateway's **30 s integration cap** (gateway answers 503, Vercel falls back). Check CloudWatch: the route's `Trigger: HTTP` line → its `REPORT` Duration (>30000 ms = timeout) and upstream failures logged between. Seen 2026-09-01: `market-extra` at 49–59 s from a serial 25-call waterfall; fixed by running its provider chains concurrently under `MARKET_EXTRA_DEADLINE_SECONDS` (22 s). **If `lambda_routes` is empty**, the hop itself is down: check the Lambda's **resource policy** for an `apigateway.amazonaws.com` invoke grant (§2 "Wiring a new API Gateway"), that Vercel's `LAMBDA_URL` still points at the gateway base (NOT the dead Function URL), and recent CloudWatch errors. Nothing looks broken on the page — that is exactly why this check exists. |
 | `known_issue_config_urls` | `bot/config.py` `URLS` missing a required key | Add the key — the URLs live in `dashboard/lib/constants.js`. |
 | `secret_leak` | gitleaks found a credential in the repo | **Rotate it immediately**, then remove the literal (env vars only). |
-| `ci_health` | An **active** workflow's **latest** run failed | Open that run, read the failure, fix + PR. Historical/fixed failures and deleted workflows are already excluded. |
+| `ci_health` | An **active** workflow's **latest** run failed | Open that run, read the failure, fix + PR. Historical/fixed failures, deleted workflows and failing pull-request runs are already excluded. A quarterly job (Rebake Long History) stays flagged until its next run: after the fix, dispatch it once. |
 
 ### Conventions
 - Severity `ok` < `warn` < `critical`; a scheduled alert lists **only non-ok** findings. A

@@ -126,3 +126,26 @@ def test_deploy_dashboard_deploys_a_rebake_only_when_main_moved():
     cond = _load("deploy-dashboard.yml")["jobs"]["deploy"]["if"]
     assert "github.event.workflow_run.conclusion == 'success'" in cond
     assert "github.sha != github.event.workflow_run.head_sha" in cond
+    # a dispatch on another branch is a dry run (rebake-long-history.yml ships only from main)
+    assert "github.event.workflow_run.head_branch == 'main'" in cond
+
+
+def test_a_skipped_deploy_cannot_cancel_a_waiting_one():
+    """A workflow-level concurrency group is taken before the job's `if` runs, so a rebake
+    that shipped nothing (deploy skipped) cancelled a dashboard push's deploy during its 90 s
+    wait, and that push never deployed. Job-level, only a deploy that will run takes it."""
+    wf = _load("deploy-dashboard.yml")
+    assert "concurrency" not in wf
+    assert wf["jobs"]["deploy"]["concurrency"] == {"group": "deploy-dashboard", "cancel-in-progress": True}
+
+
+def test_rebake_long_history_ships_only_from_main():
+    """Dispatched on another branch it would self-merge that branch's own commits into main,
+    so there it is a dry run, like on a pull request."""
+    steps = {s.get("name", ""): s for s in _load("rebake-long-history.yml")["jobs"]["rebake"]["steps"]}
+    dry = next(s for n, s in steps.items() if n.startswith("Dry run"))
+    bake = steps["Re-bake"]
+    ship = next(s for s in steps.values() if "gh pr create" in (s.get("run") or ""))
+    assert dry["if"] == "github.ref != 'refs/heads/main'"
+    assert bake["if"] == "github.ref == 'refs/heads/main'"
+    assert ship["if"] == "always() && github.ref == 'refs/heads/main'"

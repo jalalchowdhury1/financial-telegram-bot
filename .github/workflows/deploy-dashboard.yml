@@ -32,17 +32,19 @@ on:
 
 permissions: {}
 
-concurrency:
-  group: deploy-dashboard
-  cancel-in-progress: true
-
 jobs:
   deploy:
-    # A rebake's pull_request dry run is a green run too, but ships nothing: never deploy it.
-    # Nor a green rebake that merged nothing (rebake-long-history.yml with nothing new): for
-    # a workflow_run, github.sha is main's newest commit, so it equals the rebake's own
-    # head_sha unless that rebake merged (or someone pushed meanwhile, deployed on its own).
-    if: github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event != 'pull_request' && github.sha != github.event.workflow_run.head_sha)
+    # A rebake run deploys only when it shipped something: never its pull_request dry run,
+    # nor a dry run on another branch, nor a green run that merged nothing (nothing new).
+    # For a workflow_run, github.sha is main's newest commit when the rebake finished, so it
+    # differs from the rebake's head_sha only when main moved during the run: the rebake's
+    # own merge or, rarely, someone else's push (then one deploy too many).
+    if: github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event != 'pull_request' && github.event.workflow_run.head_branch == 'main' && github.sha != github.event.workflow_run.head_sha)
+    # On the job, not the workflow: a workflow-level group is taken before `if` runs, so a
+    # run that deploys nothing used to cancel a push's deploy waiting out its 90 s.
+    concurrency:
+      group: deploy-dashboard
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
