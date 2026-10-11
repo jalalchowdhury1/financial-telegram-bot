@@ -39,7 +39,7 @@ describe('RubberBandRadar', () => {
         expect(screen.getByTestId('rb-dial-slow').parentElement).toHaveTextContent('+0.63%');   // slow excess
         expect(screen.getByText('C8-T')).toBeInTheDocument();
         expect(screen.getByText(/within 10 points/)).toBeInTheDocument();
-        expect(screen.getByText(/2026-09-01/)).toBeInTheDocument();
+        expect(screen.getByText('Tue, Sep 1')).toBeInTheDocument();   // as-of, in words
         expect(screen.getByTestId('rb-dial-fast')).toHaveAttribute('data-colour', 'amber');
         expect(screen.getByTestId('rb-dial-machines')).toHaveAttribute('data-colour', 'amber');
     });
@@ -92,7 +92,7 @@ describe('RubberBandRadar', () => {
         const plot = chart.parentElement;
         expect(plot.classList.contains('chart-plot')).toBe(true);
         const labels = [...plot.querySelectorAll('.axis-layer .axis-lbl')].map((l) => l.textContent);
-        expect(labels).toEqual(expect.arrayContaining(['2026-01-01', '2026-04-30', '0.0%']));
+        expect(labels).toEqual(expect.arrayContaining(['2026', '0.0%', '▲ dips pay', '▼ dips lose']));
         expect(screen.getByText(/slow \(30 dips\)/)).toHaveClass('band-legend');
     });
 });

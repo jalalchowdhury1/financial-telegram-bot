@@ -1,9 +1,8 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useId, useState } from 'react';
 import ErrorBoundary from './ErrorBoundary';
 import Skeleton from './Skeleton';
-import { DIAL_ORDER, dialLabel } from '../lib/rubberBand';
-import { gutterFor, spreadLabels } from '../lib/chartAxis';
+import { gutterFor, spreadLabels, yearTicks } from '../lib/chartAxis';
 import useElementWidth from './useElementWidth';
 import AxisLabels from './AxisLabels';
 
@@ -25,12 +24,48 @@ import AxisLabels from './AxisLabels';
  *   Trigger: slow/rip red for 1 close, or machines red 5 closes in a row → GO DEFENSIVE (half the
  *   book to cash, hourly nag until "done"); 10 green closes with slow > +0.2% → RE-ENTER. Its state
  *   arrives as snapshot.defensive (stamped by the trigger after every evaluation).
+ *
+ * Layout (10 Oct 2026 redesign — "make it intuitive"): one big answer up top (stay invested /
+ * go defensive), the three TRIPWIRES as plain questions each with a "which side of zero" gauge
+ * and a fuse (how close to the alarm), the two look-only dials as small chips, the payoff chart,
+ * and the trigger as a 4-step rail with "you are here". Styles: `.rb-*` in app/globals.css.
  */
 
-const COLOUR_VAR = { green: 'var(--green)', amber: 'var(--orange)', red: 'var(--red)', grey: 'var(--text-muted)' };
-const COLOUR_BG = { green: 'var(--green-bg)', amber: 'var(--orange-bg)', red: 'var(--red-bg)', grey: 'rgba(148,163,184,0.12)' };
-const COLOUR_WORD = { green: 'OK', amber: 'WATCH', red: 'STOP', grey: 'NO DATA' };
+const COLOUR_VAR = { green: 'var(--green)', amber: 'var(--orange)', red: 'var(--red)', blue: 'var(--blue)', grey: 'var(--text-muted)' };
+const COLOUR_BG = { green: 'var(--green-bg)', amber: 'var(--orange-bg)', red: 'var(--red-bg)', blue: 'var(--blue-bg)', grey: 'rgba(148,163,184,0.12)' };
+const COLOUR_EDGE = { green: 'rgba(34,197,94,0.45)', amber: 'rgba(245,158,11,0.5)', red: 'rgba(239,68,68,0.55)', blue: 'rgba(59,130,246,0.5)', grey: 'rgba(148,163,184,0.3)' };
+const COLOUR_WORD = { green: 'All clear', amber: 'Watch', red: 'Stop', grey: 'No data' };
 const BADGE = { green: 'badge-green', amber: 'badge-yellow', red: 'badge-red', grey: 'badge-blue' };
+const STATUS = { green: 'Safe', amber: 'Watch', red: 'Alarm', grey: 'No data' };
+
+// The three dials that can fire the trigger, then the two that are only ever shown.
+const TRIPWIRES = ['slow', 'rip', 'machines'];
+const LOOK_ONLY = ['fast', 'age'];
+const PLAIN = {
+    slow: { q: 'Do dips bounce back?', hint: 'Buying QQQ after a sharp drop' },
+    rip: { q: 'Do rallies cool off?', hint: 'Selling after QQQ runs hot' },
+    machines: { q: 'Are the machines healthy?', hint: 'Each Composer backtest vs its limits' },
+    fast: { q: 'Early warning', hint: 'Same dip test, last 20 dips only' },
+    age: { q: 'Evidence age', hint: 'How long the last 30 dips took' },
+};
+const statusWord = (k, colour) => {
+    if (k === 'age') return { green: 'Fresh', amber: 'Getting old', red: 'Old', grey: 'No data' }[colour];
+    return STATUS[colour] || STATUS.grey;
+};
+
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const DAY_FMT = { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric' };
+const dayName = (iso) => {
+    const d = new Date(`${iso}T12:00:00Z`);
+    return Number.isNaN(d.getTime()) ? String(iso || '—') : d.toLocaleDateString('en-US', DAY_FMT);
+};
+/** The engine runs every weekday evening: the next run after `iso` skips Sat/Sun. */
+const nextRun = (iso) => {
+    const d = new Date(`${iso}T12:00:00Z`);
+    if (Number.isNaN(d.getTime())) return null;
+    do { d.setUTCDate(d.getUTCDate() + 1); } while (d.getUTCDay() === 0 || d.getUTCDay() === 6);
+    return d.toLocaleDateString('en-US', DAY_FMT);
+};
 
 const signed = (v, d = 2) => (v == null || !Number.isFinite(v) ? '—' : `${v > 0 ? '+' : ''}${v.toFixed(d)}%`);
 const pct0 = (v) => (v == null || !Number.isFinite(v) ? '—' : `${Math.round(v * 100)}%`);
@@ -108,220 +143,389 @@ const EXPLAIN = {
     },
 };
 
-function headline(key, d) {
-    if (d.colour === 'grey') return { big: '—', sub: d.reason || 'not enough data' };
-    switch (key) {
-        case 'slow':
-        case 'fast':
-            return { big: signed(d.excess_pct), sub: `${d.n} dips · hit ${pct0(d.hit)} · neg ${d.red_days ?? 0}/${d.window ?? 60}d` };
-        case 'age':
-            return { big: `${num(d.years, 1)}y`, sub: `${d.events_last_12m ?? '—'} dips last 12m · amber >${d.amber_years}y` };
-        case 'rip':
-            return { big: signed(d.excess_pct), sub: `${d.n} rips · fade ${pct0(1 - (d.hit ?? 0))} · hot ${d.hot_days ?? 0}/${d.window ?? 60}d` };
-        case 'machines': {
-            const worst = (d.legs || []).filter((l) => l.dd_pct != null && l.role !== 'hedge').sort((a, b) => a.dd_pct - b.dd_pct)[0];
-            return { big: worst ? `${worst.name} ${signed(worst.dd_pct, 0)}` : '—', sub: d.reasons?.length ? d.reasons[0] : 'all legs inside their lines' };
-        }
-        default:
-            return { big: '—', sub: '' };
-    }
+/** Inline custom properties that colour one block (`.rb-*` CSS reads them). */
+const tone = (c) => ({ '--rb-c': COLOUR_VAR[c] || COLOUR_VAR.grey, '--rb-bg': COLOUR_BG[c] || COLOUR_BG.grey, '--rb-edge': COLOUR_EDGE[c] || COLOUR_EDGE.grey });
+
+/** Tap toggles, double-click always opens, Enter/Space toggles — shared by every tappable box. */
+const pressable = (onToggle, onOpen) => ({
+    role: 'button',
+    tabIndex: 0,
+    onClick: onToggle,
+    onDoubleClick: (e) => { e.preventDefault(); onOpen(); },
+    onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(); } },
+});
+
+/** Big numbers get a real minus sign (a hyphen reads as a gap at display sizes). */
+const minus = (s) => String(s).replace(/^-/, '−');
+
+function Chip({ text }) {
+    return <span className="rb-chip">{text}</span>;
 }
 
-/** One dial. Tap toggles its explanation panel; double-click always opens it; Enter/Space too. */
-function Dial({ k, d, active, onToggle, onOpen, tooltip }) {
-    const { big, sub } = headline(k, d);
-    const col = COLOUR_VAR[d.colour] || COLOUR_VAR.grey;
+/** Where today's number sits against zero: one side is the danger side. */
+function Gauge({ value, scale, badSide, left, right }) {
+    if (value == null || !Number.isFinite(value)) return null;
+    const m = Math.max(scale, Math.abs(value) * 1.2);
+    const pos = clamp(50 + (value / m) * 50, 3, 97);
     return (
-        <div
-            data-testid="rb-dial"
-            data-colour={d.colour}
-            role="button"
-            tabIndex={0}
-            aria-expanded={active}
-            aria-label={`${dialLabel(k)}: ${COLOUR_WORD[d.colour]}. Tap for the rule.`}
-            className="tooltip-trigger"
-            data-tooltip={tooltip}
-            onClick={onToggle}
-            onDoubleClick={(e) => { e.preventDefault(); onOpen(); }}
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(); } }}
-            style={{ background: COLOUR_BG[d.colour] || COLOUR_BG.grey, border: `${active ? 2 : 1}px solid ${col}`, borderRadius: 10, padding: '10px 12px', minWidth: 0, cursor: 'pointer', userSelect: 'none' }}
-        >
-            <div data-testid={`rb-dial-${k}`} data-colour={d.colour} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
-                <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{dialLabel(k)}</span>
-                <span style={{ fontSize: '0.62rem', fontWeight: 700, color: col }}>● {COLOUR_WORD[d.colour]}{k === 'fast' && d.colour !== 'green' ? ' (look)' : ''}</span>
+        <div className="rb-gauge" aria-hidden="true">
+            <div className={`rb-gauge-track ${badSide === 'below' ? 'bad-left' : 'bad-right'}`}>
+                <span className="rb-gauge-zero" />
+                <span className="rb-gauge-dot" style={{ left: `${pos}%` }} />
             </div>
-            <div style={{ fontSize: '1.25rem', fontWeight: 700, color: col, fontVariantNumeric: 'tabular-nums', marginTop: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{big}</div>
-            <div style={{ fontSize: '0.66rem', color: 'var(--text-muted)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sub}</div>
-            <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginTop: 4, opacity: 0.75 }}>{active ? '▴ close' : '▾ tap for the rule'}</div>
+            <div className="rb-gauge-ends"><span>◂ {left}</span><span>0</span><span>{right} ▸</span></div>
         </div>
     );
 }
 
-function ExplainRow({ tag, text, colour }) {
+/** How much of the alarm's fuse has burnt: `count` of the `of` it takes to trip. */
+function Fuse({ label, count, of }) {
+    const known = count != null && Number.isFinite(count);
+    const frac = known && of ? clamp(count / of, 0, 1) : 0;
+    const c = !known ? 'grey' : frac >= 1 ? 'red' : frac >= 0.75 ? 'amber' : 'green';
+    return (
+        <div className="rb-fuse">
+            <div className="rb-fuse-row">
+                <span>{label}</span>
+                <span className="rb-fuse-n" style={{ color: COLOUR_VAR[c] }}>{known ? count : '—'}<i> · alarm at {of}</i></span>
+            </div>
+            <div className="rb-bar"><span style={{ width: `${known && count > 0 ? Math.max(frac * 100, 3) : 0}%`, background: COLOUR_VAR[c] }} /></div>
+        </div>
+    );
+}
+
+// A leg's record only counts once it has enough history before its peak (as scripts/rubber_band.py).
+const recordCounts = (l, spm) => l.worst_dd_prior_pct != null && l.worst_dd_prior_pct < 0 && (l.days_before_peak ?? 0) >= spm.min_history_days;
+
+/** The limit that trips first: the written line or the leg's own worst completed drawdown. */
+function legLimit(l, spm) {
+    const limits = [];
+    if (l.line_pct != null) limits.push({ v: l.line_pct, why: 'your line' });
+    if (recordCounts(l, spm)) limits.push({ v: l.worst_dd_prior_pct, why: 'worst ever' });
+    return limits.length ? limits.reduce((a, b) => (b.v > a.v ? b : a)) : null;
+}
+
+function legColour(l, spm) {
+    if (l.dd_pct == null) return 'grey';
+    const rec = recordCounts(l, spm);
+    if (l.line_pct != null && l.dd_pct <= l.line_pct) return 'red';
+    if (rec && l.dd_pct <= l.worst_dd_prior_pct) return 'red';
+    if (l.line_pct != null && l.dd_pct <= l.line_pct + spm.near_line_pts) return 'amber';
+    if (rec && l.dd_pct <= l.worst_dd_prior_pct * spm.record_amber_frac) return 'amber';
+    return 'green';
+}
+
+const legUsed = (l, spm) => {
+    const lim = legLimit(l, spm);
+    return lim && l.dd_pct != null ? { lim, frac: clamp(l.dd_pct / lim.v, 0, 1) } : null;
+};
+
+/** One machine: today's drop as a bar that fills toward the limit that would trip it. */
+function LegBar({ l, spm }) {
+    const used = legUsed(l, spm);
+    const c = legColour(l, spm);
+    const uw = l.months_underwater == null ? null
+        : l.longest_underwater_prior_months != null ? `${l.months_underwater} of ${l.longest_underwater_prior_months} mo under water`
+            : `${l.months_underwater} mo under water`;
+    const lim = used ? `trips at ${signed(used.lim.v, 0)} (${used.lim.why})` : 'no limit yet';
+    return (
+        <div className="rb-leg">
+            <div className="rb-leg-top">
+                <span className="rb-leg-name">{l.name}</span>
+                {l.role === 'hedge' && <span className="rb-leg-tag">hedge</span>}
+                {l.missing && <span className="rb-leg-tag">no curve</span>}
+                <span className="rb-leg-dd" style={{ color: COLOUR_VAR[c] }}>{minus(signed(l.dd_pct, 1))}</span>
+            </div>
+            <div className="rb-bar"><span style={{ width: `${used ? Math.max(used.frac * 100, l.dd_pct < 0 ? 2 : 0) : 0}%`, background: COLOUR_VAR[c] }} /></div>
+            <div className="rb-leg-sub">{lim}{uw ? ` · ${uw}` : ''}</div>
+        </div>
+    );
+}
+
+/** The middle of a tripwire box: today's number, what it means, the gauge + history or the legs. */
+function TripBody({ k, d, ctx, history }) {
+    if (d.colour === 'grey') return <div className="rb-big-row"><span className="rb-big">—</span><span className="rb-cap">{d.reason || 'not enough data'}</span></div>;
+    if (k === 'slow') {
+        return (
+            <>
+                <div className="rb-big-row">
+                    <span className="rb-big">{minus(signed(d.excess_pct))}</span>
+                    <span className="rb-cap">extra per dip vs a normal day · paid off {pct0(d.hit)} of the time</span>
+                </div>
+                <Gauge value={d.excess_pct} scale={1} badSide="below" left="dips lose" right="dips pay" />
+                <HistoryChart history={history} main="slow" ghost="fast" badSide="below" up="dips pay" down="dips lose"
+                    legend="— slow (30 dips) · - - early warning (20 dips)" aria="Slow and fast dip-payoff lines" />
+            </>
+        );
+    }
+    if (k === 'rip') {
+        return (
+            <>
+                <div className="rb-big-row">
+                    <span className="rb-big">{minus(signed(d.excess_pct))}</span>
+                    <span className="rb-cap">next-day move after a hot run · below 0 = it cools off</span>
+                </div>
+                <Gauge value={d.excess_pct} scale={0.5} badSide="above" left="cools off" right="keeps running" />
+                <HistoryChart history={history} main="rip" badSide="above" up="keeps running" down="cools off"
+                    legend="— last 30 hot runs" aria="Next-day move after hot runs" />
+            </>
+        );
+    }
+    const legs = d.legs || [];
+    const judged = legs.filter((l) => l.dd_pct != null);
+    const inside = judged.filter((l) => legColour(l, ctx.machines) !== 'red').length;
+    const closest = legs.map((l) => ({ l, used: legUsed(l, ctx.machines) })).filter((x) => x.used).sort((a, b) => b.used.frac - a.used.frac)[0];
     return (
         <>
-            <span style={{ color: colour || 'var(--text-muted)', fontWeight: 700, whiteSpace: 'nowrap', fontSize: '0.7rem' }}>{tag}</span>
-            <span style={{ lineHeight: 1.45 }}>{text}</span>
+            <div className="rb-big-row">
+                <span className="rb-big">{judged.length ? `${inside} of ${judged.length}` : '—'}</span>
+                <span className="rb-cap">
+                    legs inside their limits{closest ? ` · closest: ${closest.l.name}, ${Math.round(closest.used.frac * 100)}% of the way to ${closest.used.lim.why === 'worst ever' ? 'its worst-ever drop' : 'its line'}` : ''}
+                </span>
+            </div>
+            {d.reasons?.length > 0 && <ul className="rb-reasons">{d.reasons.map((r) => <li key={r}>{r}</li>)}</ul>}
+            <div className="rb-legs">{legs.map((l) => <LegBar key={l.name} l={l} spm={ctx.machines} />)}</div>
+            {d.hedge_check && <div data-testid="rb-hedge-check" className="rb-note">Hedge check: {d.hedge_check}</div>}
         </>
     );
 }
 
-/** The ELI5 panel for the open dial — one at a time, drawn under the dial row so phones stay readable. */
+function tripFuse(k, d, ctx, def) {
+    if (k === 'slow') return { label: `Bad days in the last ${d.window ?? ctx.dip.stop_window}`, count: d.red_days ?? 0, of: d.stop_after ?? ctx.dip.stop_of };
+    if (k === 'rip') return { label: `Hot days in the last ${d.window ?? ctx.rip.hot_window}`, count: d.hot_days ?? 0, of: d.red_after ?? ctx.rip.hot_of };
+    return { label: 'Red days in a row', count: def ? (def.streak?.machines ?? 0) : null, of: ctx.rules.fire_after.machines };
+}
+
+/** A tripwire: one plain question, today's answer, and how much of its fuse has burnt. */
+function TripCard({ k, d, ctx, def, history, active, onToggle, onOpen }) {
+    const word = statusWord(k, d.colour);
+    return (
+        <div data-testid="rb-dial" data-colour={d.colour} aria-expanded={active} aria-label={`${PLAIN[k].q} ${word}. Tap for the rule.`}
+            className={`rb-trip${active ? ' is-open' : ''}`} style={tone(d.colour)} {...pressable(onToggle, onOpen)}>
+            <div data-testid={`rb-dial-${k}`} data-colour={d.colour} className="rb-trip-head">
+                <span className="rb-q">{PLAIN[k].q}</span>
+                <Chip text={word} />
+            </div>
+            <div className="rb-hint">{PLAIN[k].hint}</div>
+            <TripBody k={k} d={d} ctx={ctx} history={history} />
+            <Fuse {...tripFuse(k, d, ctx, def)} />
+        </div>
+    );
+}
+
+/** A look-only dial: one compact row, shown but never able to fire anything. */
+function LookChip({ k, d, active, onToggle, onOpen }) {
+    const grey = d.colour === 'grey';
+    const big = grey ? '—' : k === 'age' ? `${num(d.years, 1)} yrs` : minus(signed(d.excess_pct));
+    const sub = grey ? (d.reason || 'not enough data')
+        : k === 'age' ? `${d.events_last_12m ?? '—'} dips in the last 12 months · old after ${d.amber_years ?? '—'} yrs`
+            : `${PLAIN[k].hint} · look only`;
+    const word = statusWord(k, d.colour);
+    return (
+        <div data-testid="rb-dial" data-colour={d.colour} aria-expanded={active} aria-label={`${PLAIN[k].q} ${word}. Tap for the rule.`}
+            className={`rb-look${active ? ' is-open' : ''}`} style={tone(d.colour)} {...pressable(onToggle, onOpen)}>
+            <div data-testid={`rb-dial-${k}`} data-colour={d.colour} className="rb-look-main">
+                <span className="rb-look-q">{PLAIN[k].q}</span>
+                <span className="rb-look-sub">{sub}</span>
+            </div>
+            <span className="rb-look-big">{big}</span>
+            <Chip text={word} />
+        </div>
+    );
+}
+
+/** The ELI5 panel for the open box — one at a time, drawn under its row so phones stay readable. */
 function ExplainPanel({ k, d, ctx, onClose }) {
     const e = EXPLAIN[k] ? EXPLAIN[k](d, ctx) : null;
     if (!e) return null;
-    const col = COLOUR_VAR[d.colour] || COLOUR_VAR.grey;
+    const rows = [
+        ['What it asks', e.what],
+        ['Today', e.today],
+        ['Red when', e.red],
+        ['Amber when', e.amber],
+        ['Track record', e.record],
+    ];
+    if (k === 'machines' && d.lag_pair) {
+        rows.push(['Also shown', `${d.lag_pair[0]} vs ${d.lag_pair[1]} lag: ${d.lag_months ?? '—'} month${d.lag_months === 1 ? '' : 's'}${d.lag_is_info_only === false ? ' (exit rule at 2)' : ' — information only, not a rule'}.`]);
+    }
     return (
-        <div data-testid={`rb-explain-${k}`} role="region" aria-label={`${dialLabel(k)} explained`}
-            style={{ marginTop: 8, padding: '10px 12px', borderRadius: 10, border: `1px solid ${col}`, background: 'rgba(148,163,184,0.06)', fontSize: '0.76rem', display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '6px 10px', alignItems: 'start' }}>
-            <span style={{ gridColumn: '1 / -1', fontWeight: 700, color: col }}>{dialLabel(k)} — {COLOUR_WORD[d.colour]}</span>
-            <ExplainRow tag="What" text={e.what} />
-            <ExplainRow tag="Today" text={e.today} colour={col} />
-            <ExplainRow tag="🔴 Red when" text={e.red} colour="var(--red)" />
-            <ExplainRow tag="🟠 Amber when" text={e.amber} colour="var(--orange)" />
-            <ExplainRow tag="Record" text={e.record} />
-            <span style={{ gridColumn: '1 / -1', textAlign: 'right' }}>
-                <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.7rem', padding: 0 }}>close ▴</button>
-            </span>
+        <div data-testid={`rb-explain-${k}`} role="region" aria-label={`${PLAIN[k].q} explained`} className="rb-explain" style={tone(d.colour)}>
+            <div className="rb-explain-head">
+                <b>{PLAIN[k].q}</b>
+                <Chip text={statusWord(k, d.colour)} />
+                <button type="button" className="rb-close" onClick={onClose}>Close ✕</button>
+            </div>
+            <dl className="rb-explain-grid">
+                {rows.map(([tag, text]) => (
+                    <Fragment key={tag}><dt>{tag}</dt><dd>{text}</dd></Fragment>
+                ))}
+            </dl>
         </div>
     );
 }
 
-/** Slow (solid) + fast (dashed) excess lines over the published history, zero line drawn. */
-function BandChart({ history }) {
+/**
+ * A tripwire's history: its line is green on the safe side of zero and red on the danger side
+ * (`badSide`), the optional `ghost` series dashed. Lives inside the tripwire box.
+ */
+function HistoryChart({ history, main, ghost = null, badSide, up, down, legend, aria }) {
+    const gid = `rb${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
     const [plotRef, plotPx] = useElementWidth();
-    const pts = (history || []).filter((h) => h.slow != null);
+    const pts = (history || []).filter((h) => h[main] != null);
     if (pts.length < 20) return null;
-    // The chart scales evenly with its width, so on a phone the old 720×120 drawing shrank to
-    // ~56px tall with ~4px text. Once measured, the height and margins are set in real px
-    // (k = viewBox units per CSS px; 1 = the old drawing until then) and labels are 10px HTML.
+    // Sized in real px once measured (k = viewBox units per CSS px; 1 until then): 120px tall,
+    // labels 10px HTML — on a phone a fixed drawing shrinks to ~4px text.
     const W = 720, padR = 8;
     const k = plotPx ? W / plotPx : 1;
-    const H = Math.max(120, Math.round(96 * k));
-    const padT = Math.max(8, Math.ceil(7 * k)), padB = Math.max(18, Math.ceil(16 * k));
-    const vals = pts.flatMap((h) => [h.slow, h.fast ?? h.slow]).filter((v) => v != null);
-    const lo = Math.min(0, ...vals), hi = Math.max(0, ...vals);
-    const span = hi - lo || 1;
-    const ticks = [lo, 0, hi].filter((v, i, a) => a.indexOf(v) === i);
+    const H = Math.round(120 * k);
+    const padT = Math.ceil(8 * k), padB = Math.ceil(18 * k);
+    const vals = pts.flatMap((h) => [h[main], ghost ? h[ghost] : null]).filter((v) => v != null);
+    let lo = Math.min(0, ...vals), hi = Math.max(0, ...vals);
+    // Always leave a visible band on both sides of zero, so "above = pays, below = loses" reads at a glance.
+    lo = Math.min(lo, -0.3 * (hi || 1));
+    hi = Math.max(hi, 0.3 * Math.abs(lo));
+    const span = hi - lo;
+    const ticks = [lo, 0, hi];
     const padL = gutterFor(ticks.map((v) => signed(v, 1)), W, plotPx, 34);
     const x = (i) => padL + (i / (pts.length - 1)) * (W - padL - padR);
     const y = (v) => padT + (1 - (v - lo) / span) * (H - padT - padB);
-    const path = (key) => pts.map((h, i) => (h[key] == null ? null : `${i === 0 || pts[i - 1][key] == null ? 'M' : 'L'}${x(i).toFixed(1)},${y(h[key]).toFixed(1)}`)).filter(Boolean).join(' ');
+    const line = (key) => pts.map((h, i) => (h[key] == null ? null : `${i === 0 || pts[i - 1][key] == null ? 'M' : 'L'}${x(i).toFixed(1)},${y(h[key]).toFixed(1)}`)).filter(Boolean).join(' ');
+    const area = `M${x(0).toFixed(1)},${y(0).toFixed(1)} ${pts.map((h, i) => `L${x(i).toFixed(1)},${y(h[main]).toFixed(1)}`).join(' ')} L${x(pts.length - 1).toFixed(1)},${y(0).toFixed(1)} Z`;
+    const zeroAt = ((y(0) - padT) / (H - padT - padB)).toFixed(4);
+    const top = badSide === 'below' ? 'var(--green)' : 'var(--red)';
+    const bottom = badSide === 'below' ? 'var(--red)' : 'var(--green)';
     const last = pts[pts.length - 1];
-    const first = pts[0].d, mid = pts[Math.floor(pts.length / 2)].d;
-    // zero first, then the extremes; a tick closer than 12px to a kept one goes unlabelled
-    const tickLabels = spreadLabels([0, hi, lo].filter((v) => ticks.includes(v)).map((v) => ({ v, pos: y(v) / k })), 12);
+    const lastBad = badSide === 'below' ? last[main] < 0 : last[main] > 0;
+    const years = Math.max(1, Math.round((Date.parse(last.d) - Date.parse(pts[0].d)) / (365.25 * 86400000)));
+    const tickLabels = spreadLabels([0, hi, lo].map((v) => ({ v, pos: y(v) / k })), 12);
     const labels = [
         ...tickLabels.map(({ v }) => ({ x: padL - 4 * k, y: y(v), text: signed(v, 1), ax: 'end', ay: 'middle' })),
-        { x: padL, y: H, text: first, ax: 'start', ay: 'bottom' },
-        { x: (padL + W - padR) / 2, y: H, text: mid, ax: 'middle', ay: 'bottom' },
-        { x: W - padR, y: H, text: last.d, ax: 'end', ay: 'bottom' },
+        ...yearTicks(pts.map((h) => h.d), x, { maxLabels: 8, minGap: 36 * k }).map((t) => ({ x: t.x, y: H, text: t.label, ax: 'start', ay: 'bottom' })),
+        { x: padL + 6 * k, y: y(0) - 4 * k, text: `▲ ${up}`, ax: 'start', ay: 'bottom' },
+        { x: padL + 6 * k, y: y(0) + 4 * k, text: `▼ ${down}`, ax: 'start', ay: 'top' },
     ];
+    // the danger side of zero gets a faint red wash
+    const dangerY = badSide === 'below' ? y(0) : y(hi);
+    const dangerH = badSide === 'below' ? y(lo) - y(0) : y(0) - y(hi);
     return (
-        <>
-        <div className="chart-plot" ref={plotRef}>
-        <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Slow and fast dip-payoff lines over the last three years, with the zero line" style={{ width: '100%', height: 'auto', display: 'block' }}>
-            {ticks.map((v) => (
-                <line key={v} x1={padL} x2={W - padR} y1={y(v)} y2={y(v)} stroke={v === 0 ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.08)'} strokeDasharray={v === 0 ? '' : '2 4'} />
-            ))}
-            <rect x={padL} y={y(0)} width={W - padL - padR} height={Math.max(0, y(lo) - y(0))} fill="rgba(239,68,68,0.06)" />
-            <path d={path('fast')} fill="none" stroke="var(--text-muted)" strokeWidth="1.2" strokeDasharray="3 3" opacity="0.9" />
-            <path d={path('slow')} fill="none" stroke={last.slow >= 0 ? 'var(--green)' : 'var(--red)'} strokeWidth="2" />
-            <circle cx={x(pts.length - 1)} cy={y(last.slow)} r="3" fill={last.slow >= 0 ? 'var(--green)' : 'var(--red)'} />
-        </svg>
-        <AxisLabels w={W} h={H} labels={labels} />
+        <div className="rb-chart">
+            <div className="rb-chart-head">
+                <span className="rb-chart-title">Last {years} years</span>
+                <span className="band-legend">{legend}</span>
+            </div>
+            <div className="chart-plot" ref={plotRef}>
+                <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`${aria} over the last ${years} years, with the zero line`} style={{ width: '100%', height: 'auto', display: 'block' }}>
+                    <defs>
+                        <linearGradient id={`${gid}l`} gradientUnits="userSpaceOnUse" x1="0" y1={padT} x2="0" y2={H - padB}>
+                            <stop offset="0" stopColor={top} /><stop offset={zeroAt} stopColor={top} />
+                            <stop offset={zeroAt} stopColor={bottom} /><stop offset="1" stopColor={bottom} />
+                        </linearGradient>
+                        <linearGradient id={`${gid}a`} gradientUnits="userSpaceOnUse" x1="0" y1={padT} x2="0" y2={H - padB}>
+                            <stop offset="0" stopColor={top} stopOpacity="0.28" /><stop offset={zeroAt} stopColor={top} stopOpacity="0.04" />
+                            <stop offset={zeroAt} stopColor={bottom} stopOpacity="0.04" /><stop offset="1" stopColor={bottom} stopOpacity="0.28" />
+                        </linearGradient>
+                    </defs>
+                    <rect x={padL} y={dangerY} width={W - padL - padR} height={Math.max(0, dangerH)} fill="rgba(239,68,68,0.05)" />
+                    {[lo, hi].map((v) => (
+                        <line key={v} x1={padL} x2={W - padR} y1={y(v)} y2={y(v)} stroke="rgba(255,255,255,0.07)" strokeDasharray="2 4" vectorEffect="non-scaling-stroke" />
+                    ))}
+                    <path d={area} fill={`url(#${gid}a)`} />
+                    <line x1={padL} x2={W - padR} y1={y(0)} y2={y(0)} stroke="rgba(255,255,255,0.4)" vectorEffect="non-scaling-stroke" />
+                    {ghost && <path d={line(ghost)} fill="none" stroke="var(--text-secondary)" strokeWidth="1.2" strokeDasharray="3 3" opacity="0.6" vectorEffect="non-scaling-stroke" />}
+                    <path d={line(main)} fill="none" stroke={`url(#${gid}l)`} strokeWidth="2.2" vectorEffect="non-scaling-stroke" />
+                    <circle cx={x(pts.length - 1)} cy={y(last[main])} r={4 * k} fill={lastBad ? 'var(--red)' : 'var(--green)'} stroke="var(--bg-secondary)" strokeWidth={2 * k} />
+                </svg>
+                <AxisLabels w={W} h={H} labels={labels} />
+            </div>
         </div>
-        <div className="band-legend">— slow (30 dips) · - - fast (20 dips) · below zero = dips lose</div>
-        </>
-    );
-}
-
-/** Machine legs: drawdown vs the written line AND vs each leg's own completed record (v1.1). */
-function Legs({ m, spm }) {
-    const legs = m.legs || [];
-    if (!legs.length) return null;
-    const cell = { textAlign: 'right', fontVariantNumeric: 'tabular-nums' };
-    const head = { ...cell, color: 'var(--text-muted)' };
-    const recordOk = (l) => l.worst_dd_prior_pct != null && (l.days_before_peak == null || l.days_before_peak >= spm.min_history_days);
-    const ddColour = (l) => {
-        if (l.dd_pct == null) return 'var(--text-muted)';
-        if (l.line_pct != null && l.dd_pct <= l.line_pct) return 'var(--red)';
-        if (recordOk(l) && l.dd_pct <= l.worst_dd_prior_pct) return 'var(--red)';
-        if (l.line_pct != null && l.dd_pct <= l.line_pct + spm.near_line_pts) return 'var(--orange)';
-        if (recordOk(l) && l.dd_pct <= l.worst_dd_prior_pct * spm.record_amber_frac) return 'var(--orange)';
-        return 'inherit';
-    };
-    const underwater = (l) => (l.months_underwater == null ? '—' : `${l.months_underwater}${l.longest_underwater_prior_months != null ? ` / ${l.longest_underwater_prior_months}` : ''} mo`);
-    return (
-        <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1fr 0.8fr 1.2fr 1fr', gap: '3px 8px', fontSize: '0.72rem', marginTop: 10 }}>
-            <span style={{ color: 'var(--text-muted)' }}>Leg</span>
-            <span style={head}>Drawdown</span>
-            <span style={head}>Line</span>
-            <span style={head}>Under water now / record</span>
-            <span style={head}>Record DD</span>
-            {legs.map((l) => (
-                <LegRow key={l.name} l={l} cell={cell} colour={ddColour(l)} underwater={underwater(l)} />
-            ))}
-            {m.hedge_check && (
-                <span data-testid="rb-hedge-check" style={{ gridColumn: '1 / -1', color: 'var(--text-muted)', fontSize: '0.68rem' }}>
-                    Hedge check: {m.hedge_check} — STOP if the book drops {Math.abs(spm.book_drop_pct)}%+ in {spm.fast_window_days} days while the hedges do not rise.
-                </span>
-            )}
-            {m.lag_pair && (
-                <span style={{ gridColumn: '1 / -1', color: 'var(--text-muted)', fontSize: '0.68rem' }}>
-                    {m.lag_pair[0]} vs {m.lag_pair[1]} lag: {m.lag_months ?? '—'} month{m.lag_months === 1 ? '' : 's'}{m.lag_is_info_only === false ? ' (exit rule at 2)' : ' — information only, not a rule'}.
-                </span>
-            )}
-        </div>
-    );
-}
-
-function LegRow({ l, cell, colour, underwater }) {
-    return (
-        <>
-            <span style={{ fontWeight: 600 }}>{l.name}{l.missing ? <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}> (no curve)</span> : ''}</span>
-            <span style={{ ...cell, color: colour, fontWeight: 600 }}>{signed(l.dd_pct, 1)}</span>
-            <span style={cell}>{l.role === 'hedge' ? 'hedge' : l.line_pct == null ? 'none' : `${l.line_pct}%`}</span>
-            <span style={cell}>{underwater}</span>
-            <span style={{ ...cell, color: 'var(--text-muted)' }}>{signed(l.worst_dd_prior_pct ?? l.worst_dd_pct, 0)}</span>
-        </>
     );
 }
 
 const MODE = {
-    INVESTED: { badge: 'badge-green', word: 'INVESTED', eli5: 'All machines running. Nothing to do.' },
-    PENDING_DEFENSIVE: { badge: 'badge-red', word: 'GO DEFENSIVE — waiting for you', eli5: 'The 📡 thread has the 2-minute steps: sell half of each machine to cash, then reply "done".' },
-    DEFENSIVE: { badge: 'badge-yellow', word: 'DEFENSIVE — half in cash', eli5: 'Half the book sits in cash until the radar has been green enough closes in a row.' },
-    PENDING_REENTRY: { badge: 'badge-blue', word: 'RE-ENTER — waiting for you', eli5: 'The 📡 thread has the steps: put the cash back into each machine, then reply "done".' },
-    UNKNOWN: { badge: 'badge-blue', word: 'UNKNOWN', eli5: 'The trigger could not report its state — check the Mac mini log.' },
+    INVESTED: { badge: 'badge-green', word: 'INVESTED', colour: 'green', eli5: 'All machines running. Nothing to do.' },
+    PENDING_DEFENSIVE: { badge: 'badge-red', word: 'GO DEFENSIVE — waiting for you', colour: 'red', eli5: 'The 📡 thread has the 2-minute steps: sell half of each machine to cash, then reply "done".' },
+    DEFENSIVE: { badge: 'badge-yellow', word: 'DEFENSIVE — half in cash', colour: 'amber', eli5: 'Half the book sits in cash until the radar has been green enough closes in a row.' },
+    PENDING_REENTRY: { badge: 'badge-blue', word: 'RE-ENTER — waiting for you', colour: 'blue', eli5: 'The 📡 thread has the steps: put the cash back into each machine, then reply "done".' },
+    UNKNOWN: { badge: 'badge-blue', word: 'UNKNOWN', colour: 'grey', eli5: 'The trigger could not report its state — check the Mac mini log.' },
 };
 
-/** The decision layer: live mode + streak counters, and the rule in one breath on tap. */
+// The trigger's loop, in order. "You are here" follows snapshot.defensive.mode.
+const STEPS = [
+    { mode: 'INVESTED', title: 'Invested', body: () => 'All machines running. Nothing to do.' },
+    { mode: 'PENDING_DEFENSIVE', title: 'A tripwire goes red', body: () => 'Sell half of each machine to cash. 📡 nags every hour until you reply "done".' },
+    { mode: 'DEFENSIVE', title: 'Defensive', body: () => 'Half the book waits in cash. Nothing to do.' },
+    { mode: 'PENDING_REENTRY', title: 'Back in', body: (r) => `${r.reentry_closes} green days in a row with dips paying over +${r.reentry_edge_pct}% → put the cash back, then step 1.` },
+];
+
+/** The big answer: what to do today, why, and when the radar last looked. */
+function Hero({ data, stale }) {
+    const def = data.defensive;
+    const v = data.verdict.colour;
+    const mode = def ? (MODE[def.mode] || MODE.UNKNOWN) : null;
+    let h;
+    if (def?.mode === 'PENDING_DEFENSIVE') h = { c: 'red', icon: '!', title: 'Go defensive — waiting for you' };
+    else if (def?.mode === 'DEFENSIVE') h = { c: 'amber', icon: '‖', title: 'Defensive — half in cash' };
+    else if (def?.mode === 'PENDING_REENTRY') h = { c: 'blue', icon: '↺', title: 'Time to go back in' };
+    else if (v === 'red') h = { c: 'red', icon: '!', title: 'A tripwire is red' };
+    else if (v === 'amber') h = { c: 'amber', icon: '!', title: 'Stay invested — keep an eye on it' };
+    else if (v === 'grey') h = { c: 'grey', icon: '?', title: 'No reading today' };
+    else h = { c: 'green', icon: '✓', title: 'Stay invested' };
+    const act = def && def.mode !== 'INVESTED'
+        ? `${mode.eli5}${def.defensive_since ? ` Defensive since ${dayName(def.defensive_since)}.` : ''}`
+        : v === 'green' ? 'Nothing to do.' : null;
+    const next = nextRun(data.asOf);
+    return (
+        <div className="rb-hero" style={tone(h.c)}>
+            <div className="rb-hero-icon" aria-hidden="true">{h.icon}</div>
+            <div className="rb-hero-main">
+                <div className="rb-hero-title">{h.title}</div>
+                <div className="rb-hero-text">{data.verdict.text}</div>
+                {act && <div className="rb-hero-act">{act}</div>}
+            </div>
+            <div className="rb-hero-side">
+                {def && <div className="rb-stat"><b>{def.green_streak ?? 0}</b><span>all-clear days in a row</span></div>}
+                <div className="rb-stat">
+                    <b>{dayName(data.asOf)}</b>
+                    <span>{stale ? `STALE — ${data._meta?.ageDays ?? '?'} days old` : `last check${next ? ` · next ${next}` : ''}`}</span>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+/** The decision layer as a 4-step loop with "you are here", the streak counters, and the rule on tap. */
 function Trigger({ def, rules, open, onToggle }) {
     const mode = def ? (MODE[def.mode] || MODE.UNKNOWN) : null;
+    const here = def ? STEPS.findIndex((s) => s.mode === def.mode) : -1;
     const st = def?.streak || {};
     const fa = rules.fire_after;
-    const rule = `Fires when "Dip pays?" or "Rips fade?" is red for ${fa.slow} close, or Machine health is red ${fa.machines} closes in a row → 📡 GO DEFENSIVE: sell half of each machine to cash, hourly nag until you reply "done". Back in after ${rules.reentry_closes} green closes in a row with "Dip pays?" above +${rules.reentry_edge_pct}% → 📡 RE-ENTER, nag until "done". If the alarm clears before you act, it stands down by itself; if the green run breaks before you re-enter, it holds.`;
+    const rule = `Fires when "Do dips bounce back?" or "Do rallies cool off?" is red for ${fa.slow} close, or "Are the machines healthy?" is red ${fa.machines} closes in a row → 📡 GO DEFENSIVE: sell half of each machine to cash, hourly nag until you reply "done". Back in after ${rules.reentry_closes} green closes in a row with dips paying above +${rules.reentry_edge_pct}% → 📡 RE-ENTER, nag until "done". If the alarm clears before you act, it stands down by itself; if the green run breaks before you re-enter, it holds.`;
     return (
-        <div data-testid="rb-trigger" style={{ marginTop: 12, padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(148,163,184,0.25)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>What happens on red</span>
+        <div data-testid="rb-trigger" className="rb-rail-box">
+            <div className="rb-label-row">
+                <span className="rb-label">What happens if a tripwire goes red</span>
                 {mode ? <span className={`badge ${mode.badge}`} data-testid="rb-mode">{mode.word}</span> : <span className="badge badge-blue">state not published yet</span>}
             </div>
-            <div style={{ fontSize: '0.76rem', marginTop: 6, lineHeight: 1.45 }}>
-                {mode ? mode.eli5 : 'The trigger stamps its state into the next nightly snapshot.'}
-                {def?.defensive_since && def.mode !== 'INVESTED' ? ` Defensive since ${def.defensive_since}.` : ''}
-            </div>
+            <ol className="rb-rail">
+                {STEPS.map((s, i) => (
+                    <li key={s.mode} className={`rb-step${i === here ? ' is-here' : ''}`} style={i === here ? tone(MODE[s.mode].colour) : undefined}>
+                        <span className="rb-step-num">{i + 1}</span>
+                        <div>
+                            <b>{s.title}</b>{i === here && <span className="rb-here">you are here</span>}
+                            <p>{s.body(rules)}</p>
+                        </div>
+                    </li>
+                ))}
+            </ol>
             {def && (
-                <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: 4, fontVariantNumeric: 'tabular-nums' }}>
-                    Red closes in a row — dips {st.slow ?? 0}/{fa.slow} · rips {st.rip ?? 0}/{fa.rip} · machines {st.machines ?? 0}/{fa.machines} · green run {def.green_streak ?? 0}/{rules.reentry_closes}{def.last_asof ? ` · counted to ${def.last_asof}` : ''}
+                <div className="rb-counters">
+                    Red closes in a row: dips <b>{st.slow ?? 0}</b>/{fa.slow} · rallies <b>{st.rip ?? 0}</b>/{fa.rip} · machines <b>{st.machines ?? 0}</b>/{fa.machines} · green run <b>{def.green_streak ?? 0}</b>/{rules.reentry_closes}{def.last_asof ? ` · counted to ${dayName(def.last_asof)}` : ''}
                 </div>
             )}
-            <button type="button" onClick={onToggle} aria-expanded={open}
-                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.68rem', padding: 0, marginTop: 6 }}>
+            <button type="button" className="rb-link" onClick={onToggle} aria-expanded={open}>
                 {open ? '▴ hide the rule' : '▾ the rule in one breath'}
             </button>
-            {open && <div data-testid="rb-trigger-rule" style={{ fontSize: '0.76rem', marginTop: 6, lineHeight: 1.45 }}>{rule}</div>}
+            {open && <div data-testid="rb-trigger-rule" className="rb-rule">{rule}</div>}
         </div>
     );
 }
@@ -358,9 +562,13 @@ export default function RubberBandRadar({ onVerdict = null } = {}) {
     const stale = !!data?._meta?.stale;
     const ctx = contextOf(data);
     const toggle = (k) => setOpen((cur) => (cur === k ? null : k));
+    const box = (k) => ({ k, d: data.dials[k], active: open === k, onToggle: () => toggle(k), onOpen: () => setOpen(k) });
+    const panel = (keys) => (keys.includes(open) && data.dials[open]
+        ? <ExplainPanel k={open} d={data.dials[open]} ctx={ctx} onClose={() => setOpen(null)} />
+        : null);
 
     return (
-        <div className="card" style={{ gridColumn: '1 / -1', animationDelay: '0.5s' }}>
+        <div className="card rb" style={{ gridColumn: '1 / -1', animationDelay: '0.5s' }}>
             <div className="card-header">
                 <h2>🪢 Rubber Band Radar</h2>
                 <span style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -375,23 +583,25 @@ export default function RubberBandRadar({ onVerdict = null } = {}) {
                     </div>
                 ) : (
                     <>
-                        <div style={{ fontSize: '0.86rem', color: COLOUR_VAR[verdictColour], fontWeight: 600, marginBottom: 12, lineHeight: 1.4 }}>
-                            {data.verdict.text}
+                        <Hero data={data} stale={stale} />
+                        <div className="rb-label-row">
+                            <span className="rb-label">The 3 tripwires — any one red sends half the book to cash</span>
+                            <span className="rb-label-hint">tap a box for its rule</span>
                         </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8 }}>
-                            {DIAL_ORDER.map((k) => (
-                                <Dial key={k} k={k} d={data.dials[k]} active={open === k} onToggle={() => toggle(k)} onOpen={() => setOpen(k)}
-                                    tooltip={EXPLAIN[k] ? EXPLAIN[k](data.dials[k], ctx).what : ''} />
-                            ))}
+                        <div className="rb-trips">
+                            {TRIPWIRES.map((k) => <TripCard key={k} {...box(k)} ctx={ctx} def={data.defensive} history={data.history} />)}
                         </div>
-                        {open && data.dials[open] && <ExplainPanel k={open} d={data.dials[open]} ctx={ctx} onClose={() => setOpen(null)} />}
-                        <div style={{ marginTop: 12 }}>
-                            <BandChart history={data.history} />
+                        {panel(TRIPWIRES)}
+                        <div className="rb-label-row">
+                            <span className="rb-label">Also watching — these never trip anything</span>
                         </div>
-                        <Legs m={data.dials.machines} spm={ctx.machines} />
+                        <div className="rb-looks">
+                            {LOOK_ONLY.map((k) => <LookChip key={k} {...box(k)} />)}
+                        </div>
+                        {panel(LOOK_ONLY)}
                         <Trigger def={data.defensive} rules={ctx.rules} open={open === 'trigger'} onToggle={() => toggle('trigger')} />
-                        <div style={{ color: 'var(--text-muted)', fontSize: '0.65rem', marginTop: 10, opacity: 0.8 }}>
-                            As of {data.asOf} · rules v{ctx.version} · QQQ Wilder RSI-10 (dips &lt;32, rips &gt;79) · tap any dial for its rule{stale ? ` · STALE (${data._meta?.ageDays}d old)` : ''}
+                        <div className="rb-foot">
+                            Computed nightly on the Mac mini · rules v{ctx.version} · QQQ Wilder RSI-10: a dip = under {ctx.dip.rsi_below}, a hot run = over {ctx.rip.rsi_above}{stale ? ` · STALE (${data._meta?.ageDays}d old)` : ''}
                         </div>
                     </>
                 )}

@@ -785,6 +785,18 @@ so `isGood` rejects an empty digest rather than letting it claim "nothing change
   (`fetch_rubber_band_line`) that must never fail the brief.
 - Alerts (colour change or failed run) go to the owner's alert thread from the Mac mini,
   chat id via the launchd env — never in the repo.
+- **Card layout (10 Oct 2026 redesign, owner: "make it intuitive").** Top to bottom: one big
+  answer (hero: "Stay invested" / "Go defensive…", from `defensive.mode` then verdict colour);
+  **the 3 tripwires** (slow, rip, machines — the only dials that fire the trigger) as plain
+  questions ("Do dips bounce back?") each with a which-side-of-zero gauge, a 3-year mini chart
+  (slow and rip; red wash on the danger side) and a **fuse** (bad/hot days of 45, machines red
+  closes of 5); the two look-only dials (fast, age) as chips; then the trigger as a 4-step rail
+  with "you are here". Machines box leads with "N of M legs inside their limits"; each leg's bar
+  fills toward the limit that trips first (line or worst completed drawdown — same rule as
+  `colour_machines` in `scripts/rubber_band.py`). Tap/double-click/Enter any box → its ELI5
+  panel (one at a time). Styles are `.rb-*` in `app/globals.css`; testids `rb-dial`,
+  `rb-dial-<key>`, `rb-explain-<key>`, `rb-hedge-check`, `rb-mode`, `rb-trigger-rule` are pinned
+  by the tests.
 
 ### 🧭 Jev regime pills (`/api/jev-pills` + `/api/breadth` + `JevPills.js`) — added 2026-09-19
 - Five pills under Market Pulse — regime, recession, breadth, hedges, conflict — plus a
