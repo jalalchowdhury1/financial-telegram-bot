@@ -2810,3 +2810,161 @@ html:not(:has(.jump-fab)) .back-pill {
   .header-status .mark-chip { padding: 0 8px; font-size: 0.6rem; }
   .header-status .mark-chip { gap: 5px; }
 }
+
+/* 🪢 Rubber Band Radar (components/RubberBandRadar.js) — 10 Oct 2026 redesign: big answer,
+   3 tripwire boxes (gauge + fuse), look-only chips, payoff chart, 4-step trigger rail.
+   --rb-c / --rb-bg / --rb-edge are set inline per state colour (tone() in the component). */
+.rb-hero {
+  display: flex; align-items: center; gap: 18px;
+  padding: 18px 20px; border-radius: var(--radius-lg);
+  border: 1px solid var(--rb-edge);
+  background: radial-gradient(140% 170% at 0% 0%, var(--rb-bg), transparent 55%), rgba(148, 163, 184, 0.04);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.rb-hero-icon {
+  flex: none; width: 48px; height: 48px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 1.4rem; font-weight: 800;
+  color: var(--rb-c); background: var(--rb-bg); border: 1px solid var(--rb-edge);
+  animation: rb-pulse 2.8s ease-out infinite;
+}
+@keyframes rb-pulse { 0% { box-shadow: 0 0 0 0 var(--rb-edge); } 70%, 100% { box-shadow: 0 0 0 12px transparent; } }
+.rb-hero-main { flex: 1; min-width: 0; }
+.rb-hero-title { font-size: 1.45rem; font-weight: 800; letter-spacing: -0.01em; line-height: 1.15; color: var(--rb-c); }
+.rb-hero-text { margin-top: 4px; font-size: 0.84rem; line-height: 1.45; color: var(--text-secondary); }
+.rb-hero-act { margin-top: 6px; font-size: 0.84rem; font-weight: 600; color: var(--text-primary); }
+.rb-hero-side { flex: none; display: flex; gap: 24px; text-align: right; }
+.rb-stat b { display: block; font-size: 1.15rem; font-weight: 700; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.rb-stat span { font-size: 0.68rem; color: var(--text-muted); }
+
+.rb-label-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin: 22px 0 10px; }
+.rb-label { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); }
+.rb-label-hint { font-size: 0.68rem; color: var(--text-muted); }
+.rb-label-row .badge { font-size: 0.66rem; font-weight: 700; padding: 3px 10px; border-radius: 999px; letter-spacing: 0.04em; }
+
+.rb-trips { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.rb-trip {
+  display: flex; flex-direction: column; gap: 12px; min-width: 0;
+  padding: 16px; border-radius: var(--radius-md);
+  background: rgba(148, 163, 184, 0.05); border: 1px solid rgba(148, 163, 184, 0.14);
+  border-top: 3px solid var(--rb-c);
+  cursor: pointer; user-select: none;
+  transition: background 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
+}
+.rb-trip:hover, .rb-look:hover { background: rgba(148, 163, 184, 0.09); }
+.rb-trip:active, .rb-look:active { transform: scale(0.99); }
+.rb-trip.is-open, .rb-look.is-open { box-shadow: 0 0 0 1px var(--rb-edge), 0 0 22px var(--rb-bg); }
+.rb-trip:focus-visible, .rb-look:focus-visible { outline: 2px solid var(--text-accent); outline-offset: 2px; }
+.rb-trip-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.rb-q { font-size: 0.95rem; font-weight: 700; line-height: 1.25; color: var(--text-primary); }
+.rb-hint { margin-top: -8px; font-size: 0.72rem; color: var(--text-muted); }
+.rb-chip {
+  flex: none; display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 10px; border-radius: 999px; white-space: nowrap;
+  font-size: 0.64rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--rb-c); background: var(--rb-bg);
+}
+.rb-chip::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.rb-big-row { display: flex; flex-direction: column; gap: 3px; }
+.rb-big { font-size: 1.9rem; font-weight: 800; letter-spacing: -0.02em; line-height: 1.05; color: var(--rb-c); font-variant-numeric: tabular-nums; }
+.rb-cap { font-size: 0.74rem; line-height: 1.4; color: var(--text-secondary); }
+
+.rb-gauge-track { position: relative; height: 8px; border-radius: 999px; }
+.rb-gauge-track.bad-left { background: linear-gradient(90deg, rgba(239, 68, 68, 0.6), rgba(239, 68, 68, 0.12) 50%, rgba(34, 197, 94, 0.12) 50%, rgba(34, 197, 94, 0.6)); }
+.rb-gauge-track.bad-right { background: linear-gradient(90deg, rgba(34, 197, 94, 0.6), rgba(34, 197, 94, 0.12) 50%, rgba(239, 68, 68, 0.12) 50%, rgba(239, 68, 68, 0.6)); }
+.rb-gauge-zero { position: absolute; left: 50%; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; border-radius: 1px; background: rgba(255, 255, 255, 0.5); }
+.rb-gauge-dot {
+  position: absolute; top: 50%; width: 16px; height: 16px; border-radius: 50%;
+  transform: translate(-50%, -50%); background: var(--rb-c);
+  border: 3px solid var(--bg-secondary); box-shadow: 0 0 0 1px var(--rb-c), 0 0 12px var(--rb-c);
+}
+.rb-gauge-ends { display: grid; grid-template-columns: 1fr auto 1fr; margin-top: 6px; font-size: 0.66rem; color: var(--text-muted); }
+.rb-gauge-ends span:last-child { text-align: right; }
+
+.rb-fuse { margin-top: auto; padding-top: 10px; border-top: 1px dashed rgba(148, 163, 184, 0.2); }
+.rb-fuse-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 6px; font-size: 0.72rem; color: var(--text-secondary); }
+.rb-fuse-n { font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.rb-fuse-n i { font-style: normal; font-weight: 500; color: var(--text-muted); }
+.rb-bar { position: relative; height: 6px; border-radius: 999px; overflow: hidden; background: rgba(148, 163, 184, 0.14); }
+.rb-bar > span { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; }
+
+.rb-reasons { list-style: none; display: flex; flex-direction: column; gap: 4px; font-size: 0.74rem; line-height: 1.4; color: var(--rb-c); }
+.rb-legs { display: flex; flex-direction: column; gap: 10px; }
+.rb-leg-top { display: flex; align-items: baseline; gap: 6px; margin-bottom: 4px; font-size: 0.78rem; }
+.rb-leg-name { font-weight: 700; color: var(--text-primary); }
+.rb-leg-tag { padding: 0 6px; border-radius: 999px; border: 1px solid rgba(148, 163, 184, 0.3); font-size: 0.58rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
+.rb-leg-dd { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; }
+.rb-leg-sub { margin-top: 4px; font-size: 0.66rem; color: var(--text-muted); }
+.rb-note { font-size: 0.68rem; line-height: 1.4; color: var(--text-muted); }
+
+.rb-looks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.rb-look {
+  display: flex; align-items: center; gap: 12px; min-width: 0;
+  padding: 12px 16px; border-radius: var(--radius-md);
+  background: rgba(148, 163, 184, 0.04); border: 1px solid rgba(148, 163, 184, 0.12);
+  cursor: pointer; user-select: none; transition: background 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
+}
+.rb-look-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.rb-look-q { font-size: 0.84rem; font-weight: 600; color: var(--text-primary); }
+.rb-look-sub { font-size: 0.68rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rb-look-big { font-size: 1.15rem; font-weight: 700; color: var(--rb-c); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.rb-explain {
+  margin-top: 12px; padding: 16px 18px; border-radius: var(--radius-md);
+  border: 1px solid var(--rb-edge);
+  background: linear-gradient(180deg, var(--rb-bg), rgba(148, 163, 184, 0.04) 70%);
+  animation: rb-in 0.2s ease-out;
+}
+@keyframes rb-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+.rb-explain-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.rb-explain-head b { font-size: 0.92rem; }
+.rb-close { margin-left: auto; padding: 4px 12px; border: none; border-radius: 999px; background: rgba(148, 163, 184, 0.12); color: var(--text-secondary); font-size: 0.7rem; cursor: pointer; }
+.rb-explain-grid { display: grid; grid-template-columns: 112px 1fr; gap: 8px 16px; font-size: 0.8rem; line-height: 1.5; color: var(--text-secondary); }
+.rb-explain-grid dt { padding-top: 2px; font-size: 0.66rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
+.rb-explain-grid dd { margin: 0; }
+
+.rb-chart { margin: 2px 0 6px; }
+.rb-chart-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+.rb-chart-title { font-size: 0.64rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); }
+.rb-chart-head .band-legend { margin: 0; }
+
+.rb-rail-box { margin-top: 4px; }
+.rb-rail { list-style: none; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; }
+.rb-step {
+  position: relative; display: flex; gap: 10px; min-width: 0;
+  padding: 12px 14px; border-radius: var(--radius-md);
+  background: rgba(148, 163, 184, 0.04); border: 1px solid rgba(148, 163, 184, 0.12);
+}
+.rb-step:not(:last-child)::after {
+  content: '→'; position: absolute; right: -9px; top: 50%; transform: translate(50%, -50%);
+  font-size: 0.8rem; color: var(--text-muted);
+}
+.rb-step:not(.is-here) > * { opacity: 0.65; }
+.rb-step.is-here { border-color: var(--rb-edge); background: linear-gradient(180deg, var(--rb-bg), rgba(148, 163, 184, 0.03)); box-shadow: 0 0 22px var(--rb-bg); }
+.rb-step-num { flex: none; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 0.7rem; font-weight: 700; background: rgba(148, 163, 184, 0.14); color: var(--text-secondary); }
+.rb-step.is-here .rb-step-num { background: var(--rb-c); color: var(--bg-primary); }
+.rb-step b { font-size: 0.82rem; color: var(--text-primary); }
+.rb-step p { margin-top: 3px; font-size: 0.72rem; line-height: 1.4; color: var(--text-muted); }
+.rb-here { margin-left: 8px; font-size: 0.58rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: var(--rb-c); }
+.rb-counters { margin-top: 12px; font-size: 0.7rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.rb-counters b { color: var(--text-primary); }
+.rb-link { margin-top: 8px; padding: 0; border: none; background: none; color: var(--text-accent); font-size: 0.72rem; cursor: pointer; }
+.rb-rule { margin-top: 8px; font-size: 0.8rem; line-height: 1.5; color: var(--text-secondary); }
+.rb-foot { margin-top: 16px; font-size: 0.66rem; color: var(--text-muted); opacity: 0.85; }
+
+@media (max-width: 960px) {
+  .rb-trips { grid-template-columns: 1fr; }
+  .rb-rail { grid-template-columns: 1fr; gap: 14px; }
+  .rb-step:not(:last-child)::after { content: '↓'; right: auto; top: auto; left: 25px; bottom: -7px; transform: translate(-50%, 50%); }
+}
+@media (max-width: 640px) {
+  .rb-hero { flex-wrap: wrap; gap: 14px; padding: 16px; }
+  .rb-hero-title { font-size: 1.25rem; }
+  .rb-hero-side { width: 100%; justify-content: flex-start; text-align: left; padding-top: 12px; border-top: 1px solid rgba(255, 255, 255, 0.06); }
+  .rb-looks { grid-template-columns: 1fr; }
+  .rb-explain-grid { grid-template-columns: 1fr; gap: 2px; }
+  .rb-explain-grid dd { margin-bottom: 8px; }
+  .rb-label-hint { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rb-hero-icon, .rb-explain { animation: none; }
+}
