@@ -505,7 +505,8 @@ export default function Dashboard() {
                             <>
                                 {/* Hero score */}
                                 <div className="hero-price-section">
-                                    <div className="hero-price" style={{ color: fgColor(fg.score) }}>{Math.round(fg.score)}</div>
+                                    {/* 📈 tap → CNN's own history since Jan 2021. The VIX proxy is a different number: no chart. */}
+                                    <HeroValue markKey="cnnFearGreed" raw={fg._meta?.proxy ? null : fg.score} style={{ color: fgColor(fg.score) }}>{Math.round(fg.score)}</HeroValue>
                                     <div className="hero-change" style={{ color: fgColor(fg.score) }}>{fg.rating}</div>
                                 </div>
 

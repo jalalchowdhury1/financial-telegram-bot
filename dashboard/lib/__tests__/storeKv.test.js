@@ -170,11 +170,14 @@ describe('serve(): preferNewer (a flagged build newer than the cache)', () => {
     const staleBuild = { v: 9, _meta: { source: 'Polygon (fallback, last close 2026-10-08)', stale: true, hasErrors: true, asOf: '2026-10-08', messages: [] } };
     const preferNewer = (p, savedAt) => p._meta.asOf >= savedAt.slice(0, 10);
     const notGood = (x) => x && !x._meta?.stale;
+    // The fixtures carry fixed dates; a year-long maxStaleMs stops the 7-day default from aging the
+    // 2026-10-03 KV copy out (that made these two tests go red on 10 Oct with no code change).
+    const maxStaleMs = 365 * 86400000;
 
     test('older KV copy loses to the newer flagged build (still flagged stale)', async () => {
         const key = uniq('pn');
         const kv = fakeKv({ [`ftb:lg:${key}`]: { data: good, savedAt: '2026-10-03T20:00:00.000Z' } });
-        const b = await (await serve(key, async () => staleBuild, { kv, isGood: notGood, preferNewer })).json();
+        const b = await (await serve(key, async () => staleBuild, { kv, isGood: notGood, preferNewer, maxStaleMs })).json();
         expect(b.v).toBe(9);
         expect(b._meta.stale).toBe(true);
         expect(b._meta.messages.join(' ')).toMatch(/KV last-known-good \(2026-10-03.*older/);
@@ -192,9 +195,9 @@ describe('serve(): preferNewer (a flagged build newer than the cache)', () => {
     test('without preferNewer the copy is served (old behaviour); a throwing hook is ignored', async () => {
         const key = uniq('pn3');
         const kv = fakeKv({ [`ftb:lg:${key}`]: { data: good, savedAt: '2026-10-03T20:00:00.000Z' } });
-        expect((await (await serve(key, async () => staleBuild, { kv, isGood: notGood })).json()).v).toBe(42);
+        expect((await (await serve(key, async () => staleBuild, { kv, isGood: notGood, maxStaleMs })).json()).v).toBe(42);
         const bad = () => { throw new Error('x'); };
-        expect((await (await serve(key, async () => staleBuild, { kv, isGood: notGood, preferNewer: bad })).json()).v).toBe(42);
+        expect((await (await serve(key, async () => staleBuild, { kv, isGood: notGood, preferNewer: bad, maxStaleMs })).json()).v).toBe(42);
     });
 });
 

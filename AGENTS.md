@@ -435,6 +435,47 @@ answered. Three fixes, each safe on its own:
     AND the chart. The 2nd click of a double-click is ignored (`e.detail > 1`), so a
     double-click opens it once. Tooltips live on the labels, so the two never compete.
 
+### 📜 Long look-back in the popover (decades, not since Mar 12) — 2026-10-10
+Rollback: tag `known-good-pre-history-2026-10-10` (= b9fd5d8; the tag message has the
+`vercel rollback` URL), or `git checkout known-good-pre-history-2026-10-10 -- dashboard/`.
+- **Chips** (`lib/chartRange.js`): 1M 3M 6M 1Y 5Y MAX. A stat shows only the windows SHORTER
+  than its history (`rangesFor(spanDays)`), then MAX; a remembered pick it doesn't offer opens
+  as MAX (`pickFor`). The old saved `ALL` (localStorage `ftb:chartRange`) maps to MAX. The
+  eyebrow counts a 1Y/5Y window as full when its first point is within 40 days of the window
+  start (monthly history), else it says "since …".
+- **Baked files** (`scripts/bake_long_history.py` → `public/history/<key>.json` +
+  `lib/data/longHistoryIndex.json`): `{from, t:[day offsets], v:[5 sig figs]}`, one per stat,
+  fetched only when that popover opens (`lib/longHistory.js loadLong`, once per page, a
+  failure retries on the next open, never throws). 34 stats, 804 KB on disk, largest 49 KB.
+  - **Join:** baked points only strictly BEFORE the cut = the sheet's first point for that key,
+    or the index's `sheetFrom` when later. From the cut on, every point is the sheet's. A dotted
+    line marks the cut; the foot reads "<source> · snapshots from <cut>".
+  - **The history sheet is never touched** (append-only; backfilling would break MAX_ROWS,
+    the KV cap and the marks).
+  - Each value is computed like the live number (YoY %, Sahm, 4-wk claims, ratios, the 80%-LTV
+    30-yr payment) and dated AS PUBLISHED (release-lag shift per stat in `SPECS`, measured from
+    the sheet's change days). Daily series older than 5 years are thinned to one point a week.
+  - **Self-check:** a stat is refused when the median |baked − sheet| over the overlap exceeds
+    20% of its 10-year p10–p90 range, or when a re-bake starts later / has < 90% of the old
+    file's points (delete the file first if a later start is on purpose, as for CNN below).
+  - `SHEET_FROM`: P/E (sheet switched source 2026-09-05, so multpl is drawn up to then) and
+    savings (BEA's annual revision, live 2026-09-30, lifted PSAVERT ~1.5 pts).
+- **Sources** (all free, no keys): FRED `fredgraph.csv` (curl's DEFAULT user agent only — a
+  custom UA gets reset); CNBC ts-api for DXY, gold, copper (`1Y` daily ~2 y, `10Y` weekly
+  dated Sunday → +5 d, `ALL` quarterly dated quarter start → quarter end); CNN graphdata
+  (needs `Referer: https://edition.cnn.com/`; the feed opens with 6 months of flat-50 filler,
+  dropped, so CNN starts 2021-01-22); AAII `sentiment.xls` (bear − bull, like the pill);
+  multpl by-month P/E (1871→). Yahoo 429s and Stooq has a JS wall. **BDT pairs have no long
+  source and stay sheet-only.**
+- **New popovers:** VIX current + VIX 3M (`CustomIndicatorBar`), and the CNN F&G hero score
+  (`SHEET_METRICS.cnnFearGreed`, col 66, from 2026-09-26). The VIX-proxy F&G gets no chart.
+- **Re-bake about once a year** (`cd dashboard && uv run scripts/bake_long_history.py [--dry]
+  [key …]`): `/api/history` `series` holds ~2 years, so from ~2028-03 the sheet no longer
+  reaches back to the bake's end and a gap would open. A test (`longHistory.test.js`) checks
+  every index row decodes, matches its file and ends after 2026-03-12.
+- **Freshness:** unchanged. Baked files are static history; the newest point on every chart
+  is still the sheet's, which `/api/freshness` already grades.
+
 ### 🧰 QoL ship 6: glance bar · Pulse verdicts · back pill · thumb taps · Markets windows · econ line — 2026-10-04
 Twelve client-side upgrades; no `/api` route or feed contract changed. Rollback: tag
 `known-good-2026-10-04` (= 210de43). CSS for each lane sits at the end of `globals.css` in

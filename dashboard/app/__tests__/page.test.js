@@ -201,6 +201,25 @@ describe('honest labels on the SPY and Fear & Greed cards', () => {
         await waitFor(() => expect(document.querySelectorAll('.fg-history-item')).toHaveLength(4));
         expect(document.querySelector('[data-testid="fg-provenance"]')).toBeNull();
     });
+
+    it('📈 the CNN score opens its chart (sheet + CNN since 2021); the VIX proxy is a different number: no chart', async () => {
+        const fg = (meta) => ok({ score: 45, rating: 'FEAR', previousClose: 38, previousWeek: 40, previousMonth: 38, previousYear: 49, _meta: meta });
+        const history = ok({ today: '2026-10-10', metrics: {}, series: { from: '2026-09-21', days: 20, v: { cnnFearGreed: Array.from({ length: 20 }, (_, i) => 40 + (i % 6)) } } });
+        const score = () => [...document.querySelectorAll('.hero-price')].find((h) => h.textContent === '45');
+        mockRoutes({ '/api/fear-greed': fg({ source: 'CNN', hasErrors: false }), '/api/history': history });
+        const first = render(<Dashboard />);
+        await waitFor(() => expect(score()?.querySelector('.chartable')).toBeTruthy());
+        await act(async () => { fireEvent.click(score().querySelector('.chartable')); });
+        expect(document.querySelector('.mark-pop').getAttribute('aria-label')).toBe('CNN Fear & Greed chart');
+        first.unmount();
+        window.localStorage.clear();
+
+        mockRoutes({ '/api/fear-greed': fg({ source: 'Yahoo ^VIX Proxy', proxy: true, hasErrors: true }), '/api/history': history });
+        render(<Dashboard />);
+        await waitFor(() => expect(score()).toBeTruthy());
+        await act(async () => { await new Promise((res) => setTimeout(res, 0)); });
+        expect(score().querySelector('.chartable')).toBeNull();
+    });
 });
 
 it('📡 Market Pulse shows the verdicts of the cards below, the Rubber Band one handed up by its own card', async () => {

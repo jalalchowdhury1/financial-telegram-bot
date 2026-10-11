@@ -11,7 +11,8 @@
  * and nothing pulses forever, so a page with four marks never strobes.
  *
  * Tap / click the value (or the dot) to see what it was before — and, for any number
- * with history-sheet data (`chartKey`), its chart (2026-09-26; range chips 2026-10-09). A number with a
+ * with history-sheet data (`chartKey`), its chart (2026-09-26; range chips 2026-10-09; decades
+ * of baked history before the sheet, lib/longHistory.js, 2026-10-10). A number with a
  * chart but no mark gets a faint dotted underline so it reads as tappable.
  *
  * THE POPOVER IS PORTALLED TO document.body AND POSITIONED FIXED. It must not live
@@ -19,18 +20,20 @@
  * an absolutely-positioned child is trapped there and the NEXT card paints over it.
  * (globals.css already carries a comment from a previous run-in with this bug.)
  */
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useChart } from './MarkProvider';
-import { RANGES, getRange, setRange, sliceRange, rangeLabel } from '../lib/chartRange';
+import { RANGES, getRange, setRange, sliceRange, rangeLabel, rangesFor, pickFor } from '../lib/chartRange';
+import { longInfo, loadLong, peekLong, joinLong, cutFor, spanDays } from '../lib/longHistory';
 
 const MAX_SPARK = 8;
 
-function fmtDate(iso) {
+function fmtDate(iso, long = false) {
     if (!iso) return null;
     const d = new Date(`${iso}T00:00:00`);
     if (Number.isNaN(d.getTime())) return null;
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    // past ~10 months "Oct 9" is ambiguous: month + year instead
+    return d.toLocaleDateString('en-US', long ? { month: 'short', year: 'numeric' } : { month: 'short', day: 'numeric' });
 }
 
 /** Sparkline of recent values, with the newest point emphasised. */
@@ -59,10 +62,12 @@ function Spark({ runs, dir }) {
 const fmtNum = (v) => v.toLocaleString('en-US', { maximumFractionDigits: Math.abs(v) >= 100 ? 0 : 2 });
 
 /**
- * Line of daily sheet snapshots (the window the range chips picked): low / high, first → last, and the dates. Drawn in a
+ * Line of the window the range chips picked: low / high, first → last, and the dates. Drawn in a
  * neutral colour: "up" is bad news for VIX, claims or spreads, so green/red would mislead.
+ * `joinAt` (the date the sheet's snapshots take over from baked history) gets a faint dotted
+ * rule when it falls inside the window.
  */
-export function SeriesChart({ chart, format }) {
+export function SeriesChart({ chart, format, joinAt }) {
     const pts = chart?.points || [];
     if (pts.length < 2) return null;
     const f = (v) => { try { return format ? format(v) : fmtNum(v); } catch { return fmtNum(v); } };
@@ -74,9 +79,13 @@ export function SeriesChart({ chart, format }) {
     const x = (p) => ((Date.parse(`${p.date}T00:00:00Z`) - t0) / span) * (w - 6) + 3;
     const y = (v) => h - 4 - ((v - lo) / vr) * (h - 8);
     const first = pts[0], last = pts[pts.length - 1];
+    const long = span > 300 * 86400000;
+    const jx = joinAt && pts[0].long && joinAt > first.date && joinAt <= last.date ? x({ date: joinAt }) : null;
     return (
         <div className="series-chart">
             <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" aria-hidden="true">
+                {jx != null && <line className="series-join" x1={jx} x2={jx} y1="0" y2={h}
+                    stroke="rgba(148,163,184,.4)" strokeWidth="1" strokeDasharray="2 2" vectorEffect="non-scaling-stroke" />}
                 <polyline points={pts.map((p) => `${x(p).toFixed(1)},${y(p.value).toFixed(1)}`).join(' ')}
                     fill="none" stroke="var(--mark, #22d3ee)" strokeWidth="1.6" strokeLinejoin="round" />
                 <circle cx={x(last)} cy={y(last.value)} r="2.6" fill="var(--mark, #22d3ee)" />
@@ -85,8 +94,8 @@ export function SeriesChart({ chart, format }) {
                 <span>low {f(lo)}</span><span>high {f(hi)}</span>
             </div>
             <div className="series-dates">
-                <span>{fmtDate(first.date)}: {f(first.value)}</span>
-                <span>{fmtDate(last.date)}: {f(last.value)}</span>
+                <span>{fmtDate(first.date, long)}: {f(first.value)}</span>
+                <span>{fmtDate(last.date, long)}: {f(last.value)}</span>
             </div>
         </div>
     );
@@ -122,34 +131,65 @@ function fmtDelta(mark) {
 }
 
 /**
- * The popover's chart section: 1M · 3M · 6M · ALL chips (styled like the cards' timeframe
- * pills), the eyebrow, the line. Mounts only while the popover is open, so it reads the
- * remembered pick fresh each time — a chip picked on one number carries to the next.
+ * A stat's baked long history (lib/longHistory.js), fetched when its popover opens.
+ * undefined while loading, null when there is none or it failed, else the points.
+ */
+function useLong(key) {
+    const has = !!longInfo(key);
+    const [pts, setPts] = useState(() => (has ? peekLong(key) : null));
+    useEffect(() => {
+        if (!has) { setPts(null); return undefined; }
+        let live = true;
+        loadLong(key).then((p) => { if (live) setPts(p); });
+        return () => { live = false; };
+    }, [key, has]);
+    return pts;
+}
+
+/**
+ * The popover's chart section: 1M · 3M · 6M · 1Y · 5Y · MAX chips (styled like the cards'
+ * timeframe pills; only the ones this stat's history can fill), the eyebrow, the line. Mounts
+ * only while the popover is open, so it reads the remembered pick fresh each time — a chip
+ * picked on one number carries to the next.
  */
 export function ChartBlock({ chart, format, marked, onRangeChange }) {
+    const info = longInfo(chart.key);
+    const long = useLong(chart.key);
+    const all = useMemo(() => joinLong(chart.points, long, info), [chart.points, long, info]);
+    const chips = rangesFor(spanDays(chart.points, info));
     const [range, setLocal] = useState(getRange);
-    const pts = sliceRange(chart.points, range);
+    const shown = pickFor(range, chips);
+    const pts = sliceRange(all, shown);
+    const cut = info ? cutFor(chart.points, info) : null;
     const pick = (id) => {
         setRange(id);
         setLocal(id);
         if (onRangeChange) window.requestAnimationFrame?.(onRangeChange);
     };
+    // Footer: where the line comes from. "loading…" only while the window needs the baked part.
+    const r = RANGES.find((x) => x.id === shown);
+    const last = chart.points[chart.points.length - 1]?.date;
+    const wantsOld = !!(info && cut && last && (r.days === Infinity
+        || new Date(Date.parse(`${last}T00:00:00Z`) - (r.days - 1) * 86400000).toISOString().slice(0, 10) < cut));
+    let foot = 'daily snapshots · history sheet';
+    if (pts[0]?.long) foot = `${info.source} · snapshots from ${fmtDate(cut)}`;
+    else if (wantsOld && long === undefined) foot = `loading history since ${info.from.slice(0, 4)}…`;
     return (
         <>
             {marked && <div className="mark-pop-sep" />}
             <div className="series-head">
-                <div className="mark-pop-eyebrow">{chart.label} · {rangeLabel(pts, range)}</div>
+                <div className="mark-pop-eyebrow">{chart.label} · {rangeLabel(pts, shown)}</div>
                 <div className="series-tfs" role="group" aria-label="Chart range">
-                    {RANGES.map((r) => (
-                        <button key={r.id} type="button"
-                            className={`series-tf${r.id === range ? ' is-on' : ''}`}
-                            aria-pressed={r.id === range}
-                            onClick={(e) => { e.stopPropagation(); pick(r.id); }}>{r.id}</button>
+                    {chips.map((c) => (
+                        <button key={c.id} type="button"
+                            className={`series-tf${c.id === shown ? ' is-on' : ''}`}
+                            aria-pressed={c.id === shown}
+                            onClick={(e) => { e.stopPropagation(); pick(c.id); }}>{c.id}</button>
                     ))}
                 </div>
             </div>
-            <SeriesChart chart={{ ...chart, points: pts }} format={format} />
-            <div className="mark-pop-foot">daily snapshots · history sheet</div>
+            <SeriesChart chart={{ ...chart, points: pts }} format={format} joinAt={cut} />
+            <div className="mark-pop-foot">{foot}</div>
         </>
     );
 }

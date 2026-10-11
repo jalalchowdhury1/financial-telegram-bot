@@ -140,7 +140,9 @@ export default function CustomIndicatorBar({ sheets, loading }) {
                 <div className="value">
                     {loading ? '...' : (sheets?.VIX?.current
                         ? <>
-                            {`${sheets.VIX.current} | ${sheets.VIX.threeMonth}`}
+                            <Delta chartKey="vixCurrent" raw={parseFloat(sheets.VIX.current)}>{sheets.VIX.current}</Delta>
+                            {' | '}
+                            <Delta chartKey="vix3m" raw={parseFloat(sheets.VIX.threeMonth)}>{sheets.VIX.threeMonth}</Delta>
                             <span className="vix-tag"><span className="vix-tag-sep"> | </span>{sheets.VIX.fearGreed}</span>
                         </>
                         : 'N/A')}

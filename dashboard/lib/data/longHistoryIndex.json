@@ -1,0 +1,211 @@
+{
+ "keys": {
+  "aaiiDiff": {
+   "from": "1987-07-24",
+   "to": "2026-10-08",
+   "n": 2044,
+   "source": "AAII survey"
+  },
+  "atnhpi": {
+   "from": "1976-11-28",
+   "to": "2026-08-29",
+   "n": 200,
+   "source": "FRED ATNHPIUS39300Q"
+  },
+  "btc": {
+   "from": "2014-12-06",
+   "to": "2026-10-10",
+   "n": 2183,
+   "source": "FRED CBBTCUSD"
+  },
+  "cadinr": {
+   "from": "1973-01-05",
+   "to": "2026-10-02",
+   "n": 3794,
+   "source": "FRED DEXINUS ÷ DEXCAUS"
+  },
+  "cl": {
+   "from": "1986-01-03",
+   "to": "2026-10-06",
+   "n": 3112,
+   "source": "FRED DCOILWTICO"
+  },
+  "claims": {
+   "from": "1967-02-02",
+   "to": "2026-10-08",
+   "n": 3115,
+   "source": "FRED ICSA (4-week avg)"
+  },
+  "cnnFearGreed": {
+   "from": "2021-01-22",
+   "to": "2026-10-09",
+   "n": 1292,
+   "source": "CNN Fear & Greed"
+  },
+  "copperGold": {
+   "from": "1988-09-30",
+   "to": "2026-10-09",
+   "n": 1271,
+   "source": "CNBC copper ÷ gold × 1000"
+  },
+  "creditSpread": {
+   "from": "2023-10-10",
+   "to": "2026-10-08",
+   "n": 786,
+   "source": "FRED BAMLC0A4CBBB"
+  },
+  "durable": {
+   "from": "1992-06-30",
+   "to": "2026-09-30",
+   "n": 412,
+   "source": "FRED DGORDER (3-month change)"
+  },
+  "dxy": {
+   "from": "1980-03-31",
+   "to": "2026-10-09",
+   "n": 1348,
+   "source": "CNBC .DXY"
+  },
+  "gold": {
+   "from": "1980-03-31",
+   "to": "2026-10-09",
+   "n": 1306,
+   "source": "CNBC gold futures"
+  },
+  "housing": {
+   "from": "1959-02-17",
+   "to": "2026-09-17",
+   "n": 812,
+   "source": "FRED HOUST"
+  },
+  "indpro": {
+   "from": "1919-08-16",
+   "to": "2026-09-16",
+   "n": 1286,
+   "source": "FRED INDPRO (6-month change)"
+  },
+  "jolts": {
+   "from": "2001-02-01",
+   "to": "2026-10-02",
+   "n": 309,
+   "source": "FRED JTSJOL"
+  },
+  "m2": {
+   "from": "1960-02-25",
+   "to": "2026-09-25",
+   "n": 800,
+   "source": "FRED M2SL (year-on-year)"
+  },
+  "mortgagePayment": {
+   "from": "1971-04-02",
+   "to": "2026-10-08",
+   "n": 2898,
+   "source": "FRED MORTGAGE30US + MSPUS"
+  },
+  "mortgageRate": {
+   "from": "1971-04-02",
+   "to": "2026-10-08",
+   "n": 2898,
+   "source": "FRED MORTGAGE30US"
+  },
+  "nfci": {
+   "from": "1971-01-13",
+   "to": "2026-10-07",
+   "n": 2909,
+   "source": "FRED NFCI"
+  },
+  "peRatio": {
+   "from": "1871-01-01",
+   "to": "2026-10-09",
+   "n": 1870,
+   "source": "multpl S&P 500 P/E",
+   "sheetFrom": "2026-09-05"
+  },
+  "profitMargin": {
+   "from": "1947-05-31",
+   "to": "2026-08-29",
+   "n": 318,
+   "source": "FRED corporate profits ÷ GDP"
+  },
+  "realYields": {
+   "from": "2003-01-03",
+   "to": "2026-10-08",
+   "n": 2229,
+   "source": "FRED DFII10"
+  },
+  "rentIndex": {
+   "from": "1915-01-12",
+   "to": "2026-09-12",
+   "n": 1079,
+   "source": "FRED rent CPI × 4.41"
+  },
+  "retail": {
+   "from": "1992-05-16",
+   "to": "2026-09-15",
+   "n": 413,
+   "source": "FRED RSXFS (3-month change)"
+  },
+  "sahmRule": {
+   "from": "1949-01-05",
+   "to": "2026-10-06",
+   "n": 933,
+   "source": "FRED UNRATE (Sahm rule)"
+  },
+  "savings": {
+   "from": "1959-03-02",
+   "to": "2026-09-30",
+   "n": 812,
+   "source": "FRED PSAVERT",
+   "sheetFrom": "2026-09-30"
+  },
+  "sentiment": {
+   "from": "1952-12-27",
+   "to": "2026-09-26",
+   "n": 676,
+   "source": "FRED UMCSENT"
+  },
+  "t2y": {
+   "from": "1976-06-04",
+   "to": "2026-10-08",
+   "n": 3616,
+   "source": "FRED DGS2"
+  },
+  "tnx": {
+   "from": "1962-01-05",
+   "to": "2026-10-08",
+   "n": 4368,
+   "source": "FRED DGS10"
+  },
+  "usdcad": {
+   "from": "1971-01-08",
+   "to": "2026-10-02",
+   "n": 3898,
+   "source": "FRED DEXCAUS"
+  },
+  "usdinr": {
+   "from": "1973-01-05",
+   "to": "2026-10-02",
+   "n": 3794,
+   "source": "FRED DEXINUS"
+  },
+  "vix3m": {
+   "from": "2007-12-07",
+   "to": "2026-10-08",
+   "n": 1978,
+   "source": "FRED VXVCLS"
+  },
+  "vixCurrent": {
+   "from": "1990-01-05",
+   "to": "2026-10-08",
+   "n": 2946,
+   "source": "FRED VIXCLS"
+  },
+  "yieldCurve": {
+   "from": "1976-06-04",
+   "to": "2026-10-09",
+   "n": 3616,
+   "source": "FRED T10Y2Y"
+  }
+ },
+ "bakedAt": "2026-10-10"
+}
