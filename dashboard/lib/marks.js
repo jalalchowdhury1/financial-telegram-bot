@@ -74,6 +74,8 @@ export const SHEET_METRICS = {
     vixCurrent:      { col: 36, kind: 'none',  rate: 0.83, label: 'VIX (Current)' },
     vix3m:           { col: 37, kind: 'none',  rate: 0.83, label: 'VIX (3M)' },
     vixFearGreed:    { col: 38, kind: 'none',  rate: 0.78, label: 'VIX Fear/Greed' },
+    // CNN's index (not the VIX tag above), from 2026-09-26; here for its chart only.
+    cnnFearGreed:    { col: 66, kind: 'none',  rate: 0.80, label: 'CNN Fear & Greed' },
 };
 
 /**

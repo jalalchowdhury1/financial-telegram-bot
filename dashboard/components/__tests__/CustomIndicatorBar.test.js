@@ -101,3 +101,28 @@ describe('stale pill line', () => {
         expect(screen.queryByTestId('stale-vixCurrent')).toBeNull();
     });
 });
+
+describe('📈 VIX current and VIX 3M open their own charts', () => {
+    const { MarkProvider } = require('../MarkProvider');
+    const ramp = (base) => Array.from({ length: 40 }, (_, i) => base + (i % 4) / 10);
+    const series = { from: '2026-09-01', days: 40, v: { vixCurrent: ramp(14.5), vix3m: ramp(17.5) } };
+    const sheets = { AAIIDiff: 'N/A', VIX: { current: '14.84', threeMonth: '17.77', fearGreed: 'GREED04' } };
+
+    test('each number is tappable on its own; the pill still reads "14.84 | 17.77 | GREED04"', () => {
+        global.fetch = jest.fn(() => new Promise(() => {})); // baked file never lands: the sheet line still draws
+        const { container } = render(<MarkProvider history={null} series={series}><CustomIndicatorBar sheets={sheets} loading={false} /></MarkProvider>);
+        const pill = [...container.querySelectorAll('.indicator-pill')].find((p) => /VIX \(Current \| 3M\)/.test(p.textContent));
+        expect(pill.querySelector('.value').textContent).toBe('14.84 | 17.77 | GREED04');
+        const taps = pill.querySelectorAll('.chartable');
+        expect([...taps].map((t) => t.textContent)).toEqual(['14.84', '17.77']);
+        require('@testing-library/react').fireEvent.click(taps[1]);
+        expect(document.querySelector('.mark-pop').getAttribute('aria-label')).toBe('VIX (3M) chart');
+        expect(document.querySelector('.mark-pop-foot').textContent).toMatch(/loading history since 2007/);
+        delete global.fetch;
+    });
+
+    test('no sheet history → plain numbers, exactly as before', () => {
+        const { container } = render(<CustomIndicatorBar sheets={sheets} loading={false} />);
+        expect(container.querySelectorAll('.chartable')).toHaveLength(0);
+    });
+});

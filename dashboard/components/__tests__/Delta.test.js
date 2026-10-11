@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import Delta from '../Delta';
 
 const printMark = {
@@ -179,11 +179,14 @@ describe('📈 tap for the 90-day chart', () => {
     const series = { from: '2026-06-29', days: 90, v: { claims: Array.from({ length: 90 }, (_, i) => 200 + (i % 5)) } };
     const wrap = (ui) => render(<MarkProvider history={null} series={series}>{ui}</MarkProvider>);
 
-    test('a number with history but no mark is tappable and opens its chart', () => {
+    test('a number with history but no mark is tappable and opens its chart', async () => {
+        global.fetch = jest.fn(() => Promise.resolve({ ok: false, status: 404 }));
         wrap(<Delta mark={null} chartKey="claims" raw={204}>204</Delta>);
         const btn = screen.getByRole('button');
         expect(btn).toHaveClass('chartable');
-        fireEvent.click(btn);
+        await act(async () => { fireEvent.click(btn); });
+        require('../../lib/longHistory').resetLong();
+        delete global.fetch;
         const pop = document.querySelector('.mark-pop');
         expect(pop.textContent).toMatch(/Initial Claims \(4wk\) · 90 days/);
         expect(pop.textContent).toMatch(/low 200/);
@@ -193,29 +196,87 @@ describe('📈 tap for the 90-day chart', () => {
         expect(document.querySelector('.mark-pop')).toBeNull();
     });
 
-    test('range chips: 3M by default, a tap re-slices without closing, and the pick carries to the next popover', () => {
+    test('range chips: 3M by default, a tap re-slices without closing, and the pick carries to the next popover', async () => {
         require('../../lib/chartRange').resetRange();
         window.localStorage.clear();
+        global.fetch = jest.fn(() => Promise.resolve({ ok: false, status: 404 })); // no baked file → sheet only
         wrap(<Delta mark={null} chartKey="claims" raw={204}>204</Delta>);
         const btn = document.querySelector('.chartable');
-        fireEvent.click(btn);
+        await act(async () => { fireEvent.click(btn); });
         const on = () => document.querySelector('.series-tf.is-on').textContent;
         expect(on()).toBe('3M');
         fireEvent.click(screen.getByRole('button', { name: '1M' }));
         expect(document.querySelector('.mark-pop')).not.toBeNull();
         expect(on()).toBe('1M');
         expect(document.querySelector('.mark-pop').textContent).toMatch(/· 30 days/);
-        fireEvent.click(screen.getByRole('button', { name: 'ALL' }));
+        fireEvent.click(screen.getByRole('button', { name: 'MAX' }));
         expect(document.querySelector('.mark-pop').textContent).toMatch(/· since Jun 29/);
-        fireEvent.click(btn); fireEvent.click(btn); // close, reopen
-        expect(on()).toBe('ALL');
+        expect(document.querySelector('.mark-pop-foot').textContent).toBe('daily snapshots · history sheet');
+        fireEvent.click(btn); await act(async () => { fireEvent.click(btn); }); // close, reopen
+        expect(on()).toBe('MAX');
+        require('../../lib/chartRange').resetRange();
+        window.localStorage.clear();
+        require('../../lib/longHistory').resetLong();
+        delete global.fetch;
+    });
+
+    test('📜 baked long history: fetched on open, drawn BEFORE the sheet, 1Y/5Y chips, source in the footer', async () => {
+        require('../../lib/chartRange').resetRange();
+        window.localStorage.clear();
+        require('../../lib/longHistory').resetLong();
+        // weekly claims from 1990-01-05 to 2026-09-25: the part from Jun 29 on must be dropped
+        const t = Array.from({ length: 1900 }, (_, i) => i * 7);
+        const body = { key: 'claims', from: '1990-01-05', t, v: t.map((d) => 300 + (d % 50)) };
+        global.fetch = jest.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve(body) }));
+        wrap(<Delta mark={null} chartKey="claims" raw={204}>204</Delta>);
+        await act(async () => { fireEvent.click(document.querySelector('.chartable')); });
+        expect(global.fetch).toHaveBeenCalledWith('/history/claims.json');
+        expect([...document.querySelectorAll('.series-tf')].map((b) => b.textContent)).toEqual(['1M', '3M', '6M', '1Y', '5Y', 'MAX']);
+        const pop = () => document.querySelector('.mark-pop').textContent;
+        expect(pop()).toMatch(/· 90 days/);                       // 3M: the sheet alone
+        expect(document.querySelector('.mark-pop-foot').textContent).toBe('daily snapshots · history sheet');
+        fireEvent.click(screen.getByRole('button', { name: '5Y' }));
+        expect(pop()).toMatch(/· 5 years/);
+        fireEvent.click(screen.getByRole('button', { name: 'MAX' }));
+        expect(pop()).toMatch(/· since Jan 5, 1990/);
+        expect(pop()).toMatch(/Jan 1990: 3\d\d/);                  // month + year once the span is long
+        expect(document.querySelector('.mark-pop-foot').textContent).toBe('FRED ICSA (4-week avg) · snapshots from Jun 29');
+        expect(document.querySelector('.series-join')).not.toBeNull(); // where the snapshots take over
+        // the sheet's own points are all still there, unchanged, after the baked ones
+        expect(pop()).toMatch(/Sep 2026: 204/);
+        require('../../lib/chartRange').resetRange();
+        window.localStorage.clear();
+        require('../../lib/longHistory').resetLong();
+        delete global.fetch;
+    });
+
+    test('📜 a stat with no baked file shows only the chips its history can fill; a remembered 5Y falls back to MAX', () => {
+        require('../../lib/chartRange').resetRange();
+        window.localStorage.setItem('ftb:chartRange', '5Y');
+        const s = { from: '2026-03-12', days: 199, v: { usdbdt: Array.from({ length: 199 }, (_, i) => 120 + (i % 3)) } };
+        render(<MarkProvider history={null} series={s}><Delta mark={null} chartKey="usdbdt" raw={122}>122</Delta></MarkProvider>);
+        fireEvent.click(document.querySelector('.chartable'));
+        expect([...document.querySelectorAll('.series-tf')].map((b) => b.textContent)).toEqual(['1M', '3M', '6M', 'MAX']);
+        expect(document.querySelector('.series-tf.is-on').textContent).toBe('MAX');
+        expect(document.querySelector('.mark-pop').textContent).toMatch(/· since Mar 12/);
         require('../../lib/chartRange').resetRange();
         window.localStorage.clear();
     });
 
-    test('a marked number opens with a single tap and shows the chart under the mark', () => {
+    test('📜 the old ALL pick (saved before 1Y/5Y existed) opens as MAX', () => {
+        require('../../lib/chartRange').resetRange();
+        window.localStorage.setItem('ftb:chartRange', 'ALL');
+        expect(require('../../lib/chartRange').getRange()).toBe('MAX');
+        require('../../lib/chartRange').resetRange();
+        window.localStorage.clear();
+    });
+
+    test('a marked number opens with a single tap and shows the chart under the mark', async () => {
+        global.fetch = jest.fn(() => Promise.resolve({ ok: false, status: 404 }));
         const { container } = wrap(<Delta mark={printMark} chartKey="claims" raw={204}>204</Delta>);
-        fireEvent.click(container.querySelector('[data-mark]'));
+        await act(async () => { fireEvent.click(container.querySelector('[data-mark]')); });
+        require('../../lib/longHistory').resetLong();
+        delete global.fetch;
         const pop = document.querySelector('.mark-pop');
         expect(pop.textContent).toMatch(/Before this print/);
         expect(pop.textContent).toMatch(/90 days/);
