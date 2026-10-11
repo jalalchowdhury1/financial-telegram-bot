@@ -259,9 +259,9 @@ The repo is **public** — keys NEVER go in code; they live in **Vercel env vars
 - **External links** must use `target="_blank" rel="noopener noreferrer"`.
 - Probability-bar colors (MarketModal `getOddsColor`): `<0.2` red, `0.2–0.4` orange,
   `0.4–0.6` yellow, `0.6–0.8` green, `≥0.8` bright green. The field is **`bet.odds`** (a
-  decimal 0–1, rendered as a %) — not `bet.probability`. The modal links to the bare
-  `https://polymarket.com` homepage; per-market deep links were deliberately avoided as
-  unreliable (the API doesn't surface a usable slug).
+  decimal 0–1, rendered as a %) — not `bet.probability`. The modal links to that market's
+  event page, `https://polymarket.com/event/<event slug>` (the slug polymarket.com's own links
+  use; `bet.slug`), and to the bare homepage only when a row has no slug (an old saved copy).
 
 ### ⚡ Loading speed + robustness (`lib/cdn.js`, `lib/loadJson.js`, `app/page.js`) — 2026-09-26
 Before: every route ran cold on every visit (all `no-store`), and the page waited on ONE
@@ -735,29 +735,76 @@ repo is deleted (it may still exist and still be writing C2 today; treat it as g
   tier becomes permanently stale — harmless to leave as a dead tier (it degrades to
   `'N/A'` once the cell goes empty) rather than ripping it out, unless it gets confusing.
 
-### Polymarket "Market Sentiment" board (`/api/polymarket` + `PolymarketTable.js`)
-Both the Lambda fetcher (`bot/fetchers.py:fetch_polymarket_trending`, **primary**) and the
-dashboard JS fallback (`dashboard/app/api/polymarket/route.js:fallbackPoly`) implement the
-**same curation** and must stay in sync. They turn the raw Gamma feed (a wall of 1%/100%
-longshots) into a curated board of "what the crowd is betting on":
-1. Fetch a broad pool — paginate the public Gamma REST API (`gamma-api.polymarket.com/markets`,
-   **no key**), `active=true&closed=false`, `order=volume1wk` (recent interest, less churny
-   than 24h), `limit=100`, offsets 0→400 (Gamma caps `limit` at 100).
-2. **Group by event** (`events[0].ticker`/`slug`) so multi-candidate races collapse to one
-   "Event: favorite" row; drop markets resolving in <1 day.
-3. Keep **binary Yes/No** markets only; standalone markets must have odds in **[0.08, 0.92]**
-   and volume ≥ ~$25k; event favorites use [0.05, 0.85] and event-summed volume ≥ ~$25k.
-4. Filter **sports/esports** (a big keyword set + any `sport` tag); tag a **topic** (Crypto 🪙
-   / Geopolitics 🌍 / Politics 🏛️ / Tech 🤖 / Economy 📉 / else World 🌐), cap **2 per topic**.
-5. Rank by volume, de-dupe by event, and **cap longshots** (<30% odds, non-event) to ≈half
-   the slots in a first pass (so the board is a spread, not a wall) — a second pass fills any
-   remaining slots without the cap. Take **top 8**.
-Per-bet contract: `{ name, odds (0–1), volume ($), change (oneMonthPriceChange, ±frac|null),
-topic, topicEmoji, endDate (ISO|null), eventSlug }`. Backward-compatible: `name/odds/volume`
-preserved so `MarketModal` keeps working. The fetcher returns `[]` on any failure (never raises).
-Frontend row: topic emoji + question + colored **%** bar + **▲▼** 30-day momentum (shown only
-when |change| ≥ 0.02) + volume in $M/$k + a muted "resolves in Nd". Out of scope (v2):
-multi-candidate "favorites" lists; a fresher momentum window via the CLOB price-history endpoint.
+### Polymarket "Market Sentiment" board (`/api/polymarket` + `PolymarketTable.js`) — 2026-10-11
+Three slices of polymarket.com, with **sports and esports dropped from all three**. Every source
+is public and keyless. The Lambda (`bot/fetchers.py:fetch_polymarket_board`, **primary**) and
+the Vercel fallback (`dashboard/app/api/polymarket/route.js:directBoard`) hold the **same
+curation** (same feeds, filters, sports regex, topic table and row shapes), so change both
+together. `/api/polymarket?debug=compare` prints both side by side.
+1. **📈 Macro** = polymarket.com/dashboards/macro: Gamma `/events?tag_slug=` for `macro-graph,
+   macro-single, macro-fed, macro-inflation, macro-jobs, macro-unemployment, macro-geopolitics`
+   (that order, de-duped by slug), top **6**. Tile = the leading outcome's `label` + odds + a
+   ~30-day sparkline from the CLOB (`clob.polymarket.com/prices-history?market=<token>&interval=1m
+   &fidelity=720`, ≤40 points). `change` = odds − the first spark point (so the number and the line
+   agree), else Gamma's `oneMonthPriceChange`. **Tags that answer with no open event at all are
+   an outage** (`sources.macro` null → "Macro odds unavailable", `hasErrors`, health warns),
+   never a quiet day: the dashboard always has tiles. On 11 Oct 4 of the 7 tags were already
+   empty (their 2024–25 events closed) and 5 of the 6 live tiles end by Jan 2027, so expect
+   to re-point `PM_MACRO_TAGS` / `MACRO_TAGS` when Polymarket restocks the dashboard.
+2. **🔥 Trending** = the front page's hand-picked cards: Gamma `/events/keyset?…&order=featuredOrder
+   &ascending=true&featured_order=true` (the exact call the homepage makes). It is ~2.5 MB, over
+   Next's 2 MB data-cache limit, so the JS side fetches it with `revalidate: 0`. Kept in
+   Polymarket's own order, minus sports and the 5-minute "Up or Down" coin flips, top **12**, then
+   minus any event already shown as a Macro tile. Row = title + the two likeliest outcomes (a
+   single-market event reads "Chance") + 24h change (shown at ≥1 pt) + total volume.
+3. **⚡ Breaking** = the "Breaking News" page: `polymarket.com/api/biggest-movers` (the site's own
+   feed, with each market's 24h history). Anything also in `?category=sports` is dropped. Keeps
+   open markets with volume ≥ **$50k** and a 24h move ≥ **5 pts**, up or down (a collapse is news
+   too). One row per event, biggest move first, top **10**. **Backup** when that feed fails, or
+   when none of its markets survive (a changed shape is likelier than 25 unusable markets): Gamma
+   `/markets?order=oneDayPriceChange`, both directions, `volume_num_min=50000`, minus
+   `sportsMarketType` / `gameStartTime` / past-`endDate` markets, with a 24h CLOB sparkline
+   (`interval=1d&fidelity=30`).
+
+**Payload:** `{trending, breaking, macro, sources: {trending, breaking, macro}, source, timestamp,
+error, _meta}`. `sources.<list>` names the feed that served the list (`featured`;
+`biggest-movers` | `gamma`; `macro-tags`). It is **null when all of that list's feeds failed**.
+So the card can say "Quiet day: no market moved 5+ points" (empty list + a source) apart from
+"Breaking moves unavailable" (null). Topic emoji: first match wins in `_PM_TOPICS` / `TOPICS`
+(elections are claimed before geopolitics).
+
+**Route:**
+- **Lambda first** (10 s cap). Its answer is accepted only with a non-empty `trending` and no
+  `error`, so an old `{bets}` Lambda is rejected.
+- **Missing lists are filled directly.** A list the Lambda left empty with a null source comes
+  straight from Polymarket, and its source reads e.g. `biggest-movers (direct)`. The top-level
+  `source` stays `Polymarket API`.
+- **Breaking upgrade.** When the Lambda settled for the Gamma backup (`sources.breaking:
+  'gamma'`; polymarket.com may refuse an AWS address), the route tries the site's own feed from
+  Vercel. If that works, the source reads `biggest-movers (direct)`. If not, the Lambda's Gamma
+  rows stay.
+- **Lambda down** → the direct board, labelled `Polymarket Gamma API (fallback)`. The
+  `(fallback)` marker is what health_check's `lambda_primary_path` and `isDegraded` read.
+- **`_meta.hasErrors`** = some list had no source at all. That answer is never edge-cached and
+  never stored as last-good.
+- **Total failure** → `serve()` serves the /tmp, then KV, last-good copy.
+- **Every direct call is capped as a whole** (headers + body) by `makeGet`. `fetchJson`'s own
+  timeout stops at the headers, and Next doesn't pre-read a revalidate-0 body. Without the cap,
+  a stalled 2.5 MB keyset body would outlive the function and turn serve()'s answer into a 504.
+- **Both sides skip one bad row instead of failing the whole list.** Python sends the
+  dashboard's browser headers (`_PM_HEADERS` = `DEFAULT_HEADERS`).
+- **Faults:** `?_fail=lambda,gamma,tmplg,lastgood`.
+
+**Card:**
+- Macro tiles on top, then Trending | Breaking side by side (one column ≤800 px), each showing 6
+  rows with a "Show all N" button.
+- Tap anything → `MarketModal`: every outcome, the sparkline (start → now, ▲/▼ pts) and the
+  `/event/<slug>` link.
+- Odds read like Polymarket's (`<1%`, `>99%`).
+- `normalize()` still draws an old `{bets}` last-good copy as Trending.
+
+Retired 2026-10-11: the `volume1wk` pool and the 8-row curated board (odds bands, 2-per-topic
+cap, longshot cap). The front page already curates, and it does it better.
 
 ### ✦ Fresh Print Marks (`/api/history` + `Delta.js` + `lib/marks.js`)
 
@@ -1511,8 +1558,9 @@ Now: fewer than 756 bars → the Sheet's own 3Y return (`_sheet_return_3y`) → 
 5. Is every new/changed cached `/api/*` route still never-throw (whole body inside
    `serve()`), returning 200 + valid JSON, with no hardcoded secrets?
 6. Did you keep `bot/` lite and put new UI in `dashboard/components/`?
-7. If you changed Polymarket curation, did you mirror it in **both** `bot/fetchers.py` and
-   `dashboard/app/api/polymarket/route.js`?
+7. If you changed Polymarket curation (feeds, filters, sports regex, topics, row shape), did
+   you mirror it in **both** `bot/fetchers.py` and `dashboard/app/api/polymarket/route.js`?
+   (`/api/polymarket?debug=compare` shows both side by side.)
 8. For backend changes: did the **Deploy to AWS Lambda** run go green (incl. the API
    Gateway smoke test)? For dashboard changes: does `npm test` + `npm run build` pass? For
    any change: does `ci.yml` (pytest + jest + build) pass — that's the merge gate.
@@ -1537,7 +1585,7 @@ Now: fewer than 756 bars → the Sheet's own 3Y return (`_sheet_return_3y`) → 
   symbols are paid-tier, 403 forever), USD spot chain ER-API → Frankfurter → Fawaz,
   gold-api.com, Coinbase spot. Stooq is gone — its download endpoint sits behind a JS
   proof-of-work wall), and
-  `fetch_polymarket_trending` (the curated sentiment board), and `calculate_rsi` (Wilder RSI
+  `fetch_polymarket_board` (the Market Sentiment board: macro / trending / breaking), and `calculate_rsi` (Wilder RSI
   used by the SPY waterfall).
 - `scripts/rubber_band.py` — Rubber Band Radar engine (pure maths + Mac mini nightly I/O; see
   §3 and `docs/rubber-band.md`). `scripts/rubber_band_nightly.sh` — its launchd wrapper.
