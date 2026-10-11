@@ -229,6 +229,28 @@ def test_check_ci_runs_ignores_in_progress():
     assert hc.check_ci_runs(runs)["severity"] == "ok"
 
 
+def test_check_ci_runs_ignores_a_failing_pull_request_check():
+    # 2026-10-11: PR #61's failed dry runs were the newest "Rebake Long History" runs, so
+    # the daily check said a workflow was failing though it had never once run on main.
+    runs = [
+        {"name": "Rebake Long History", "conclusion": "failure", "event": "pull_request",
+         "createdAt": "2026-10-11T03:42:02Z"},
+        {"name": "Rebake Long History", "conclusion": "failure", "event": "pull_request",
+         "createdAt": "2026-10-11T03:36:12Z"},
+    ]
+    assert hc.check_ci_runs(runs)["severity"] == "ok"
+
+
+def test_check_ci_runs_still_flags_main_when_a_pr_check_fails_after_it():
+    runs = [
+        {"name": "Deploy", "conclusion": "failure", "event": "pull_request", "createdAt": "2026-06-01T03:00:00Z"},
+        {"name": "Deploy", "conclusion": "failure", "event": "push", "createdAt": "2026-06-01T02:00:00Z"},
+    ]
+    f = hc.check_ci_runs(runs)
+    assert f["severity"] == "warn"
+    assert f["evidence"]["failing"] == ["Deploy"]
+
+
 def test_assemble_report_overall_is_worst_severity():
     findings = [{"severity": "ok"}, {"severity": "warn"}, {"severity": "critical"}]
     assert hc.assemble_report(findings)["overall"] == "critical"

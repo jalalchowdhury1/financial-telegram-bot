@@ -116,3 +116,13 @@ def test_rebake_reports_a_rebuild_that_did_not_succeed():
     assert "steps.rebake.outcome" in run
     assert '!= "success"' in run, (
         "rebake: test the outcome against success, so `skipped`/`cancelled` are not read as healthy")
+
+
+def test_deploy_dashboard_deploys_a_rebake_only_when_main_moved():
+    """rebake-long-history.yml ends green when there is nothing for the owner to do, which
+    includes a run that had nothing new to merge. For a workflow_run, github.sha is main's
+    newest commit (run 38109724192 saw c1ed931d8 while its trigger ran on 06de367fc), so it
+    differs from the rebake's own commit only when the rebake merged: no wasted deploy."""
+    cond = _load("deploy-dashboard.yml")["jobs"]["deploy"]["if"]
+    assert "github.event.workflow_run.conclusion == 'success'" in cond
+    assert "github.sha != github.event.workflow_run.head_sha" in cond

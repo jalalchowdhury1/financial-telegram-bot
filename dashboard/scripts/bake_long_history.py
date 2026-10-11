@@ -28,11 +28,14 @@ kept. A bake that reaches back less far, or has far fewer points, than the file 
 replace is refused too. BDT pairs have no long free source and stay sheet-only.
 
 Run (from dashboard/):  uv run scripts/bake_long_history.py [--dry] [--retry-after=SECONDS] [key ...]
---retry-after: stats whose DOWNLOAD failed get one more try after that wait (CNBC's backend
-503s for minutes at a time). A refused stat is not retried: it would only refuse again.
+--retry-after: stats whose DOWNLOAD failed get one more try after that wait. A refused stat
+is not retried: it would only refuse again.
 .github/workflows/rebake-long-history.yml re-bakes every quarter: the sheet's chart window
 is capped at 730 days (lib/marks.js CHART_MAX_DAYS), so a bake left alone ~2 years would
-leave a gap between its last day and the sheet.
+leave a gap between its last day and the sheet. A stat that kept its old file is fine until
+then. The last lines are for that workflow: NOTHING BAKED when every stat failed, and
+RUNWAY LOW naming each stat whose chart would show a gap within a year (a file kept too
+long, or a source that still answers but stopped updating).
 """
 import csv
 import functools
@@ -55,25 +58,29 @@ SHEET_CSV = ('https://docs.google.com/spreadsheets/d/1lA-_yjLMc3qDTt9sogSPQrCohN
 BROWSER = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
 DAILY_YEARS = 5          # keep every day this far back from the newest point; weekly before
 MATCH_FRAC = 0.2         # refuse when the median |baked − sheet| exceeds 20% of the stat's 10-year p10–p90 range
+CHART_DAYS = 730         # lib/marks.js CHART_MAX_DAYS: the days of sheet /api/history serves
+RUNWAY_ALERT_DAYS = 365  # RUNWAY LOW names a stat whose chart gap is nearer than this
+SHEET_WAITS = (5, 15, 30, 60, 120)   # the sheet is read once, before any stat: a Google blip must not end the run
 
 
 # ── downloads ──────────────────────────────────────────────────────────────────
 
-def curl(url, ua=None, headers=()):
+def curl(url, ua=None, headers=(), waits=(2, 5)):
     """FRED resets connections from most user agents but answers curl's own, so FRED calls
-    pass ua=None. Retries 3×; raises on failure."""
+    pass ua=None. One try more than there are waits; raises on failure."""
     cmd = ['curl', '-sfL', '-m', '90', '--compressed']
     if ua:
         cmd += ['-A', ua]
     for h in headers:
         cmd += ['-H', h]
     last = None
-    for attempt in range(3):
+    for wait in (*waits, None):
         r = subprocess.run(cmd + [url], capture_output=True)
         if r.returncode == 0 and r.stdout:
             return r.stdout
         last = f'curl exit {r.returncode}'
-        time.sleep(2 + attempt * 3)
+        if wait is not None:
+            time.sleep(wait)
     raise RuntimeError(f'{last}: {url}')
 
 
@@ -99,13 +106,17 @@ def add_months(d, n):
 @functools.lru_cache(maxsize=None)
 def cnbc_bars(symbol, rng):
     """One CNBC bar series, fetched once per run (gold and copper/gold share @GC.1).
-    CNBC now and then answers 200 with no bars (its backend 503s, a different symbol each
-    run, from GitHub's runners and from the Mac alike), so an empty answer is retried with
-    a growing wait before the stat is given up."""
+    CNBC's chart API caches its answer per EXACT URL, an error too: when its backend fails
+    it answers 200 with no bars and "503 Backend fetch failed", then replays that for hours
+    (.DXY ALL replayed a 23:42 error until at least 09:42 the next day, 2026-10-11). Retrying
+    the same URL could never get past it, and sank all four of PR #61's dry runs. So every
+    try carries a `_=` the cache has never seen and reaches the backend, whose own misses
+    are brief."""
+    url = f'https://ts-api.cnbc.com/harmony/app/charts/{rng}.json?symbol={quote(symbol)}'
     for attempt in range(4):
         if attempt:
             time.sleep(10 * 2 ** (attempt - 1))   # 10, 20, 40 s; main() retries once more later
-        j = json.loads(curl(f'https://ts-api.cnbc.com/harmony/app/charts/{rng}.json?symbol={quote(symbol)}', ua=BROWSER))
+        j = json.loads(curl(f'{url}&_={time.time_ns()}{attempt}', ua=BROWSER))
         out = []
         for b in (j.get('barData') or {}).get('priceBars') or []:
             try:
@@ -346,6 +357,23 @@ def sig(v):
     return float(f'{v:.5g}')
 
 
+def runway_low(entries, keys, today):
+    """Of `keys`, the stats worth the owner's time. The popover draws a baked file only
+    before the sheet window, which /api/history caps at CHART_DAYS, so a file leaves a gap
+    in its chart from (its last day + CHART_DAYS): one missed quarter still leaves ~2 years.
+    `entries` is the index after this run (a re-baked stat's new last day, a failed one's
+    old). Named when that gap is less than RUNWAY_ALERT_DAYS away, or with no file at all."""
+    low = []
+    for k in keys:
+        if k not in entries:
+            low.append(f'{k} (no baked file)')
+            continue
+        gap = date.fromisoformat(entries[k]['to']) + timedelta(days=CHART_DAYS)
+        if (gap - today).days < RUNWAY_ALERT_DAYS:
+            low.append(f'{k} (chart gap from {gap})')
+    return low
+
+
 def main(argv):
     dry = '--dry' in argv
     retry_after = next((int(a.split('=', 1)[1]) for a in argv if a.startswith('--retry-after=')), 0)
@@ -353,7 +381,7 @@ def main(argv):
     unknown = [k for k in only if k not in SPECS]
     if unknown:
         sys.exit(f'unknown key(s): {unknown}')
-    rows = list(csv.reader(io.StringIO(curl(SHEET_CSV, ua='financial-dashboard-bake/1.0').decode())))
+    rows = list(csv.reader(io.StringIO(curl(SHEET_CSV, ua='financial-dashboard-bake/1.0', waits=SHEET_WAITS).decode())))
     try:
         index = json.loads(INDEX.read_text())
     except FileNotFoundError:
@@ -398,13 +426,20 @@ def main(argv):
             prev_path.write_text(json.dumps(body, separators=(',', ':'), ensure_ascii=False) + '\n')
         return 'ok'
 
-    results = {k: bake(k) for k in SPECS if not only or k in only}
+    def attempt(key):
+        try:
+            return bake(key)
+        except Exception as e:  # nor may a bad answer that trips a self-check (no points at all)
+            print(f'{key:16} FAILED: {type(e).__name__}: {e}')
+            return 'error'
+
+    results = {k: attempt(k) for k in SPECS if not only or k in only}
     retry = [k for k, r in results.items() if r == 'download']
     if retry and retry_after:
         print(f'\n{len(retry)} download(s) failed, one more try in {retry_after} s: {retry}')
         time.sleep(retry_after)
         for k in retry:
-            results[k] = bake(k)
+            results[k] = attempt(k)
     failed = [k for k, r in results.items() if r != 'ok']
     index['bakedAt'] = date.today().isoformat()
     index['keys'] = dict(sorted(index['keys'].items()))
@@ -412,6 +447,11 @@ def main(argv):
         INDEX.write_text(json.dumps(index, indent=1, ensure_ascii=False) + '\n')
     print(f'\n{"dry run — nothing written" if dry else f"wrote {OUT_DIR.relative_to(HERE.parent)}/ + {INDEX.relative_to(HERE.parent)}"}'
           f'{f"; FAILED/REFUSED: {failed}" if failed else ""}')
+    if failed and len(failed) == len(results):
+        print('NOTHING BAKED: every stat kept its old file')
+    low = runway_low(index['keys'], list(results), date.today())
+    if low:
+        print(f'RUNWAY LOW: {", ".join(low)}')
     return 1 if failed else 0
 
 
