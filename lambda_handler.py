@@ -36,7 +36,7 @@ from bot.fetchers import (
     fetch_spy_with_fallback,
     fetch_spy_daily_move,
     fetch_market_extra,
-    fetch_polymarket_trending,
+    fetch_polymarket_board,
 )
 from bot.utils import load_environment_variables, send_to_telegram, report_marker, digest_post
 from bot.jev_line import fetch_jev_line
@@ -108,11 +108,12 @@ def handle_http_api(event: Dict[str, Any], env_vars: Dict[str, str]) -> Dict[str
 
         elif path == '/api/polymarket':
             logger.info('Dashboard: GET /api/polymarket')
-            bets = fetch_polymarket_trending()
+            board = fetch_polymarket_board()   # {trending, breaking, macro, sources}
             return _ok({
-                'bets': bets,
+                **board,
+                'source': 'Polymarket API',
                 'timestamp': datetime.utcnow().isoformat() + 'Z',
-                'error': None if bets else 'Polymarket API unavailable'
+                'error': None if board['trending'] else 'Polymarket API unavailable'
             })
 
         else:

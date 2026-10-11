@@ -2968,3 +2968,73 @@ html:not(:has(.jump-fab)) .back-pill {
 @media (prefers-reduced-motion: reduce) {
   .rb-hero-icon, .rb-explain { animation: none; }
 }
+
+/* 📊 Market Sentiment (components/PolymarketTable.js): 📈 Macro tiles on top, then
+   🔥 Trending and ⚡ Breaking side by side; one column on phones. Every row is a button
+   (keyboard + a 44px tap height) that opens the details sheet (MarketModal.js, .pm-sheet-*). */
+.pm-section { min-width: 0; }
+.pm-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 0 0 8px; }
+.pm-head h3 { margin: 0; font-size: 0.74rem; font-weight: 700; color: var(--text-primary); text-transform: uppercase; letter-spacing: 0.05em; }
+.pm-head span { font-size: 0.65rem; color: var(--text-muted); text-align: right; }
+.pm-tile, .pm-row, .pm-more { font: inherit; color: inherit; background: none; border: 0; text-align: left; cursor: pointer; }
+.pm-tile:focus-visible, .pm-row:focus-visible, .pm-more:focus-visible { outline: 2px solid var(--text-accent); outline-offset: 2px; }
+.pm-macro { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-bottom: 20px; }
+.pm-tile {
+  display: flex; flex-direction: column; gap: 4px; min-width: 0; min-height: 44px; padding: 10px 10px 8px;
+  border-radius: var(--radius-sm); background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.06);
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+.pm-tile:hover { background: rgba(255, 255, 255, 0.06); border-color: rgba(255, 255, 255, 0.12); }
+.pm-tile-title {
+  min-height: 2.6em; font-size: 0.7rem; line-height: 1.3; color: var(--text-secondary);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.pm-tile-label { font-size: 0.65rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pm-tile-row { display: flex; align-items: baseline; gap: 6px; }
+.pm-tile-odds { font-family: 'JetBrains Mono', monospace; font-size: 1.15rem; font-weight: 700; color: var(--text-primary); }
+.pm-spark { display: block; width: 100%; height: 22px; overflow: visible; }
+.pm-delta { font-family: 'JetBrains Mono', monospace; font-size: 0.62rem; font-weight: 700; white-space: nowrap; }
+.pm-delta.up { color: var(--green); }
+.pm-delta.down { color: var(--red); }
+.pm-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px; }
+.pm-list { list-style: none; margin: 0; padding: 0; }
+.pm-list li { border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
+.pm-list li:last-child { border-bottom: 0; }
+.pm-row { display: flex; width: 100%; min-height: 44px; padding: 8px 6px; border-radius: 6px; transition: background 0.2s ease; }
+.pm-row:hover { background: rgba(255, 255, 255, 0.05); }
+.pm-title {
+  flex: 1; min-width: 0; font-size: 0.78rem; font-weight: 600; line-height: 1.35; color: var(--text-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pm-trend { flex-direction: column; gap: 4px; }
+.pm-trend-head { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.pm-vol { font-family: 'JetBrains Mono', monospace; font-size: 0.65rem; color: var(--text-muted); white-space: nowrap; }
+.pm-out { display: grid; grid-template-columns: minmax(0, 1fr) 64px 40px 36px; align-items: center; gap: 8px; font-size: 0.7rem; color: var(--text-secondary); }
+.pm-out-2 { opacity: 0.72; }
+.pm-out-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pm-bar { display: block; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+.pm-bar > span { display: block; height: 100%; border-radius: 2px; background: var(--text-accent); }
+.pm-out-2 .pm-bar > span { background: var(--text-muted); }
+.pm-out-odds { font-family: 'JetBrains Mono', monospace; font-weight: 700; text-align: right; color: var(--text-primary); }
+.pm-out .pm-delta { text-align: right; }
+.pm-break { align-items: center; gap: 10px; }
+.pm-q { white-space: normal; font-weight: 500; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.pm-break-spark { flex: 0 0 56px; width: 56px; }
+.pm-break-num { flex: 0 0 auto; min-width: 44px; display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+.pm-break-odds { font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; font-weight: 700; color: var(--text-primary); }
+.pm-more { display: block; margin: 4px auto 0; min-height: 44px; padding: 10px 14px; font-size: 0.7rem; font-weight: 600; color: var(--text-accent); }
+.pm-note { padding: 8px 0; font-size: 0.72rem; color: var(--text-muted); }
+.pm-stale { color: var(--orange); }
+.pm-foot { margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(255, 255, 255, 0.04); font-size: 0.65rem; color: var(--text-muted); text-align: center; }
+.pm-sheet-out { display: grid; grid-template-columns: minmax(0, 1fr) 90px 44px; align-items: center; gap: 10px; padding: 5px 0; font-size: 0.85rem; color: var(--text-primary); }
+.pm-sheet-out-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pm-sheet-out-odds { font-family: 'JetBrains Mono', monospace; font-weight: 700; text-align: right; }
+.pm-sheet-spark { display: block; width: 100%; height: 64px; overflow: visible; }
+.pm-sheet-move { margin: 8px 0 0; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; color: var(--text-secondary); }
+@media (max-width: 800px) {
+  .pm-cols { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+}
+@media (max-width: 500px) {
+  .pm-macro { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pm-title { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+}

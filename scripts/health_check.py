@@ -283,7 +283,8 @@ FALLBACK_SOURCE_MARKER = "(fallback)"
 
 def _route_source(payload):
     """The winning-source label, wherever the route puts it. spy/market-extra use
-    `_meta.source`; spy-daily-move/polymarket carry a TOP-LEVEL `source` and no `_meta`."""
+    `_meta.source`; spy-daily-move/polymarket carry a TOP-LEVEL `source` (polymarket's
+    `_meta` holds only hasErrors/messages)."""
     if not isinstance(payload, dict):
         return None
     meta = payload.get("_meta")

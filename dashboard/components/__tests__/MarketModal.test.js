@@ -78,15 +78,22 @@ describe('MarketModal Component', () => {
     expect(screen.getByText('$1,234,567')).toBeInTheDocument();
   });
 
-  test('link points to the Polymarket homepage', () => {
+  test('link opens that market on Polymarket (its event page)', () => {
     render(
       <MarketModal bet={mockBet} isOpen={true} onClose={mockOnClose} />
     );
 
     const link = screen.getByRole('link');
-    // Per AGENTS.md: per-market deep links were deliberately removed as unreliable
-    // (the Polymarket API doesn't surface a usable slug). The modal links to the homepage.
-    expect(link).toHaveAttribute('href', 'https://polymarket.com');
+    // The event slug is the one polymarket.com itself links to: /event/<event slug>.
+    expect(link).toHaveAttribute('href', 'https://polymarket.com/event/will-espanyol-qualify-europa-league');
+  });
+
+  test('a row without a slug links to the Polymarket homepage', () => {
+    render(
+      <MarketModal bet={{ ...mockBet, slug: undefined }} isOpen={true} onClose={mockOnClose} />
+    );
+
+    expect(screen.getByRole('link')).toHaveAttribute('href', 'https://polymarket.com');
   });
 
   test('link opens in new tab with security attributes', () => {
@@ -280,5 +287,69 @@ describe('MarketModal Component', () => {
       expect(document.querySelector('[data-sheet-scroll]')).not.toBeNull();
       expect(screen.getAllByLabelText('Close modal').some((b) => b.tagName === 'BUTTON' && b.classList.contains('sheet-x'))).toBe(true);
     });
+  });
+});
+
+describe('MarketModal: Market Sentiment extras', () => {
+  const onClose = jest.fn();
+
+  test('a multi-outcome event lists every outcome instead of one probability', () => {
+    const { container } = render(
+      <MarketModal
+        bet={{
+          name: 'Balance of Power: 2026 Midterms', slug: 'balance-of-power-2026-midterms', volume: 21_400_000, odds: 0.62,
+          outcomes: [{ label: 'Democrats Sweep', odds: 0.62 }, { label: 'R Senate, D House', odds: 0.3 }, { label: 'Republicans Sweep', odds: 0.004 }],
+        }}
+        isOpen={true}
+        onClose={onClose}
+      />
+    );
+    expect(screen.getByText('Outcomes')).toBeInTheDocument();
+    expect(screen.queryByText('Probability')).toBeNull();
+    expect(container.querySelectorAll('.pm-sheet-out')).toHaveLength(3);
+    expect(screen.getByText('Republicans Sweep')).toBeInTheDocument();
+    expect(screen.getByText('<1%')).toBeInTheDocument();      // tiny odds read like Polymarket's
+  });
+
+  test('a single outcome keeps the probability bar', () => {
+    render(<MarketModal bet={{ name: 'Modi out?', odds: 0.004, outcomes: [{ label: 'Yes', odds: 0.004 }] }} isOpen={true} onClose={onClose} />);
+    expect(screen.getByText('Probability')).toBeInTheDocument();
+    expect(screen.getByText('<1%')).toBeInTheDocument();
+    expect(screen.queryByText('Outcomes')).toBeNull();
+  });
+
+  test('a breaking move shows its 24-hour chart, start → now and the move in points', () => {
+    const { container } = render(
+      <MarketModal
+        bet={{ name: 'Will Putin meet Lukashenko in Turkmenistan?', odds: 0.015, spark: [0.555, 0.3, 0.015], change: -0.54, window: '24 hours' }}
+        isOpen={true}
+        onClose={onClose}
+      />
+    );
+    expect(screen.getByText('Last 24 hours')).toBeInTheDocument();
+    expect(screen.getByText(/56% → 2%/)).toBeInTheDocument();
+    expect(screen.getByText('▼54 pts')).toBeInTheDocument();
+    expect(container.querySelector('.pm-sheet-spark').getAttribute('data-trend')).toBe('down');
+  });
+
+  test('a macro tile names its outcome over 30 days', () => {
+    render(
+      <MarketModal
+        bet={{ name: 'Fed decision in October?', label: 'No change', odds: 0.996, spark: [0.79, 0.84, 0.996], change: 0.206, window: '30 days' }}
+        isOpen={true}
+        onClose={onClose}
+      />
+    );
+    expect(screen.getByText('No change: last 30 days')).toBeInTheDocument();
+    expect(screen.getByText(/79% → >99%/)).toBeInTheDocument();
+    expect(screen.getByText('▲20.6 pts')).toBeInTheDocument();
+  });
+
+  test('no chart without two real points', () => {
+    const { container } = render(
+      <MarketModal bet={{ name: 'Thin history', odds: 0.4, spark: [0.4, NaN, null], change: 0.1, window: '24 hours' }} isOpen={true} onClose={onClose} />
+    );
+    expect(screen.queryByText('Last 24 hours')).toBeNull();
+    expect(container.querySelector('svg')).toBeNull();
   });
 });

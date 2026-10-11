@@ -677,7 +677,7 @@ export default function Dashboard() {
 
                 {/* POLYMARKET TABLE - Integrated in grid naturally */}
                 <div style={{ gridColumn: '1 / -1' }} data-jump="Polymarket">
-                    <ErrorBoundary resetKey={refreshTick}><PolymarketTable /></ErrorBoundary>
+                    <ErrorBoundary resetKey={refreshTick}><PolymarketTable refreshKey={refreshTick} bust={bustKey} /></ErrorBoundary>
                 </div>
 
                 {/* FINANCIAL DASHBOARD HISTORY LINK */}

@@ -4,11 +4,14 @@ Handles FRED API, the SPY/market waterfalls, and Google Sheets integration.
 """
 
 import csv
+import json
 import logging
+import math
+import re
 import requests
 import time
 from io import StringIO
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 from bot.config import URLS, RSI_PERIOD
 from datetime import datetime, timedelta, timezone
 
@@ -1506,241 +1509,407 @@ def fetch_market_extra(fred_api_key: str,
     }
 
 
-def fetch_polymarket_trending(limit: int = 8) -> List[Dict[str, Any]]:
-    """
-    Curated "market sentiment" board: meaningful-probability (8-92%), non-sports, binary
-    Yes/No Polymarket markets, de-duped by event and topic-diverse, ranked by volume.
-    Uses the public Gamma REST API directly — no API key required.
+# ---------------------------------------------------------------------------------------
+# Polymarket "Market Sentiment" board. Three lists, each mirroring a polymarket.com page:
+#   trending = the front page's hand-picked cards (Gamma events/keyset ordered by
+#              featuredOrder: the exact call the homepage makes)
+#   breaking = the "Breaking News" page: biggest 24h moves (polymarket.com/api/biggest-movers),
+#              backed up by Gamma markets ordered by oneDayPriceChange
+#   macro    = the Macro dashboard (events Polymarket tags macro-*), each with a 30-day
+#              sparkline from the CLOB price history
+# Sports and esports are dropped from all three. Every source is public and keyless.
+# dashboard/app/api/polymarket/route.js mirrors this as the Vercel fallback: change both.
+# ---------------------------------------------------------------------------------------
 
-    Returns: [{name, odds, volume, change, topic, topicEmoji, endDate, eventSlug}, ...]
-             ([] on any failure — graceful degradation, never raises).
-    """
-    # Sports keywords to filter out (checked against question, slug, and event titles)
-    SPORTS_KEYWORDS = {
-        # Betting notation patterns
-        'spread:', 'o/u', 'over/under', 'exact score', 'moneyline', 'parlay',
-        # US Sports
-        'nfl', 'nba', 'nhl', 'mlb', 'nba draft', 'nfl draft', 'mlb draft', 'ncaa', 'march madness',
-        'super bowl', 'world series', 'stanley cup', 'nba finals', 'nfl playoffs',
-        # European Football/Soccer
-        'fifa', 'world cup', 'champions league', 'premier league', 'laliga', 'bundesliga',
-        'serie a', 'ligue 1', 'europa league', 'conference league', 'super league',
-        'arsenal', 'manchester', 'chelsea', 'tottenham', 'liverpool', 'real madrid',
-        'barcelona', 'juventus', 'ac milan', 'psg', 'bayern', 'borussia', 'dortmund',
-        'atletico', 'napoli', 'ajax', 'celtic', 'rangers', 'galatasaray', 'roma',
-        'lazio', 'fiorentina', 'inter', 'marseille', 'monaco', 'rennes', 'lyon',
-        # South American Football/Soccer
-        'palmeiras', 'flamengo', 'santos', 'vasco', 'corinthians', 'sao paulo', 'gremio',
-        'internacional', 'cruzeiro', 'atletico mineiro', 'river plate', 'boca juniors',
-        'independiente', 'racing', 'velez', 'deportivo cali', 'america', 'chivas',
-        # Asian Football/Soccer
-        'fc', 'fc.', ' vs ', ' vs.', 'kagoshima', 'kyoto', 'grampus', 'nagoya', 'lanús',
-        'lecce', 'pisa', 'ready', 'villarreal', 'betis', 'getafe', 'girona',
-        # Other Sports
-        'tennis', 'wimbledon', 'us open', 'french open', 'australian open', 'atp', 'wta',
-        'golf', 'masters', 'us pga', 'the open', 'ryder cup', 'pga tour',
-        'cricket', 'ipl', 'bpl', 'rugby', 'super rugby', 'six nations',
-        'rugby world cup', 'nrl', 'afl', 'australian football',
-        'formula 1', 'f1', 'formula e', 'motogp', 'moto2', 'moto3',
-        'mma', 'ufc', 'boxing', 'wwe', 'wrestling', 'esports', 'dota', 'valorant', 'lol',
-        'basketball', 'soccer', 'football', 'baseball', 'hockey', 'ice hockey',
-        'pfa player', 'golden ball', 'player of the year', 'manager of the year',
-        'ballon dor', 'coach of the year', 'rookie of the year',
-        # Gaming / Esports
-        'counter-strike', 'cs:go', 'cs2', 'call of duty', 'cod', 'overwatch',
-        'starcraft', 'sc2', 'pubg', 'fortnite', 'minecraft', 'twitch', 'gaming',
-        'streamer', 'esports tournament', 'esports league', 'fps', 'moba',
-        'map 1', 'map 2', 'map 3', 'odd/even total kills', 'total rounds',
-        'eternal premium', 'bushido', 'immortals', 'fnatic', 'heroic', 'astralis'
-    }
+PM_GAMMA = "https://gamma-api.polymarket.com"
+PM_SITE = "https://polymarket.com"
+PM_CLOB = "https://clob.polymarket.com"
+PM_TIMEOUT = 10
+PM_MIN_MOVER_VOLUME = 50_000     # a 24h move on a thinner market is noise, not news
+PM_MIN_MOVE = 0.05               # 5 points
+PM_MACRO_TAGS = ("macro-graph", "macro-single", "macro-fed", "macro-inflation", "macro-jobs",
+                 "macro-unemployment", "macro-geopolitics")
 
-    # Topic tagging (first keyword match wins; order matters — specific before generic).
-    TOPIC_KEYWORDS = (
-        ("Crypto", "🪙", ("bitcoin", "btc", "ethereum", " eth ", "crypto", "microstrategy",
-                          "solana", "coinbase", "stablecoin", "dogecoin", "xrp", "binance")),
-        ("Geopolitics", "🌍", ("iran", "israel", "gaza", "ukraine", "russia", "china", "taiwan",
-                              "ceasefire", "nuclear", "nato", "hormuz", "north korea", "hostage",
-                              "peace deal", " war ", "missile", "sanction", "venezuela", "houthi")),
-        ("Politics", "🏛️", ("trump", "biden", "election", "president", "senate", "congress",
-                            "governor", "democrat", "republican", "nominee", "primary",
-                            "supreme court", "impeach", "cabinet", "vance", "mayor", "parliament")),
-        ("Tech", "🤖", ("openai", "anthropic", "gpt", "nvidia", "spacex", "tesla", "apple",
-                       "google", "microsoft", "ipo", "chatgpt", "claude", "llm", "agi",
-                       "artificial intelligence", "starship", "robotaxi", "quantum")),
-        ("Economy", "📉", ("recession", "fed ", "rate cut", "inflation", "gdp", "unemployment",
-                          "s&p", "interest rate", "market cap", "valuation", "jobs report")),
-    )
+# Untagged text (movers carry no tags). Word-bounded on purpose: the old substring list
+# matched "inter" inside "interest rates" and "america" inside "Latin American".
+_PM_SPORTS_RE = re.compile(
+    r"\b(nfl|nba|wnba|nhl|mlb|mls|ncaa|cfb|ufc|mma|wwe|nascar|f1|formula 1|motogp|grand prix|"
+    r"premier league|champions league|europa league|la liga|serie a|bundesliga|ligue 1|"
+    r"world cup|super bowl|world series|stanley cup|ballon d'?or|heisman|wimbledon|"
+    r"french open|australian open|atp|wta|pga|lpga|golf|tennis|cricket|ipl|rugby|boxing|"
+    r"wrestling|esports?|league of legends|lol|dota|valorant|counter-strike|cs2|overwatch|"
+    r"esl|bo[1357]|o/u|over/under|moneyline|touchdowns?|playoffs?|fc|vs\.?)\b|spread:", re.I)
 
-    def topic_of(text):
-        for tname, emoji, kws in TOPIC_KEYWORDS:
-            if any(kw in text for kw in kws):
-                return tname, emoji
-        return "World", "🌐"
+# First match wins. Elections are claimed before geopolitics so "Prime Minister of Israel
+# after the next election?" reads as politics, while "US-Iran ceasefire" stays geopolitics.
+_PM_TOPICS = (
+    ("Crypto", "🪙", r"\b(crypto|bitcoin|btc|ethereum|eth|solana|xrp|dogecoin|stablecoins?|airdrop|"
+                    r"fdv|token|coinbase|binance|microstrategy)\b"),
+    ("Tech", "🤖", r"\b(tech|ai|openai|anthropic|chatgpt|gpt|gemini|grok|claude|fable|llm|nvidia|"
+                  r"spacex|spacexai|starship|tesla|apple|google|microsoft|meta|science|fda|"
+                  r"vaccines?|ipo)\b"),
+    ("Economy", "📉", r"\b(economy|finance|fed|fomc|rate (?:cut|hike)s?|interest rates?|inflation|"
+                     r"cpi|gdp|recession|unemployment|jobs report|tariffs?|s&p|stocks?|"
+                     r"consumer sentiment)\b"),   # not "macro": Polymarket tags elections "Macro Election"
+    ("Politics", "🏛️", r"\b(elections?|midterms?|senate|house|congress|governor|mayor(?:al)?|"
+                      r"nominee|primary|president(?:ial)?|prime minister|parliament)\b"),
+    ("Geopolitics", "🌍", r"\b(geopolitics|military|war|ceasefire|invad\w*|invasion|iran|israel|"
+                         r"gaza|ukraine|russia|putin|china|xi jinping|taiwan|nato|nuclear|"
+                         r"hormuz|houthi|yemen|blockade|missiles?|sanctions?|middle east)\b"),
+    ("Politics", "🏛️", r"\b(politics|trump|ambassador|cabinet|impeach\w*|supreme court)\b"),
+    ("Culture", "🎬", r"\b(culture|pop culture|movies?|box office|music|album|songs?|youtube|"
+                     r"mrbeast|views|netflix|oscars?|grammys?|emmys?|rotten tomatoes|spotify|"
+                     r"billboard|celebrit\w+|tweets?)\b"),
+)
+_PM_TOPIC_RES = tuple((n, e, re.compile(p, re.I)) for n, e, p in _PM_TOPICS)
 
+
+def _pm_get(url: str, params: Optional[Dict[str, Any]] = None, timeout: int = PM_TIMEOUT):
+    resp = requests.get(url, params=params, timeout=timeout)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def _pm_list(raw) -> list:
+    """Gamma sends outcomes/outcomePrices/clobTokenIds as JSON strings; accept either."""
+    if isinstance(raw, list):
+        return raw
     try:
-        url = "https://gamma-api.polymarket.com/markets"
-        # Broad pool by WEEKLY volume (recent interest, less churny than 24h). The Gamma API
-        # caps `limit` at 100, so paginate to widen the pool, then filter hard below.
-        markets = []
-        for offset in range(0, 500, 100):
-            resp = requests.get(url, params={
-                "active": "true", "closed": "false", "order": "volume1wk",
-                "ascending": "false", "limit": 100, "offset": offset,
-            }, timeout=15)
-            resp.raise_for_status()
-            page = resp.json()
-            if not isinstance(page, list) or not page:
-                break
-            markets.extend(page)
-
-        from datetime import datetime, timezone, timedelta
-        from collections import defaultdict
-        import ast
-        now = datetime.now(timezone.utc)
-        min_horizon = now + timedelta(days=1)   # drop intraday churn (e.g. "BTC up/down 5m")
-
-        _MONTHS = ("january", "february", "march", "april", "may", "june", "july",
-                   "august", "september", "october", "november", "december")
-
-        def clean_title(t):
-            for a, b in (("Democratic", "Dem"), ("Republican", "GOP"),
-                         ("Presidential Election Winner", "US President"),
-                         ("Presidential Nominee", "Nominee"),
-                         ("Presidential Election", "Election")):
-                t = t.replace(a, b)
-            return " ".join(t.split()).strip()
-
-        def is_candidate_name(git):
-            # A real entity (person/company) — not a date/price/level tranche.
-            g = (git or "").strip().lower()
-            if not g or g[0] in "<>↑↓$0123456789":
-                return False
-            return not any(g.startswith(mo) for mo in _MONTHS)
-
-        # Group the pool by event so multi-candidate races (elections, etc.) collapse to a
-        # single "Event: favorite" row instead of N separate candidate rows.
-        by_event = defaultdict(list)
-        for m in markets:
-            ev = (m.get("events") or [{}])[0]
-            if not isinstance(ev, dict):
-                ev = {}
-            key = ev.get("ticker") or ev.get("slug") or m.get("slug") or m.get("question") or id(m)
-            by_event[key].append((m, ev))
-
-        candidates = []
-        for key, members in by_event.items():
-            try:
-                first_ev = members[0][1]
-                ev_title = (first_ev.get("title") or "").strip()
-
-                parsed = []
-                for m, _ev in members:
-                    end_iso = m.get("endDate")
-                    if end_iso:
-                        try:
-                            if datetime.fromisoformat(end_iso.replace("Z", "+00:00")) < min_horizon:
-                                continue
-                        except Exception:
-                            end_iso = None
-                    try:
-                        outs = [str(o).lower() for o in ast.literal_eval(m.get("outcomes", "[]"))]
-                    except Exception:
-                        outs = []
-                    if outs != ["yes", "no"]:
-                        continue
-                    try:
-                        odds = float(ast.literal_eval(m.get("outcomePrices", "[]"))[0])
-                    except Exception:
-                        continue
-                    try:
-                        chg = float(m["oneMonthPriceChange"]) if m.get("oneMonthPriceChange") is not None else None
-                    except Exception:
-                        chg = None
-                    parsed.append({
-                        "odds": odds, "vol": float(m.get("volumeNum") or m.get("volume") or 0),
-                        "change": chg, "end": end_iso,
-                        "git": (m.get("groupItemTitle") or "").strip(),
-                        "q": m.get("question") or "",
-                    })
-                if not parsed:
-                    continue
-
-                # Sports filter (event title + member questions + tags from any member).
-                text = (ev_title + " " + " ".join(p["q"] for p in parsed) + " "
-                        + (first_ev.get("slug") or "")).lower()
-                tag_labels = {(t.get("label") or "").lower()
-                              for m, _ev in members for t in (m.get("tags") or []) if isinstance(t, dict)}
-                if any("sport" in lbl for lbl in tag_labels) or any(kw in text for kw in SPORTS_KEYWORDS):
-                    continue
-
-                topic, emoji = topic_of(text)
-                is_multi = len(members) >= 2 and any(p["git"] for p in parsed)
-
-                if is_multi:
-                    # Event favorite = highest-odds candidate (the current field leader).
-                    fav = max(parsed, key=lambda p: p["odds"])
-                    if not (0.05 <= fav["odds"] <= 0.85):
-                        continue
-                    ev_vol = sum(p["vol"] for p in parsed)
-                    if ev_vol < 25000:
-                        continue
-                    if ev_title and is_candidate_name(fav["git"]):
-                        name = f"{clean_title(ev_title)}: {fav['git']}"   # candidate race
-                    else:
-                        name = fav["q"] or ev_title or "Unknown"          # date/price tranche → self-descriptive
-                    if "__" in name:                                      # malformed placeholder question
-                        continue
-                    chosen, vol, is_event = fav, ev_vol, True
-                else:
-                    # Standalone binary market: genuine-uncertainty band.
-                    p = parsed[0]
-                    if not (0.08 <= p["odds"] <= 0.92) or p["vol"] < 25000:
-                        continue
-                    name, chosen, vol, is_event = (p["q"] or "Unknown"), p, p["vol"], False
-
-                candidates.append({
-                    "name": name,
-                    "odds": round(chosen["odds"], 2),
-                    "volume": vol,
-                    "change": round(chosen["change"], 4) if chosen["change"] is not None else None,
-                    "topic": topic,
-                    "topicEmoji": emoji,
-                    "endDate": chosen["end"],
-                    "eventSlug": first_ev.get("slug"),
-                    "_event": key,
-                    "_is_event": is_event,
-                })
-            except Exception as e:
-                logging.warning(f"Polymarket event parse error on {key}: {e}")
-                continue
-
-        # Select: rank by volume, de-dupe by event (highest-volume wins), cap 2 per topic,
-        # AND cap "longshots" (<30%) so the board is a real SPREAD of sentiment, not a wall
-        # of unlikely-but-heavily-traded bets. Pass 1 enforces the longshot cap; pass 2 fills
-        # any leftover slots without it (so we still reach `limit` on a quiet day).
-        candidates.sort(key=lambda b: b["volume"], reverse=True)
-        LONGSHOT, max_longshots = 0.30, max(1, limit // 2)
-        seen_events, per_topic, bets, n_longshots = set(), {}, [], 0
-        for allow_longshot in (False, True):
-            for c in candidates:
-                if len(bets) >= limit:
-                    break
-                if c["_event"] in seen_events or per_topic.get(c["topic"], 0) >= 2:
-                    continue
-                # Event favorites are exempt from the longshot cap — a field leader is
-                # interesting at any %; the cap only tames standalone unlikely-but-traded bets.
-                is_longshot = c["odds"] < LONGSHOT and not c["_is_event"]
-                if is_longshot and not allow_longshot and n_longshots >= max_longshots:
-                    continue
-                seen_events.add(c["_event"])
-                per_topic[c["topic"]] = per_topic.get(c["topic"], 0) + 1
-                n_longshots += 1 if is_longshot else 0
-                bets.append({k: v for k, v in c.items() if not k.startswith("_")})
-            if len(bets) >= limit:
-                break
-
-        return bets
-
-    except Exception as e:
-        logging.error(f"Polymarket API error: {e}", exc_info=True)
+        val = json.loads(raw or "[]")
+        return val if isinstance(val, list) else []
+    except Exception:
         return []
+
+
+def _pm_float(raw) -> Optional[float]:
+    try:
+        val = float(raw)
+        return val if math.isfinite(val) else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _pm_tag_text(tags) -> str:
+    return " ".join(f"{t.get('label') or ''} {(t.get('slug') or '').replace('-', ' ')}"
+                    for t in (tags or []) if isinstance(t, dict))
+
+
+def _pm_is_sports(text: str, tags=None) -> bool:
+    if any("sport" in (f"{t.get('label') or ''} {t.get('slug') or ''}").lower()
+           for t in (tags or []) if isinstance(t, dict)):
+        return True
+    return bool(_PM_SPORTS_RE.search(text or ""))
+
+
+def _pm_topic(text: str):
+    for name, emoji, rx in _PM_TOPIC_RES:
+        if rx.search(text or ""):
+            return name, emoji
+    return "World", "🌐"
+
+
+def _pm_outcomes(event: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """The event's still-open outcomes, likeliest first (how Polymarket's cards order them)."""
+    rows = []
+    for m in event.get("markets") or []:
+        if not isinstance(m, dict) or m.get("closed") or m.get("archived") or m.get("active") is False:
+            continue
+        prices = _pm_list(m.get("outcomePrices"))
+        odds = _pm_float(prices[0]) if prices else None
+        if odds is None:
+            continue
+        outs = _pm_list(m.get("outcomes"))
+        tokens = _pm_list(m.get("clobTokenIds"))
+        rows.append({
+            "label": (m.get("groupItemTitle") or "").strip() or (str(outs[0]) if outs else "Yes"),
+            "odds": odds,
+            "change": _pm_float(m.get("oneDayPriceChange")),
+            "change30": _pm_float(m.get("oneMonthPriceChange")),
+            "token": str(tokens[0]) if tokens else None,
+        })
+    rows.sort(key=lambda r: r["odds"], reverse=True)
+    return rows
+
+
+def _pm_ended(iso) -> bool:
+    """True when the market's end date has passed (it only awaits resolution: old news)."""
+    try:
+        return datetime.fromisoformat(str(iso).replace("Z", "+00:00")).timestamp() < time.time()
+    except (TypeError, ValueError):
+        return False
+
+
+def _pm_round(val: Optional[float], nd: int = 3) -> Optional[float]:
+    return round(val, nd) if val is not None else None
+
+
+def _pm_spark(points, max_points: int = 48) -> List[float]:
+    """[{t, p}] price history → at most `max_points` prices, oldest first."""
+    prices = [p for p in (_pm_float(x.get("p")) for x in (points or []) if isinstance(x, dict))
+              if p is not None]
+    if len(prices) > max_points:
+        step = (len(prices) - 1) / (max_points - 1)
+        prices = [prices[round(i * step)] for i in range(max_points)]
+    return [round(p, 3) for p in prices]
+
+
+def _pm_trending_rows(limit: int) -> Tuple[List[Dict[str, Any]], str]:
+    """Front-page cards. Raises when the feed itself fails (vs. [] = nothing to show)."""
+    data = _pm_get(f"{PM_GAMMA}/events/keyset", {
+        "active": "true", "archived": "false", "closed": "false",
+        "order": "featuredOrder", "ascending": "true", "featured_order": "true",
+    }, timeout=15)
+    events = data.get("events") if isinstance(data, dict) else data
+    if not isinstance(events, list):
+        raise ValueError("featured keyset returned no events list")
+    rows = []
+    for ev in events:
+        try:
+            title = (ev.get("title") or "").strip()
+            slug = ev.get("slug") or ""
+            text = f"{title} {slug.replace('-', ' ')} {_pm_tag_text(ev.get('tags'))}"
+            # Sports, and the 5-minute "Up or Down" coin flips (pure intraday churn).
+            if not title or _pm_is_sports(text, ev.get("tags")) or "updown" in slug or "up or down" in title.lower():
+                continue
+            outcomes = _pm_outcomes(ev)
+            if not outcomes:
+                continue
+            topic, emoji = _pm_topic(text)
+            rows.append({
+                "title": title,
+                "slug": slug,
+                "topic": topic,
+                "topicEmoji": emoji,
+                "volume": _pm_float(ev.get("volume")) or 0.0,
+                "volume24h": _pm_float(ev.get("volume24hr")) or 0.0,
+                "endDate": ev.get("endDate"),
+                "outcomes": [{"label": o["label"], "odds": _pm_round(o["odds"]),
+                              "change": _pm_round(o["change"])} for o in outcomes[:6]],
+                "nOutcomes": len(outcomes),
+            })
+        except Exception as e:
+            logging.warning(f"Polymarket featured event skipped ({ev.get('slug')}): {e}")
+        if len(rows) >= limit:
+            break
+    return rows, "featured"
+
+
+def _pm_pick_movers(cands: List[Dict[str, Any]], limit: int) -> List[Dict[str, Any]]:
+    """Biggest moves first, one per event (a date ladder can't fill the list)."""
+    cands.sort(key=lambda c: abs(c["change"]), reverse=True)
+    seen, out = set(), []
+    for c in cands:
+        if c["slug"] in seen:
+            continue
+        seen.add(c["slug"])
+        out.append(c)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _pm_mover_row(question: str, slug: str, odds: float, change: float, volume: float,
+                  spark: List[float]) -> Dict[str, Any]:
+    topic, emoji = _pm_topic(f"{question} {slug.replace('-', ' ')}")
+    return {"question": question, "slug": slug, "odds": _pm_round(odds), "change": _pm_round(change),
+            "volume": volume, "spark": spark, "topic": topic, "topicEmoji": emoji}
+
+
+def _pm_movers_site(limit: int) -> List[Dict[str, Any]]:
+    """polymarket.com's own Breaking News feed (comes with each market's 24h history)."""
+    data = _pm_get(f"{PM_SITE}/api/biggest-movers", timeout=6)
+    movers = data.get("markets") if isinstance(data, dict) else None
+    if not movers:
+        raise ValueError("biggest-movers returned no markets")
+    try:  # The site's own sports bucket: anything in it is dropped from "all".
+        sports_ids = {str(m.get("id")) for m in
+                      (_pm_get(f"{PM_SITE}/api/biggest-movers", {"category": "sports"}, timeout=4)
+                       .get("markets") or [])}
+    except Exception:
+        sports_ids = set()
+    cands = []
+    for m in movers:
+        ev = (m.get("events") or [{}])[0] or {}
+        question = (m.get("question") or "").strip()
+        slug = ev.get("slug") or m.get("slug") or ""
+        odds = _pm_float(m.get("currentPrice"))
+        if odds is None:
+            prices = _pm_list(m.get("outcomePrices"))
+            odds = _pm_float(prices[0]) if prices else None
+        live = _pm_float(m.get("livePriceChange"))   # points, e.g. -54
+        change = live / 100 if live is not None else _pm_float(m.get("oneDayPriceChange"))
+        volume = _pm_float(ev.get("volume")) or 0.0
+        if (not question or odds is None or change is None or m.get("closed")
+                or str(m.get("id")) in sports_ids
+                or _pm_is_sports(f"{question} {slug.replace('-', ' ')}")
+                or volume < PM_MIN_MOVER_VOLUME or abs(change) < PM_MIN_MOVE):
+            continue
+        cands.append(_pm_mover_row(question, slug, odds, change, volume, _pm_spark(m.get("history"))))
+    if not cands:   # 25 markets and not one usable: more likely a changed shape than a quiet day
+        raise ValueError(f"biggest-movers: none of {len(movers)} markets passed the filters")
+    return _pm_pick_movers(cands, limit)
+
+
+def _pm_movers_gamma(limit: int) -> List[Dict[str, Any]]:
+    """Backup: Gamma markets by 24h price change, both directions, plus a 24h sparkline
+    from the CLOB so the list looks the same when this path is the one serving."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    def page(ascending):
+        return _pm_get(f"{PM_GAMMA}/markets", {
+            "active": "true", "closed": "false", "order": "oneDayPriceChange",
+            "ascending": ascending, "limit": 50, "volume_num_min": PM_MIN_MOVER_VOLUME,
+        }, timeout=8) or []
+
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        pages = list(ex.map(page, ("false", "true")))
+    cands = []
+    for m in (m for pg in pages for m in (pg if isinstance(pg, list) else [])):
+        ev = (m.get("events") or [{}])[0] or {}
+        question = (m.get("question") or "").strip()
+        slug = ev.get("slug") or m.get("slug") or ""
+        prices = _pm_list(m.get("outcomePrices"))
+        odds = _pm_float(prices[0]) if prices else None
+        change = _pm_float(m.get("oneDayPriceChange"))
+        volume = _pm_float(m.get("volumeNum") or m.get("volume")) or 0.0
+        if (not question or odds is None or change is None
+                or m.get("sportsMarketType") or m.get("gameStartTime") or _pm_ended(m.get("endDate"))
+                or _pm_is_sports(f"{question} {slug.replace('-', ' ')}", m.get("tags"))
+                or volume < PM_MIN_MOVER_VOLUME or abs(change) < PM_MIN_MOVE):
+            continue
+        row = _pm_mover_row(question, slug, odds, change, volume, [])
+        tokens = _pm_list(m.get("clobTokenIds"))
+        row["_token"] = str(tokens[0]) if tokens else None
+        cands.append(row)
+    rows = _pm_pick_movers(cands, limit)
+    if rows:
+        with ThreadPoolExecutor(max_workers=len(rows)) as ex:
+            for row, spark in zip(rows, ex.map(lambda r: _pm_history(r["_token"], "1d", 30, 48), rows)):
+                row["spark"] = spark
+    return [{k: v for k, v in r.items() if not k.startswith("_")} for r in rows]
+
+
+def _pm_breaking_rows(limit: int) -> Tuple[List[Dict[str, Any]], str]:
+    """Breaking News: the site's feed, else Gamma. Raises only when BOTH fail, so an empty
+    list with a source means a genuinely quiet day."""
+    try:
+        return _pm_movers_site(limit), "biggest-movers"
+    except Exception as e:
+        logging.warning(f"Polymarket biggest-movers unavailable ({e}); using Gamma 24h change")
+    return _pm_movers_gamma(limit), "gamma"
+
+
+def _pm_history(token: Optional[str], interval: str, fidelity: int, max_points: int) -> List[float]:
+    """CLOB price history for one outcome token → sparkline prices; [] on any failure
+    (a row without a sparkline still shows its number)."""
+    if not token:
+        return []
+    try:
+        data = _pm_get(f"{PM_CLOB}/prices-history", {"market": token, "interval": interval,
+                                                     "fidelity": fidelity}, timeout=6)
+        return _pm_spark(data.get("history"), max_points=max_points)
+    except Exception:
+        return []
+
+
+def _pm_macro_rows(limit: int) -> Tuple[List[Dict[str, Any]], str]:
+    """Macro dashboard tiles. Raises when every macro tag failed to load."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    def by_tag(tag):
+        try:
+            return _pm_get(f"{PM_GAMMA}/events", {"tag_slug": tag, "active": "true",
+                                                  "closed": "false", "archived": "false",
+                                                  "limit": 10}, timeout=8)
+        except Exception as e:
+            logging.warning(f"Polymarket macro tag {tag} failed: {e}")
+            return None
+
+    with ThreadPoolExecutor(max_workers=len(PM_MACRO_TAGS)) as ex:
+        groups = list(ex.map(by_tag, PM_MACRO_TAGS))
+    if all(g is None for g in groups):
+        raise ValueError("every macro tag failed")
+    tiles, seen = [], set()
+    for events in groups:
+        for ev in events if isinstance(events, list) else []:
+            title = (ev.get("title") or "").strip()
+            slug = ev.get("slug") or ""
+            text = f"{title} {slug.replace('-', ' ')} {_pm_tag_text(ev.get('tags'))}"
+            if not title or slug in seen or _pm_is_sports(text, ev.get("tags")):
+                continue
+            outcomes = _pm_outcomes(ev)
+            if not outcomes:
+                continue
+            seen.add(slug)
+            lead = outcomes[0]
+            tiles.append({"title": title, "slug": slug, "label": lead["label"],
+                          "odds": _pm_round(lead["odds"]), "change": _pm_round(lead["change30"]),
+                          "volume": _pm_float(ev.get("volume")) or 0.0, "spark": [],
+                          "_token": lead["token"]})
+    tiles = tiles[:limit]
+    if tiles:
+        with ThreadPoolExecutor(max_workers=len(tiles)) as ex:
+            for tile, spark in zip(tiles, ex.map(lambda t: _pm_history(t["_token"], "1m", 720, 40), tiles)):
+                tile["spark"] = spark
+                if len(spark) >= 2:   # the change the sparkline draws, so the two agree
+                    tile["change"] = _pm_round(tile["odds"] - spark[0])
+    return [{k: v for k, v in t.items() if not k.startswith("_")} for t in tiles], "macro-tags"
+
+
+def _pm_safe(build, limit: int) -> Tuple[List[Dict[str, Any]], Optional[str]]:
+    """(rows, source) from one builder; ([], None) when its sources all failed. Never raises."""
+    try:
+        return build(limit)
+    except Exception as e:
+        logging.error(f"Polymarket {build.__name__} failed: {e}")
+        return [], None
+
+
+def fetch_polymarket_trending(limit: int = 12) -> List[Dict[str, Any]]:
+    """
+    Polymarket's front-page cards: the hand-picked featured events, in Polymarket's own
+    order, minus sports. Each row: {title, slug, topic, topicEmoji, volume, volume24h,
+    endDate, outcomes: [{label, odds, change}] (likeliest first, ≤6), nOutcomes}.
+    Returns [] on any failure (never raises).
+    """
+    return _pm_safe(_pm_trending_rows, limit)[0]
+
+
+def fetch_polymarket_breaking(limit: int = 10) -> List[Dict[str, Any]]:
+    """
+    Polymarket's "Breaking News": the biggest 24h moves (up AND down: a collapse is news
+    too), minus sports, closed markets and markets under $50k. Each row: {question, slug,
+    odds, change (24h, fraction), volume, spark (24h prices), topic, topicEmoji}.
+    Primary = polymarket.com/api/biggest-movers; backup = Gamma by oneDayPriceChange.
+    Returns [] on any failure (never raises).
+    """
+    return _pm_safe(_pm_breaking_rows, limit)[0]
+
+
+def fetch_polymarket_macro(limit: int = 6) -> List[Dict[str, Any]]:
+    """
+    Polymarket's Macro dashboard: the events it tags macro-graph / macro-single /
+    macro-fed / … / macro-geopolitics, in that order, minus sports. Each tile: {title,
+    slug, label, odds, change (30d, fraction), volume, spark (≈30 days of prices)}.
+    Returns [] on any failure (never raises).
+    """
+    return _pm_safe(_pm_macro_rows, limit)[0]
+
+
+def fetch_polymarket_board() -> Dict[str, Any]:
+    """The three lists at once (fetched in parallel), plus `sources`: which feed served
+    each list, or None when all of that list's feeds failed (so an empty list can be told
+    apart from a quiet day). Never raises."""
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=3) as ex:
+        trending = ex.submit(_pm_safe, _pm_trending_rows, 12)
+        breaking = ex.submit(_pm_safe, _pm_breaking_rows, 10)
+        macro = ex.submit(_pm_safe, _pm_macro_rows, 6)
+        (t_rows, t_src), (b_rows, b_src), (m_rows, m_src) = trending.result(), breaking.result(), macro.result()
+    macro_slugs = {m["slug"] for m in m_rows}
+    return {
+        "trending": [t for t in t_rows if t["slug"] not in macro_slugs],
+        "breaking": b_rows,
+        "macro": m_rows,
+        "sources": {"trending": t_src, "breaking": b_src, "macro": m_src},
+    }

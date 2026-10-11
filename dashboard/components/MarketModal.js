@@ -8,7 +8,9 @@
  * - Displays full market question without truncation
  * - Color-coded probability bar with dynamic width
  * - Formatted trading volume display
- * - Link to Polymarket.com
+ * - Link to that market on Polymarket (its event page when the row carries a slug)
+ * - Optional extras the Market Sentiment rows pass: every outcome's odds (`outcomes`),
+ *   the leading outcome (`label`) and an odds chart (`spark` over `window`, with `change`)
  * - Dismissible via close button, backdrop click or Esc
  * - A modal dialog (role="dialog", aria-modal) that holds the page still while open
  *   (useSheetLock), takes focus to its × and hands it back on close (useSheetFocus),
@@ -16,6 +18,18 @@
  */
 import { useEffect, useRef } from 'react';
 import useSheetLock, { useSheetFocus } from './useSheetLock';
+import OddsSpark from './OddsSpark';
+
+const finite = (v) => typeof v === 'number' && Number.isFinite(v);
+const sectionLabel = {
+  display: 'block',
+  fontSize: '0.85rem',
+  fontWeight: 600,
+  color: 'var(--text-secondary)',
+  textTransform: 'uppercase',
+  letterSpacing: '0.05em',
+  marginBottom: '10px'
+};
 
 export default function MarketModal({ bet, isOpen, onClose }) {
   const open = !!(isOpen && bet);
@@ -50,12 +64,17 @@ export default function MarketModal({ bet, isOpen, onClose }) {
     return `$${(volume || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
   };
 
-  // Link to Polymarket homepage (specific market URLs may not work reliably)
-  const polymarketUrl = 'https://polymarket.com';
+  // The event page Polymarket itself links to (polymarket.com/event/<event slug>);
+  // the homepage when a row has no slug (e.g. an old saved copy).
+  const polymarketUrl = bet.slug
+    ? `https://polymarket.com/event/${encodeURIComponent(bet.slug)}`
+    : 'https://polymarket.com';
+  const outcomes = Array.isArray(bet.outcomes) ? bet.outcomes.filter((o) => o && finite(o.odds)) : [];
+  const spark = Array.isArray(bet.spark) ? bet.spark.filter(finite) : [];
+  const fmtPct = (v) => (v > 0 && v < 0.01 ? '<1%' : v > 0.99 && v < 1 ? '>99%' : `${Math.round(v * 100)}%`);
 
   // Use 'odds' from API (not 'probability')
   const odds = bet.odds || 0;
-  const oddsPercent = (odds * 100).toFixed(0);
   const barColor = getOddsColor(odds);
 
   return (
@@ -186,62 +205,95 @@ export default function MarketModal({ bet, isOpen, onClose }) {
             </p>
           </div>
 
-          {/* Probability section */}
-          <div style={{ marginBottom: '28px' }}>
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                marginBottom: '10px'
-              }}
-            >
-              <label
-                style={{
-                  fontSize: '0.85rem',
-                  fontWeight: 600,
-                  color: 'var(--text-secondary)',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em',
-                  margin: 0
-                }}
-              >
-                Probability
-              </label>
-              <span
-                style={{
-                  fontSize: '0.9rem',
-                  fontWeight: 700,
-                  fontFamily: "'JetBrains Mono', monospace",
-                  color: barColor
-                }}
-              >
-                {oddsPercent}%
-              </span>
+          {/* Every outcome (multi-outcome events), likeliest first */}
+          {outcomes.length > 1 && (
+            <div style={{ marginBottom: '28px' }}>
+              <span style={sectionLabel}>Outcomes</span>
+              {outcomes.map((o, i) => (
+                <div key={`${o.label}-${i}`} className="pm-sheet-out">
+                  <span className="pm-sheet-out-label">{o.label}</span>
+                  <span className="pm-bar"><span style={{ width: `${Math.min(1, Math.max(0, o.odds)) * 100}%` }} /></span>
+                  <span className="pm-sheet-out-odds">{fmtPct(o.odds)}</span>
+                </div>
+              ))}
             </div>
+          )}
 
-            {/* Probability bar */}
-            <div
-              style={{
-                width: '100%',
-                height: '6px',
-                background: 'rgba(255, 255, 255, 0.08)',
-                borderRadius: '3px',
-                overflow: 'hidden'
-              }}
-            >
+          {/* Probability section */}
+          {outcomes.length < 2 && (
+            <div style={{ marginBottom: '28px' }}>
               <div
                 style={{
-                  width: `${odds * 100}%`,
-                  height: '100%',
-                  background: barColor,
-                  boxShadow: `0 0 6px ${barColor}50`,
-                  borderRadius: '3px',
-                  transition: 'width 0.3s ease'
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: '10px'
                 }}
-              />
+              >
+                <label
+                  style={{
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    color: 'var(--text-secondary)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    margin: 0
+                  }}
+                >
+                  Probability
+                </label>
+                <span
+                  style={{
+                    fontSize: '0.9rem',
+                    fontWeight: 700,
+                    fontFamily: "'JetBrains Mono', monospace",
+                    color: barColor
+                  }}
+                >
+                  {fmtPct(odds)}
+                </span>
+              </div>
+
+              {/* Probability bar */}
+              <div
+                style={{
+                  width: '100%',
+                  height: '6px',
+                  background: 'rgba(255, 255, 255, 0.08)',
+                  borderRadius: '3px',
+                  overflow: 'hidden'
+                }}
+              >
+                <div
+                  style={{
+                    width: `${odds * 100}%`,
+                    height: '100%',
+                    background: barColor,
+                    boxShadow: `0 0 6px ${barColor}50`,
+                    borderRadius: '3px',
+                    transition: 'width 0.3s ease'
+                  }}
+                />
+              </div>
             </div>
-          </div>
+
+          )}
+
+          {/* Odds over time (Breaking: 24 hours, Macro: 30 days) */}
+          {spark.length >= 2 && (
+            <div style={{ marginBottom: '28px' }}>
+              <span style={sectionLabel}>{bet.label ? `${bet.label}: last ${bet.window || 'days'}` : `Last ${bet.window || 'days'}`}</span>
+              <OddsSpark points={spark} className="pm-sheet-spark" label={`Odds over the last ${bet.window || 'days'}`} />
+              <p className="pm-sheet-move">
+                {fmtPct(spark[0])} → {fmtPct(finite(odds) ? odds : spark[spark.length - 1])}
+                {finite(bet.change) && Math.abs(bet.change) >= 0.0005 && (
+                  <span style={{ color: bet.change > 0 ? 'var(--green)' : 'var(--red)', marginLeft: '8px' }}>
+                    {bet.change > 0 ? '▲' : '▼'}{Math.abs(Math.round(bet.change * 1000) / 10)} pts
+                  </span>
+                )}
+              </p>
+            </div>
+          )}
 
           {/* Volume section */}
           <div style={{ marginBottom: '28px' }}>

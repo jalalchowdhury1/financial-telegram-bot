@@ -395,16 +395,19 @@ LIVE_LAMBDA_PAYLOADS = {
     # Lambda-built: bot/fetchers.py composes these (`<tier> + Finnhub Spot`).
     "spy": {"current": 631.0, "_meta": {"source": "Polygon + Finnhub Spot", "hasErrors": False}},
     "market-extra": {"_meta": {"source": "yfinance/Polygon/Finnhub/FRED/ER-API", "hasErrors": False}},
-    # These two carry a TOP-LEVEL `source` and no _meta.source at all.
+    # These two carry a TOP-LEVEL `source` and no _meta.source at all (polymarket's
+    # _meta holds only hasErrors + messages since the 2026-10-11 board redesign).
     "spy-daily-move": {"value": "+0.29%", "source": "Google Sheets"},
-    "polymarket": {"bets": [{"name": "x"}], "timestamp": "2026-08-06T00:00:00Z"},
+    "polymarket": {"trending": [{"title": "x"}], "source": "Polymarket API",
+                   "_meta": {"hasErrors": False, "messages": []}, "timestamp": "2026-10-11T00:00:00Z"},
 }
 
 LIVE_FALLBACK_PAYLOADS = {
     "spy": {"current": 631.0, "_meta": {"source": "Polygon + Finnhub (fallback)", "hasErrors": False}},
     "market-extra": {"_meta": {"source": "Direct sources (fallback)", "hasErrors": False}},
     "spy-daily-move": {"value": "+0.29%", "source": "Finnhub (fallback)"},
-    "polymarket": {"bets": [], "source": "Polymarket Gamma API (fallback)"},
+    "polymarket": {"trending": [{"title": "x"}], "source": "Polymarket Gamma API (fallback)",
+                   "_meta": {"hasErrors": False, "messages": ["Lambda HTTP 503"]}},
 }
 
 
@@ -457,6 +460,16 @@ def test_check_lambda_path_reads_a_top_level_source_when_there_is_no_meta():
     f = hc.check_lambda_path(payloads)
     assert f["severity"] == "warn"
     assert "spy-daily-move" in f["detail"]
+
+
+def test_check_lambda_path_reads_a_top_level_source_beside_a_sourceless_meta():
+    """/api/polymarket answers with `_meta: {hasErrors, messages}` and the label at the TOP
+    level: a _meta without a source must not hide it."""
+    payloads = dict(LIVE_LAMBDA_PAYLOADS)
+    payloads["polymarket"] = LIVE_FALLBACK_PAYLOADS["polymarket"]
+    f = hc.check_lambda_path(payloads)
+    assert f["severity"] == "warn"
+    assert f["evidence"]["fallback_routes"] == ["polymarket"]
 
 
 def test_check_lambda_path_is_ok_when_nothing_is_readable():

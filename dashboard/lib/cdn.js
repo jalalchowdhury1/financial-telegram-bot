@@ -52,7 +52,7 @@ export function isDegraded(payload) {
     if (!payload || typeof payload !== 'object') return false;
     const m = payload._meta && typeof payload._meta === 'object' ? payload._meta : null;
     if (m && (m.stale || m.hasErrors || m.fallback)) return true;
-    // spy-daily-move + polymarket carry a top-level `source` and no _meta.
+    // spy-daily-move + polymarket carry a top-level `source` (polymarket's _meta has none).
     const source = m?.source ?? payload.source;
     return typeof source === 'string' && source.toLowerCase().includes(FALLBACK_SOURCE_MARKER);
 }
