@@ -664,7 +664,8 @@ computes them from daily prices with the sheets' exact logic; the sheets are bac
   'Original' tab only looks back ~25 calendar days, so its bottom rows use truncated windows.
   Harmless for I2, but don't validate against those rows.
 - **Prices:** Nasdaq historical (3 y, keyless) → CNBC daily bars (`cnbcHistory`, ~500 raw bars,
-  equal to Nasdaq's) → Yahoo `adjusted:false` (blocked from Vercel when 17 calls land at once,
+  equal to Nasdaq's; CNBC's chart cache 503s per symbol+range — XLP/XLF on `3M` 2026-10-11,
+  SPY on `1Y` — so an empty answer tries `1Y` then `6M` before failing) → Yahoo `adjusted:false` (blocked from Vercel when 17 calls land at once,
   seen 2026-10-10; kept as the last try) per ticker, plus ONE
   CNBC quote call for all 17 tickers that adds today's session as a bar (the SPY RSI rule).
   All or none: if any ticker in a signal lacks today's quote, the plain closes are used, so

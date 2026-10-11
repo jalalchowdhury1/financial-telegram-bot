@@ -191,22 +191,36 @@ export async function cnbcQuotes(symbols, { revalidate = 1800, timeout = 6000, t
  * to Nasdaq's: TMF/VIXY 500/500 bars, checked 2026-10-10). The '3M.json'
  * range actually returns ~500 DAILY bars (~2yr) — plenty for 1mo/3mo deltas.
  * tradeTime is 'YYYYMMDDhhmmss'; close is a string.
+ *
+ * CNBC's chart cache breaks per (symbol, range): on 2026-10-11 '3M' answered
+ * "503 Backend fetch failed" for XLP and XLF while '1Y' served the same 499 daily bars,
+ * and '1Y' failed for SPY while '3M' worked. So a fast empty/ERROR answer tries the next
+ * daily range ('1Y' = same 499 bars, '6M' = ~750) before giving up. A thrown fetch error
+ * (timeout, network) still propagates at once so the caller's time budget holds.
  */
+const CNBC_DAILY_RANGES = ['3M', '1Y', '6M'];
+
 export async function cnbcHistory(symbol, { range = '3M', revalidate = 1800, timeout = 6000, tries = 2 } = {}) {
-    const url = `https://ts-api.cnbc.com/harmony/app/charts/${range}.json?symbol=${encodeURIComponent(symbol)}`;
-    const data = await withRetry(() => fetchJson(url, { revalidate, timeout }), { tries });
-    const bars = data?.barData?.priceBars || [];
-    const history = [];
-    for (const b of bars) {
-        const price = parseFloat(b.close);
-        const tt = String(b.tradeTime || '');
-        if (!Number.isFinite(price) || tt.length < 8) continue;
-        const open = parseFloat(b.open);
-        history.push({ date: `${tt.slice(0, 4)}-${tt.slice(4, 6)}-${tt.slice(6, 8)}`, price, ...(Number.isFinite(open) && open > 0 ? { open } : {}) });
+    const ranges = [range, ...CNBC_DAILY_RANGES.filter((r) => r !== range)];
+    let why = 'empty history';
+    for (const r of ranges) {
+        const url = `https://ts-api.cnbc.com/harmony/app/charts/${r}.json?symbol=${encodeURIComponent(symbol)}`;
+        const data = await withRetry(() => fetchJson(url, { revalidate, timeout }), { tries });
+        const history = [];
+        for (const b of data?.barData?.priceBars || []) {
+            const price = parseFloat(b.close);
+            const tt = String(b.tradeTime || '');
+            if (!Number.isFinite(price) || tt.length < 8) continue;
+            const open = parseFloat(b.open);
+            history.push({ date: `${tt.slice(0, 4)}-${tt.slice(4, 6)}-${tt.slice(6, 8)}`, price, ...(Number.isFinite(open) && open > 0 ? { open } : {}) });
+        }
+        if (history.length) {
+            history.sort((a, b) => (a.date < b.date ? -1 : 1)); // ISO 'YYYY-MM-DD' sorts chronologically as strings → oldest -> newest
+            return history;
+        }
+        if (data?.statusMessage) why = String(data.statusMessage).replace(/\s+/g, ' ').slice(0, 90);
     }
-    if (!history.length) throw new Error(`CNBC: empty history ${symbol}`);
-    history.sort((a, b) => (a.date < b.date ? -1 : 1)); // ISO 'YYYY-MM-DD' sorts chronologically as strings → oldest -> newest
-    return history;
+    throw new Error(`CNBC: ${why} (${symbol}; tried ${ranges.join('/')})`);
 }
 
 /**

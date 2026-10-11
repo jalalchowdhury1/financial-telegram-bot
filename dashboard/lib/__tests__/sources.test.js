@@ -170,9 +170,26 @@ describe('cnbcHistory', () => {
         expect(out[0]).toEqual({ date: '2026-06-01', price: 6.10 }); // sorted oldest-first
         expect(out[1]).toEqual({ date: '2026-06-05', price: 6.28 });
     });
-    test('throws on empty bars', async () => {
+    test('throws on empty bars (after trying every daily range)', async () => {
         mockFetch({ barData: { priceBars: [] } });
-        await expect(cnbcHistory('@HG.1')).rejects.toThrow();
+        await expect(cnbcHistory('@HG.1')).rejects.toThrow(/empty history.*3M\/1Y\/6M/);
+        expect(global.fetch).toHaveBeenCalledTimes(3);
+    });
+    test("a 503 'Backend fetch failed' answer on 3M falls through to 1Y (XLP/XLF, 2026-10-11)", async () => {
+        const answers = [
+            { requestDetails: { symbol: 'XLP' }, status: 'ERROR', statusMessage: 'Error in getting bars for symbol: XLP and barType: ONE_DAY 503 Backend fetch failed: "<!DOCTYPE html>' },
+            { barData: { symbol: 289812, priceBars: [{ tradeTime: '20261008000000', close: '83.10', open: '83.00' }, { tradeTime: '20261009000000', close: '83.43', open: '83.20' }] } },
+        ];
+        global.fetch = jest.fn(async () => ({ ok: true, status: 200, json: async () => answers.shift() }));
+        const out = await cnbcHistory('XLP', { tries: 1 });
+        expect(out).toEqual([{ date: '2026-10-08', price: 83.10, open: 83.00 }, { date: '2026-10-09', price: 83.43, open: 83.20 }]);
+        expect(global.fetch).toHaveBeenCalledTimes(2);
+        expect(global.fetch.mock.calls[0][0]).toContain('/charts/3M.json?symbol=XLP');
+        expect(global.fetch.mock.calls[1][0]).toContain('/charts/1Y.json?symbol=XLP');
+    });
+    test('the error names the CNBC status when every range fails', async () => {
+        mockFetch({ status: 'ERROR', statusMessage: 'Error in getting bars for symbol: XLF and barType: ONE_DAY 503 Backend fetch failed' });
+        await expect(cnbcHistory('XLF', { tries: 1 })).rejects.toThrow(/503 Backend fetch failed.*XLF/);
     });
 });
 
