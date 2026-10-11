@@ -6,11 +6,11 @@ name: CI
 # also the gate the Phase 2 self-improve agent's PRs must clear.
 on:
   pull_request:
-    branches: [main]
+    branches: [main, canary-protected-base]
   # Bot PRs (opened with GITHUB_TOKEN) never fire pull_request, so the required
   # checks would sit at "expected" forever. workflow_dispatch is the one event a
-  # GITHUB_TOKEN may trigger: rebake-bankruptcies.yml dispatches CI on its own
-  # branch, the job results land on the PR's head commit, and it can self-merge.
+  # GITHUB_TOKEN may trigger, so the rebake bots dispatch CI on their own branch and
+  # the `report` job below hands the result to their PR.
   workflow_dispatch:
 
 jobs:
@@ -45,3 +45,38 @@ jobs:
         run: npm test -- --watchAll=false
       - name: Build
         run: npm run build
+
+  # A dispatched run's checks never reach a pull request: GitHub files them under the
+  # dispatch, not the PR, so a bot PR stayed BLOCKED after its dispatched CI passed
+  # (canary PR #65, 11 Oct 2026). A commit status of the same name does count (the PR
+  # went BLOCKED -> mergeable), so a dispatched run copies each job's result onto the
+  # commit it tested. Posting it is no new power: any write token can set a status.
+  report:
+    if: always() && github.event_name == 'workflow_dispatch'
+    needs: [backend-tests, dashboard-tests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      statuses: write
+    steps:
+      - name: Copy the job results onto the commit as statuses
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          BACKEND: ${{ needs.backend-tests.result }}
+          DASHBOARD: ${{ needs.dashboard-tests.result }}
+        run: |
+          post() {   # context, job result (success | failure | cancelled | skipped)
+            if [ "$2" = success ]; then STATE=success; else STATE=failure; fi
+            for _ in 1 2 3; do
+              gh api "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" -f state="$STATE" -f context="$1" \
+                -f target_url="$RUN_URL" -f description="dispatched CI run: $2" >/dev/null && return 0
+              sleep 10
+            done
+            echo "::error::could not post the $1 status"
+            return 1
+          }
+          RC=0
+          post backend-tests "$BACKEND" || RC=1
+          post dashboard-tests "$DASHBOARD" || RC=1
+          exit $RC
