@@ -39,7 +39,7 @@ concurrency:
 jobs:
   rebake:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 75        # bake ~1 min, + 20 min retry wait on a source outage, + CI ~10 min
     steps:
       - uses: actions/checkout@v6
 
@@ -53,7 +53,7 @@ jobs:
       - name: Dry run (pull request — nothing written)
         if: github.event_name == 'pull_request'
         working-directory: dashboard
-        run: python scripts/bake_long_history.py --dry
+        run: python scripts/bake_long_history.py --dry --retry-after=120
 
       - name: Re-bake
         id: bake
@@ -62,7 +62,8 @@ jobs:
         working-directory: dashboard
         run: |
           set -o pipefail
-          python scripts/bake_long_history.py 2>&1 | tee "$RUNNER_TEMP/bake.log"
+          # a stat whose source failed gets one more try 20 min later (CNBC 503s for minutes)
+          python scripts/bake_long_history.py --retry-after=1200 2>&1 | tee "$RUNNER_TEMP/bake.log"
 
       # One step does the git/PR work AND the notify, for the reason spelled out in
       # rebake-bankruptcies.yml: a failing assignment under bash -e used to kill the

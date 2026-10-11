@@ -27,11 +27,15 @@ whose values do not match the sheet (a units or formula slip) is REFUSED and its
 kept. A bake that reaches back less far, or has far fewer points, than the file it would
 replace is refused too. BDT pairs have no long free source and stay sheet-only.
 
-Run (from dashboard/):  uv run scripts/bake_long_history.py [--dry] [key ...]
-Re-bake about once a year: the sheet's chart window is capped at 730 days (lib/marks.js
-CHART_MAX_DAYS), so from ~2028-03 a gap would open between the bake's end and the sheet.
+Run (from dashboard/):  uv run scripts/bake_long_history.py [--dry] [--retry-after=SECONDS] [key ...]
+--retry-after: stats whose DOWNLOAD failed get one more try after that wait (CNBC's backend
+503s for minutes at a time). A refused stat is not retried: it would only refuse again.
+.github/workflows/rebake-long-history.yml re-bakes every quarter: the sheet's chart window
+is capped at 730 days (lib/marks.js CHART_MAX_DAYS), so a bake left alone ~2 years would
+leave a gap between its last day and the sheet.
 """
 import csv
+import functools
 import io
 import json
 import re
@@ -92,10 +96,15 @@ def add_months(d, n):
     return date(d.year + y, m + 1, 1)
 
 
-def cnbc(symbol):
-    """CNBC chart bars: 1Y = daily (≈2 years), 10Y = weekly (bar dated the week's Sunday,
-    close = Friday), ALL = quarterly (dated the quarter's first day, close = quarter end)."""
-    def bars(rng):
+@functools.lru_cache(maxsize=None)
+def cnbc_bars(symbol, rng):
+    """One CNBC bar series, fetched once per run (gold and copper/gold share @GC.1).
+    CNBC now and then answers 200 with no bars (its backend 503s, a different symbol each
+    run, from GitHub's runners and from the Mac alike), so an empty answer is retried with
+    a growing wait before the stat is given up."""
+    for attempt in range(4):
+        if attempt:
+            time.sleep(10 * 2 ** (attempt - 1))   # 10, 20, 40 s; main() retries once more later
         j = json.loads(curl(f'https://ts-api.cnbc.com/harmony/app/charts/{rng}.json?symbol={quote(symbol)}', ua=BROWSER))
         out = []
         for b in (j.get('barData') or {}).get('priceBars') or []:
@@ -103,10 +112,16 @@ def cnbc(symbol):
                 out.append((datetime.strptime(b['tradeTime'][:8], '%Y%m%d').date(), float(b['close'])))
             except (KeyError, ValueError, TypeError):
                 pass
-        if not out:
-            raise RuntimeError(f'CNBC {symbol} {rng}: no bars')
-        return out
-    daily = bars('1Y')
+        if out:
+            return tuple(out)
+    raise RuntimeError(f'CNBC {symbol} {rng}: no bars after 4 tries ({j.get("statusMessage", "")[:80]})')
+
+
+def cnbc(symbol):
+    """CNBC chart bars: 1Y = daily (≈2 years), 10Y = weekly (bar dated the week's Sunday,
+    close = Friday), ALL = quarterly (dated the quarter's first day, close = quarter end)."""
+    bars = functools.partial(cnbc_bars, symbol)
+    daily = list(bars('1Y'))
     weekly = [(d + timedelta(days=5), v) for d, v in bars('10Y')]
     quarterly = [(add_months(d, 3) - timedelta(days=1), v) for d, v in bars('ALL')]
     return ([p for p in quarterly if p[0] < weekly[0][0]]
@@ -333,6 +348,7 @@ def sig(v):
 
 def main(argv):
     dry = '--dry' in argv
+    retry_after = next((int(a.split('=', 1)[1]) for a in argv if a.startswith('--retry-after=')), 0)
     only = [a for a in argv if not a.startswith('--')]
     unknown = [k for k in only if k not in SPECS]
     if unknown:
@@ -343,17 +359,16 @@ def main(argv):
     except FileNotFoundError:
         index = {'keys': {}}
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    failed = []
     print(f'{"key":16} {"from":10} {"to":10} {"pts":>5}  {"vs sheet":>9} {"n":>4} {"limit":>8}  lag')
-    for key, (col, lag, source, build) in SPECS.items():
-        if only and key not in only:
-            continue
+
+    def bake(key):
+        """'ok' (written), 'download' (source failed) or 'refused' (self-check)."""
+        col, lag, source, build = SPECS[key]
         try:
             raw = sorted(build())
         except Exception as e:  # one dead source must not sink the others
             print(f'{key:16} FAILED download: {e}')
-            failed.append(key)
-            continue
+            return 'download'
         pts = [(d + timedelta(days=lag), v) for d, v in raw]
         sheet = [p for p in sheet_series(rows, col) if p[0] >= SHEET_FROM.get(key, date.min)]
         md, n = median_diff(pts, sheet)
@@ -372,8 +387,7 @@ def main(argv):
         mds = f'{md:9.4g}' if md is not None else '        —'
         print(f'{key:16} {pts[0][0]} {pts[-1][0]} {len(pts):5d}  {mds} {n:4d} {limit:8.4g}  {lag:3d}  {"" if verdict == "ok" else verdict}')
         if verdict != 'ok':
-            failed.append(key)
-            continue
+            return 'refused'
         start = pts[0][0]
         body = {'key': key, 'source': source, 'from': start.isoformat(), 'to': pts[-1][0].isoformat(),
                 't': [(d - start).days for d, _ in pts], 'v': [sig(v) for _, v in pts]}
@@ -382,6 +396,16 @@ def main(argv):
             index['keys'][key]['sheetFrom'] = SHEET_FROM[key].isoformat()
         if not dry:
             prev_path.write_text(json.dumps(body, separators=(',', ':'), ensure_ascii=False) + '\n')
+        return 'ok'
+
+    results = {k: bake(k) for k in SPECS if not only or k in only}
+    retry = [k for k, r in results.items() if r == 'download']
+    if retry and retry_after:
+        print(f'\n{len(retry)} download(s) failed, one more try in {retry_after} s: {retry}')
+        time.sleep(retry_after)
+        for k in retry:
+            results[k] = bake(k)
+    failed = [k for k, r in results.items() if r != 'ok']
     index['bakedAt'] = date.today().isoformat()
     index['keys'] = dict(sorted(index['keys'].items()))
     if not dry:

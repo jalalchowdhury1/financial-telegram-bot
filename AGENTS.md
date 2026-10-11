@@ -476,7 +476,9 @@ Rollback: tag `known-good-pre-history-2026-10-10` (= b9fd5d8; the tag message ha
   deploy is spent). Why it matters: `/api/history` `series` holds 730 days, so a bake left
   alone for ~2 years (the first one would hit it ~2028-10) leaves a hole between the bake's
   last day and the sheet window. A PR touching the workflow or the bake script dry-runs the
-  bake on GitHub's runners. By hand: `cd dashboard && uv run scripts/bake_long_history.py
+  bake on GitHub's runners. A stat whose source fails is retried once 20 min later
+  (`--retry-after=1200`; CNBC's backend 503s DXY/gold for minutes at a time, and each CNBC
+  series is fetched once per run). By hand: `cd dashboard && uv run scripts/bake_long_history.py
   [--dry] [key …]`, or Actions → Rebake Long History → Run workflow. A test
   (`longHistory.test.js`) checks every index row decodes, matches its file and ends after
   2026-03-12.
