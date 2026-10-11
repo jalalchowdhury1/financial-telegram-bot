@@ -469,10 +469,17 @@ Rollback: tag `known-good-pre-history-2026-10-10` (= b9fd5d8; the tag message ha
   source and stay sheet-only.**
 - **New popovers:** VIX current + VIX 3M (`CustomIndicatorBar`), and the CNN F&G hero score
   (`SHEET_METRICS.cnnFearGreed`, col 66, from 2026-09-26). The VIX-proxy F&G gets no chart.
-- **Re-bake about once a year** (`cd dashboard && uv run scripts/bake_long_history.py [--dry]
-  [key …]`): `/api/history` `series` holds ~2 years, so from ~2028-03 the sheet no longer
-  reaches back to the bake's end and a gap would open. A test (`longHistory.test.js`) checks
-  every index row decodes, matches its file and ends after 2026-03-12.
+- **Re-baked automatically every quarter** (`.github/workflows/rebake-long-history.yml`, 15
+  Jan/Apr/Jul/Oct 12:00 UTC): bake → PR → CI → self-merge on green (owner OK'd 2026-10-10)
+  → `deploy-dashboard.yml` via workflow_run. Silent when every stat refreshed; one Telegram
+  line when a stat kept its old bake (🟡) or nothing merged (🔴, and the run ends red so no
+  deploy is spent). Why it matters: `/api/history` `series` holds 730 days, so a bake left
+  alone for ~2 years (the first one would hit it ~2028-10) leaves a hole between the bake's
+  last day and the sheet window. A PR touching the workflow or the bake script dry-runs the
+  bake on GitHub's runners. By hand: `cd dashboard && uv run scripts/bake_long_history.py
+  [--dry] [key …]`, or Actions → Rebake Long History → Run workflow. A test
+  (`longHistory.test.js`) checks every index row decodes, matches its file and ends after
+  2026-03-12.
 - **Freshness:** unchanged. Baked files are static history; the newest point on every chart
   is still the sheet's, which `/api/freshness` already grades.
 

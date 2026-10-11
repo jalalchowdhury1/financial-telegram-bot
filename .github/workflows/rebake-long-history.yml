@@ -1,0 +1,132 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow
+name: Rebake Long History
+
+# The tap-a-number popovers draw decades of baked history (dashboard/public/history/)
+# BEFORE the history sheet's points. /api/history carries at most 730 days of sheet
+# (CHART_MAX_DAYS), so a bake that is never refreshed opens a hole in every chart once
+# the sheet window starts after the bake's last day (~2 years after the bake). This
+# re-bakes every quarter, so there are always ~7 more runs before a hole could open.
+#
+# scripts/bake_long_history.py refuses any stat that disagrees with the sheet, starts
+# later, or shrinks below 90% of its file; a refused or unreachable stat keeps its old
+# file and the others are still refreshed (exit 1 = "some stats failed", not "nothing
+# written"). The PR self-merges once CI is green, exactly like rebake-bankruptcies.yml
+# (owner OK'd self-merge for this one on 2026-10-10), and deploy-dashboard.yml deploys
+# after a SUCCESSFUL run. This job ends red whenever nothing was merged, so a failed run
+# never costs a Vercel deploy.
+#
+# A PR that changes this file or the bake script dry-runs the bake here: proof the
+# sources answer from GitHub's runners, nothing written.
+
+on:
+  schedule:
+    - cron: '0 12 15 1,4,7,10 *'   # 15 Jan / Apr / Jul / Oct, 12:00 UTC
+  workflow_dispatch:                # owner's on-demand re-bake
+  pull_request:
+    paths:
+      - '.github/workflows/rebake-long-history.yml'
+      - 'dashboard/scripts/bake_long_history.py'
+
+permissions:
+  contents: write            # push a branch (NOT main — branch protection blocks that)
+  pull-requests: write       # open + merge the PR (owner OK'd self-merge 10 Oct 2026)
+  actions: write             # dispatch CI on the bot branch (see ci.yml)
+
+concurrency:
+  group: rebake-long-history
+  cancel-in-progress: false
+
+jobs:
+  rebake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Install deps
+        run: pip install 'xlrd==2.0.1'
+
+      - name: Dry run (pull request — nothing written)
+        if: github.event_name == 'pull_request'
+        working-directory: dashboard
+        run: python scripts/bake_long_history.py --dry
+
+      - name: Re-bake
+        id: bake
+        if: github.event_name != 'pull_request'
+        continue-on-error: true      # some stats refused ≠ nothing to ship; handled below
+        working-directory: dashboard
+        run: |
+          set -o pipefail
+          python scripts/bake_long_history.py 2>&1 | tee "$RUNNER_TEMP/bake.log"
+
+      # One step does the git/PR work AND the notify, for the reason spelled out in
+      # rebake-bankruptcies.yml: a failing assignment under bash -e used to kill the
+      # step before the message was set, and silence read as success.
+      - name: Open a PR, self-merge on green CI, notify on trouble
+        if: always() && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          FAILED=$(grep -o 'FAILED/REFUSED: .*' "$RUNNER_TEMP/bake.log" 2>/dev/null | head -1 || true)
+          MSG=""; MERGED=""
+
+          # Judge on the stat files: the index's bakedAt changes on every run, even one
+          # where every stat failed.
+          if [ -z "$(git status --porcelain -- dashboard/public/history)" ]; then
+            MSG="🔴 <b>Long-history rebake wrote nothing</b> (bake: ${{ steps.bake.outcome }}). ${FAILED:-no stat refreshed}. Charts keep the old bake. Log: ${RUN_URL}"
+          else
+            N=$(python -c "import json;print(len(json.load(open('dashboard/lib/data/longHistoryIndex.json'))['keys']))")
+            BRANCH="rebake/long-history-${{ github.run_id }}"
+            git config user.name "github-actions"
+            git config user.email "actions@github.com"
+            git checkout -b "$BRANCH"
+            git add dashboard/public/history dashboard/lib/data/longHistoryIndex.json
+            git commit -m "chore(data): refresh baked long history (${N} stats)"
+            if ! PUSH_OUT=$(git push origin "$BRANCH" 2>&1); then
+              printf '%s\n' "$PUSH_OUT"
+              MSG="🔴 <b>Long-history rebake could not push its branch</b>; main untouched. Log: ${RUN_URL}"
+            elif PR_OUT=$(gh pr create --base main --head "$BRANCH" \
+                --title "chore(data): refresh baked long history" \
+                --body "Quarterly re-bake of the popovers' long history (${N} stats). ${FAILED:-Every stat refreshed.} The bake refuses any stat that disagrees with the sheet, starts later, or shrinks." 2>&1); then
+              URL=$(printf '%s\n' "$PR_OUT" | tail -1)
+              CHECKS=""
+              if gh workflow run ci.yml --ref "$BRANCH"; then
+                for _ in $(seq 1 60); do      # up to ~20 min
+                  sleep 20
+                  CHECKS=$(gh pr checks "$BRANCH" --required 2>/dev/null || true)
+                  if printf '%s\n' "$CHECKS" | grep -qE $'\t(fail|cancel)'; then break; fi
+                  if [ "$(printf '%s\n' "$CHECKS" | grep -cE $'^(backend|dashboard)-tests\tpass')" = 2 ]; then
+                    gh pr merge "$BRANCH" --squash --delete-branch && MERGED=1
+                    break
+                  fi
+                done
+              fi
+              if [ -z "$MERGED" ]; then
+                printf '%s\n' "${CHECKS:-no checks seen}"
+                MSG="🔴 <b>Long-history rebake: PR opened but NOT merged</b> (CI not green in time). Review: ${URL}"
+              elif [ -n "$FAILED" ]; then
+                MSG="🟡 <b>Long-history rebake merged, but some stats kept their old bake</b>: ${FAILED#FAILED/REFUSED: }. Log: ${RUN_URL}"
+              fi
+            else
+              printf '%s\n' "$PR_OUT"
+              MSG="🔴 <b>Long-history rebake pushed ${BRANCH} but could not open the PR</b>. Log: ${RUN_URL}"
+            fi
+          fi
+
+          # Silence = merged with every stat refreshed. Anything else pings once.
+          if [ -n "$MSG" ]; then
+            curl -sS -m 20 "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
+              -d chat_id="$TELEGRAM_CHAT_ID" -d parse_mode=HTML \
+              --data-urlencode "text=$MSG" -o /dev/null -w 'telegram HTTP %{http_code}\n' || true
+          fi
+          # Red unless merged: deploy-dashboard.yml only deploys after a green run.
+          [ -n "$MERGED" ]

@@ -11,8 +11,9 @@ name: Deploy dashboard
 #
 # - Bursts: a newer run cancels a waiting older one, and the hook always builds the newest
 #   commit on main, so several pushes inside 90 s cost ONE deploy.
-# - Bot merges: a push made with GITHUB_TOKEN (rebake-bankruptcies' self-merge) does not
-#   start push workflows, so a successful rebake run deploys through workflow_run.
+# - Bot merges: a push made with GITHUB_TOKEN (rebake-bankruptcies' and rebake-long-history's
+#   self-merges) does not start push workflows, so a successful rebake run deploys through
+#   workflow_run.
 # - Manual: Actions → Deploy dashboard → Run workflow.
 
 on:
@@ -20,7 +21,7 @@ on:
     branches: [main]
     paths: ['dashboard/**']
   workflow_run:
-    workflows: ['Rebake Bankruptcies History']
+    workflows: ['Rebake Bankruptcies History', 'Rebake Long History']
     types: [completed]
   workflow_dispatch:
 
@@ -32,7 +33,8 @@ concurrency:
 
 jobs:
   deploy:
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    # A rebake's pull_request dry run is a green run too, but ships nothing: never deploy it.
+    if: github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event != 'pull_request')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
