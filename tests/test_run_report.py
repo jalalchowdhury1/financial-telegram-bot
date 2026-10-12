@@ -25,3 +25,12 @@ def test_run_report_false_on_send_failure(_send, _fetch, _env):
 def test_run_report_true_on_success(mock_send, _fetch, _env):
     assert m.run_report() is True
     mock_send.assert_called_once()
+
+
+def test_signal_sig_only_the_two_signals_and_empty_when_na():
+    import lambda_handler
+    rep = "🛡️ NotSoBoring : ON\n\n🔑 FrontRunner : BIL (T-Bill ETF)\n\n🎢 VIX: 17 | 18 | GREED13\nPrice : $580.10"
+    assert lambda_handler.signal_sig(rep) == "NotSoBoring=ON|FrontRunner=BIL (T-Bill ETF)"
+    assert lambda_handler.signal_sig(rep.replace("$580.10", "$571.00")) == lambda_handler.signal_sig(rep)
+    assert lambda_handler.signal_sig(rep.replace("NotSoBoring : ON", "NotSoBoring : N/A")) == ""
+    assert lambda_handler.signal_sig("Price : $580") == ""

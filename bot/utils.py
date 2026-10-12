@@ -86,17 +86,20 @@ def load_environment_variables() -> Dict[str, str]:
     # We can safely cast because we checked for missing vars
     return {k: str(v) for k, v in config.items()}
 
-def digest_post(item_id, text, parse_mode="HTML", photo=None, caption=None) -> bool:
+def digest_post(item_id, text, parse_mode="HTML", photo=None, caption=None, sig=None) -> bool:
     """Hand an overnight message to the health-hub Silent digest instead of the chat
     (one 07:00 card, a button per item; a tap replays the full message — 11 Sep 2026).
-    True = stored; False = caller sends to Telegram as before. Needs DIGEST_URL + DIGEST_KEY."""
+    True = stored; False = caller sends to Telegram as before. Needs DIGEST_URL + DIGEST_KEY.
+    sig (12 Oct 2026): the values that matter; the same sig as the last SHOWN report makes
+    health-hub store it as a quiet heartbeat (no card row, no button)."""
     url, key = os.environ.get("DIGEST_URL"), os.environ.get("DIGEST_KEY")
     if not url or not key:
         return False
     try:
-        r = requests.post(url, params={"k": key}, timeout=10,
-                          json={"id": item_id, "text": text, "parse_mode": parse_mode,
-                                "photo": photo, "caption": caption})
+        body = {"id": item_id, "text": text, "parse_mode": parse_mode, "photo": photo, "caption": caption}
+        if sig:
+            body["sig"] = sig
+        r = requests.post(url, params={"k": key}, timeout=10, json=body)
         return r.status_code == 200 and r.json().get("ok") is True
     except Exception as e:  # noqa: BLE001
         print(f"digest hand-off failed ({e}); sending directly")

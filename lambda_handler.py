@@ -10,6 +10,7 @@ CloudWatch Logs: all print() calls are automatically captured.
 import json
 import logging
 import os
+import re
 from collections import deque
 from datetime import datetime, timezone
 from typing import Dict, Any
@@ -124,6 +125,20 @@ def handle_http_api(event: Dict[str, Any], env_vars: Dict[str, str]) -> Dict[str
         return _err(500, str(e))
 
 
+def signal_sig(report: str) -> str:
+    """'NotSoBoring=ON|FrontRunner=BIL' — the report only shows on Jalal's morning card when
+    this changes (12 Oct 2026: he wants the brief only when a signal flips). '' (= always
+    show) when either signal is missing or N/A, so a broken fetch is never hidden."""
+    vals = []
+    for name in ('NotSoBoring', 'FrontRunner'):
+        m = re.search(rf'{name} : (.+)', report)
+        v = m.group(1).strip() if m else ''
+        if not v or v.upper() == 'N/A':
+            return ''
+        vals.append(f'{name}={v}')
+    return '|'.join(vals)
+
+
 def handle_eventbridge(env_vars: Dict[str, str], run_time: str) -> Dict[str, Any]:
     """Handle the daily Telegram report scheduled by EventBridge."""
     telegram_token   = env_vars['TELEGRAM_TOKEN']
@@ -206,7 +221,7 @@ def handle_eventbridge(env_vars: Dict[str, str], run_time: str) -> Dict[str, Any
     full_report = separator.join(report_sections)
 
     logger.info('Sending report to Telegram...')
-    success = digest_post("report", full_report, "Markdown") or \
+    success = digest_post("report", full_report, "Markdown", sig=signal_sig(full_report)) or \
         send_to_telegram(telegram_token, telegram_chat_id, caption=full_report, silent=True)  # ~04:15 ET — no buzz (11 Sep 2026)
 
     if success:
