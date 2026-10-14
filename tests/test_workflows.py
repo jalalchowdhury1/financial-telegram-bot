@@ -1,6 +1,6 @@
 """Shape tests for the workflows whose ONLY output is a Telegram message.
 
-`rebake-bankruptcies.yml` and `self-improve.yml` are both "silence is the healthy
+`rebake-bankruptcies.yml` (and the retired `self-improve.yml`) are "silence is the healthy
 state" jobs: nobody watches their logs, so the notify step IS the product. Both
 have already been broken by the same bug — a `gh pr create` failure killing the
 step before it could notify — so the guarantee is worth a regression test.
@@ -44,7 +44,6 @@ def _code(run):
 
 NOTIFY_WORKFLOWS = [
     ("rebake-bankruptcies.yml", "rebake"),
-    ("self-improve.yml", "self-improve"),
 ]
 
 
