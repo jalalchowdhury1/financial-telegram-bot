@@ -6,7 +6,7 @@
 > `docs/superpowers/specs/*` design docs, and the `docs/superpowers/plans/*`
 > implementation plans — which were point-in-time and have been **deleted** (their durable
 > facts live here now). `README.md` (human/GitHub landing page) and
-> `.github/self-improve-prompt.md` (the live agent prompt, see §7) are kept. If something
+> is kept. If something
 > here is wrong, fix *this* file.
 
 This project is the owner's **most important** tool. Production stability matters more
@@ -1722,26 +1722,22 @@ Now: fewer than 756 bars → the Sheet's own 3Y return (`_sheet_return_3y`) → 
 **Self-healing / ops (scripts + workflows)**
 - `scripts/health_check.py` — the daily self-check prober (see §7); pure check functions +
   HTTP probes + `--notify`/`--summary`.
-- `scripts/collect_health_context.py` — distills recent health reports into the weekly
-  agent's digest (`health-digest.md`).
 - `scripts/build_bankruptcies_history.py` — regenerates the Four Horsemen card's baked
   bankruptcies history from uscourts.gov F-2 tables (run with `uv run`; the monthly
   `rebake-bankruptcies.yml` runs it — the dashboard's live tier keeps the newest quarter
   fresh on its own).
 - `tests/` — pytest: `test_polymarket_fetcher`, `test_run_report`, `test_utils`,
-  `test_health_check`, `test_collect_health_context`, `test_workflows` (shape tests for the
-  two "silence is healthy" workflows — needs `PyYAML`, in `requirements-dev.txt`).
+  `test_health_check`, `test_workflows` (shape tests for the
+  "silence is healthy" rebake workflow — needs `PyYAML`, in `requirements-dev.txt`).
   Dashboard Jest tests live under `dashboard/**/__tests__/`.
 - `.github/workflows/` — `deploy-lambda.yml` (auto-deploys the Lambda on `bot/**` /
   `lambda_handler.py` changes), `daily_report.yml` (09:45 UTC runner-based report backstop +
   CloudWatch skip-guard + self-retry harness), `ci.yml` (pytest + jest + build on every PR —
   the merge gate; on a bot's dispatch its `report` job posts the result as commit statuses,
   which is what lets a bot PR merge), `health-check.yml` (14:00 UTC daily self-check + Telegram alert),
-  `self-improve.yml` (weekly Wed 13:00 UTC agent that opens PRs — see §7), and
+  and
   `diagnose-lambda.yml` (manual on-demand: dumps the Lambda's recent CloudWatch invocations +
   outcomes to answer "why didn't the report send?"; read-only).
-- `.github/self-improve-prompt.md` — the guardrailed prompt the weekly agent runs (kept; it
-  is `cat`-ed by `self-improve.yml`).
 - `.env.example` / `setup_env.sh` — local env scaffolding (human-facing).
 - `README.md` — human/GitHub landing page (kept).
 
@@ -1774,9 +1770,8 @@ behavior. The step condition is `inputs.force_alert || steps.sev.outputs.overall
 compares cleanly); on a `schedule`-triggered run `inputs` is not populated and
 `inputs.force_alert` safely evaluates to `null`/falsy rather than erroring, so the
 schedule path is unchanged. No other step in this workflow depended on the old
-`github.event_name == 'workflow_dispatch'` condition. **Weekly**
-(`self-improve.yml`, Wed 13:00 UTC) a headless Claude agent reads the recent reports + this
-file and opens PRs the owner approves (it never self-merges; branch protection enforces it).
+`github.event_name == 'workflow_dispatch'` condition. (The weekly
+`self-improve.yml` agent was RETIRED 14 Oct 2026 — 1 PR in 10 weekly runs, owner's call.)
 
 ### ⚠️ The governing principle for every check in this file
 **A green check must prove the PRIMARY path ran. If a FALLBACK can satisfy the check, the
@@ -1878,57 +1873,15 @@ Each finding has an `id`. Map id → meaning → fix:
   `remediation: auto:redispatch_daily_report` tag means the daily workflow already retried.
 - **History = artifacts, not commits.** Each daily run uploads `health-report.json` (90-day
   retention); `health-check.yml` runs with `contents: read` and does **not** push to `main`
-  (branch protection blocks bot pushes). The weekly agent (`self-improve.yml`) downloads the
-  last ~10 health-check run artifacts into `health/history/` and runs
-  `scripts/collect_health_context.py` to build `health-digest.md`.
+  (branch protection blocks bot pushes).
 - Delivery uses a **24h rolling CloudWatch window** for the Lambda's
   `REPORT_DELIVERED`/`REPORT_FAILED` markers (`bot/utils.report_marker`), cross-checked with
   the `daily_report.yml` run status.
 
-### The weekly self-improve agent (`self-improve.yml`)
-- Trigger: cron `0 13 * * 3` (Wed 13:00 UTC) + `workflow_dispatch` (owner's override).
-  `timeout-minutes: 30`. Permissions: `contents: write` (feature branch only — NOT main),
-  `pull-requests: write`, `actions: read` (to download health artifacts).
-- It installs the **Claude CLI** (`npm i -g @anthropic-ai/claude-code`) and runs
-  `claude -p "<prompt + this week's digest>" --model claude-opus-4-8 --max-turns 15
-  --allowedTools "Read,Edit,Write,Grep,Glob" --permission-mode acceptEdits` using the
-  `ANTHROPIC_API_KEY` secret. **The agent only edits files** — it has no shell/git/test tools.
-  *(This differs from the old Phase-2 plan, which proposed `anthropics/claude-code-action@v1`;
-  the live workflow uses the CLI + a separate PR step instead — trust the workflow.)*
-- A subsequent workflow step does the git work: if the agent changed nothing → Telegram
-  "nothing to fix this week"; otherwise it runs `pytest` for a signal, creates branch
-  `self-improve/run-<run_id>`, commits, pushes, opens a PR via `gh pr create`,
-  and posts a Telegram summary with the PR link. It **never merges**; the owner reviews + merges.
-- **GOTCHA — do NOT put `[skip ci]` in that commit** (it was there until 2026-08-05). `ci.yml`
-  fires only on `pull_request` → main and `deploy-lambda.yml` only on push → main, so on a
-  feature-branch push the marker suppressed **nothing** — but on the PR it suppressed
-  `backend-tests` + `dashboard-tests`, which are **required checks** on `main`. The agent's own
-  PRs were unmergeable by design (first seen on #38: zero check runs, blocked). It would also
-  skip the Lambda deploy if it rode into a merge commit.
-- The agent's hard rules (`.github/self-improve-prompt.md`): be conservative (a clean no-op is
-  success), one small single-concern change, cross-check this AGENTS.md first, and **never
-  touch** secrets/keys, `aws/template.yaml`, live AWS config, `.env`, or `.github/workflows/`.
-- **GOTCHA — `gh pr create` needs a REPO SETTING, not just `pull-requests: write`.** Settings →
-  Actions → General → **"Allow GitHub Actions to create and approve pull requests"** must be ON
-  (API: `PUT /repos/{owner}/{repo}/actions/permissions/workflow`,
-  `can_approve_pull_request_reviews: true`). It was OFF, and on **2026-08-05** (run
-  `31019492456`) the agent made its first real change in 8 weekly runs, pushed the branch fine,
-  and then `gh pr create` was refused → the job failed. **Every prior green run was a no-op, so
-  this whole code path had never once executed** — a workflow that has "passed" 8 times can
-  still have a completely untested branch. If you ever see the branch pushed but no PR, check
-  this setting first.
-- **GOTCHA — never swallow that step's output.** The old line was
-  `URL=$(gh pr create … 2>&1 | tail -1)`. With `set -o pipefail` under GitHub's default
-  `bash -e`, gh's non-zero status propagated out of the ASSIGNMENT and killed the step, while
-  `2>&1` had already redirected the real error message into `$URL` where nobody saw it. Net
-  effect: no PR, no error text, and — because the step died before the notify — **no Telegram
-  either**; the only signal was GitHub's own "run failed" email. The PR-create call is now
-  wrapped in `if PR_OUT=$(…); then … else …`, which prints the failure as a `::warning::` and
-  still Telegrams, falling back to a `/compare/<branch>?expand=1` link. **The branch is already
-  pushed by that point, so the work is never lost — the notify matters more than the exit
-  code.**
-- **To fix anything here:** branch → fix + test → PR (CI gates it) → owner merges. Never push
-  to `main`. Roll back via a PR's **Revert** button or a `known-good-*` git tag.
+### The weekly self-improve agent — RETIRED 14 Oct 2026
+`self-improve.yml`, its prompt, `scripts/collect_health_context.py` and its test were deleted
+(1 useful PR, #38, in 10 weekly Opus runs; the fleet health checks cover breakage). To bring it
+back, restore them from git history (`git log --diff-filter=D -- .github/workflows/self-improve.yml`).
 
 ## 11 Sep 2026 — nag review changes
 - The daily report (Lambda `handle_eventbridge` and the `bot.main report` backstop) is sent with
