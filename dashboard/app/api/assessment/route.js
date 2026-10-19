@@ -6,13 +6,20 @@
 // API error, refusal, empty text) or when the daily cap is hit. No key = the
 // old path exactly. This is a PUBLIC, unauthenticated POST on a public repo,
 // so Claude is capped per day in Upstash KV; no KV = no Claude (fails closed).
+// 2026-10-19 (audit): the route now needs header x-assessment-secret = env
+// ASSESSMENT_SECRET (unset = always 401), and the paid fallback cascade has its
+// own daily cap (FALLBACK_DAILY_CAP, KV unreadable = rule-based answer).
 import {
     CLAUDE_KEY_ENV, CLAUDE_LABEL, claudeBudgetOk, claudeAssessment,
+    assessmentAuthorized, fallbackBudgetOk,
 } from '../../../lib/claudeAssessment';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request) {
+    if (!assessmentAuthorized(request)) {
+        return Response.json({ error: 'unauthorized' }, { status: 401 });
+    }
     try {
         const data = await request.json();
 
@@ -117,6 +124,12 @@ Output the assessment now:`;
         }
 
         if (configs.length === 0) {
+            return Response.json({ assessment: generateRuleBased(data) });
+        }
+
+        // The cascade's first leg is paid: cap it per day too (KV unreadable = no cascade).
+        if (!(await fallbackBudgetOk())) {
+            console.warn('[ASSESSMENT] fallback daily cap reached or KV unavailable — rule-based answer');
             return Response.json({ assessment: generateRuleBased(data) });
         }
 

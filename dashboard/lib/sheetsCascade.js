@@ -258,6 +258,25 @@ function fromRecord(record, f, label, now) {
  * Fill every still-null field from the per-field last-good copies: /tmp first, then KV.
  * Mutates and returns `fields`; adds a message per filled field. Never throws.
  */
+/**
+ * Read the KV last-good record. `ok:false` = KV could not be read (outage), which is
+ * NOT the same as an empty record: a merge-writer must skip, never overwrite.
+ * Uses kv.read when the client has it (defaultKv); a get-only client counts a throw
+ * as unknown and null as empty. Never throws.
+ */
+export async function readKvRecord(kv) {
+    try {
+        if (typeof kv?.read === 'function') {
+            const r = await kv.read(KV_KEY);
+            if (!r?.ok) return { ok: false, data: null };
+            return { ok: true, data: parseEnvelope(r.value)?.data || null };
+        }
+        return { ok: true, data: parseEnvelope(await kv.get(KV_KEY))?.data || null };
+    } catch {
+        return { ok: false, data: null };
+    }
+}
+
 export async function fillFromLastGood(fields, { faults, store, kv, now = Date.now(), backups = {} } = {}) {
     const messages = [];
     const has = (n) => !!(faults && faults.has(n));
@@ -274,9 +293,10 @@ export async function fillFromLastGood(fields, { faults, store, kv, now = Date.n
     }
     let kvRecord;
     if (missing().length && !has('lastgood') && !has('kvlg') && !has('sheets_kvlg')) {
-        try { kvRecord = parseEnvelope(await kv.get(KV_KEY))?.data || null; } catch { kvRecord = null; }
+        const r = await readKvRecord(kv);
+        kvRecord = r.ok ? r.data : undefined; // undefined = unknown → persistLiveFields re-reads
         for (const f of missing()) {
-            const got = fromRecord(kvRecord, f, TIER.kv, now);
+            const got = fromRecord(r.data, f, TIER.kv, now);
             if (got) { fields[f] = got; messages.push(`${f}: served KV last-good from ${got.savedAt} (STALE)`); }
         }
     }
@@ -317,7 +337,11 @@ export async function persistLiveFields(fields, { faults, store, kv, now = Date.
 
         let base = kvRecord;
         if (base === undefined && Object.keys(fresh).length < FIELDS.length) {
-            try { base = parseEnvelope(await kv.get(KV_KEY))?.data || null; } catch { base = null; }
+            const r = await readKvRecord(kv);
+            // KV unreadable = we don't know what's there: skip the write rather than
+            // replace every other field's last-good with nothing (audit 19 Oct 2026).
+            if (!r.ok) return false;
+            base = r.data;
         }
         const ok = await kv.set(KV_KEY, { data: { ...(base || {}), ...fresh }, savedAt: at });
         if (ok) { try { store.save(MARK_KEY, { hash, at }); } catch { /* ignore */ } }

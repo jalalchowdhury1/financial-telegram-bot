@@ -12,20 +12,47 @@ export const CLAUDE_KEY_ENV = 'CLAUDE_CREDITS_API_KEY'; // never the SDK's defau
 export const CLAUDE_TIMEOUT_MS = 12000;
 export const CLAUDE_DAILY_CAP = 100;
 
-/** Count this call against today's (ET) cap. true = under the cap. Never throws. */
-export async function claudeBudgetOk() {
+export const FALLBACK_DAILY_CAP = 50; // the paid OpenRouter/OpenAI/Moonshot cascade (19 Oct 2026)
+export const ASSESSMENT_SECRET_ENV = 'ASSESSMENT_SECRET';
+export const ASSESSMENT_SECRET_HEADER = 'x-assessment-secret';
+
+/**
+ * The route spends money, so a caller must send `x-assessment-secret` equal to env
+ * ASSESSMENT_SECRET. Env unset = nobody gets in (fails closed). Never throws.
+ */
+export function assessmentAuthorized(request) {
     try {
-        const day = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-        const key = `ftb:assessment:claude:${day}`;
-        const d = await kvCall(`/incr/${encodeURIComponent(key)}`, { method: 'POST' });
-        const n = Number(d?.result);
-        if (!Number.isFinite(n)) return false;          // KV unreadable → fail closed
-        if (n === 1) await kvCall(`/expire/${encodeURIComponent(key)}/172800`, { method: 'POST' });
-        return n <= CLAUDE_DAILY_CAP;
+        const want = process.env[ASSESSMENT_SECRET_ENV] || '';
+        const got = request.headers.get(ASSESSMENT_SECRET_HEADER) || '';
+        if (!want || got.length !== want.length) return false;
+        let diff = 0;
+        for (let i = 0; i < want.length; i++) diff |= want.charCodeAt(i) ^ got.charCodeAt(i);
+        return diff === 0;
     } catch {
         return false;
     }
 }
+
+/** Count one call against `prefix`'s per-ET-day cap. true = under the cap. KV unreadable = false. Never throws. */
+export async function dailyBudgetOk(prefix, cap) {
+    try {
+        const day = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+        const key = `${prefix}:${day}`;
+        const d = await kvCall(`/incr/${encodeURIComponent(key)}`, { method: 'POST' });
+        const n = Number(d?.result);
+        if (!Number.isFinite(n)) return false;          // KV unreadable → fail closed
+        if (n === 1) await kvCall(`/expire/${encodeURIComponent(key)}/172800`, { method: 'POST' });
+        return n <= cap;
+    } catch {
+        return false;
+    }
+}
+
+/** Count this call against today's (ET) Claude cap. true = under the cap. Never throws. */
+export const claudeBudgetOk = () => dailyBudgetOk('ftb:assessment:claude', CLAUDE_DAILY_CAP);
+
+/** Same for the fallback cascade (one count per request that reaches it). */
+export const fallbackBudgetOk = () => dailyBudgetOk('ftb:assessment:fallback', FALLBACK_DAILY_CAP);
 
 /** One Claude call. Returns the assessment text or throws (caller falls back). */
 export async function claudeAssessment(prompt) {

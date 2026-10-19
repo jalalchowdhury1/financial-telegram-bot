@@ -233,6 +233,13 @@ The repo is **public** — keys NEVER go in code; they live in **Vercel env vars
   reply's `*(Provider: …)*` tag names who answered (`Claude Haiku 5.5 (claude-haiku-5-5)`).
   Nothing on the page calls this route today (2026-10-09). Tests:
   `lib/__tests__/claudeAssessment.test.js`.
+  **Locked 2026-10-19 (API-credit audit):** a POST must carry header `x-assessment-secret`
+  equal to env `ASSESSMENT_SECRET`, else **401** before any LLM call. Env unset = always 401
+  (it is unset today, since nothing calls the route; set it in Vercel if a caller is added).
+  The fallback cascade (its first leg, DeepSeek V4 Flash on OpenRouter, is paid) has its own
+  cap, `FALLBACK_DAILY_CAP` (50) per ET day via `INCR ftb:assessment:fallback:<date>`;
+  over the cap or KV unreadable = the rule-based answer, no paid call.
+- `ASSESSMENT_SECRET` — optional; the shared secret for `/api/assessment` (above).
 - `GITHUB_TOKEN` — optional, raises the GitHub API rate limit for `/api/last-run`.
 
 ### Conventions (enforce on every change)
@@ -724,6 +731,10 @@ computes them from daily prices with the sheets' exact logic; the sheets are bac
   = built from at least the latest completed session. A close-based value is saved with
   savedAt = that close. The computed tier is capped at 12 s so it never holds the VIX answer.
   `_meta.fields.<signal>.detail` carries the 16 RSIs / TMF max, min, drawdown, watch-out level.
+- **KV write never wipes (2026-10-19 audit):** the per-field KV last-good is a merge write.
+  `readKvRecord` (via `defaultKv.read`) tells "KV unreadable" apart from "key empty"; on an
+  unreadable KV `persistLiveFields` SKIPS the SET instead of writing only this run's live
+  fields over every other field's last-good.
 - **Faults:** `?_fail=signals` (tier off → sheets), `signals_nasdaq` (→ CNBC), `signals_cnbc`,
   `signals_yahoo`, `signals_spot` (no live today bar). `scripts/fault_matrix.py: signals_agree()` checks nightly that
   both are computed and current, that NotSoBoring equals the live sheet, and that the CNBC
