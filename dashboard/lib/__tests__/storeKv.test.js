@@ -37,15 +37,17 @@ describe('serve() KV last-good tier', () => {
 
     test('/tmp miss → serves the KV copy, relabelled + stale (never as live)', async () => {
         const key = uniq('kvr');
-        const kv = fakeKv({ [`ftb:lg:${key}`]: { data: good, savedAt: '2026-10-08T20:00:00.000Z' } });
+        // savedAt is relative to now: a hardcoded date aged past serve()'s 7-day window (date rot, 19 Oct 2026).
+        const at = new Date(Date.now() - 864e5).toISOString();
+        const kv = fakeKv({ [`ftb:lg:${key}`]: { data: good, savedAt: at } });
         const res = await serve(key, boom, { kv, fallback: { error: 'x' } });
         const b = await res.json();
         expect(res.status).toBe(200);
         expect(b.v).toBe(42);
-        expect(b._meta.source).toBe('KV last-good (2026-10-08T20:00:00.000Z) ← Live API');
+        expect(b._meta.source).toBe(`KV last-good (${at}) ← Live API`);
         expect(b._meta.stale).toBe(true);
         expect(b._meta.hasErrors).toBe(true);
-        expect(b._meta.lastGoodAt).toBe('2026-10-08T20:00:00.000Z');
+        expect(b._meta.lastGoodAt).toBe(at);
         expect(b._meta.messages).toContain('cached: ok');
         expect(res.headers.get('cache-control')).toBe('no-store');
     });

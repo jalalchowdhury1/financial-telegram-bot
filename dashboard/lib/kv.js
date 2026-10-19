@@ -41,6 +41,15 @@ export const defaultKv = {
         const d = await kvCall(`/get/${encodeURIComponent(key)}`);
         return d ? d.result ?? null : null;
     },
+    /**
+     * Like get(), but tells "the key is empty" ({ok:true, value:null}) apart from
+     * "KV could not be read" ({ok:false}) — a writer that merges must never treat
+     * an outage as an empty record (audit 19 Oct 2026).
+     */
+    async read(key) {
+        const d = await kvCall(`/get/${encodeURIComponent(key)}`);
+        return d ? { ok: true, value: d.result ?? null } : { ok: false, value: null };
+    },
     async set(key, value) {
         const d = await kvCall(`/set/${encodeURIComponent(key)}`, {
             method: 'POST',

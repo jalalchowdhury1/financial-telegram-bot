@@ -18,19 +18,29 @@ jest.mock('@anthropic-ai/sdk', () => ({
     }),
 }));
 
-let kvCount = 1;   // what INCR answers; null = KV unavailable
+let kvCount = 1;   // what INCR answers for the Claude key; null = KV unavailable
+let fbCount = 1;   // same for the fallback-cascade key
 jest.mock('../kv', () => ({
-    kvCall: jest.fn(async (p) => (p.startsWith('/incr/') ? (kvCount === null ? null : { result: kvCount }) : { result: 1 })),
+    kvCall: jest.fn(async (p) => {
+        if (!p.startsWith('/incr/')) return { result: 1 };
+        const n = p.includes('fallback') ? fbCount : kvCount;
+        return n === null ? null : { result: n };
+    }),
 }));
 
 const { POST } = require('../../app/api/assessment/route');
 const lib = require('../claudeAssessment');
 
 const DATA = { yieldCurve: 0.45, fearGreed: 31, sahmRule: 0.2, claims: 230, sentiment: 58, copperGold: 1.4, creditSpread: 1.1, realYields: 1.9 };
-const post = () => POST(new Request('https://x.test/api/assessment', { method: 'POST', body: JSON.stringify(DATA) }));
+const SECRET = 'test-secret-not-real';
+const post = (secret = SECRET) => POST(new Request('https://x.test/api/assessment', {
+    method: 'POST',
+    headers: secret === null ? {} : { 'x-assessment-secret': secret },
+    body: JSON.stringify(DATA),
+}));
 const msg = (text, stop_reason = 'end_turn') => ({ stop_reason, content: [{ type: 'thinking', thinking: '' }, { type: 'text', text }] });
 
-const KEYS = ['CLAUDE_CREDITS_API_KEY', 'OPENROUTER_API_KEY', 'OPENAI_API_KEY', 'GROQ_API_KEY', 'MOONSHOT_API_KEY'];
+const KEYS = ['ASSESSMENT_SECRET', 'CLAUDE_CREDITS_API_KEY', 'OPENROUTER_API_KEY', 'OPENAI_API_KEY', 'GROQ_API_KEY', 'MOONSHOT_API_KEY'];
 const saved = {};
 const realFetch = global.fetch;
 
@@ -39,6 +49,8 @@ beforeEach(() => {
     create.mockReset();
     ctorArgs.length = 0;
     kvCount = 1;
+    fbCount = 1;
+    process.env.ASSESSMENT_SECRET = SECRET;
     global.fetch = jest.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: 'old cascade text' } }] }), { status: 200 }));
     jest.spyOn(console, 'log').mockImplementation(() => {});
     jest.spyOn(console, 'warn').mockImplementation(() => {});
@@ -97,12 +109,65 @@ test('over the daily cap: Claude is skipped, the old cascade serves', async () =
     expect(body.assessment).toContain('Provider: OpenRouter DeepSeek V4 Flash');
 });
 
-test('KV unavailable: fails closed (no Claude), the old cascade serves', async () => {
+test('Claude KV unavailable: fails closed (no Claude), the old cascade serves', async () => {
     withClaude();
     kvCount = null;
     const body = await (await post()).json();
     expect(create).not.toHaveBeenCalled();
     expect(body.assessment).toContain('old cascade text');
+});
+
+describe('auth (audit 19 Oct 2026): no secret, no LLM call', () => {
+    test.each([
+        ['no header', null],
+        ['wrong secret', 'nope'],
+        ['wrong secret, same length', 'x'.repeat(SECRET.length)],
+    ])('%s -> 401 and nothing is called', async (_n, secret) => {
+        withClaude();
+        const res = await post(secret);
+        expect(res.status).toBe(401);
+        expect(await res.json()).toEqual({ error: 'unauthorized' });
+        expect(create).not.toHaveBeenCalled();
+        expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    test('env ASSESSMENT_SECRET unset -> 401 even with an empty header (fails closed)', async () => {
+        withClaude();
+        delete process.env.ASSESSMENT_SECRET;
+        expect((await post('')).status).toBe(401);
+        expect((await post(SECRET)).status).toBe(401);
+        expect(create).not.toHaveBeenCalled();
+    });
+});
+
+describe('paid fallback cascade has its own daily cap', () => {
+    test('over the fallback cap: no paid call, rule-based answer', async () => {
+        withClaude();
+        kvCount = lib.CLAUDE_DAILY_CAP + 1;
+        fbCount = lib.FALLBACK_DAILY_CAP + 1;
+        const res = await post();
+        const body = await res.json();
+        expect(res.status).toBe(200);
+        expect(global.fetch).not.toHaveBeenCalled();
+        expect(body.assessment).toContain('Rule-based assessment');
+    });
+
+    test('fallback KV unavailable: fails closed, no paid call', async () => {
+        withClaude();
+        kvCount = null;
+        fbCount = null;
+        const body = await (await post()).json();
+        expect(global.fetch).not.toHaveBeenCalled();
+        expect(body.assessment).toContain('Rule-based assessment');
+    });
+
+    test('at the cap exactly: the cascade still serves', async () => {
+        withClaude();
+        kvCount = lib.CLAUDE_DAILY_CAP + 1;
+        fbCount = lib.FALLBACK_DAILY_CAP;
+        const body = await (await post()).json();
+        expect(body.assessment).toContain('old cascade text');
+    });
 });
 
 test('no Claude key = the old path exactly (SDK never built)', async () => {
