@@ -6,11 +6,14 @@ import { faultsFrom } from '../../../lib/faults';
 // the handler is dynamic (Lambda call stays no-store). See fred/route.js note.
 export const fetchCache = 'default-cache';
 
+// A hung Lambda must not hold the fallback tiers back until API Gateway's ~29 s cap.
+const LAMBDA_TIMEOUT_MS = 10000;
+
 async function lambdaSpy(messages) {
     const lambdaUrl = process.env.LAMBDA_URL;
     if (!lambdaUrl) { messages.push('LAMBDA_URL not configured'); return null; }
     try {
-        const res = await fetch(`${lambdaUrl}/api/spy`, { cache: 'no-store' });
+        const res = await fetch(`${lambdaUrl}/api/spy`, { cache: 'no-store', signal: AbortSignal.timeout(LAMBDA_TIMEOUT_MS) });
         if (!res.ok) { messages.push(`Lambda HTTP ${res.status}`); return null; }
         const j = await res.json();
         if (j && j.current != null && !j.error) return j;
