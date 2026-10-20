@@ -5,6 +5,9 @@
 
 import { DEFAULT_HEADERS, YAHOO_TICKERS, GOOGLE_SHEETS } from './constants';
 
+// Error messages end up in public `_meta.messages`, so never echo a key from the URL.
+export const maskUrl = (url) => String(url).replace(/([?&](?:api_key|apikey|token|key)=)[^&\s]+/gi, '$1***');
+
 export async function proxyFetch(url, options = {}) {
     const { timeout = 8000, ...fetchOptions } = options;
     const controller = new AbortController();
@@ -25,14 +28,14 @@ export async function proxyFetch(url, options = {}) {
         clearTimeout(timer);
 
         if (!response.ok) {
-            throw new Error(`Fetch failed for ${url}: ${response.status} ${response.statusText}`);
+            throw new Error(`Fetch failed for ${maskUrl(url)}: ${response.status} ${response.statusText}`);
         }
 
         return response;
     } catch (error) {
         clearTimeout(timer);
         if (error.name === 'AbortError') {
-            throw new Error(`Fetch timed out for ${url} after ${timeout}ms`);
+            throw new Error(`Fetch timed out for ${maskUrl(url)} after ${timeout}ms`);
         }
         console.error(`[proxyFetch Error]: ${error.message}`);
         throw error;
