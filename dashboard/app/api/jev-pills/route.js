@@ -235,6 +235,26 @@ export async function repairPillInputs(raw, { fredKey, faults = new Set(), now =
     return inputSources;
 }
 
+/**
+ * Log today's verdicts (best effort, never throws). The log is first-write-wins
+ * per day and becomes tomorrow's "since yesterday" baseline, so a fault-injected
+ * (?_fail=) request must never write it.
+ */
+export async function logTodaysVerdicts(payload, raw, faults, { now = new Date(), log = logVerdicts } = {}) {
+    if (faults && faults.size > 0) return false;
+    const todayStr = now.toISOString().slice(0, 10);
+    try {
+        return await log(todayStr, {
+            date: todayStr,
+            pills: payload.pills,
+            state: payload.state,
+            spy: { price: raw.spy?.current ?? raw.spy?.price ?? null },
+        });
+    } catch {
+        return false;
+    }
+}
+
 export async function GET(request) {
     // Touch the request so this handler runs per-request (dynamic, not static).
     request.headers.get('user-agent');
@@ -297,19 +317,7 @@ export async function GET(request) {
         // rebuilt by the next request.
         payload._meta.hasErrors = pillsDegraded(payload._meta.jev, results);
 
-        // Log today's verdicts (best effort, never throw)
-        const todayStr = new Date().toISOString().slice(0, 10);
-        try {
-            const logged = await logVerdicts(todayStr, {
-                date: todayStr,
-                pills: payload.pills,
-                state: payload.state,
-                spy: { price: raw.spy?.current ?? raw.spy?.price ?? null },
-            });
-            payload._meta.logged = logged;
-        } catch {
-            payload._meta.logged = false;
-        }
+        payload._meta.logged = await logTodaysVerdicts(payload, raw, faults);
 
         return payload;
     }, {

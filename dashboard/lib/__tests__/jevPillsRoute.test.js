@@ -896,3 +896,32 @@ describe('pillsDegraded — what keeps a pills answer out of the edge cache', ()
         expect(pillsDegraded('ok', [{ _meta: { hasErrors: true } }])).toBe(true);
     });
 });
+
+import { logTodaysVerdicts } from '../../app/api/jev-pills/route';
+
+describe('logTodaysVerdicts', () => {
+    const payload = { pills: { regime: { verdict: 'risk-on' } }, state: 'abc' };
+    const raw = { spy: { current: 500 } };
+    const now = new Date('2026-10-19T12:00:00Z');
+
+    test('fault-injected request never writes the day log', async () => {
+        const log = jest.fn().mockResolvedValue(true);
+        const r = await logTodaysVerdicts(payload, raw, new Set(['fred']), { now, log });
+        expect(r).toBe(false);
+        expect(log).not.toHaveBeenCalled();
+    });
+
+    test('clean request logs today with the spy price', async () => {
+        const log = jest.fn().mockResolvedValue(true);
+        const r = await logTodaysVerdicts(payload, raw, new Set(), { now, log });
+        expect(r).toBe(true);
+        expect(log).toHaveBeenCalledWith('2026-10-19', {
+            date: '2026-10-19', pills: payload.pills, state: 'abc', spy: { price: 500 },
+        });
+    });
+
+    test('a throwing log returns false', async () => {
+        const log = jest.fn().mockRejectedValue(new Error('kv down'));
+        expect(await logTodaysVerdicts(payload, raw, new Set(), { now, log })).toBe(false);
+    });
+});
