@@ -37,6 +37,10 @@ import re
 import sys
 import urllib.parse
 import urllib.request
+try:
+    from tg_relay import open_tg            # run as scripts/<name>.py
+except ImportError:
+    from scripts.tg_relay import open_tg    # imported as scripts.<name> (tests)
 from datetime import date, datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -112,8 +116,7 @@ def send_telegram(text, buttons=None, silent=False):
         payload["reply_markup"] = json.dumps(buttons)
     body = urllib.parse.urlencode(payload).encode()
     try:
-        req = urllib.request.Request(f"https://api.telegram.org/bot{tok}/sendMessage", data=body)
-        with urllib.request.urlopen(req, timeout=20) as r:
+        with open_tg(tok, "sendMessage", body, "defensive") as r:
             return r.status == 200
     except Exception as e:                       # noqa: BLE001 — a failed send is logged, never fatal
         print(f"  telegram send failed: {e}")
