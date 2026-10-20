@@ -35,6 +35,10 @@ import subprocess
 import sys
 import time
 from datetime import date, datetime, timedelta, timezone
+try:
+    from tg_relay import open_tg            # run as scripts/<name>.py
+except ImportError:
+    from scripts.tg_relay import open_tg    # imported as scripts.<name> (tests)
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -653,9 +657,12 @@ def send_alert(text):
     token, chat = os.environ.get("TELEGRAM_TOKEN"), os.environ.get("RUBBER_BAND_ALERT_CHAT")
     if not token or not chat:
         return False
-    r = requests.post(f"https://api.telegram.org/bot{token}/sendMessage",
-                      json={"chat_id": chat, "text": text, "parse_mode": "HTML"}, timeout=20)
-    return r.status_code == 200
+    try:
+        with open_tg(token, "sendMessage", json.dumps({"chat_id": chat, "text": text, "parse_mode": "HTML"}).encode(),
+                     "rubberband", headers={"Content-Type": "application/json"}) as r:
+            return r.status == 200
+    except Exception:                          # noqa: BLE001 — same as a non-200 before
+        return False
 
 
 EMOJI = {"green": "🟢", "amber": "🟡", "red": "🔴", "grey": "⚪"}

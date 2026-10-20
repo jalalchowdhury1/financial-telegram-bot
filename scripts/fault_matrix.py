@@ -25,6 +25,10 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import concurrent.futures as cf
+try:
+    from tg_relay import open_tg            # run as scripts/<name>.py
+except ImportError:
+    from scripts.tg_relay import open_tg    # imported as scripts.<name> (tests)
 
 BASE = os.environ.get('FTB_BASE', 'https://financial-telegram-bot-beryl.vercel.app') + '/api/'
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -264,7 +268,7 @@ def send(text):
     data = urllib.parse.urlencode({'chat_id': chat, 'text': text, 'parse_mode': 'HTML',
                                    'disable_web_page_preview': 'true'}).encode()
     try:
-        urllib.request.urlopen(f'https://api.telegram.org/bot{token}/sendMessage', data=data, timeout=20)
+        open_tg(token, 'sendMessage', data, 'faultmatrix').close()
     except Exception as e:
         print(f'alert failed: {e}')
 
