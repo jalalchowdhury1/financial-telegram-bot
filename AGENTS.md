@@ -334,8 +334,8 @@ answered. Three fixes, each safe on its own:
   mask; the active window scrolls itself into view.
 
 ### ⚡ Instant open · 📈 What moved · 📱 phone polish — 2026-09-26
-- **Instant open (`lib/snapshot.js`).** Every page feed (plus `/api/factors`, and
-  `/api/vol` for the vol card) saves its last good answer in this device's localStorage
+- **Instant open (`lib/snapshot.js`).** Every page feed (plus `/api/factors`; the vol
+  card reads the page's `/api/vol` feed, fetched once per refresh since 21 Oct 2026) saves its last good answer in this device's localStorage
   (`fd:snap:v1:<build>:<feed>`, ~1 MB total, 3-day max age). The key carries the deploy's
   commit (`NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA`, 'dev' locally) so an old-shape copy never meets
   new code; `purgeOldSnaps()` drops other deploys' copies on open. The next

@@ -52,8 +52,7 @@ const FEEDS = [
     { key: 'history', path: '/api/history' },
     // Jev pills: a failure hides the row, nothing else. Asked for after its inputs land (fetchAll).
     { key: 'jev', path: '/api/jev-pills' },
-    // VIX since its last close, for the "What moved" strip. The vol card fetches its own
-    // copy; automatic loads of both are answered by the edge cache.
+    // VIX since its last close, for the "What moved" strip, and the vol card's data.
     { key: 'vol', path: '/api/vol' },
 ];
 
@@ -675,7 +674,7 @@ export default function Dashboard() {
                 </div>
 
                 {/* VOLATILITY METRICS (IV rank / percentile / VRP) */}
-                <div data-jump="Volatility" style={{ display: 'contents' }}><ErrorBoundary resetKey={refreshTick}><VolMetricsTable refreshKey={refreshTick} bust={bustKey} /></ErrorBoundary></div>
+                <div data-jump="Volatility" style={{ display: 'contents' }}><ErrorBoundary resetKey={refreshTick}><VolMetricsTable data={vol} saved={saved('vol')} waiting={pending.vol} /></ErrorBoundary></div>
 
                 {/* BULL MARKET CHECKLIST */}
                 <div className="saved-wrap" data-jump="Bull checklist" data-cached={saved('fred')} style={{ display: 'contents', ...savedVar('fred') }}><ErrorBoundary resetKey={refreshTick}><BullChecklist fred={fred} loading={pending.fred && !fred} /></ErrorBoundary></div>

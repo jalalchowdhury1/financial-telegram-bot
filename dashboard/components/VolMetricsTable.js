@@ -1,11 +1,8 @@
 'use client';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useRef } from 'react';
 import ErrorBoundary from './ErrorBoundary';
 import Skeleton from './Skeleton';
-import { getJson } from '../lib/loadJson';
-import { readSnap, savedLabel } from '../lib/snapshot';
 
-const useIsoLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
 const hasRows = (j) => !!(j && Array.isArray(j.tickers) && j.tickers.length);
 
 /**
@@ -19,7 +16,6 @@ const hasRows = (j) => !!(j && Array.isArray(j.tickers) && j.tickers.length);
  * 5 trading days.
  */
 export const SHOWN = ['SPY', 'QQQ'];
-const MIN_REFETCH_MS = 60e3;
 
 const fmt = (v, digits = 1) => (v == null || !Number.isFinite(v) ? '—' : v.toFixed(digits));
 
@@ -63,41 +59,19 @@ const asOfNote = (data, rows) => {
 const COLS = '1.3fr 1.2fr 1fr 1fr 1fr 1fr';
 const cellRight = { textAlign: 'right', fontVariantNumeric: 'tabular-nums' };
 
-export default function VolMetricsTable({ refreshKey = null, bust = false }) {
-    const [data, setData] = useState(null);
-    const [status, setStatus] = useState('loading'); // loading | ready | error
-    // ⚡ Instant open: this device's saved copy (the page saves /api/vol under 'vol'),
-    // tagged 🕐 until the live answer lands. See lib/snapshot.js.
-    const [savedAt, setSavedAt] = useState(null);
-    const lastFetch = useRef(0);
-    const mounted = useRef(true);
-    useEffect(() => {
-        mounted.current = true;
-        return () => { mounted.current = false; };
-    }, []);
-
-    useIsoLayoutEffect(() => {
-        const snap = readSnap('vol');
-        if (snap && hasRows(snap.data)) { setData(snap.data); setStatus('ready'); setSavedAt(snap.savedAt); }
-    }, []);
-
-    // Refetch on the page's refresh tick. The floor stops the first-load double fetch
-    // (mount, then the page's first tick); a manual refresh (`bust`) always goes through
-    // and skips the edge cache. A failed refresh keeps what the card already shows.
-    useEffect(() => {
-        if (!bust && Date.now() - lastFetch.current < MIN_REFETCH_MS) return;
-        lastFetch.current = Date.now();
-        getJson('/api/vol', { bust }).then((json) => {
-            if (!mounted.current) return;
-            if (hasRows(json)) { setData(json); setStatus('ready'); setSavedAt(null); }
-            else setStatus((s) => (s === 'ready' ? 'ready' : 'error'));
-        });
-    }, [refreshKey]); // `bust` changes together with each tick
+export default function VolMetricsTable({ data: incoming = null, saved, waiting = false }) {
+    // The page fetches /api/vol once per refresh and hands it down (it used to be fetched
+    // twice per load — Vercel Active CPU, 21 Oct 2026). `saved` = the page's 🕐 label for a
+    // saved copy. A failed or empty answer keeps what the card already shows.
+    const last = useRef(null);
+    if (hasRows(incoming)) last.current = incoming;
+    const data = last.current;
+    const status = data ? 'ready' : waiting ? 'loading' : 'error';
 
     const rows = data ? SHOWN.map((t) => data.tickers.find((x) => x && x.ticker === t)).filter(Boolean) : [];
 
     return (
-        <div className="card" style={{ animationDelay: '0.6s' }} data-cached={savedAt ? savedLabel(savedAt) : undefined}>
+        <div className="card" style={{ animationDelay: '0.6s' }} data-cached={saved}>
             <div className="card-header">
                 <h2>🌡️ Volatility</h2>
                 <span className="badge badge-blue">IV · VIX curve · decay</span>
