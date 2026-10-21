@@ -1118,6 +1118,7 @@ measures what is SERVED, not whether a writer ran. The fleet monitor (github-not
 - NOT covered (no timestamp in the served value): `/api/sheets` (NotSoBoring / FrontRunner /
   VIX sheet cells) and the Lambda's Telegram brief built from them.
 - Tests: `lib/__tests__/servedFreshness.test.js` (real producer shapes; fresh=green, stale=red).
+- **Timeout order (21 Oct 2026):** `/api/freshness` `TIMEOUT_MS` (50 s) must stay above every served route's own budget (`/api/fred` `FRED_BUDGET_MS` 40 s) and the fleet probe (65 s) above freshness's `maxDuration` (60 s) — else a slow cold fred reads as "served nothing" (red). Tripwire: `lib/__tests__/freshnessTimeout.test.js`.
 
 ### 📉 Chart helpers (`lib/chartAxis.js`, MiniChart + SpyChart) — 2026-09-26
 - Year labels go through `yearTicks`: round steps (1/2/5/10/20 years, max 8 labels) and a
