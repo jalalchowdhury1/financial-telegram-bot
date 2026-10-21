@@ -23,8 +23,8 @@ const addDays = (date, n) => new Date(Date.parse(`${date}T12:00:00Z`) + n * 864e
 const isDate = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(`${s}T00:00:00Z`));
 
 // Close is 16:00 ET (13:00 on early-close days); the Mac runs at 18:30 ET, so an early
-// close legitimately waits 5.5 h. +0.5 h edge cache (lib/cdn.js rubber-band ≤ 30 min).
-export const RUBBER_BAND_GRACE_H = 6;
+// close legitimately waits 5.5 h. +2 h edge cache (lib/cdn.js rubber-band ≤ 2 h).
+export const RUBBER_BAND_GRACE_H = 8;
 // Scraper runs every 12 h; one dropped GHA run (seen ~1×/fortnight in Sheet1) + GHA queue
 // delay must stay green, two in a row must not.
 export const HISTORY_GRACE_H = 12;

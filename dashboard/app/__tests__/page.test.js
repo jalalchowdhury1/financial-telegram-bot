@@ -84,7 +84,8 @@ it('a feed that fails on refresh keeps the card it already had', async () => {
     global.fetch.mockImplementation(() => Promise.reject(new TypeError('Failed to fetch')));
     jest.useFakeTimers();
     fireEvent.click(screen.getByRole('button', { name: 'Refresh all data' }));
-    await act(async () => { await jest.advanceTimersByTimeAsync(2000); });
+    // Two retry rounds (1.5 s each): jev-pills is asked only after its sibling feeds.
+    await act(async () => { await jest.advanceTimersByTimeAsync(4000); });
     jest.useRealTimers();
     await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh all data' })).not.toBeDisabled());
     expect(screen.getByText('$612.34')).toBeInTheDocument();

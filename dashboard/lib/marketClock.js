@@ -90,6 +90,9 @@ export function marketStatus(now = Date.now()) {
     return { state: 'closed', at, ms: at - now, date: next, holiday: NYSE_HOLIDAYS[date] || null, estimated };
 }
 
+/** Page auto-refresh period: 5 min while the market is open, 30 min otherwise (Vercel CPU cap, 21 Oct 2026). */
+export const refreshMs = (now = Date.now()) => (marketStatus(now).state === 'open' ? 5 : 30) * 60e3;
+
 /** "45m", "2h 10m", "1d 3h". */
 export function fmtCountdown(ms) {
     const m = Math.max(0, Math.round(ms / 60000));

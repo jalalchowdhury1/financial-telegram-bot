@@ -24,21 +24,24 @@
  */
 
 // [max-age, stale-while-revalidate] in seconds. Prices move → short; daily data → long.
+// Live rows: max-age just over the page's 5-min market-hours refresh (app/page.js,
+// lib/marketClock refreshMs), so the next refresh is an edge HIT, not a function run
+// (Vercel Active CPU cap, 21 Oct 2026). Off-hours the page refreshes every 30 min.
 export const CDN_POLICY = {
-    spy:              [60, 240],    // ≤ 5 min: live price
-    'spy-daily-move': [60, 240],    // ≤ 5 min
-    'fear-greed':     [120, 480],   // ≤ 10 min: CNN updates every few minutes at most
-    sheets:           [120, 480],   // ≤ 10 min: his Google Sheet (also read by the bot's brief)
-    'market-extra':   [120, 480],   // ≤ 10 min: the slowest route (~5 s cold)
-    vol:              [120, 480],   // ≤ 10 min
-    'jev-pills':      [120, 480],   // ≤ 10 min: regime pills, built from sibling routes
-    polymarket:       [300, 900],   // ≤ 20 min: betting odds drift slowly
-    'rubber-band':    [300, 1500],  // ≤ 30 min: written nightly by the Mac mini
-    aaii:             [900, 2700],  // ≤ 1 h: weekly survey (the route also caches 3 h per instance)
-    breadth:          [900, 2700],  // ≤ 1 h: daily bars
-    factors:          [900, 2700],  // ≤ 1 h: daily bars
-    history:          [900, 2700],  // ≤ 1 h: one row per day
-    fred:             [900, 2700],  // ≤ 1 h: daily/monthly series (the page says "refreshes every 30 min")
+    spy:              [330, 270],   // ≤ 10 min: live price
+    'spy-daily-move': [330, 270],   // ≤ 10 min
+    'fear-greed':     [330, 270],   // ≤ 10 min: CNN updates every few minutes at most
+    sheets:           [330, 270],   // ≤ 10 min: his Google Sheet (also read by the bot's brief)
+    'market-extra':   [330, 270],   // ≤ 10 min: the slowest route (~5 s cold)
+    vol:              [330, 270],   // ≤ 10 min
+    'jev-pills':      [330, 270],   // ≤ 10 min: regime pills, built from sibling routes
+    polymarket:       [1800, 1800], // ≤ 1 h: betting odds drift slowly
+    'rubber-band':    [3600, 3600], // ≤ 2 h: written nightly by the Mac mini (lib/servedFreshness grace counts it)
+    history:          [3600, 3600], // ≤ 2 h: Sheet1 gets rows at 02:00 + 14:00 UTC (freshness maxAgeH 30 h counts it)
+    aaii:             [7200, 3600], // ≤ 3 h: weekly survey (the route also caches 3 h per instance)
+    breadth:          [7200, 3600], // ≤ 3 h: daily bars
+    factors:          [7200, 3600], // ≤ 3 h: daily bars
+    fred:             [7200, 3600], // ≤ 3 h: daily/monthly series (the page says "refreshes every 3 h")
 };
 
 // The Lambda-primary routes (spy, spy-daily-move, market-extra, polymarket) answer from

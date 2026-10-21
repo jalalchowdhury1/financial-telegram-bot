@@ -34,7 +34,7 @@ describe('rubber-band item', () => {
     test('fresh: Friday snapshot (generated 18:30 ET) read on Sat night = green', () => {
         const now = t('2026-10-03T02:48:00Z');
         const it = rubberBandItem(snap('2026-10-02', '2026-10-02T22:30:19+00:00'), now);
-        expect(it).toEqual({ name: 'rubber-band', inputAgeH: 6.8, servedAgeH: 6.8, graceH: 6 });
+        expect(it).toEqual({ name: 'rubber-band', inputAgeH: 6.8, servedAgeH: 6.8, graceH: 8 });
         expect(isRed(it)).toBe(false);
     });
     test('fresh: Friday snapshot still green on Monday morning (weekend is a legit gap)', () => {
@@ -47,13 +47,13 @@ describe('rubber-band item', () => {
         expect(isRed(it)).toBe(false);
     });
     test('stale: Monday night with only Friday\'s snapshot (missed run) = red', () => {
-        const it = rubberBandItem(snap('2026-10-02'), t('2026-10-06T03:00:00Z'));
-        expect(it.inputAgeH).toBe(7);
-        expect(it.servedAgeH).toBe(79);
+        const it = rubberBandItem(snap('2026-10-02'), t('2026-10-06T05:00:00Z'));
+        expect(it.inputAgeH).toBe(9);
+        expect(it.servedAgeH).toBe(81);
         expect(isRed(it)).toBe(true);
     });
     test('fallback payload (asOf null) after the grace = red', () => {
-        const it = rubberBandItem({ asOf: null, dials: null, verdict: null }, t('2026-10-06T03:00:00Z'));
+        const it = rubberBandItem({ asOf: null, dials: null, verdict: null }, t('2026-10-06T05:00:00Z'));
         expect(it.servedAgeH).toBeNull();
         expect(isRed(it)).toBe(true);
     });

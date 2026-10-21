@@ -30,6 +30,7 @@ import { readSnap, writeSnap, savedLabel, purgeOldSnaps, isLiveAnswer } from '..
 import { readSeen, writeSeen, mergeSeen, pickSeen, SINCE_MIN_GAP_MS } from '../lib/lastVisit';
 import SinceLastVisit from '../components/SinceLastVisit';
 import MarketClock from '../components/MarketClock';
+import { refreshMs } from '../lib/marketClock';
 import { movedWhen } from '../lib/whatMoved';
 import { fgHistoryCells } from '../lib/fgHistory';
 
@@ -49,7 +50,7 @@ const FEEDS = [
     // Baselines for the fresh-print marks: if it fails the digest is null, no marks
     // render, and every number reads exactly as it does without them.
     { key: 'history', path: '/api/history' },
-    // Jev pills: a failure hides the row, nothing else.
+    // Jev pills: a failure hides the row, nothing else. Asked for after its inputs land (fetchAll).
     { key: 'jev', path: '/api/jev-pills' },
     // VIX since its last close, for the "What moved" strip. The vol card fetches its own
     // copy; automatic loads of both are answered by the edge cache.
@@ -172,7 +173,7 @@ export default function Dashboard() {
             // answer 200 even when degraded): keep the previous payload rather than
             // blanking a card that had data. history + jev-pills failures are silent by
             // design — no fresh-print marks / no pills row, everything else unchanged.
-            await Promise.all(FEEDS.map(async ({ key, path }) => {
+            const load = async ({ key, path }) => {
                 const res = await getJson(path, { bust });
                 got[key] = res;
                 // A failure answer (an error, or a route's 200 fallback body) never replaces
@@ -187,7 +188,13 @@ export default function Dashboard() {
                     setters[key](res); // no saved copy: the card shows the route's own degraded state
                 }
                 setPending((p) => (p[key] ? { ...p, [key]: false } : p));
-            }));
+            };
+            // jev-pills reads spy/sheets/fear-greed/fred/vol over HTTP: ask for it only after
+            // those landed, so its reads HIT the edge copies instead of running each route a
+            // second time (Vercel Active CPU, 21 Oct 2026).
+            const loads = Object.fromEntries(FEEDS.filter((f) => f.key !== 'jev').map((f) => [f.key, load(f)]));
+            await Promise.all([...Object.values(loads), Promise.all(['spy', 'sheets', 'fg', 'fred', 'vol'].map((k) => loads[k]))
+                .then(() => load(FEEDS.find((f) => f.key === 'jev')))]);
             hasLoadedRef.current = true;
             const { sheets: sheetsRes, spy: spyRes, fg: fgRes, fred: fredRes, extra: extraRes } = got;
 
@@ -266,20 +273,21 @@ export default function Dashboard() {
     }, []);
 
     useEffect(() => {
-        const REFRESH_MS = 5 * 60 * 1000;
         fetchAll();
-        // Auto-refresh every 5 minutes — but not while the tab is hidden. /api/fred
-        // alone is ~650KB, so an idle background tab was pulling ~8MB/hour. On
-        // returning to the tab, refresh immediately if the data has gone stale.
-        // Offline: skip the tick — the offline banner refreshes on reconnect.
+        // Auto-refresh every 5 minutes while the US market is open, every 30 otherwise
+        // (refreshMs — Vercel Active CPU cap, 21 Oct 2026) — but not while the tab is
+        // hidden. /api/fred alone is ~650KB, so an idle background tab was pulling
+        // ~8MB/hour. On returning to the tab, refresh immediately if the data has gone
+        // stale. Offline: skip the tick — the offline banner refreshes on reconnect.
+        // Checked each minute (30 s slack) so the 9:30 open switches within a minute.
         const interval = setInterval(() => {
-            if (!document.hidden && navigator.onLine !== false) fetchAll();
-        }, REFRESH_MS);
+            if (!document.hidden && navigator.onLine !== false && Date.now() - lastFetchRef.current > refreshMs() - 30e3) fetchAll();
+        }, 60e3);
         const onVisible = () => {
             if (document.hidden) return;
             // Back after an hour or more = a new visit: compare against what was last seen.
             if (Date.now() - lastFetchRef.current >= SINCE_MIN_GAP_MS) readBase();
-            if (navigator.onLine !== false && Date.now() - lastFetchRef.current > REFRESH_MS) fetchAll();
+            if (navigator.onLine !== false && Date.now() - lastFetchRef.current > refreshMs()) fetchAll();
         };
         document.addEventListener('visibilitychange', onVisible);
         return () => {
@@ -374,7 +382,7 @@ export default function Dashboard() {
                 <div className="mkt-clock-row"><ErrorBoundary><MarketClock /></ErrorBoundary></div>
                 {fred?._meta?.fetchedAt && (
                     <p className="subtitle data-asof" style={{ fontSize: '0.7rem', opacity: 0.6, marginTop: '6px' }}>
-                        Economic data as of {new Date(fred._meta.fetchedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}<span className="hide-sm"> · refreshes every 30 min</span><span className="hide-sm"> · tap a label for its date, a number for its chart</span>
+                        Economic data as of {new Date(fred._meta.fetchedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}<span className="hide-sm"> · refreshes every 3 h</span><span className="hide-sm"> · tap a label for its date, a number for its chart</span>
                     </p>
                 )}
             </header>

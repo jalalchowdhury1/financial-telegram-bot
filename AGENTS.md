@@ -280,8 +280,9 @@ Before: every route ran cold on every visit (all `no-store`), and the page waite
 answered. Three fixes, each safe on its own:
 1. **Edge cache for healthy answers (`lib/cdn.js`).** `serve()` (and the hand-rolled
    `sheets` + `fear-greed` Layer 1) add `Vercel-CDN-Cache-Control: max-age=X,
-   stale-while-revalidate=Y` from `CDN_POLICY` (prices ≤5 min total, sentiment ≤10 min,
-   Polymarket ≤20, rubber band ≤30, daily data ≤1 h — a test pins these caps). Vercel
+   stale-while-revalidate=Y` from `CDN_POLICY` (prices + sentiment + jev-pills ≤10 min with max-age 330 s, just over the 5-min refresh so
+   the next refresh HITs; Polymarket ≤1 h, rubber band + history ≤2 h, other daily data ≤3 h —
+   a test pins these caps; raised 21 Oct 2026 for the Vercel Active CPU cap). Vercel
    strips that header at the edge; the browser still sees `cache-control: no-store`.
    **Never cached:** anything with `_meta.stale` / `hasErrors` / `fallback`; a source
    label containing `(fallback)` (the Lambda-primary routes' direct-source answers — the
@@ -292,12 +293,16 @@ answered. Three fixes, each safe on its own:
    very next request, never pinned. Check it: repeat `curl -sI <url>/api/spy` → the
    second shows `x-vercel-cache: HIT`.
 2. **Cache busting.** The edge key includes the query string. The page's refresh button
-   and the **R** key send `?_t=<now>` (always live); the automatic 5-min refresh and the
+   and the **R** key send `?_t=<now>` (always live); the automatic refresh (5 min while the US market is open, 30 min otherwise:
+   `lib/marketClock.js refreshMs`) and the
    first load don't (fast). `scripts/health_check.py` always sends `?_t=` — a health probe
    must test the live route, never the edge copy. `FactorRow` busts on the same signal.
 3. **Progressive feeds (`app/page.js` `FEEDS` + `pending`).** Each of the 8 feeds sets its
    own state the moment it answers; each card shows its skeleton only while ITS feed is
    pending. The status footer + "Updated" badge still wait for all 8.
+   `jev-pills` is asked for only after spy/sheets/fear-greed/fred/vol land: the route reads
+   those siblings over HTTP, and asked in the same second they all MISSed and ran twice;
+   asked after, its reads HIT the edge copies (21 Oct 2026).
 - **`getJson` (`lib/loadJson.js`) never throws:** 60 s timeout (abort), one retry after
   1.5 s on a network error / unreadable JSON / 5xx (a final 5xx body is still parsed — the
   legacy routes send error JSON), no retry after a timeout (a hung route would just hang
@@ -1110,7 +1115,7 @@ measures what is SERVED, not whether a writer ran. The fleet monitor (github-not
 `servedAgeH > maxAgeH`. Sibling fetch failure → 500 `{"error"}`.
 - `rubber-band` — Mac launchd (weekdays 18:30 ET) → gist → `/api/rubber-band`. input = newest
   NYSE close (`lib/marketClock.js` calendar, early closes); served = close of the snapshot's
-  `asOf`; `graceH` 6 (early close waits 5.5 h for the run).
+  `asOf`; `graceH` 8 (early close waits 5.5 h for the run, + the 2 h edge cache).
 - `history-sheet` — financial-dashboard-history scraper (GHA `0 14,2 * * *`) → Sheet1 →
   `/api/history` (marks, What-moved σ, tap charts). `/api/history` now carries
   `_meta.newestRow {date, rows}` (UTC date; 1 row = 02:00 run, ≥2 = 14:00 run too).

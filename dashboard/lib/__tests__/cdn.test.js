@@ -14,7 +14,7 @@ describe('cacheHeaders', () => {
     it('a healthy answer gets the route policy at the edge; the browser never caches', () => {
         expect(cacheHeaders('market-extra', { payload: { _meta: { hasErrors: false } } })).toEqual({
             'cache-control': 'no-store',
-            'vercel-cdn-cache-control': 'max-age=120, stale-while-revalidate=480',
+            'vercel-cdn-cache-control': 'max-age=330, stale-while-revalidate=270',
         });
     });
     it.each([
@@ -39,11 +39,12 @@ describe('cacheHeaders', () => {
     it('a route without a policy is never cached', () => {
         expect(cacheHeaders('last-run', { payload: {} })).toEqual({ 'cache-control': 'no-store' });
     });
-    it('every policy keeps the worst-case age at an hour or less, prices at 10 minutes or less', () => {
+    it('every policy keeps the worst-case age at 3 hours or less, prices at 10 minutes or less', () => {
         for (const [k, [maxAge, swr]] of Object.entries(CDN_POLICY)) {
-            expect(maxAge + swr).toBeLessThanOrEqual(3600);
-            if (['spy', 'spy-daily-move', 'market-extra', 'fear-greed', 'sheets', 'vol'].includes(k)) {
+            expect(maxAge + swr).toBeLessThanOrEqual(3 * 3600);
+            if (['spy', 'spy-daily-move', 'market-extra', 'fear-greed', 'sheets', 'vol', 'jev-pills'].includes(k)) {
                 expect(maxAge + swr).toBeLessThanOrEqual(600);
+                expect(maxAge).toBeGreaterThan(300); // the next 5-min refresh is an edge HIT
             }
         }
     });
@@ -59,7 +60,7 @@ describe('serve() + the edge policy', () => {
 
     it('a healthy live answer carries the edge policy', async () => {
         const res = await serve('spy', async () => ({ price: 1, _meta: { hasErrors: false } }));
-        expect(header(res)).toBe('max-age=60, stale-while-revalidate=240');
+        expect(header(res)).toBe('max-age=330, stale-while-revalidate=270');
         expect(res.headers.get('cache-control')).toBe('no-store');
     });
     it('a degraded live answer does not', async () => {

@@ -1,5 +1,5 @@
 import {
-    marketStatus, clockLabel, fmtCountdown, etWallToMs, etParts, sessionOf,
+    marketStatus, clockLabel, fmtCountdown, etWallToMs, etParts, sessionOf, refreshMs,
     NYSE_HOLIDAYS, EARLY_CLOSES, CALENDAR_THROUGH,
 } from '../marketClock';
 
@@ -55,4 +55,13 @@ test('fmtCountdown', () => {
     expect(fmtCountdown(0)).toBe('0m');
     expect(fmtCountdown(59 * 60e3)).toBe('59m');
     expect(fmtCountdown(26 * 3600e3)).toBe('1d 2h');
+});
+
+test('refreshMs: 5 min while the market is open, 30 min otherwise', () => {
+    expect(refreshMs(at('2026-09-28T13:30:00Z'))).toBe(5 * 60e3); // Mon 9:30 ET open
+    expect(refreshMs(at('2026-09-28T19:59:00Z'))).toBe(5 * 60e3); // 15:59 ET
+    expect(refreshMs(at('2026-09-28T20:00:00Z'))).toBe(30 * 60e3); // 16:00 close
+    expect(refreshMs(at('2026-09-28T13:29:00Z'))).toBe(30 * 60e3); // pre-market
+    expect(refreshMs(at('2026-09-26T15:00:00Z'))).toBe(30 * 60e3); // Saturday
+    expect(refreshMs(at('2026-11-27T18:30:00Z'))).toBe(30 * 60e3); // 13:30 ET after a 1 pm early close
 });
