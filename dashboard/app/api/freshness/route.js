@@ -9,9 +9,11 @@
 import { buildFreshness, SERVED_ROUTES } from '../../../lib/servedFreshness';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 30;
+export const maxDuration = 60;
 
-const TIMEOUT_MS = 20000;
+// Must outlast every served route's own budget (/api/fred: FRED_BUDGET_MS 40 s on a cold
+// cache), or a slow-but-fine route reads as "served nothing" → red (21 Oct 2026).
+export const TIMEOUT_MS = 50000;
 
 async function sibling(origin, path) {
     const ctl = new AbortController();
