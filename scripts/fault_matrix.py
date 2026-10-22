@@ -233,6 +233,54 @@ def signals_agree():
     return out
 
 
+# FRED down: these four come from their own non-FRED sources and must stay LIVE on top of the
+# saved copy (21 Oct 2026: the copy hid them and EPS went N/A). `lastgood` forces the Sheet base,
+# which carries no source labels, so a dropped live value shows up as a missing source.
+FRED_EXTRAS = {
+    'EPS': lambda d: ((d.get('spEps') or {}).get('current'), (d.get('spEps') or {}).get('source')),
+    'P/E': lambda d: (d.get('peRatio'), d.get('peSource')),
+    'Copper/Gold': lambda d: (((d.get('indicators') or {}).get('copperGold') or {}).get('value'),
+                              ((d.get('indicators') or {}).get('copperGold') or {}).get('source')),
+    'Bankruptcies': lambda d: (((d.get('horsemen') or {}).get('bankruptcies') or {}).get('current'),
+                               ((d.get('horsemen') or {}).get('bankruptcies') or {}).get('source')),
+}
+EXTRAS_ALL = 'eps_multpl,eps_derived,eps_datahub,pe_multpl,pe_yahoo,pe_computed,' + CG_ALL + ',bk_uscourts,bk_baked'
+EXTRAS_CASES = [
+    ('fred,lastgood', dict.fromkeys(FRED_EXTRAS, 'live')),
+    ('fred,lastgood,eps_multpl', {'EPS': 'live'}),
+    ('fred,lastgood,pe_multpl,pe_yahoo', {'P/E': 'live'}),
+    ('fred,lastgood,cg_cnbc', {'Copper/Gold': 'live'}),
+    ('fred,lastgood,bk_uscourts', {'Bankruptcies': 'live'}),
+    ('fred,lastgood,' + EXTRAS_ALL, dict.fromkeys(FRED_EXTRAS, 'copy')),
+]
+
+
+def judge_extras(d, expect):
+    """-> [(ok, msg)]. live = a value with its own source label; copy = no live label (the saved
+    copy, or nothing for EPS, which the Sheet does not keep) inside a stale-labelled answer."""
+    out = []
+    stale = bool(((d or {}).get('_meta') or {}).get('stale'))
+    for name, want in expect.items():
+        v, src = FRED_EXTRAS[name](d or {})
+        if want == 'live':
+            ok = has_value(v) and bool(src)
+        else:
+            ok = not src and stale and (has_value(v) or name == 'EPS')
+        out.append((ok, f'{name} want {want}: {v!r} ← {src or "no live source"}'))
+    return out
+
+
+def fred_extras_agree():
+    out = []
+    for faults, expect in EXTRAS_CASES:
+        _, d, _, err = fetch('fred', faults)
+        if d is None:
+            out.append((False, f'{faults}: no answer ({err})'))
+            continue
+        out += [(ok, f'{faults[14:] or "FRED off"}: {m}') for ok, m in judge_extras(d, expect)]
+    return out
+
+
 def main():
     alert = '--no-alert' not in sys.argv
     # normal loads first (warms caches), then fault cases in modest parallel
@@ -246,6 +294,7 @@ def main():
     ok3, msg3 = spy_3y_agrees()
     sheet_checks = sheets_3y_agree()
     signal_checks = signals_agree()
+    extra_checks = fred_extras_agree()
 
     fails = [(c, r) for c, r in results if not r[0]]
     for (route, faults, expect), (ok, msg, secs) in results:
@@ -255,10 +304,13 @@ def main():
         print(f"{'PASS' if ok else 'FAIL'} sheet-3y      {msg}")
     for ok, msg in signal_checks:
         print(f"{'PASS' if ok else 'FAIL'} signals       {msg}")
+    for ok, msg in extra_checks:
+        print(f"{'PASS' if ok else 'FAIL'} fred-extras   {msg}")
     sheet_bad = [m for ok, m in sheet_checks if not ok]
     signal_bad = [m for ok, m in signal_checks if not ok]
-    total = len(results) + 1 + len(sheet_checks) + len(signal_checks)
-    bad = len(fails) + (0 if ok3 else 1) + len(sheet_bad) + len(signal_bad)
+    extra_bad = [m for ok, m in extra_checks if not ok]
+    total = len(results) + 1 + len(sheet_checks) + len(signal_checks) + len(extra_checks)
+    bad = len(fails) + (0 if ok3 else 1) + len(sheet_bad) + len(signal_bad) + len(extra_bad)
     print(f'=== {total - bad}/{total} passed ===')
 
     if bad and alert:
@@ -267,6 +319,7 @@ def main():
             lines.append(f'• <b>spy 3Y</b>: {msg3}')
         lines += [f'• <b>sheet 3Y</b>: {m}' for m in sheet_bad]
         lines += [f'• <b>signals</b>: {m}' for m in signal_bad]
+        lines += [f'• <b>FRED-down extras</b>: {m}' for m in extra_bad]
         send(f'🧪 <b>Dashboard backup test: {bad} of {total} failed</b>\n' + '\n'.join(lines)
              + '\n<blockquote><i>scripts/fault_matrix.py · nightly · run it again to recheck</i></blockquote>')
     return 1 if bad else 0

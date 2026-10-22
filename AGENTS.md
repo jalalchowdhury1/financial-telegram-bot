@@ -1545,6 +1545,10 @@ Now: fewer than 756 bars → the Sheet's own 3Y return (`_sheet_return_3y`) → 
       Then `overlayLiveExtras` puts back every value this request got LIVE from non-FRED
       sources (S&P EPS, P/E, Copper/Gold, Bankruptcies); before 21 Oct the cached base hid
       them and EPS went N/A (the Sheet base has no `spEps`). A new non-FRED field goes there too.
+      Nightly guard: `fault_matrix.py` `fred_extras_agree()` turns FRED off (`fred,lastgood` →
+      Sheet base) and checks each of the four stays live, each one's backup answers with its
+      main source off, and all-off shows the unlabelled stale copy. Derived EPS reads CNBC
+      `.SPX` before FRED SP500 so it works in a FRED outage (datahub is frozen at 2023 → refused).
     - **GOTCHA (#36, both found ONLY by testing on prod):** (a) this merge path reads /tmp
       **DIRECTLY** via `loadLastGood()`, bypassing `serve()`'s guarded reader — so
       `?_fail=lastgood` was silently ignored and the Sheet tier was unreachable alongside live

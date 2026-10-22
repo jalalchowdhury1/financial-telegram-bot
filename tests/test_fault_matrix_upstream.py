@@ -56,3 +56,26 @@ class RouteKeepsFailReason(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FredExtras(unittest.TestCase):
+    """FAKE payloads: the four non-FRED numbers must stay live on top of a FRED-down copy."""
+    LIVE = {"_meta": {"stale": True}, "spEps": {"current": 298.0, "source": "multpl"},
+            "peRatio": 26.5, "peSource": "multpl",
+            "indicators": {"copperGold": {"value": 1.58, "source": "copper:cnbc"}},
+            "horsemen": {"bankruptcies": {"current": 27054, "source": "uscourts"}}}
+    DROPPED = {"_meta": {"stale": True}, "peRatio": 26.3, "peSource": None,
+               "indicators": {"copperGold": {"value": 1.57}}, "horsemen": {"bankruptcies": {"current": 26941}}}
+
+    def test_live_overlay_passes(self):
+        want = dict.fromkeys(fault_matrix.FRED_EXTRAS, "live")
+        self.assertTrue(all(ok for ok, _ in fault_matrix.judge_extras(self.LIVE, want)))
+
+    def test_cached_copy_hiding_live_values_fails(self):
+        want = dict.fromkeys(fault_matrix.FRED_EXTRAS, "live")
+        self.assertFalse(any(ok for ok, _ in fault_matrix.judge_extras(self.DROPPED, want)))
+
+    def test_all_sources_off_is_an_unlabelled_stale_copy(self):
+        want = dict.fromkeys(fault_matrix.FRED_EXTRAS, "copy")
+        self.assertTrue(all(ok for ok, _ in fault_matrix.judge_extras(self.DROPPED, want)))
+        self.assertFalse(all(ok for ok, _ in fault_matrix.judge_extras(self.LIVE, want)))

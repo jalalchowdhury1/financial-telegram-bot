@@ -211,7 +211,11 @@ function spEpsSources({ fredKey, pe, peSource }) {
         } },
         { name: 'derived', freshnessDays: 7, fetch: async () => {
             if (!pe || peSource === 'cape' || peSource === 'computed') throw new Error('derived EPS: no independent TTM P/E to divide by');
-            if (!fredKey) throw new Error('derived EPS: no FRED key');
+            // S&P close: CNBC .SPX first, so this backup still works when FRED is down
+            // (21 Oct 2026 outage: FRED-only made it fail exactly when needed) → FRED SP500.
+            const q = (await cnbcQuotes(['.SPX'], { revalidate: 600 }).catch(() => ({})))['.SPX'];
+            if (q?.price > 0) return { current: q.price / pe, currentDate: q.asOf, historyAsc: [] };
+            if (!fredKey) throw new Error('derived EPS: no CNBC .SPX and no FRED key');
             const spx = await fredObservations('SP500', fredKey, { limit: 5 }); // newest-first daily closes
             return { current: spx[0].value / pe, currentDate: spx[0].date, historyAsc: [] };
         } },
