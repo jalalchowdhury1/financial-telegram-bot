@@ -723,6 +723,9 @@ export async function GET(request) {
                 messages: messages.filter((m) => m.startsWith('Horseman') || m.startsWith('FRED_API_KEY')),
             });
             if (merged) {
+                // S&P EPS resolved live from non-FRED sources above; the cached base
+                // (the Sheet tier has no spEps) would otherwise blank the card.
+                if (!responseData.spEps.unavailable) merged.spEps = responseData.spEps;
                 merged._meta = { ...merged._meta, horsemenLive, loadedCount: 0, fetchedAt: now.toISOString() };
                 return merged;
             }
