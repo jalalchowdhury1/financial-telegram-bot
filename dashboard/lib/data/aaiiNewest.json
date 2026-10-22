@@ -1,12 +1,12 @@
 {
   "data": {
-    "bull": 38.7,
-    "neutral": 19.7,
-    "bear": 41.6,
-    "diff": "2.90%",
-    "as_of": "2026-10-14",
+    "bull": 36.9,
+    "neutral": 17.3,
+    "bear": 45.8,
+    "diff": "8.90%",
+    "as_of": "2026-10-21",
     "source": "macromicro",
     "stale": false
   },
-  "savedAt": "2026-10-15T21:30:13.056Z"
+  "savedAt": "2026-10-22T17:30:08.428Z"
 }
