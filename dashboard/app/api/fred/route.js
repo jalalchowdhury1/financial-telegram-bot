@@ -720,7 +720,9 @@ export async function GET(request) {
                 baseLabel,
                 horsemen: Object.fromEntries(Object.entries(repairedHorsemen).filter(([k]) => k !== 'spread')),
                 yieldCurve: repairedHorsemen.spread || null,
-                messages: messages.filter((m) => m.startsWith('Horseman') || m.startsWith('FRED_API_KEY')),
+                // Keep WHY FRED failed (e.g. its maintenance page: "Unexpected token '<'"),
+                // else a FRED outage looks identical to a code regression (21 Oct 2026).
+                messages: messages.filter((m) => /^(Horseman|FRED_API_KEY|Loaded |Series failed)/.test(m)),
             });
             if (merged) {
                 // S&P EPS resolved live from non-FRED sources above; the cached base

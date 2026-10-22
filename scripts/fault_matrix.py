@@ -111,6 +111,24 @@ def classify(d):
     return 'live', src
 
 
+def fred_upstream_down():
+    """FRED's own API, asked directly. Keyless, it answers a JSON 400 when it is up; during its
+    maintenance it serves an HTML "Site Maintenance" page at HTTP 200 (21 Oct 2026, 57/60).
+    -> a short reason when FRED itself is down, else None."""
+    url = 'https://api.stlouisfed.org/fred/series/observations?series_id=GDP&file_type=json&limit=1'
+    try:
+        body = urllib.request.urlopen(urllib.request.Request(url, headers={'user-agent': 'fault-matrix/1.0'}), timeout=20).read()
+    except urllib.error.HTTPError as e:
+        body = e.read()
+    except Exception as e:
+        return f'FRED unreachable ({str(e)[:40]})'
+    try:
+        json.loads(body)
+        return None
+    except ValueError:
+        return 'FRED serving its maintenance page' if b'Maintenance' in body else 'FRED answering non-JSON'
+
+
 def check(route, faults, expect):
     status, d, secs, err = fetch(route, faults)
     if err and d is None and status is None:
@@ -133,6 +151,10 @@ def check(route, faults, expect):
             problems.append(f'Unavailable although a {"saved copy" if expect == "copy" else "tier"} should answer')
         elif expect == 'live' and kind != 'live':
             problems.append(f'expected live, got {kind} "{src[:50]}"')
+            # Still a FAIL; just say whether FRED itself is down, so nobody hunts a code regression.
+            down = route == 'fred' and fred_upstream_down()
+            if down:
+                problems.append(f'upstream down: {down}, not a code fault')
         elif expect == 'copy' and kind != 'copy':
             problems.append(f'every live tier off but answer labelled live: "{src[:50]}"')
     return not problems, '; '.join(problems) or f'{kind}: {src[:60]}', secs
