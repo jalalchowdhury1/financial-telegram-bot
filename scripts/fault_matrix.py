@@ -8,6 +8,7 @@ wrong number dressed as live. Alerts the 📡 thread ONLY when a check fails.
 
   .venv/bin/python scripts/fault_matrix.py            # run + alert on failure
   .venv/bin/python scripts/fault_matrix.py --no-alert # run, print only
+  .venv/bin/python scripts/fault_matrix.py --catchup  # 04:30: re-run only if the last run wasn't N/N
 
 Each case expects one of:
   live  — answered by a live tier (no saved-copy label, not stale-as-copy)
@@ -281,7 +282,19 @@ def fred_extras_agree():
     return out
 
 
+def catchup_needed(log=os.path.expanduser('~/Library/Logs/ftb-fault-matrix.log')):
+    """True unless the log's last line is a clean '=== N/N passed ===' (the fleet row's own rule).
+    A one-night upstream outage at 21:40 (FRED, 21 Oct 2026) otherwise left the row red ~24 h."""
+    try:
+        lines = [l for l in open(log).read().splitlines() if l.strip()]
+    except OSError:
+        return True
+    return not (lines and re.match(r'^=== (\d+)/\1 passed ===$', lines[-1]))
+
+
 def main():
+    if '--catchup' in sys.argv and not catchup_needed():
+        return  # silent: printing would change the log's last line
     alert = '--no-alert' not in sys.argv
     # normal loads first (warms caches), then fault cases in modest parallel
     normal = [c for c in CASES if not c[1]]

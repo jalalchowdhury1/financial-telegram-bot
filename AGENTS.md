@@ -693,6 +693,9 @@ Rule: every number has ≥2 independent live sources, then saved copies, then an
 - **Nightly guard:** `scripts/fault_matrix.py` (launchd `com.jalal.ftb-fault-matrix`, 21:40 daily,
   log `~/Library/Logs/ftb-fault-matrix.log`) runs 53 checks on prod and pings 📡 only on a FAIL.
   Add a case there whenever you add a tier.
+  Catch-up: `com.jalal.ftb-fault-matrix-catchup` (01:40, `--catchup`) re-runs ONLY when the log's
+  last line isn't `=== N/N passed ===`, and prints nothing on a skip — keep it silent, or the
+  fleet row (which grades that last line) breaks (22 Oct 2026).
   A `fred … live` FAIL ending "upstream down: FRED serving its maintenance page" = FRED itself is
   down (HTTP 200 HTML, API and fredgraph CSV alike; 21 Oct 2026): the route is right to serve the
   stale copy + live Horsemen. Not a regression; it clears when FRED is back. The reason is in

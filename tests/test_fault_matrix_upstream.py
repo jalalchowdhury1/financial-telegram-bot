@@ -79,3 +79,25 @@ class FredExtras(unittest.TestCase):
         want = dict.fromkeys(fault_matrix.FRED_EXTRAS, "copy")
         self.assertTrue(all(ok for ok, _ in fault_matrix.judge_extras(self.DROPPED, want)))
         self.assertFalse(all(ok for ok, _ in fault_matrix.judge_extras(self.LIVE, want)))
+
+
+class CatchUp(unittest.TestCase):
+    """--catchup (04:30): re-run only when the 21:40 drill did not end N/N (FAKE logs)."""
+    def _needed(self, text):
+        p = os.path.join(os.path.dirname(__file__), "_catchup_fake.log")
+        with open(p, "w") as f:
+            f.write(text)
+        try:
+            return fault_matrix.catchup_needed(p)
+        finally:
+            os.remove(p)
+
+    def test_green_last_run_skips(self):
+        self.assertFalse(self._needed("=== 57/60 passed ===\nx\n=== 72/72 passed ===\n"))
+
+    def test_red_last_run_reruns(self):
+        self.assertTrue(self._needed("=== 72/72 passed ===\nFAIL fred\n=== 57/60 passed ===\n"))
+
+    def test_crashed_or_missing_run_reruns(self):
+        self.assertTrue(self._needed("=== 72/72 passed ===\nTraceback (most recent call last):\n"))
+        self.assertTrue(fault_matrix.catchup_needed("/nonexistent/ftb.log"))
