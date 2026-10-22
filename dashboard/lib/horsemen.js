@@ -325,6 +325,23 @@ export function mergeHorsemenOverBase(base, live) {
 }
 
 /**
+ * Total FRED outage: the cached base must not hide values this request already got
+ * LIVE from non-FRED sources (S&P EPS, P/E, Copper/Gold, Bankruptcies). Each one
+ * replaces the cached copy only if it actually resolved.
+ */
+export function overlayLiveExtras(merged, live) {
+    if (live.spEps && !live.spEps.unavailable) merged.spEps = live.spEps;
+    if (live.peRatio != null) {
+        Object.assign(merged, { peRatio: live.peRatio, peRatioAsOf: live.peRatioAsOf, peSource: live.peSource, peIsCape: live.peIsCape });
+    }
+    const cg = live.indicators?.copperGold;
+    if (cg && !cg.unavailable) merged.indicators = { ...(merged.indicators || {}), copperGold: cg };
+    const bk = live.horsemen?.bankruptcies;
+    if (bk && !bk.unavailable) merged.horsemen = { ...(merged.horsemen || {}), bankruptcies: bk };
+    return merged;
+}
+
+/**
  * Shape a resolved horseman into the `horsemen.<key>` payload the card reads.
  * Mirrors the freshness contract of every other FRED metric so the UI's orange
  * 🕐 stale treatment and the health check's `staleDays > 3` rule work unchanged.

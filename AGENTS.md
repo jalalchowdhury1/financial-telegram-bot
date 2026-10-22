@@ -1542,6 +1542,9 @@ Now: fewer than 756 bars → the Sheet's own 3Y return (`_sheet_return_3y`) → 
       storing a mostly-cached payload would refresh its `savedAt` and let stale data outlive
       the 7-day window forever). A missing `FRED_API_KEY` therefore no longer throws out of
       `produce()` — that IS the outage these fallbacks exist for.
+      Then `overlayLiveExtras` puts back every value this request got LIVE from non-FRED
+      sources (S&P EPS, P/E, Copper/Gold, Bankruptcies); before 21 Oct the cached base hid
+      them and EPS went N/A (the Sheet base has no `spEps`). A new non-FRED field goes there too.
     - **GOTCHA (#36, both found ONLY by testing on prod):** (a) this merge path reads /tmp
       **DIRECTLY** via `loadLastGood()`, bypassing `serve()`'s guarded reader — so
       `?_fail=lastgood` was silently ignored and the Sheet tier was unreachable alongside live

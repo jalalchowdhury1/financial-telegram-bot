@@ -11,7 +11,7 @@ import { resolveSpEps, parseMultplEps, parseShillerCsv, toMonthlyHistory } from 
 import { resolveBankruptcies } from '../../../lib/bankruptcies';
 import bakedBankruptcies from '../../../lib/data/bankruptciesBaked.json';
 import { cnbcQuotes, cnbcHistory, goldApiSpot, polygonDaily, fredObservations, yahooChart, treasuryYieldCurveCsv, blsSeries, fredGraphCsv, dolWeeklyClaimsXml, westmetallTable } from '../../../lib/sources';
-import { resolveHorseman, buildHorseman, needsRepair, isUpgrade, mergeHorsemenOverBase, parseTreasuryCsv, parseBlsSeries, parseFredGraphCsv, parseDolClaimsXml } from '../../../lib/horsemen';
+import { resolveHorseman, buildHorseman, needsRepair, isUpgrade, mergeHorsemenOverBase, overlayLiveExtras, parseTreasuryCsv, parseBlsSeries, parseFredGraphCsv, parseDolClaimsXml } from '../../../lib/horsemen';
 
 // In Next 13.5 the route's default fetchCache is 'only-no-store', which ERRORS
 // on cached fetches. 'default-cache' permits caching (and never errors), so the
@@ -725,9 +725,7 @@ export async function GET(request) {
                 messages: messages.filter((m) => /^(Horseman|FRED_API_KEY|Loaded |Series failed)/.test(m)),
             });
             if (merged) {
-                // S&P EPS resolved live from non-FRED sources above; the cached base
-                // (the Sheet tier has no spEps) would otherwise blank the card.
-                if (!responseData.spEps.unavailable) merged.spEps = responseData.spEps;
+                overlayLiveExtras(merged, responseData);
                 merged._meta = { ...merged._meta, horsemenLive, loadedCount: 0, fetchedAt: now.toISOString() };
                 return merged;
             }

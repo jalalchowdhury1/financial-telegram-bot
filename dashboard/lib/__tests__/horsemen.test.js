@@ -1,6 +1,6 @@
 import {
     parseTreasuryCsv, parseBlsSeries, parseFredGraphCsv,
-    resolveHorseman, buildHorseman, needsRepair, isUpgrade, splitCsvLine, mergeHorsemenOverBase,
+    resolveHorseman, buildHorseman, needsRepair, isUpgrade, splitCsvLine, mergeHorsemenOverBase, overlayLiveExtras,
 } from '../horsemen';
 
 const NOW = new Date('2026-07-25T12:00:00Z');
@@ -264,5 +264,41 @@ describe('mergeHorsemenOverBase', () => {
     test('returns null when there is nothing live to overlay', () => {
         expect(mergeHorsemenOverBase(base, { horsemen: {}, yieldCurve: null })).toBeNull();
         expect(mergeHorsemenOverBase(base, null)).toBeNull();
+    });
+});
+
+describe('overlayLiveExtras', () => {
+    const base = {
+        peRatio: 26.3, peRatioAsOf: 'old', peSource: undefined,
+        indicators: { sahmRule: { value: 0.03 }, copperGold: { value: 1.5, asOf: 'old' } },
+        horsemen: { claims: { current: 1 }, bankruptcies: { current: 1, asOf: 'old' } },
+    };
+    test('live non-FRED values (EPS, P/E, copper/gold, bankruptcies) replace the cached copies', () => {
+        const live = {
+            spEps: { current: 298, unavailable: false },
+            peRatio: 27.1, peRatioAsOf: 'now', peSource: 'multpl', peIsCape: false,
+            indicators: { copperGold: { value: 1.6, asOf: 'now', unavailable: false } },
+            horsemen: { bankruptcies: { current: 2, asOf: 'now', unavailable: false } },
+        };
+        const m = overlayLiveExtras(JSON.parse(JSON.stringify(base)), live);
+        expect(m.spEps.current).toBe(298);
+        expect([m.peRatio, m.peRatioAsOf, m.peSource]).toEqual([27.1, 'now', 'multpl']);
+        expect(m.indicators.copperGold.value).toBe(1.6);
+        expect(m.indicators.sahmRule.value).toBe(0.03);
+        expect(m.horsemen.bankruptcies.asOf).toBe('now');
+        expect(m.horsemen.claims.current).toBe(1);
+    });
+    test('a live source that failed keeps the cached copy', () => {
+        const live = {
+            spEps: { current: null, unavailable: true },
+            peRatio: null, peSource: null,
+            indicators: { copperGold: { value: null, unavailable: true } },
+            horsemen: { bankruptcies: { current: null, unavailable: true } },
+        };
+        const m = overlayLiveExtras(JSON.parse(JSON.stringify(base)), live);
+        expect(m.spEps).toBeUndefined();
+        expect(m.peRatio).toBe(26.3);
+        expect(m.indicators.copperGold.value).toBe(1.5);
+        expect(m.horsemen.bankruptcies.asOf).toBe('old');
     });
 });
