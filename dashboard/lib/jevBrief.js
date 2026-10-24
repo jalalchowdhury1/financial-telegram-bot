@@ -725,7 +725,7 @@ export function pillFactors(data) {
         rows.push({
             label: 'Fear & Greed',
             value: fmtInt(fgScore),
-            test: '≥ 50 → +1 · < 30 → −1 · else 0',
+            test: '≥ 50 → +1 · < 30 → −1',
             hit: fgHit,
             effect: fgEffect,
         });
@@ -743,7 +743,7 @@ export function pillFactors(data) {
             label: 'HYG/LQD 20d',
             value: fmtPct(hygChg20, 2),
             ...(hygLegsTxt ? { note: hygLegsTxt } : {}),
-            test: '> 0 → +1 · < −1 → −1 · else 0',
+            test: '> 0 → +1 · < −1% → −1',
             hit: hygHit,
             effect: hygEffect,
         });
@@ -754,7 +754,7 @@ export function pillFactors(data) {
         else regimeVerdict = 'neutral';
 
         factors.regime = {
-            summary: `Score ${score} → ${regimeVerdict} (risk-on needs ≥ 2, risk-off ≤ −1)`,
+            summary: `Score ${score} → ${regimeVerdict}`,
             rows,
         };
     }
@@ -781,7 +781,7 @@ export function pillFactors(data) {
         rows.push({
             label: 'Yield curve (2s10s)',
             value: fmtNum(yieldCurve),
-            test: '< 0 → rising · < 0 with claims ≥ 260k → high',
+            test: '< 0 → rising · + claims ≥ 260k → high',
             hit: ycEffect !== '',
             effect: ycEffect,
         });
@@ -790,7 +790,7 @@ export function pillFactors(data) {
         rows.push({
             label: 'Jobless claims',
             value: claims != null ? `${Math.round(claims)}k` : 'n/a',
-            test: '≥ 260k → rising · ≥ 260k with curve < 0 → high',
+            test: '≥ 260k → rising · + curve < 0 → high',
             hit: claimsEffect !== '',
             effect: claimsEffect,
         });
@@ -810,7 +810,7 @@ export function pillFactors(data) {
 
         factors.recession = {
             summary: recessionVerdict === 'low'
-                ? 'Strongest warning wins; none tripped → low'
+                ? 'No warning tripped → low'
                 : `${names} tripped → ${recessionVerdict}`,
             rows,
         };
@@ -836,7 +836,7 @@ export function pillFactors(data) {
         rows.push({
             label: 'RSP/SPY 20d',
             value: fmtPct(rspChg20),
-            test: '< −1.5% with RSP vs 50d < 0 → rolling-over · > 0 with IWM > 0 → broad',
+            test: '> 0 → broad · < −1.5% → rolling over',
             hit: rsp20Hit,
             effect: rsp20Effect,
         });
@@ -846,7 +846,7 @@ export function pillFactors(data) {
         rows.push({
             label: 'RSP/SPY vs 50d avg',
             value: fmtPct(rspVs50d),
-            test: '< 0 (with 20d < −1.5%) → rolling-over',
+            test: '< 0 → rolling over',
             hit: vs50dHit,
             effect: vs50dHit ? 'rolling-over' : '',
         });
@@ -856,18 +856,18 @@ export function pillFactors(data) {
         rows.push({
             label: 'IWM/SPY 20d',
             value: fmtPct(iwmChg20),
-            test: '> 0 (with RSP 20d > 0) → broad',
+            test: '> 0 → broad',
             hit: iwmHit,
             effect: iwmHit ? 'broad' : '',
         });
 
         let summary;
         if (breadthVerdict === 'broad') {
-            summary = 'Broad participation: RSP and IWM both positive over 20d';
+            summary = 'Broad: RSP and IWM both beat SPY';
         } else if (breadthVerdict === 'rolling-over') {
-            summary = 'Rolling over: RSP/SPY declining below 50d avg';
+            summary = 'Rolling over: RSP lagging, below its 50d';
         } else {
-            summary = 'Narrow participation: not meeting broad or rolling-over thresholds';
+            summary = 'Narrow: not broad, not rolling over';
         }
 
         factors.breadth = { summary, rows };
@@ -895,7 +895,7 @@ export function pillFactors(data) {
         rows.push({
             label: 'IV percentile (1y)',
             value: fmtInt(ivPctile),
-            test: '> 70 → expensive · < 20 (with VRP < 6) → cheap',
+            test: '> 70 → expensive · < 20 → cheap',
             hit: ivHit,
             effect: ivEffect,
         });
@@ -910,7 +910,7 @@ export function pillFactors(data) {
         rows.push({
             label: 'VRP',
             value: fmtNum(vrp),
-            test: '> 10 → expensive · < 6 (with IV pct < 20) → cheap',
+            test: '> 10 → expensive · < 6 → cheap',
             hit: vrpHit,
             effect: vrpEffect,
         });
@@ -929,22 +929,22 @@ export function pillFactors(data) {
             {
                 label: 'sentiment vs price',
                 value: `F&G ${fmtInt(fgScore)} · SPY ${fmtPct(ma200Pct)} vs 200d`,
-                test: 'F&G < 35 with SPY > +3% · or F&G > 65 with SPY < −3%',
+                test: 'F&G < 35 & SPY > +3% · or F&G > 65 & SPY < −3%',
             },
             {
                 label: '2s10s vs 3m10y',
                 value: `2s10s ${fmtNum(yieldCurve)} · 3m10y ${fmtNum(t10y3m)}`,
-                test: 'Opposite signs between 2s10s and 3m10y',
+                test: 'opposite signs',
             },
             {
                 label: 'credit vs equities',
                 value: `SPY ${fmtPct(ma200Pct)} vs 200d · HYG/LQD ${fmtPct(hygChg20, 2)}`,
-                test: 'SPY > 0% vs 200d with HYG/LQD 20d < −1.5%',
+                test: 'SPY > 0 & HYG/LQD < −1.5%',
             },
             {
                 label: 'breadth vs index',
                 value: `SPY ${fmtPct(high52Pct)} from 52w high · RSP/SPY ${fmtPct(rspChg20)}`,
-                test: 'SPY within 2% of high with RSP/SPY 20d < −1.5%',
+                test: 'SPY within 2% of high & RSP/SPY < −1.5%',
             },
         ];
 

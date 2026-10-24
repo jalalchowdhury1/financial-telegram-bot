@@ -290,9 +290,11 @@ describe('JevPills', () => {
         render(<JevPills data={withMeta} loading={false} />);
         fireEvent.click(screen.getByRole('button', { name: /Regime/ }));
         const dlg = screen.getByRole('dialog');
-        expect(dlg).toHaveTextContent('What this measures');
-        expect(dlg).toHaveTextContent(/risk-on\) or "no-go"/);
-        expect(dlg).toHaveTextContent(/Junk bonds \(HYG\) vs high-quality bonds/);
+        expect(dlg).toHaveTextContent('Is the market in a go or no-go mood?');
+        // today's verdict is the lit row of the key
+        expect(dlg.querySelector('.jev-key-on')).toHaveTextContent('score 2 or more');
+        expect(dlg).toHaveTextContent('Junk vs safe bonds.');
+        expect(dlg).not.toHaveTextContent('not fired');
         expect(dlg).toHaveTextContent('Data through: ETF ratios 2026-09-18');
     });
 

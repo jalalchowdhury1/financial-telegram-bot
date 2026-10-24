@@ -4,36 +4,47 @@
  * row label emitted by lib/jevBrief.js: pillFactors (keep the labels in sync).
  */
 
+// ask = the one question the pill answers; key = what each verdict needs (best → worst).
 export const PILL_EXPLAIN = {
-    regime:
-        'Is the market in a "go" (risk-on) or "no-go" (risk-off) mood? Three yes/no votes: is SPY above its 200-day average, is the Fear & Greed crowd optimistic, and are junk bonds beating safe bonds. Add the votes: 2 or more = risk-on, −1 or worse = risk-off, in between = neutral.',
-    recession:
-        'How close the economy is to a recession, using four classic early warnings: the Sahm rule (unemployment rising fast), an inverted yield curve, weekly jobless claims, and the Fed’s financial-conditions index. Any warning tripped = rising; the strongest one wins (Sahm at 0.5, or an inverted curve together with high claims = high). None tripped = low.',
-    breadth:
-        'Is the rally carried by many stocks or just a few giants? Compares the equal-weight S&P (RSP) and small caps (IWM) with the cap-weighted S&P (SPY). Average stock and small caps both gaining ground = broad. Average stock losing ground and below its 50-day trend = rolling over. Anything else = narrow.',
-    hedging:
-        'What portfolio insurance costs right now. Uses SPY implied volatility (the price of options) against its own 1-year range, plus the VRP: how much more options cost than the market actually moves. Low on both = cheap to hedge; high on either = expensive.',
-    conflict:
-        'Do the signals agree with each other? Four pairs are checked for contradictions, like a fearful crowd while price trends up. 0 contradictions = aligned, 1 = mild divergence, 2 or more = major divergence. Divergences often show up before a regime change.',
+    regime: {
+        ask: 'Is the market in a go or no-go mood? Each input votes +1 or −1.',
+        key: { 'risk-on': 'score 2 or more', 'neutral': 'score 0 or 1', 'risk-off': 'score −1 or less' },
+    },
+    recession: {
+        ask: 'How close is a recession? Four early warnings; the strongest wins.',
+        key: { 'low': 'no warning tripped', 'rising': 'any one warning tripped', 'high': 'Sahm ≥ 0.5, or curve < 0 and claims ≥ 260k' },
+    },
+    breadth: {
+        ask: 'Are most stocks rising, or only a few giants?',
+        key: { 'broad': 'average stock and small caps both beat SPY', 'narrow': 'anything in between', 'rolling-over': 'average stock trails SPY by 1.5%+ and is below its 50-day' },
+    },
+    hedging: {
+        ask: 'How pricey is portfolio insurance (options) right now?',
+        key: { 'cheap': 'IV pct < 20 and VRP < 6', 'fair': 'anything in between', 'expensive': 'IV pct > 70 or VRP > 10' },
+    },
+    conflict: {
+        ask: 'Do the signals agree? Splits often come before a regime change.',
+        key: { 'aligned': 'no pair disagrees', 'mild-divergence': '1 pair disagrees', 'major-divergence': '2 or more disagree' },
+    },
 };
 
 export const INPUT_EXPLAIN = {
-    'SPY vs 200-day avg': 'How far SPY sits above or below its 200-day average price. Above = uptrend.',
-    'Fear & Greed': 'CNN’s 0–100 crowd-mood gauge. Under 30 = fear, 50 and over = greed.',
-    'HYG/LQD 20d': 'Junk bonds (HYG) vs high-quality bonds (LQD), change over 20 trading days. Junk winning = investors comfortable with risk; junk lagging = credit getting nervous. The two usually move together, so small numbers are normal.',
-    'Sahm rule': 'Unemployment rate now vs its low of the past year. 0.5 or more has marked every US recession since 1970.',
-    'Yield curve (2s10s)': '10-year minus 2-year Treasury yield. Below zero (inverted) has preceded most recessions.',
-    'Jobless claims': 'Weekly first-time unemployment claims, in thousands. 260k and up = layoffs picking up.',
-    'NFCI': 'Chicago Fed financial-conditions index. Above zero = money is tighter than average.',
-    'RSP/SPY 20d': 'Equal-weight S&P vs cap-weight S&P over 20 trading days. Rising = the average stock is keeping up with the giants.',
-    'RSP/SPY vs 50d avg': 'The same ratio vs its own 50-day average. Below = the average stock has been losing ground for weeks.',
-    'IWM/SPY 20d': 'Small caps vs the S&P over 20 trading days. Rising = small companies are joining the rally.',
-    'IV percentile (1y)': 'Where today’s SPY implied volatility ranks within the past year (0–100). Low = options are cheap by recent standards.',
-    'VRP': 'Volatility risk premium: implied volatility minus realized volatility. High = option sellers are charging a fat premium, so hedges are overpriced.',
-    'sentiment vs price': 'Crowd mood vs the price trend: a fearful crowd in an uptrend, or a greedy crowd in a downtrend.',
-    '2s10s vs 3m10y': 'Two yield-curve measures disagreeing on whether the curve is inverted.',
-    'credit vs equities': 'Stocks in an uptrend while junk bonds sell off. Credit often sees trouble first.',
-    'breadth vs index': 'Index near its 52-week closing high while the average stock falls behind. A rally getting thin.',
+    'SPY vs 200-day avg': 'Above its 200-day = uptrend.',
+    'Fear & Greed': 'CNN crowd mood, 0–100.',
+    'HYG/LQD 20d': 'Junk vs safe bonds. Junk ahead = appetite for risk.',
+    'Sahm rule': 'Jobless rate vs its 1-year low.',
+    'Yield curve (2s10s)': '10y minus 2y yield. Below 0 = inverted.',
+    'Jobless claims': 'New weekly unemployment claims.',
+    'NFCI': 'Chicago Fed gauge. Above 0 = tight money.',
+    'RSP/SPY 20d': 'Average stock vs the giants, 20 days.',
+    'RSP/SPY vs 50d avg': 'Same ratio vs its 50-day average.',
+    'IWM/SPY 20d': 'Small caps vs the S&P, 20 days.',
+    'IV percentile (1y)': 'Option prices vs the past year, 0–100.',
+    'VRP': 'Option-implied minus actual moves. High = hedges overpriced.',
+    'sentiment vs price': 'Crowd mood fighting the trend.',
+    '2s10s vs 3m10y': 'Two yield curves split on inversion.',
+    'credit vs equities': 'Stocks up while junk bonds sell off.',
+    'breadth vs index': 'Index near its high, average stock lagging.',
 };
 
 /** Friendly names + which feeds each pill depends on, for the "data through" line. */

@@ -1681,13 +1681,42 @@ body::before {
   background: rgba(34, 197, 94, 0.12);
 }
 
-.jev-no-hit {
-  display: inline-block;
-  color: var(--text-muted);
-  font-size: 0.72rem;
-  padding: 2px 8px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.04);
+/* the pill's question + verdict key (today's verdict lit, the others dimmed) */
+.jev-modal-ask {
+  font-size: 0.95rem;
+  line-height: 1.4;
+  color: var(--text-primary);
+  margin: 0 0 10px;
+}
+
+.jev-key {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.jev-key li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  opacity: 0.45;
+}
+
+.jev-key li.jev-key-on {
+  opacity: 1;
+  color: var(--text-primary);
+}
+
+.jev-key .badge {
+  flex-shrink: 0;
+  min-width: 7.2em;
+  text-align: center;
 }
 
 @media (max-width: 640px) {

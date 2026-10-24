@@ -761,7 +761,7 @@ describe('pillFactors', () => {
 
     test('recession: low verdict summary', () => {
         const pf = pillFactors(data());
-        expect(pf.recession.summary).toContain('none tripped → low');
+        expect(pf.recession.summary).toBe('No warning tripped → low');
         expect(pf.recession.rows.every((r) => !r.hit)).toBe(true);
     });
 

@@ -176,11 +176,18 @@ export default function JevPillModal({ pillKey, data, onClose }) {
                     </button>
                 </div>
 
-                {/* What this measures */}
+                {/* The question + what each verdict needs; today's verdict lit */}
                 {explain && (
                     <section className="jev-modal-section">
-                        <h3 className="jev-modal-section-label">What this measures</h3>
-                        <p className="jev-modal-muted">{explain}</p>
+                        <p className="jev-modal-ask">{explain.ask}</p>
+                        <ul className="jev-key">
+                            {Object.entries(explain.key).map(([v, rule]) => (
+                                <li key={v} className={v === pill.verdict ? 'jev-key-on' : ''}>
+                                    <span className={`badge ${SEVERITY[v]}`}>{friendly(v)}</span>
+                                    <span>{rule}</span>
+                                </li>
+                            ))}
+                        </ul>
                     </section>
                 )}
 
@@ -200,7 +207,7 @@ export default function JevPillModal({ pillKey, data, onClose }) {
 
                 {/* Inputs the rule checks */}
                 <section className="jev-modal-section">
-                    <h3 className="jev-modal-section-label">Inputs the rule checks</h3>
+                    <h3 className="jev-modal-section-label">The numbers</h3>
                     {factorSummary && (
                         <p className="jev-modal-muted jev-inputs-summary">{factorSummary}</p>
                     )}
@@ -226,15 +233,13 @@ export default function JevPillModal({ pillKey, data, onClose }) {
                                         )}
                                         {row.note && <div className="jev-input-note">{row.note}</div>}
                                         <div className="jev-input-rule">{row.test}</div>
-                                        <div className="jev-input-fired">
-                                            {row.hit ? (
+                                        {row.hit && (
+                                            <div className="jev-input-fired">
                                                 <span className="jev-hit-mark">
-                                                    {row.effect === 'divergence' ? '✓ diverges' : `✓ fired ${row.effect}`}
+                                                    {row.effect === 'divergence' ? '✓ diverges' : `✓ ${friendly(row.effect)}`}
                                                 </span>
-                                            ) : (
-                                                <span className="jev-no-hit">not fired</span>
-                                            )}
-                                        </div>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             ))}
