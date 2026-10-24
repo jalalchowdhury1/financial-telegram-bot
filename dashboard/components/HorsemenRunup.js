@@ -100,10 +100,10 @@ export default function RunupBars({ fred, now = Date.now(), ridingNote = null })
                     return (
                         <Row key={r.key} k={r.key} status="inversion">
                             <Label>{r.label}</Label>
-                            <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)' }}>
+                            <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
                                 {inv ? (inv.currentlyInverted
                                     ? 'inverted now — the tell is firing'
-                                    : `inverted ${inv.startYear}–${inv.endYear} · tell fired ${inv.monthsSince} months ago`)
+                                    : `inverted ${inv.startYear}–${String(inv.endYear).slice(2)} · ended ${inv.monthsSince} mo ago`)
                                     : 'never inverted in this history'}
                             </span>
                             <Note colour={colour}>

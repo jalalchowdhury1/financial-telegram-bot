@@ -62,7 +62,7 @@ describe('RunupBars', () => {
 
     test('live data: the curve reads as the one 2022–2024 inversion, not a September 2024 blip', () => {
         render(<RunupBars fred={live} now={NOW} />);
-        expect(screen.getByTestId('fh-row-spread').textContent).toMatch(/inverted 2022–2024 · tell fired 25 months ago/);
+        expect(screen.getByTestId('fh-row-spread').textContent).toMatch(/inverted 2022–24 · ended 25 mo ago/);
     });
 
     test('notes are never cut: no nowrap/ellipsis, and the row layout lives in CSS (so phones can restack it)', () => {
