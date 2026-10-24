@@ -55,11 +55,11 @@ def test_slow_red_fires_on_one_close_and_a_repeat_snapshot_does_not_count_twice(
     d = closes(n=2)
     st, sent = run([snap(d[0], slow="red", red_days=47)])
     assert st["mode"] == "PENDING_DEFENSIVE" and len(sent) == 1
-    assert "GO DEFENSIVE" in sent[0] and "47 of the last 60" in sent[0] and "C3" in sent[0] and "50%" in sent[0]
+    assert "go defensive" in sent[0] and "47 of the last 60" in sent[0] and "C3" in sent[0] and "50%" in sent[0]
     st, sent = run([snap(d[0], slow="red")], st, sent)              # holiday re-run: same asOf
     assert st["streak"]["slow"] == 1 and len(sent) == 1
     st, sent = run([snap(d[1])], st, sent)                          # alarm clears before he acted
-    assert st["mode"] == "INVESTED" and len(sent) == 2 and "Stand down" in sent[1]
+    assert st["mode"] == "INVESTED" and len(sent) == 2 and "stand down" in sent[1]
 
 
 def test_machines_needs_five_consecutive_red_closes():
@@ -81,12 +81,12 @@ def test_ack_then_ten_green_closes_with_edge_then_ack_again():
     sent = []
     st, _ = run([snap(closes()[0], slow="red")], sent=sent)
     st, ok = dt.ack(st, send=lambda t: sent.append(t) or True, now=T0, log=lambda *_: None)
-    assert ok and st["mode"] == "DEFENSIVE" and "DEFENSIVE" in sent[-1] and st["green_streak"] == 0
+    assert ok and st["mode"] == "DEFENSIVE" and "50% cash" in sent[-1] and st["green_streak"] == 0
     greens = closes("2026-09-16", 10)
     st, _ = run([snap(x, edge=0.5) for x in greens[:9]], st, sent)
     assert st["mode"] == "DEFENSIVE" and st["green_streak"] == 9
     st, _ = run([snap(greens[9], edge=0.5)], st, sent)
-    assert st["mode"] == "PENDING_REENTRY" and "RE-ENTER" in sent[-1] and "68 / 20 / 12" in sent[-1]
+    assert st["mode"] == "PENDING_REENTRY" and "re-enter" in sent[-1] and "68 / 20 / 12" in sent[-1]
     st, ok = dt.ack(st, send=lambda t: sent.append(t) or True, now=T0, log=lambda *_: None)
     assert ok and st["mode"] == "INVESTED" and st["streak"] == {"slow": 0, "rip": 0, "machines": 0}
 
@@ -224,7 +224,7 @@ def test_reenter_names_book_b_under_nabilas_login_and_c8t_under_jalals():
     st.update(mode="DEFENSIVE", green_streak=dt.REENTRY_CLOSES - 1, last_asof="2026-11-02")
     dt.evaluate(snap("2026-11-03"), st, send=lambda t: sent.append(t) or True, now=T0, ctx=lambda mode: CTX_BOOK_B)
     msg = sent[0]
-    assert "RE-ENTER" in msg and "C8-T" in msg and "C3" in msg and "C9" in msg and "m1" in msg
+    assert "re-enter" in msg and "C8-T" in msg and "C3" in msg and "C9" in msg and "m1" in msg
     assert "Nabila's Composer login" in msg and "Your Composer login" in msg
     assert "hedges" not in msg
 
@@ -263,7 +263,7 @@ def test_nag_outcome_pending_and_the_send_fails():
     assert sent == [] and out["sent"] == 0 and out["failed"] == 1
     assert lines[-1] == "  nag outcome: sent=0 failed=1 pending=PENDING_DEFENSIVE"
     fail = [l for l in lines if l.startswith("  send FAILED: ")]
-    assert len(fail) == 1 and "GO DEFENSIVE" in fail[0] and "<" not in fail[0]
+    assert len(fail) == 1 and "go defensive" in fail[0] and "<" not in fail[0]
     assert st["pending"]["reminders"] == 1                             # what it decides is unchanged
 
 

@@ -1936,9 +1936,9 @@ again (it would 409 against the webhook). The nag reads the tap back once an hou
 the file). Done → ack; Defer → no reminder for 1 h, the stale-radar warning still fires.
 A typed "done" in the chat still works (the webhook stores it as a text tap), and so does
 `defensive_trigger.py ack` from the concierge. `--dry` never reads taps. Reminder shape:
-`🔴 <b>ACT — what · still open</b>` + a blockquote meta line `sent Thu 14:20 · reminder #3`.
+`🛑 <b>Defensive · go defensive still open</b>` + italic `50% to cash · reminder #3` (ALERT-STYLE, 24 Oct 2026).
 
-Card anatomy (11 Sep 2026, house style): priority prefix + verb-first bold header (🔴 ACT — / 🔵 INFO —), an italic sub-line, a ≤3-line body (numbered Composer steps), buttons whose labels name the outcome, and the meta line LAST inside `<blockquote><i>…</i></blockquote>`. INFO cards go out with disable_notification.
+Card anatomy (24 Oct 2026, ~/concierge/docs/ALERT-STYLE.md): bold `🛑 Defensive · <state>` (no ACT/INFO labels), an italic sub-line, a ≤3-line body (numbered Composer steps), buttons whose labels name the outcome, and the meta line LAST inside `<blockquote><i>…</i></blockquote>`. INFO cards go out with disable_notification.
 
 ## Defensive trigger: buttons instead of "Reply DONE" (11 Sep 2026)
 
@@ -1950,9 +1950,9 @@ through `DEFENSIVE_TAP_URL` + `DEFENSIVE_TAP_KEY` in `.env` (pulled by name; lau
 sources the file). Done → ack; Defer → no reminder for 1 h, the stale-radar warning still
 fires. A typed "done" in the chat still works (the webhook stores it as a text tap), and so
 does `defensive_trigger.py ack` from the concierge. `--dry` never reads taps. Reminder shape:
-`🔴 <b>ACT — what · still open</b>` + a blockquote meta line `sent Thu 14:20 · reminder #3`.
+`🛑 <b>Defensive · go defensive still open</b>` + italic `50% to cash · reminder #3` (ALERT-STYLE, 24 Oct 2026).
 
-Card anatomy (11 Sep 2026, house style): priority prefix + verb-first bold header (🔴 ACT — / 🔵 INFO —), an italic sub-line, a ≤3-line body (numbered Composer steps), buttons whose labels name the outcome, and the meta line LAST inside `<blockquote><i>…</i></blockquote>`. INFO cards go out with disable_notification.
+Card anatomy (24 Oct 2026, ~/concierge/docs/ALERT-STYLE.md): bold `🛑 Defensive · <state>` (no ACT/INFO labels), an italic sub-line, a ≤3-line body (numbered Composer steps), buttons whose labels name the outcome, and the meta line LAST inside `<blockquote><i>…</i></blockquote>`. INFO cards go out with disable_notification.
 
 ## Silent digest hand-off (11 Sep 2026)
 

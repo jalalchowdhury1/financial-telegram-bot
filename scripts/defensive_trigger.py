@@ -236,55 +236,58 @@ def fire_reasons(st, snap):
     return out
 
 
+# ALERT-STYLE (24 Oct 2026): one bold "🛑 Defensive · <state>" line + one short italic line; the steps and
+# reasons below it are the detail (the Inbox card shows them). Same buttons, same loud/quiet split as before.
 def msg_fire(snap, reasons, ctx=None):
     why = "\n".join(f"• {r}" for r in reasons)
-    return (f"🔴 <b>ACT — GO DEFENSIVE · move 50% of the book to cash</b>\n"
-            f"<i>Radar · as of {snap['asOf']}</i>\n{why}\n\n"
+    return (f"🛑 <b>Defensive · go defensive</b>\n"
+            f"<i>move 50% of the book to cash · ~2 min</i>\n\n{why}\n\n"
             f"{steps_defensive(snap, ctx)}{_notes(ctx)}\n\n"
-            f"<blockquote><i>~2 min · every algo stays on</i></blockquote>")
+            f"<blockquote><i>Radar {snap['asOf']} · every algo stays on</i></blockquote>")
 
 
 def msg_reenter(snap, edge, ctx=None):
-    return (f"🔴 <b>ACT — RE-ENTER · put the parked cash back</b>\n"
-            f"<i>Radar · green {REENTRY_CLOSES} closes running · dip edge {edge:+.2f}% · as of {snap['asOf']}</i>\n\n"
+    return (f"🛑 <b>Defensive · re-enter</b>\n"
+            f"<i>put the parked cash back · ~2 min</i>\n\n"
             f"{steps_reentry(snap, ctx)}{_notes(ctx)}\n\n"
-            f"<blockquote><i>~2 min · same logins you parked from</i></blockquote>")
+            f"<blockquote><i>Radar {snap['asOf']} · green {REENTRY_CLOSES} closes · dip edge {edge:+.2f}%</i></blockquote>")
 
 
 def msg_stand_down(snap):
-    return (f"🔵 <b>INFO — Stand down · the alarm cleared before you acted</b>\n"
-            f"<i>Radar · as of {snap['asOf']} · {snap['verdict']['text']}</i>\n"
-            f"No action. The book stays as it is.")
+    return (f"🛑 <b>Defensive · stand down</b>\n"
+            f"<i>alarm cleared · no action</i>\n\n"
+            f"Radar {snap['asOf']} · {snap['verdict']['text']}. The book stays as it is.")
 
 
 def msg_hold(snap):
-    return (f"🔵 <b>INFO — Hold · stay defensive</b>\n"
-            f"<i>Radar · as of {snap['asOf']} · {snap['verdict']['text']}</i>\n"
-            f"The green streak broke before you re-entered. Re-entry needs {REENTRY_CLOSES} green closes again.")
+    return (f"🛑 <b>Defensive · hold</b>\n"
+            f"<i>stay defensive · green streak broke</i>\n\n"
+            f"Radar {snap['asOf']} · {snap['verdict']['text']}. Re-entry needs {REENTRY_CLOSES} green closes again.")
 
 
 def msg_ack(mode, today):
     if mode == "DEFENSIVE":
-        return (f"🔵 <b>INFO — Logged · the book is DEFENSIVE (50% cash) from {today}</b>\n"
-                f"<blockquote><i>RE-ENTER comes after {REENTRY_CLOSES} green closes with the dip edge above +{REENTRY_EDGE_PCT}%</i></blockquote>")
-    return (f"🔵 <b>INFO — Logged · the book is INVESTED again from {today}</b>\n"
-            f"<blockquote><i>The trigger is re-armed</i></blockquote>")
+        return (f"🛑 <b>Defensive · logged</b>\n"
+                f"<i>book 50% cash from {today}</i>\n\n"
+                f"Re-enter comes after {REENTRY_CLOSES} green closes with the dip edge above +{REENTRY_EDGE_PCT}%.")
+    return (f"🛑 <b>Defensive · logged</b>\n"
+            f"<i>book invested from {today} · re-armed</i>")
 
 
-def msg_reminder(st, now_local):
+def msg_reminder(st):
     p = st["pending"]
-    what = "GO DEFENSIVE · 50% to cash" if p["kind"] == "PENDING_DEFENSIVE" else "RE-ENTER · cash back in"
-    sent = datetime.fromisoformat(p["sent_at"]).astimezone(now_local.tzinfo).strftime("%a %H:%M")
-    text = (f"🔴 <b>ACT — {what} · still open</b>\n"
-            f"<blockquote><i>sent {sent} · reminder #{p['reminders']}</i></blockquote>")
+    what, how = ("go defensive", "50% to cash") if p["kind"] == "PENDING_DEFENSIVE" else ("re-enter", "cash back in")
+    text = (f"🛑 <b>Defensive · {what} still open</b>\n"
+            f"<i>{how} · reminder #{p['reminders']}</i>")
     if p["reminders"] % STEPS_EVERY_N_REMINDERS == 0 and p.get("steps"):
         text += "\n\n" + p["steps"]
     return text
 
 
 def msg_stale(last_asof, days):
-    return (f"⚠️ <b>Defensive trigger is blind</b>: no new radar close since {last_asof} ({days} business days). "
-            f"Check com.jalal.rubber-band / ~/Library/Logs/rubber-band.log.")
+    return (f"⚠️ <b>Defensive trigger · blind</b>\n"
+            f"<i>no new radar close in {days} business days</i>\n\n"
+            f"Last close {last_asof}. Check com.jalal.rubber-band / ~/Library/Logs/rubber-band.log.")
 
 
 # --- the decision ---------------------------------------------------------------------------
@@ -429,7 +432,7 @@ def _nag(st, send, taps, now, log):
         snoozed = bool(snooze_until) and now < datetime.fromisoformat(snooze_until.replace("Z", "+00:00"))
         if not snoozed:                          # a ⏰ 2 h tap skips the reminder, never the stale check below
             p["reminders"] = p.get("reminders", 0) + 1
-            text = msg_reminder(st, now_local)
+            text = msg_reminder(st)
             if _send_with_buttons(send, text, p["kind"]):
                 sent.append(text)
 
