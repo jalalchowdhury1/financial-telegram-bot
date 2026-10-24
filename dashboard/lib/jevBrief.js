@@ -709,7 +709,7 @@ export function pillFactors(data) {
         rows.push({
             label: 'SPY vs 200-day avg',
             value: fmtPct(ma200Pct),
-            test: '> 0 → +1, else −1',
+            test: '+1 if above 0 · −1 if below',
             hit: ma200Hit,
             effect: ma200Effect,
         });
@@ -725,7 +725,7 @@ export function pillFactors(data) {
         rows.push({
             label: 'Fear & Greed',
             value: fmtInt(fgScore),
-            test: '≥ 50 → +1 · < 30 → −1',
+            test: '+1 if 50 or more · −1 if under 30',
             hit: fgHit,
             effect: fgEffect,
         });
@@ -743,7 +743,7 @@ export function pillFactors(data) {
             label: 'HYG/LQD 20d',
             value: fmtPct(hygChg20, 2),
             ...(hygLegsTxt ? { note: hygLegsTxt } : {}),
-            test: '> 0 → +1 · < −1% → −1',
+            test: '+1 if above 0 · −1 if under −1%',
             hit: hygHit,
             effect: hygEffect,
         });
@@ -772,7 +772,7 @@ export function pillFactors(data) {
         rows.push({
             label: 'Sahm rule',
             value: fmtNum(sahmRule),
-            test: '≥ 0.2 → rising · ≥ 0.5 → high',
+            test: 'Rising if 0.2 or more · High if 0.5 or more',
             hit: sahmEffect !== '',
             effect: sahmEffect,
         });
@@ -781,7 +781,7 @@ export function pillFactors(data) {
         rows.push({
             label: 'Yield curve (2s10s)',
             value: fmtNum(yieldCurve),
-            test: '< 0 → rising · + claims ≥ 260k → high',
+            test: 'Rising if below 0 · High if claims are 260k+ too',
             hit: ycEffect !== '',
             effect: ycEffect,
         });
@@ -790,7 +790,7 @@ export function pillFactors(data) {
         rows.push({
             label: 'Jobless claims',
             value: claims != null ? `${Math.round(claims)}k` : 'n/a',
-            test: '≥ 260k → rising · + curve < 0 → high',
+            test: 'Rising if 260k or more · High if the curve is below 0 too',
             hit: claimsEffect !== '',
             effect: claimsEffect,
         });
@@ -799,7 +799,7 @@ export function pillFactors(data) {
         rows.push({
             label: 'NFCI',
             value: fmtNum(nfci),
-            test: '> 0 → rising',
+            test: 'Rising if above 0',
             hit: nfciHit,
             effect: nfciHit ? 'rising' : '',
         });
@@ -836,7 +836,7 @@ export function pillFactors(data) {
         rows.push({
             label: 'RSP/SPY 20d',
             value: fmtPct(rspChg20),
-            test: '> 0 → broad · < −1.5% → rolling over',
+            test: 'Broad if above 0 (IWM too) · Rolling over if under −1.5% (50d too)',
             hit: rsp20Hit,
             effect: rsp20Effect,
         });
@@ -846,7 +846,7 @@ export function pillFactors(data) {
         rows.push({
             label: 'RSP/SPY vs 50d avg',
             value: fmtPct(rspVs50d),
-            test: '< 0 → rolling over',
+            test: 'Rolling over if below 0 (20d too)',
             hit: vs50dHit,
             effect: vs50dHit ? 'rolling-over' : '',
         });
@@ -856,7 +856,7 @@ export function pillFactors(data) {
         rows.push({
             label: 'IWM/SPY 20d',
             value: fmtPct(iwmChg20),
-            test: '> 0 → broad',
+            test: 'Broad if above 0 (RSP too)',
             hit: iwmHit,
             effect: iwmHit ? 'broad' : '',
         });
@@ -895,7 +895,7 @@ export function pillFactors(data) {
         rows.push({
             label: 'IV percentile (1y)',
             value: fmtInt(ivPctile),
-            test: '> 70 → expensive · < 20 → cheap',
+            test: 'Expensive if over 70 · Cheap if under 20 (VRP under 6 too)',
             hit: ivHit,
             effect: ivEffect,
         });
@@ -910,7 +910,7 @@ export function pillFactors(data) {
         rows.push({
             label: 'VRP',
             value: fmtNum(vrp),
-            test: '> 10 → expensive · < 6 → cheap',
+            test: 'Expensive if over 10 · Cheap if under 6 (IV under 20 too)',
             hit: vrpHit,
             effect: vrpEffect,
         });
@@ -929,22 +929,22 @@ export function pillFactors(data) {
             {
                 label: 'sentiment vs price',
                 value: `F&G ${fmtInt(fgScore)} · SPY ${fmtPct(ma200Pct)} vs 200d`,
-                test: 'F&G < 35 & SPY > +3% · or F&G > 65 & SPY < −3%',
+                test: 'Fear (under 35), SPY 3%+ above 200d · Greed (over 65), SPY 3%+ below 200d',
             },
             {
                 label: '2s10s vs 3m10y',
                 value: `2s10s ${fmtNum(yieldCurve)} · 3m10y ${fmtNum(t10y3m)}`,
-                test: 'opposite signs',
+                test: 'Splits if one is below 0, one above',
             },
             {
                 label: 'credit vs equities',
                 value: `SPY ${fmtPct(ma200Pct)} vs 200d · HYG/LQD ${fmtPct(hygChg20, 2)}`,
-                test: 'SPY > 0 & HYG/LQD < −1.5%',
+                test: 'Splits if SPY is above 200d · and HYG/LQD is under −1.5%',
             },
             {
                 label: 'breadth vs index',
                 value: `SPY ${fmtPct(high52Pct)} from 52w high · RSP/SPY ${fmtPct(rspChg20)}`,
-                test: 'SPY within 2% of high & RSP/SPY < −1.5%',
+                test: 'Splits if SPY is within 2% of high · and RSP/SPY is under −1.5%',
             },
         ];
 

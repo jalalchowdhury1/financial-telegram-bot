@@ -12,7 +12,7 @@ export const PILL_EXPLAIN = {
     },
     recession: {
         ask: 'How close is a recession? Four early warnings; the strongest wins.',
-        key: { 'low': 'no warning tripped', 'rising': 'any one warning tripped', 'high': 'Sahm ≥ 0.5, or curve < 0 and claims ≥ 260k' },
+        key: { 'low': 'no warning tripped', 'rising': 'any one warning tripped', 'high': 'Sahm 0.5+, or curve below 0 with claims 260k+' },
     },
     breadth: {
         ask: 'Are most stocks rising, or only a few giants?',
@@ -20,7 +20,7 @@ export const PILL_EXPLAIN = {
     },
     hedging: {
         ask: 'How pricey is portfolio insurance (options) right now?',
-        key: { 'cheap': 'IV pct < 20 and VRP < 6', 'fair': 'anything in between', 'expensive': 'IV pct > 70 or VRP > 10' },
+        key: { 'cheap': 'IV under 20 and VRP under 6', 'fair': 'anything in between', 'expensive': 'IV over 70 or VRP over 10' },
     },
     conflict: {
         ask: 'Do the signals agree? Splits often come before a regime change.',
