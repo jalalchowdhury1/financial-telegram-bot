@@ -333,7 +333,7 @@ def main():
         lines += [f'• <b>sheet 3Y</b>: {m}' for m in sheet_bad]
         lines += [f'• <b>signals</b>: {m}' for m in signal_bad]
         lines += [f'• <b>FRED-down extras</b>: {m}' for m in extra_bad]
-        send(f'🧪 <b>Dashboard backup test: {bad} of {total} failed</b>\n' + '\n'.join(lines)
+        send(f'⚠️ <b>Dashboard backup · {bad}/{total} failed</b>\n' + '\n'.join(lines)
              + '\n<blockquote><i>scripts/fault_matrix.py · nightly · run it again to recheck</i></blockquote>')
     return 1 if bad else 0
 
