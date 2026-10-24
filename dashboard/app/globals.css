@@ -1572,48 +1572,58 @@ body::before {
   margin-bottom: 0;
 }
 
-.jev-modal-section-label {
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin: 0 0 10px;
-}
-
-.jev-modal-muted {
-  font-size: 0.85rem;
-  line-height: 1.6;
-  color: var(--text-secondary);
-  margin: 0;
-}
-
-.jev-modal-sources {
+/* sources / backups: one line each, scroll sideways if long */
+.jev-modal-foot {
   font-size: 0.72rem;
-  line-height: 1.5;
+  color: var(--text-muted);
+  margin: 0;
+  white-space: nowrap;
+  overflow-x: auto;
 }
 
-/* ── inputs list: one layout at every width ── */
 .jev-inputs-summary {
-  margin-bottom: 12px !important;
-  font-size: 0.8rem !important;
+  margin: 0 0 8px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
 }
 
 .jev-inputs {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
+/* one line per number; tap opens its meaning + rule beneath */
 .jev-input {
-  display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
-  gap: 4px 20px;
-  padding: 12px 14px;
+  padding: 9px 12px;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.05);
   border-left: 3px solid transparent;
   border-radius: var(--radius-sm);
+}
+
+.jev-input > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+  cursor: pointer;
+  list-style: none;
+}
+
+.jev-input > summary::-webkit-details-marker {
+  display: none;
+}
+
+.jev-input > summary::after {
+  content: '›';
+  color: var(--text-muted);
+  opacity: 0.5;
+  transition: transform 0.15s;
+}
+
+.jev-input[open] > summary::after {
+  transform: rotate(90deg);
 }
 
 .jev-input-hit {
@@ -1621,64 +1631,55 @@ body::before {
   background: rgba(34, 197, 94, 0.05);
 }
 
+.jev-input-hit[data-tone="badge-red"] {
+  border-left-color: var(--red);
+  background: rgba(239, 68, 68, 0.05);
+}
+
+.jev-input-hit[data-tone="badge-yellow"] {
+  border-left-color: var(--yellow);
+  background: rgba(234, 179, 8, 0.05);
+}
+
 .jev-input-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 0.88rem;
   font-weight: 600;
   color: var(--text-primary);
-  line-height: 1.3;
-}
-
-.jev-input-side {
-  text-align: right;
-}
-
-.jev-input-value {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--text-primary);
-  line-height: 1.3;
-  overflow-wrap: anywhere;
 }
 
 .jev-input-label::first-letter {
   text-transform: uppercase;
 }
 
-.jev-input-multi {
-  font-size: 0.85rem;
-  font-weight: 500;
+.jev-input-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
 }
-.jev-input-multi > div + div {
-  margin-top: 2px;
+
+.jev-input-more {
+  margin-top: 6px;
+  white-space: nowrap;
+  overflow-x: auto;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
 }
 
 .jev-input-note {
   font-family: 'JetBrains Mono', monospace;
-  font-size: 0.72rem;
-  color: var(--text-secondary);
-  margin-top: 2px;
-}
-
-.jev-input-rule {
-  font-size: 0.72rem;
-  line-height: 1.45;
-  color: var(--text-secondary);
-  margin-top: 4px;
-}
-
-.jev-input-fired {
-  margin-top: 6px;
 }
 
 .jev-hit-mark {
-  display: inline-block;
-  color: var(--green);
   font-weight: 600;
-  font-size: 0.72rem;
-  padding: 2px 8px;
+  font-size: 0.7rem;
+  padding: 2px 7px;
   border-radius: 10px;
-  background: rgba(34, 197, 94, 0.12);
 }
 
 /* the pill's question + verdict key (today's verdict lit, the others dimmed) */
@@ -1705,7 +1706,8 @@ body::before {
   font-size: 0.8rem;
   line-height: 1.4;
   color: var(--text-secondary);
-  opacity: 0.45;
+  opacity: 0.7;
+  white-space: nowrap;
 }
 
 .jev-key li.jev-key-on {
@@ -1747,27 +1749,12 @@ body::before {
   .jev-modal {
     width: calc(100vw - 24px);
     max-height: 88vh;
-    padding: 20px;
+    padding: 16px;
   }
 
-  .jev-input {
-    grid-template-columns: 1fr;
-    gap: 6px;
-    padding: 12px;
-  }
+  .jev-key li { font-size: 0.76rem; gap: 8px; }
+  .jev-key .badge { min-width: 6.6em; }
 
-  .jev-input-side {
-    text-align: left;
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 4px 12px;
-  }
-
-  .jev-input-value { font-size: 0.95rem; }
-  .jev-input-note { flex-basis: 100%; margin-top: 0; }
-  .jev-input-rule { margin-top: 0; flex-basis: 100%; }
-  .jev-input-fired { margin-top: 0; }
 }
 
 @media (max-width: 500px) {
@@ -1783,15 +1770,6 @@ body::before {
   .jev-pill-source {
     font-size: 0.58rem;
   }
-}
-
-/* Jev popup — plain-English note under each input label */
-.jev-input-explain {
-  font-weight: 400;
-  font-size: 0.7rem;
-  line-height: 1.45;
-  color: var(--text-muted);
-  margin-top: 3px;
 }
 
 /* === 🧬 Factor row (FactorRow.js) — a thin strip under the indicator bar ===

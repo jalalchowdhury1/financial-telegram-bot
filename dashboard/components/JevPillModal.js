@@ -3,7 +3,7 @@
 import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import useSheetLock, { useSheetFocus } from './useSheetLock';
-import { PILL_EXPLAIN, INPUT_EXPLAIN, FEED_NAMES, PILL_FEEDS } from './jevExplain';
+import { PILL_EXPLAIN, INPUT_EXPLAIN, INPUT_NAMES, PILL_FEEDS } from './jevExplain';
 
 const FRIENDLY = {
     'risk-on': 'Risk-on',
@@ -48,12 +48,28 @@ const PILL_SOURCE_KEYS = {
     conflict: ['spy', 'fg', 'fred', 'breadth'],
 };
 
+const PILL_BACKUP_KEYS = { recession: ['sahm', 'claims', 'nfci'], conflict: ['t10y3m'] };
+
+const PROVIDER_NAMES = {
+    polygon: 'Polygon', cnbc: 'CNBC', 'cnbc-quote': 'CNBC', cboe: 'CBOE', fred: 'FRED', 'st. louis fed': 'FRED', yahoo: 'Yahoo',
+    'finnhub spot': 'Finnhub', 'google sheet': 'Sheet', 'live horsemen': 'Horsemen',
+};
+
 /**
- * trim a source value to 60 chars with an ellipsis if longer
+ * ['RSP:polygon · VIX:cboe+live', 'Nasdaq + CNBC (fallback)', 'Google Sheet (last-known-good …)']
+ * → 'Polygon · CBOE · Nasdaq · CNBC · Sheet (saved)'
  */
-function trimSource(val) {
-    if (!val) return '—';
-    return val.length > 60 ? val.slice(0, 60) + '…' : val;
+function providers(vals) {
+    const names = new Set();
+    for (const val of vals) {
+        for (const part of String(val).split(/ · | \+ /)) {
+            let name = /^[A-Z0-9^.]+:/.test(part) ? part.slice(part.indexOf(':') + 1).replace('+live', '') : part;
+            const saved = /last-known-good|cached/.test(name);
+            name = name.replace(/\s*\(.*?\)/g, '').trim();
+            if (name) names.add((PROVIDER_NAMES[name.toLowerCase()] || name) + (saved ? ' (saved)' : ''));
+        }
+    }
+    return names.size ? [...names].join(' · ') : '—';
 }
 
 export default function JevPillModal({ pillKey, data, onClose }) {
@@ -79,66 +95,32 @@ export default function JevPillModal({ pillKey, data, onClose }) {
 
     const verdictBadge = SEVERITY[pill.verdict] || 'badge-blue';
 
-    // ---- Header sub-line ----
+    // ---- Header sub-line: who decided, Jev only when it differs, oldest data date ----
+    const jevBlock = pill.jev;
+    const pct = (p) => `${Math.round((p ?? 0) * 100)}%`;
     let decidedLine;
-    if (pill.by === 'jev') {
-        decidedLine = `Decided by Jev (confidence ${(pill.p ?? 0).toFixed(2)})`;
-    } else {
-        decidedLine = 'Decided by the rule';
-    }
+    if (pill.verdict === 'unknown') decidedLine = 'Too few numbers';
+    else if (pill.by === 'jev') decidedLine = `Jev, ${pct(pill.p)} sure`;
+    else if (data._meta?.jev === 'off') decidedLine = 'Rule · Jev off';
+    else if (jevBlock?.verdict && jevBlock.verdict !== pill.verdict) decidedLine = `Rule · Jev said ${friendly(jevBlock.verdict)} (${pct(jevBlock.p)})`;
+    else decidedLine = 'Rule';
 
-    // ---- Why section ----
-    const conflictPairs = data.conflictPairs || [];
+    const dataAsOf = data._meta?.dataAsOf || {};
+    const oldest = (PILL_FEEDS[pillKey] || []).map(k => dataAsOf[k]).filter(Boolean).sort()[0];
+    if (oldest) decidedLine += ` · ${new Date(`${oldest}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}`;
 
-    // ---- Inputs section ----
     const factors = data.factors?.[pillKey];
     const factorRows = factors?.rows || [];
-    const factorSummary = factors?.summary || null;
+    // only the regime score is news; the other summaries repeat the lit key row
+    const factorSummary = pillKey === 'regime' ? factors?.summary || null : null;
 
-    // ---- Jev's view section ----
-    const jevBlock = pill.jev;
-    let jevMessage;
-    let jevKey = 'answer';
-    if (data.mode === 'rules') {
-        jevMessage = 'Jev not consulted (rules-only mode)';
-        jevKey = 'not-consulted';
-    } else if (data._meta?.jev === 'off') {
-        jevMessage = 'Jev off — no API key configured';
-        jevKey = 'off';
-    } else if (jevBlock && jevBlock.verdict && pill.verdict === 'unknown') {
-        // Jev read the same mostly-n/a inputs; its answer is shown but never used.
-        jevMessage = `Jev said ${friendly(jevBlock.verdict)} (${(jevBlock.p ?? 0).toFixed(2)}) — not used: too few inputs measured to trust any verdict`;
-    } else if (jevBlock && jevBlock.verdict) {
-        if (pill.by === 'jev') {
-            jevMessage = `Jev decided: ${friendly(jevBlock.verdict)} (${(jevBlock.p ?? 0).toFixed(2)})`;
-        } else {
-            // by === 'rule' — Jev answered but didn't override
-            const match = jevBlock.verdict === pill.verdict;
-            if (match) {
-                jevMessage = `Jev said ${friendly(jevBlock.verdict)} (${(jevBlock.p ?? 0).toFixed(2)}) — agrees with the rule`;
-            } else {
-                jevMessage = `Jev said ${friendly(jevBlock.verdict)} (${(jevBlock.p ?? 0).toFixed(2)}) — below the 0.6 confidence floor, so the rule stands`;
-            }
-        }
-    } else {
-        jevMessage = 'Jev gave no answer this refresh';
-        jevKey = 'no-answer';
-    }
-
-    // ---- Sources section ----
-    const sourceKeys = PILL_SOURCE_KEYS[pillKey] || [];
     const sources = data._meta?.sources || {};
-    const sourceEntries = sourceKeys
-        .filter(k => sources[k] != null)
-        .map(k => `${k}: ${trimSource(sources[k])}`);
-    const sourcesText = sourceEntries.length > 0 ? sourceEntries.join(' · ') : '—';
-
-    // "Data through" — the last date each feed this pill reads was updated
-    const dataAsOf = data._meta?.dataAsOf || {};
-    const throughText = (PILL_FEEDS[pillKey] || [])
-        .filter(k => dataAsOf[k])
-        .map(k => `${FEED_NAMES[k] || k} ${dataAsOf[k]}`)
-        .join(' · ');
+    const sourcesText = providers((PILL_SOURCE_KEYS[pillKey] || []).filter(k => sources[k] != null).map(k => sources[k]));
+    // inputs that can fall back to a backup source (/api/jev-pills inputSources), per pill
+    const backups = (PILL_BACKUP_KEYS[pillKey] || [])
+        .map(k => [k, data._meta?.inputSources?.[k]])
+        .filter(([, v]) => v && v !== 'fred-route' && v !== 'fred')
+        .map(([k, v]) => `${k} ${v}`);
 
     const explain = PILL_EXPLAIN[pillKey];
 
@@ -191,92 +173,43 @@ export default function JevPillModal({ pillKey, data, onClose }) {
                     </section>
                 )}
 
-                {/* Why — only the conflict pill has content the inputs list does not already show */}
-                {pillKey === 'conflict' && conflictPairs.length > 0 && (
-                    <section className="jev-modal-section">
-                        <h3 className="jev-modal-section-label">Why</h3>
-                        <div className="jev-modal-muted">
-                            {conflictPairs.map((cp, i) => (
-                                <p key={i} style={{ marginBottom: i < conflictPairs.length - 1 ? 6 : 0 }}>
-                                    {cp.pair}: {cp.detail}
-                                </p>
-                            ))}
-                        </div>
-                    </section>
-                )}
-
-                {/* Inputs the rule checks */}
+                {/* One line per number; tap a row for its meaning and rule */}
                 <section className="jev-modal-section">
-                    <h3 className="jev-modal-section-label">The numbers</h3>
-                    {factorSummary && (
-                        <p className="jev-modal-muted jev-inputs-summary">{factorSummary}</p>
-                    )}
+                    {factorSummary && <p className="jev-inputs-summary">{factorSummary}</p>}
                     {factorRows.length > 0 ? (
                         <div className="jev-inputs">
-                            {factorRows.map((row, i) => (
-                                <div key={i} className={`jev-input ${row.hit ? 'jev-input-hit' : ''}`}>
-                                    <div className="jev-input-main">
-                                        <div className="jev-input-label">{row.label}</div>
-                                        {INPUT_EXPLAIN[row.label] && (
-                                            <div className="jev-input-explain">{INPUT_EXPLAIN[row.label]}</div>
-                                        )}
-                                    </div>
-                                    <div className="jev-input-side">
-                                        {String(row.value).includes(' · ') ? (
-                                            <div className="jev-input-value jev-input-multi">
-                                                {String(row.value).split(' · ').map((part, j) => (
-                                                    <div key={j}>{part}</div>
-                                                ))}
-                                            </div>
-                                        ) : (
-                                            <div className="jev-input-value">{row.value}</div>
-                                        )}
-                                        {row.note && <div className="jev-input-note">{row.note}</div>}
-                                        <div className="jev-input-rule">
-                                            {String(row.test).split(' · ').map((part, j) => (
-                                                <div key={j}>{part}</div>
-                                            ))}
+                            {factorRows.map((row, i) => {
+                                const multi = String(row.value).includes(' · ');
+                                // a −1 vote or a split is bad news; other effects share the verdict colours
+                                const tone = SEVERITY[row.effect] || (row.effect === '−1' || row.effect === 'divergence' ? 'badge-red' : 'badge-green');
+                                return (
+                                    <details key={i} className={`jev-input ${row.hit ? 'jev-input-hit' : ''}`} data-tone={row.hit ? tone : undefined}>
+                                        <summary>
+                                            <span className="jev-input-label">{INPUT_NAMES[row.label] || row.label}</span>
+                                            {!multi && <span className="jev-input-value">{row.value}</span>}
+                                            {row.hit && (
+                                                <span className={`jev-hit-mark ${tone}`}>{row.effect === 'divergence' ? 'splits' : friendly(row.effect)}</span>
+                                            )}
+                                        </summary>
+                                        <div className="jev-input-more">
+                                            {/* the ticker/code label only; plain-word labels just repeat the name */}
+                                            {INPUT_NAMES[row.label] && /[A-Z]{2,}|\d/.test(row.label) && <div className="jev-input-note">{row.label}</div>}
+                                            {INPUT_EXPLAIN[row.label] && <div>{INPUT_EXPLAIN[row.label]}</div>}
+                                            {multi && String(row.value).split(' · ').map((part, j) => <div key={`v${j}`} className="jev-input-note">{part}</div>)}
+                                            {row.note && <div className="jev-input-note">{row.note}</div>}
+                                            {String(row.test).split(' · ').map((part, j) => <div key={j}>{part}</div>)}
                                         </div>
-                                        {row.hit && (
-                                            <div className="jev-input-fired">
-                                                <span className="jev-hit-mark">
-                                                    {row.effect === 'divergence' ? '✓ diverges' : `✓ ${friendly(row.effect)}`}
-                                                </span>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            ))}
+                                    </details>
+                                );
+                            })}
                         </div>
                     ) : (
-                        <p className="jev-modal-muted">Inputs unavailable</p>
+                        <p className="jev-modal-foot">Inputs unavailable</p>
                     )}
                 </section>
 
-                {/* Jev's view */}
-                <section className="jev-modal-section">
-                    <h3 className="jev-modal-section-label">Jev&rsquo;s view</h3>
-                    <p className="jev-modal-muted" key={jevKey}>{jevMessage}</p>
-                </section>
-
-                {/* Sources */}
-                <section className="jev-modal-section">
-                    <h3 className="jev-modal-section-label">Sources</h3>
-                    <p className="jev-modal-muted jev-modal-sources">{sourcesText}</p>
-                    {throughText && (
-                        <p className="jev-modal-muted jev-modal-sources">Data through: {throughText}</p>
-                    )}
-                    {(() => {
-                        const inputSources = data._meta?.inputSources || {};
-                        const backupEntries = Object.entries(inputSources)
-                            .filter(([, v]) => v && v !== 'fred-route' && v !== 'fred')
-                            .map(([k, v]) => `${k} ${v}`);
-                        if (backupEntries.length > 0) {
-                            return <p className="jev-modal-muted jev-modal-sources">Backups in use: {backupEntries.join(' · ')}</p>;
-                        }
-                        return null;
-                    })()}
-                </section>
+                <p className="jev-modal-foot">{sourcesText}</p>
+                {backups.length > 0 && <p className="jev-modal-foot">Backups: {backups.join(' · ')}</p>}
             </div>
         </div>,
         document.body

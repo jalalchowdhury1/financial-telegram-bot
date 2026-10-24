@@ -929,7 +929,7 @@ export function pillFactors(data) {
             {
                 label: 'sentiment vs price',
                 value: `F&G ${fmtInt(fgScore)} · SPY ${fmtPct(ma200Pct)} vs 200d`,
-                test: 'Fear (under 35), SPY 3%+ above 200d · Greed (over 65), SPY 3%+ below 200d',
+                test: 'Fear (under 35), SPY over 3% above 200d · Greed (over 65), SPY over 3% below 200d',
             },
             {
                 label: '2s10s vs 3m10y',
@@ -966,7 +966,7 @@ export function pillFactors(data) {
         else conflictVerdict = 'major-divergence';
 
         factors.conflict = {
-            summary: `${numFiring} of 4 pairs diverge → ${conflictVerdict}`,
+            summary: `${numFiring} of 4 pairs diverge → ${conflictVerdict.replace('-', ' ')}`,
             rows,
         };
     }

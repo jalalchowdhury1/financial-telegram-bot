@@ -209,17 +209,15 @@ describe('JevPills', () => {
         const dialog = screen.getByRole('dialog');
         expect(dialog).toBeInTheDocument();
         // Decided by Jev (since by: 'jev' and p: 0.87)
-        expect(screen.getByText(/Decided by Jev/)).toBeInTheDocument();
-        // Factor row labels present (both desktop table + mobile cards render in jsdom)
-        expect(screen.getAllByText('SPY vs 200-day avg').length).toBeGreaterThanOrEqual(1);
+        expect(screen.getByText(/Jev, 87% sure/)).toBeInTheDocument();
+        // Factor rows show plain names
+        expect(screen.getAllByText('S&P vs 200-day').length).toBeGreaterThanOrEqual(1);
         expect(screen.getAllByText('Fear & Greed').length).toBeGreaterThanOrEqual(1);
-        expect(screen.getAllByText('HYG/LQD 20d').length).toBeGreaterThanOrEqual(1);
+        expect(screen.getAllByText('Junk vs safe bonds').length).toBeGreaterThanOrEqual(1);
         // Factor row values present
         expect(screen.getAllByText('+6.3%').length).toBeGreaterThanOrEqual(1);
         expect(screen.getAllByText('65').length).toBeGreaterThanOrEqual(1);
         expect(screen.getAllByText('+2.1%').length).toBeGreaterThanOrEqual(1);
-        // Jev's view section present
-        expect(screen.getByText(/Jev['\u2019]s view/)).toBeInTheDocument();
     });
 
     test('Escape key closes the dialog', () => {
@@ -278,11 +276,8 @@ describe('JevPills', () => {
         render(<JevPills data={belowFloorData} loading={false} />);
         fireEvent.click(screen.getByText('Regime'));
         expect(screen.getByRole('dialog')).toBeInTheDocument();
-        // The header says "Decided by the rule" (since by: 'rule')
-        expect(screen.getByText('Decided by the rule')).toBeInTheDocument();
-        // Jev's view section shows below-floor text
-        expect(screen.getByText(/below the 0.6 confidence floor/)).toBeInTheDocument();
-        expect(screen.getByText(/Jev said Narrow/)).toBeInTheDocument();
+        // The header says the rule decided and names Jev's differing answer
+        expect(screen.getByText(/^Rule · Jev said Narrow \(32%\)/)).toBeInTheDocument();
     });
 
     test('modal explains what the pill measures, each input, and data freshness', () => {
@@ -290,12 +285,13 @@ describe('JevPills', () => {
         render(<JevPills data={withMeta} loading={false} />);
         fireEvent.click(screen.getByRole('button', { name: /Regime/ }));
         const dlg = screen.getByRole('dialog');
-        expect(dlg).toHaveTextContent('Is the market in a go or no-go mood?');
+        expect(dlg).toHaveTextContent('Is the market in a go mood?');
         // today's verdict is the lit row of the key
-        expect(dlg.querySelector('.jev-key-on')).toHaveTextContent('score 2 or more');
-        expect(dlg).toHaveTextContent('Junk vs safe bonds.');
+        expect(dlg.querySelector('.jev-key-on')).toHaveTextContent('score 2+');
+        expect(dlg).toHaveTextContent('Junk vs safe bonds');
+        expect(dlg).toHaveTextContent('risk appetite');
         expect(dlg).not.toHaveTextContent('not fired');
-        expect(dlg).toHaveTextContent('Data through: ETF ratios 2026-09-18');
+        expect(dlg.querySelector('.jev-modal-sub')).toHaveTextContent('Sep 18');
     });
 
     // ── Backups in use ──
@@ -314,8 +310,12 @@ describe('JevPills', () => {
             },
         };
         render(<JevPills data={withBackups} loading={false} />);
+        fireEvent.click(screen.getByText('Recession'));
+        expect(screen.getByRole('dialog')).toHaveTextContent('Backups: claims horsemen · nfci fredcsv');
+        fireEvent.keyDown(document, { key: 'Escape' });
+        // Regime reads no FRED input, so its sheet does not list FRED backups
         fireEvent.click(screen.getByText('Regime'));
-        expect(screen.getByRole('dialog')).toHaveTextContent('Backups in use: t10y3m fredcsv · nfci fredcsv · claims horsemen');
+        expect(screen.getByRole('dialog')).not.toHaveTextContent('Backups:');
     });
 
     test('does NOT show "Backups in use" line when all inputSources are fred-route', () => {
@@ -333,23 +333,20 @@ describe('JevPills', () => {
         };
         render(<JevPills data={allDefault} loading={false} />);
         fireEvent.click(screen.getByText('Regime'));
-        expect(screen.getByRole('dialog')).not.toHaveTextContent('Backups in use');
+        expect(screen.getByRole('dialog')).not.toHaveTextContent('Backups:');
     });
 
     test('does NOT show "Backups in use" when inputSources is missing', () => {
         render(<JevPills data={sampleData} loading={false} />);
         fireEvent.click(screen.getByText('Regime'));
-        expect(screen.getByRole('dialog')).not.toHaveTextContent('Backups in use');
+        expect(screen.getByRole('dialog')).not.toHaveTextContent('Backups:');
     });
 });
 
 describe('PILL_FEEDS lists every feed a pill reads', () => {
-    const { PILL_FEEDS, FEED_NAMES } = require('../jevExplain');
+    const { PILL_FEEDS } = require('../jevExplain');
     test('regime and conflict include SPY and Fear & Greed', () => {
         expect(PILL_FEEDS.regime).toEqual(expect.arrayContaining(['spy', 'fg', 'breadth']));
         expect(PILL_FEEDS.conflict).toEqual(expect.arrayContaining(['spy', 'fg', 'fred', 'breadth']));
-    });
-    test('every feed key has a friendly name', () => {
-        for (const feeds of Object.values(PILL_FEEDS)) for (const f of feeds) expect(FEED_NAMES[f]).toBeTruthy();
     });
 });

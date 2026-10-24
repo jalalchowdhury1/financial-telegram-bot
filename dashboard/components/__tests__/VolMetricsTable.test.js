@@ -43,7 +43,7 @@ it('shows only the SPY and QQQ rows', async () => {
     expect(screen.queryByText('81.3')).not.toBeInTheDocument();
     expect(screen.getByText('+4.6')).toBeInTheDocument();    // positive VRP gets a plus sign
     expect(screen.getByText(/As of 2026-07-03/)).toBeInTheDocument();
-    expect(screen.getByText(/SPY→VIX · QQQ→VXN\)/)).toBeInTheDocument();
+    expect(screen.getByText(/IV from VIX and VXN/)).toBeInTheDocument();
 });
 
 it('renders the VIX curve, the call, TQQQ decay and the 5-day moves', async () => {

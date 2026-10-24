@@ -20,11 +20,11 @@ const SUBTITLES = {
     nfci: 'How tight money is (below 0 = easy)',
     m2: 'Money supply growth (over 2% = growing)',
     retail: 'Consumer spending strength',
-    housing: 'New homes (strong over 1,400K · OK over 1,300K)',
+    housing: 'New homes (strong over 1,400K · OK over 1,300K and rising)',
     indpro: '6-month manufacturing trend',
     jolts: 'Job openings (strong over 7,000K · OK over 6,000K)',
     durable: 'Business investment (3mo trend)',
-    savings: 'Consumer cushion (healthy over 5% · OK at 3.5%+)'
+    savings: 'Consumer cushion (healthy at 5%+ · OK at 3.5%+)'
 };
 
 const BENCHMARKS = {

@@ -5,50 +5,52 @@
  */
 
 // ask = the one question the pill answers; key = what each verdict needs (best → worst).
+// Keep every line short enough to stay on one line on a phone.
 export const PILL_EXPLAIN = {
-    regime: {
-        ask: 'Is the market in a go or no-go mood? Each input votes +1 or −1.',
-        key: { 'risk-on': 'score 2 or more', 'neutral': 'score 0 or 1', 'risk-off': 'score −1 or less' },
-    },
-    recession: {
-        ask: 'How close is a recession? Four early warnings; the strongest wins.',
-        key: { 'low': 'no warning tripped', 'rising': 'any one warning tripped', 'high': 'Sahm 0.5+, or curve below 0 with claims 260k+' },
-    },
-    breadth: {
-        ask: 'Are most stocks rising, or only a few giants?',
-        key: { 'broad': 'average stock and small caps both beat SPY', 'narrow': 'anything in between', 'rolling-over': 'average stock trails SPY by 1.5%+ and is below its 50-day' },
-    },
-    hedging: {
-        ask: 'How pricey is portfolio insurance (options) right now?',
-        key: { 'cheap': 'IV under 20 and VRP under 6', 'fair': 'anything in between', 'expensive': 'IV over 70 or VRP over 10' },
-    },
-    conflict: {
-        ask: 'Do the signals agree? Splits often come before a regime change.',
-        key: { 'aligned': 'no pair disagrees', 'mild-divergence': '1 pair disagrees', 'major-divergence': '2 or more disagree' },
-    },
+    regime: { ask: 'Is the market in a go mood?', key: { 'risk-on': 'score 2+', 'neutral': 'score 0 or 1', 'risk-off': 'score −1 or less' } },
+    recession: { ask: 'How close is a recession?', key: { 'low': 'no warning', 'rising': 'any warning', 'high': 'Sahm 0.5+, or curve + claims' } },
+    breadth: { ask: 'Most stocks rising, or just giants?', key: { 'broad': 'avg stock + small caps ahead', 'narrow': 'in between', 'rolling-over': 'avg over 1.5% behind, under 50d' } },
+    hedging: { ask: 'How pricey are hedges?', key: { 'cheap': '%ile under 20, markup under 6', 'fair': 'in between', 'expensive': '%ile over 70 or markup over 10' } },
+    conflict: { ask: 'Do the signals agree?', key: { 'aligned': 'no splits', 'mild-divergence': 'one split', 'major-divergence': '2+ splits' } },
 };
 
+// Row names on screen (the label is the data key; tap a row to see it).
+export const INPUT_NAMES = {
+    'SPY vs 200-day avg': 'S&P vs 200-day',
+    'HYG/LQD 20d': 'Junk vs safe bonds',
+    'Yield curve (2s10s)': 'Yield curve',
+    'NFCI': 'Money tightness',
+    'RSP/SPY 20d': 'Avg stock vs S&P',
+    'RSP/SPY vs 50d avg': 'Avg stock vs 50-day',
+    'IWM/SPY 20d': 'Small caps vs S&P',
+    'IV percentile (1y)': 'Option price %ile',
+    'VRP': 'Hedge markup',
+    'sentiment vs price': 'Mood vs price',
+    '2s10s vs 3m10y': 'Two yield curves',
+    'credit vs equities': 'Junk bonds vs stocks',
+    'breadth vs index': 'Avg stock vs index',
+};
+
+// Shown when a row is tapped.
 export const INPUT_EXPLAIN = {
-    'SPY vs 200-day avg': 'Above its 200-day = uptrend.',
+    'SPY vs 200-day avg': 'Above = uptrend.',
     'Fear & Greed': 'CNN crowd mood, 0–100.',
-    'HYG/LQD 20d': 'Junk vs safe bonds. Junk ahead = appetite for risk.',
+    'HYG/LQD 20d': 'Junk ahead = risk appetite.',
     'Sahm rule': 'Jobless rate vs its 1-year low.',
-    'Yield curve (2s10s)': '10y minus 2y yield. Below 0 = inverted.',
-    'Jobless claims': 'New weekly unemployment claims.',
-    'NFCI': 'Chicago Fed gauge. Above 0 = tight money.',
-    'RSP/SPY 20d': 'Average stock vs the giants, 20 days.',
-    'RSP/SPY vs 50d avg': 'Same ratio vs its 50-day average.',
-    'IWM/SPY 20d': 'Small caps vs the S&P, 20 days.',
-    'IV percentile (1y)': 'Option prices vs the past year, 0–100.',
-    'VRP': 'Option-implied minus actual moves. High = hedges overpriced.',
-    'sentiment vs price': 'Crowd mood fighting the trend.',
-    '2s10s vs 3m10y': 'Two yield curves split on inversion.',
-    'credit vs equities': 'Stocks up while junk bonds sell off.',
-    'breadth vs index': 'Index near its high, average stock lagging.',
+    'Yield curve (2s10s)': '10y minus 2y. Below 0 = inverted.',
+    'Jobless claims': 'New weekly claims.',
+    'NFCI': 'Chicago Fed. Above 0 = tight.',
+    'RSP/SPY 20d': 'Equal-weight vs normal S&P, 20 days.',
+    'RSP/SPY vs 50d avg': 'That ratio vs its 50-day.',
+    'IWM/SPY 20d': 'Russell 2000 vs S&P, 20 days.',
+    'IV percentile (1y)': 'vs the past year, 0–100.',
+    'VRP': 'Expected minus actual moves.',
+    'sentiment vs price': 'Mood fighting the trend.',
+    '2s10s vs 3m10y': 'One inverted, one not.',
+    'credit vs equities': 'S&P up, junk lagging safe bonds.',
+    'breadth vs index': 'Index near high, avg stock lagging.',
 };
 
-/** Friendly names + which feeds each pill depends on, for the "data through" line. */
-export const FEED_NAMES = { spy: 'SPY', fg: 'Fear & Greed', breadth: 'ETF ratios', vol: 'volatility', fred: 'FRED' };
 // Every feed a pill's rule actually reads (keep in sync with ruleVerdicts / conflictPairs).
 export const PILL_FEEDS = {
     regime: ['spy', 'fg', 'breadth'],

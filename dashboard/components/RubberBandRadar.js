@@ -98,7 +98,7 @@ const EXPLAIN = {
         return {
             what: `After QQQ's last ${d.n} sharp drops (RSI-10 under ${c.dip.rsi_below}), did buying pay more than a normal day? Above 0 = yes.`,
             today: `${signed(d.excess_pct)} extra per dip (noise ±${num(d.se_pct, 2)}%) · paid off ${pct0(d.hit)} of the time.`,
-            red: `Dips lose on ${stopAfter} of the last ${window} days. Now: ${d.red_days ?? 0}.`,
+            red: `Dips trail a normal day on ${stopAfter}+ of the last ${window} days. Now: ${d.red_days ?? 0}.`,
             amber: `Today is below 0, or ${ceil75(stopAfter)}+ bad days.`,
             record: `Since 1971: 8 alarms, none false, none since 1996. Misses slow bears like 2001 and 2008 (the machines box catches those).`,
         };
@@ -108,7 +108,7 @@ const EXPLAIN = {
         return {
             what: `The same dip test on only the last ${d.n} dips. Faster, but noisy.`,
             today: `${signed(d.excess_pct)} per dip (noise ±${num(d.se_pct, 2)}%) · ${d.red_days ?? 0} of the last ${window} days below 0.`,
-            red: `${stopAfter} of ${window} days below 0. Never fires the trigger; can only turn OK into WATCH.`,
+            red: `${stopAfter}+ of ${window} days below 0. Never fires the trigger; can only turn OK into WATCH.`,
             amber: `Today is below 0. A look, not an act.`,
             record: `Spots real flips months early, but 12 false alarms since 1993, so it gets no vote.`,
         };
@@ -125,7 +125,7 @@ const EXPLAIN = {
         return {
             what: `After QQQ's last ${d.n} hot runs (RSI-10 over ${c.rip.rsi_above}), did it slip the next day? Below 0 = cools off, normal since 2000.`,
             today: `${signed(d.excess_pct)} the next day (noise ±${num(d.se_pct, 2)}%) · cooled off ${pct0(1 - (d.hit ?? 0))} of the time.`,
-            red: `Hot runs keep going on ${redAfter} of the last ${window} days. Now: ${d.hot_days ?? 0}.`,
+            red: `Hot runs keep going on ${redAfter}+ of the last ${window} days. Now: ${d.hot_days ?? 0}.`,
             amber: `Today is above 0, or ${ceil75(redAfter)}+ hot days.`,
             record: `Never red since 2000. Fires the trigger on its own.`,
         };
@@ -499,7 +499,7 @@ function Trigger({ def, rules, open, onToggle }) {
     const here = def ? STEPS.findIndex((s) => s.mode === def.mode) : -1;
     const st = def?.streak || {};
     const fa = rules.fire_after;
-    const rule = `Sell half of each machine when dips or rallies are red for ${fa.slow} close, or the machines are red ${fa.machines} closes in a row. Buy back after ${rules.reentry_closes} green closes in a row with dips paying over +${rules.reentry_edge_pct}%. 📡 nags hourly until you reply "done"; if the alarm clears first, it stands down.`;
+    const rule = `Sell half of each machine when dips are red for ${fa.slow} close or rallies for ${fa.rip}, or the machines are red ${fa.machines} closes in a row. Buy back after ${rules.reentry_closes} green closes in a row with dips paying over +${rules.reentry_edge_pct}%. 📡 nags hourly until you reply "done"; if the alarm clears first, it stands down.`;
     return (
         <div data-testid="rb-trigger" className="rb-rail-box">
             <div className="rb-label-row">

@@ -46,7 +46,7 @@ test('v1.1 card: tap opens one rule at a time, double-click opens, hedges leg an
     expect(screen.queryByTestId('rb-explain-slow')).toBeNull();
 
     fireEvent.click(slow);                                        // tap → the rule appears
-    expect((await screen.findByTestId('rb-explain-slow')).textContent).toMatch(/45 of the last 60/);
+    expect((await screen.findByTestId('rb-explain-slow')).textContent).toMatch(/45\+ of the last 60/);
     fireEvent.click(slow);                                        // tap again → closes
     expect(screen.queryByTestId('rb-explain-slow')).toBeNull();
     fireEvent.doubleClick(slow);                                  // double-click → always open
@@ -73,6 +73,6 @@ test('a v1.0 snapshot without spec or defensive still renders with defaults', as
     global.fetch = jest.fn(() => Promise.resolve({ json: () => Promise.resolve(old) }));
     render(<RubberBandRadar />);
     fireEvent.click(await screen.findByTestId('rb-dial-rip'));
-    expect(screen.getByTestId('rb-explain-rip').textContent).toMatch(/45 of the last 60/);
+    expect(screen.getByTestId('rb-explain-rip').textContent).toMatch(/45\+ of the last 60/);
     expect(screen.getByText(/state not published yet/)).toBeTruthy();
 });

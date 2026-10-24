@@ -95,7 +95,7 @@ export default function VolMetricsTable({ data: incoming = null, saved, waiting 
                             ))}
                         </div>
                         <div style={{ color: 'var(--text-muted)', fontSize: '0.65rem', marginTop: '8px', opacity: 0.7 }}>
-                            IV via index proxies (SPY→VIX · QQQ→VXN) — approximation, not chain-derived.
+                            IV from VIX and VXN.
                             {asOfNote(data, rows)}
                         </div>
                         <ErrorBoundary>
