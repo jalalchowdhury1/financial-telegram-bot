@@ -5,19 +5,19 @@ import live from './fixtures/jev-pills-2026-10-04.json';
 // Live /api/jev-pills saved 2026-10-04 (public market numbers only).
 describe('pillWhy — live payload', () => {
     test('regime: the votes that fired', () => {
-        expect(pillWhy(live, 'regime')).toBe('2 of 3 votes: uptrend + junk bonds beating safe bonds');
+        expect(pillWhy(live, 'regime')).toBe('✓ uptrend, junk leading');
     });
     test('recession: how many warnings tripped', () => {
         expect(pillWhy(live, 'recession')).toBe('0 of 4 warnings tripped');
     });
     test('breadth: the fired rows, with their real values', () => {
-        expect(pillWhy(live, 'breadth')).toBe('Average stock −4.3% vs SPY in 20 days · below its 50-day trend');
+        expect(pillWhy(live, 'breadth')).toBe('Avg stock −4.3% vs SPY · below its 50-day trend');
     });
     test('hedging: where option prices sit in their year', () => {
         expect(pillWhy(live, 'hedging')).toBe('Options cheap: bottom 15% of the year');
     });
     test('conflict: the pairs that disagree', () => {
-        expect(pillWhy(live, 'conflict')).toBe('Fearful crowd in an uptrend · near the high, average stock slipping');
+        expect(pillWhy(live, 'conflict')).toBe('Fear in an uptrend · near the high, average stock slipping');
     });
 });
 
@@ -50,10 +50,10 @@ describe('pillWhy — every row label pillFactors emits has a template', () => {
 
 describe('pillWhy — each verdict reads from the rows that fired', () => {
     test('regime with a vote against', () => {
-        expect(why(data({ fg: { score: 22 } }), 'regime')).toBe('2 of 3 votes: uptrend + junk bonds beating safe bonds · against: fearful crowd');
+        expect(why(data({ fg: { score: 22 } }), 'regime')).toBe('✓ uptrend, junk leading · ✗ fear');
         expect(why(data({ spy: { ma200Pct: -4 }, fg: { score: 22 }, hyg: { chg20Pct: -2 } }), 'regime'))
-            .toBe('0 of 3 votes · against: downtrend + fearful crowd + junk bonds lagging safe bonds');
-        expect(why(data({ fg: { score: 70 } }), 'regime')).toBe('3 of 3 votes: uptrend + greedy crowd + junk bonds beating safe bonds');
+            .toBe('✗ downtrend, fear, junk lagging');
+        expect(why(data({ fg: { score: 70 } }), 'regime')).toBe('✓ uptrend, greed, junk leading');
     });
     test('recession warnings name their numbers', () => {
         expect(why(data({ fred: { sahmRule: 0.52 } }), 'recession')).toBe('1 of 4 warnings tripped: Sahm 0.52');
@@ -61,22 +61,22 @@ describe('pillWhy — each verdict reads from the rows that fired', () => {
             .toBe('3 of 4 warnings tripped: curve inverted (−0.30) + claims 275k + money tight (NFCI 0.10)');
     });
     test('breadth: broad, rolling over, and narrow (nothing fired -> the lead fact)', () => {
-        expect(why(data(), 'breadth')).toBe('Average stock +1.5% vs SPY in 20 days · small caps +2.0%');
-        expect(why(data({ rsp: { chg20Pct: -2, vs50dPct: -1 } }), 'breadth')).toBe('Average stock −2.0% vs SPY in 20 days · below its 50-day trend');
-        expect(why(data({ rsp: { chg20Pct: -0.5 } }), 'breadth')).toBe('Average stock −0.5% vs SPY in 20 days');
+        expect(why(data(), 'breadth')).toBe('Avg stock +1.5% vs SPY · small caps +2.0%');
+        expect(why(data({ rsp: { chg20Pct: -2, vs50dPct: -1 } }), 'breadth')).toBe('Avg stock −2.0% vs SPY · below its 50-day trend');
+        expect(why(data({ rsp: { chg20Pct: -0.5 } }), 'breadth')).toBe('Avg stock −0.5% vs SPY');
     });
     test('hedging: cheap, pricey, VRP-only pricey, and fair', () => {
         expect(why(data({ vol: { ivPctile1y: 12, vrp: 3 } }), 'hedging')).toBe('Options cheap: bottom 12% of the year');
         expect(why(data({ vol: { ivPctile1y: 82, vrp: 4 } }), 'hedging')).toBe('Options pricey: top 18% of the year');
-        expect(why(data({ vol: { ivPctile1y: 50, vrp: 12.3 } }), 'hedging')).toBe('Options cost 12.30 pts over real moves');
-        expect(why(data({ vol: { ivPctile1y: 43, vrp: 4 } }), 'hedging')).toBe('Options at the 43rd percentile of the year');
+        expect(why(data({ vol: { ivPctile1y: 50, vrp: 12.3 } }), 'hedging')).toBe('Options 12.30 pts over real moves');
+        expect(why(data({ vol: { ivPctile1y: 43, vrp: 4 } }), 'hedging')).toBe("Options at the year's 43rd %ile");
         // fair with IV in the bottom fifth (VRP >= 6 blocks "cheap"): no "mid-priced" claim.
-        expect(why(data({ vol: { ivPctile1y: 15, vrp: 7 } }), 'hedging')).toBe('Options at the 15th percentile of the year');
+        expect(why(data({ vol: { ivPctile1y: 15, vrp: 7 } }), 'hedging')).toBe("Options at the year's 15th %ile");
     });
     test('conflict: each diverging pair, or all agree', () => {
         expect(why(data(), 'conflict')).toBe('All 4 pairs agree');
-        expect(why(data({ fg: { score: 72 }, spy: { ma200Pct: -4 } }), 'conflict')).toBe('Greedy crowd in a downtrend');
-        expect(why(data({ hyg: { chg20Pct: -2 } }), 'conflict')).toBe('Junk bonds lagging safe bonds in an uptrend');
+        expect(why(data({ fg: { score: 72 }, spy: { ma200Pct: -4 } }), 'conflict')).toBe('Greed in a downtrend');
+        expect(why(data({ hyg: { chg20Pct: -2 } }), 'conflict')).toBe('Junk lagging in an uptrend');
         expect(why(data({ ten: -0.2 }), 'conflict')).toBe('Two yield curves disagree');
     });
 });
@@ -116,15 +116,15 @@ describe('pillWhy — a Jev override never sits over a line that argues the othe
     });
     test('Jev disagrees: the line says it is the rule talking', () => {
         expect(pillWhy(withPill('regime', { verdict: 'risk-off', by: 'jev', p: 0.72 }), 'regime'))
-            .toBe('Rule says risk-on · 2 of 3 votes: uptrend + junk bonds beating safe bonds');
+            .toBe('Rule says risk-on · ✓ uptrend, junk leading');
         expect(pillWhy(withPill('recession', { verdict: 'high', by: 'jev', p: 0.8 }), 'recession'))
             .toBe('Rule says low · 0 of 4 warnings tripped');
         expect(pillWhy(withPill('breadth', { verdict: 'narrow', by: 'jev', p: 0.7 }), 'breadth'))
-            .toBe('Rule says rolling over · average stock −4.3% vs SPY in 20 days · below its 50-day trend');
+            .toBe('Rule says rolling over · avg stock −4.3% vs SPY · below its 50-day trend');
         expect(pillWhy(withPill('hedging', { verdict: 'fair', by: 'jev', p: 0.65 }), 'hedging'))
             .toBe('Rule says cheap · options cheap: bottom 15% of the year');
         expect(pillWhy(withPill('conflict', { verdict: 'aligned', by: 'jev', p: 0.9 }), 'conflict'))
-            .toBe('Rule says major divergence · fearful crowd in an uptrend · near the high, average stock slipping');
+            .toBe('Rule says major divergence · fear in an uptrend · near the high, average stock slipping');
     });
     test('a rule verdict the rows do not support (mismatched payload): no line', () => {
         expect(pillWhy(withPill('regime', { verdict: 'risk-off', by: 'rule', p: null }), 'regime')).toBeNull();
@@ -152,8 +152,8 @@ describe('pillWhy — missing inputs are never counted as calm', () => {
         expect(why(data({ fred: { sahmRule: null, claims: null } }), 'recession')).toBe('0 of 2 warnings tripped (Sahm, claims n/a)');
     });
     test('one regime input missing', () => {
-        expect(why(data({ fg: { score: null } }), 'regime')).toBe('2 of 2 votes: uptrend + junk bonds beating safe bonds (F&G n/a)');
-        expect(why(data({ spy: { ma200Pct: null }, fg: { score: 22 } }), 'regime')).toBe('1 of 2 votes: junk bonds beating safe bonds · against: fearful crowd (SPY trend n/a)');
+        expect(why(data({ fg: { score: null } }), 'regime')).toBe('✓ uptrend, junk leading (F&G n/a)');
+        expect(why(data({ spy: { ma200Pct: null }, fg: { score: 22 } }), 'regime')).toBe('✓ junk leading · ✗ fear (SPY trend n/a)');
     });
     test('conflict: "all agree" counts only the pairs that could be checked', () => {
         expect(why(data({ ten: null }), 'conflict')).toBe('All 3 pairs agree (1 pair n/a)');
@@ -161,7 +161,7 @@ describe('pillWhy — missing inputs are never counted as calm', () => {
     });
     test('the payload with every input present is unchanged', () => {
         expect(why(data(), 'recession')).toBe('0 of 4 warnings tripped');
-        expect(why(data(), 'regime')).toBe('3 of 3 votes: uptrend + greedy crowd + junk bonds beating safe bonds');
+        expect(why(data(), 'regime')).toBe('✓ uptrend, greed, junk leading');
         expect(why(data(), 'conflict')).toBe('All 4 pairs agree');
     });
 });

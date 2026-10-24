@@ -381,7 +381,7 @@ export default function Dashboard() {
                 <div className="mkt-clock-row"><ErrorBoundary><MarketClock /></ErrorBoundary></div>
                 {fred?._meta?.fetchedAt && (
                     <p className="subtitle data-asof" style={{ fontSize: '0.7rem', opacity: 0.6, marginTop: '6px' }}>
-                        Economic data as of {new Date(fred._meta.fetchedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}<span className="hide-sm"> · refreshes every 3 h</span><span className="hide-sm"> · tap a label for its date, a number for its chart</span>
+                        Economic data as of {new Date(fred._meta.fetchedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}<span className="hide-sm"> · every 3 h · tap a number for its chart</span>
                     </p>
                 )}
             </header>
@@ -550,7 +550,7 @@ export default function Dashboard() {
                 {/* YIELD CURVE */}
                 <div className="card" style={{ animationDelay: '0.4s' }} data-jump="Yield curve" data-cached={saved('fred')}>
                     <div className="card-header">
-                        <h2><span className="tooltip-trigger" data-tooltip={`When the 2-year yield is higher than the 10-year, it is a classic recession warning.${freshnessNote({ value: fred?.yieldCurve?.current, asOf: fred?.yieldCurve?.asOf, stale: fred?.yieldCurve?.stale }).suffix}`}>📈 Yield Curve (10Y-2Y)</span></h2>
+                        <h2><span className="tooltip-trigger" data-tooltip={`Below 0 (2-year over 10-year) = classic recession warning.${freshnessNote({ value: fred?.yieldCurve?.current, asOf: fred?.yieldCurve?.asOf, stale: fred?.yieldCurve?.stale }).suffix}`}>📈 Yield Curve (10Y-2Y)</span></h2>
                         {fred?.yieldCurve?.current != null && <span className={`badge ${fred.yieldCurve.current >= 0 ? 'badge-green' : 'badge-red'}`}>{fred.yieldCurve.current >= 0 ? 'Positive' : 'Inverted'}</span>}
                     </div>
                     <ErrorBoundary resetKey={refreshTick}>
@@ -585,7 +585,7 @@ export default function Dashboard() {
                 {/* PROFIT MARGIN */}
                 <div className="card" style={{ animationDelay: '0.45s' }} data-jump="Profit margin" data-cached={saved('fred')}>
                     <div className="card-header">
-                        <h2><span className="tooltip-trigger" data-tooltip={`Corporate Profits / GDP: High margins indicate strong corporate pricing power.${freshnessNote({ value: fred?.profitMargin?.current, asOf: fred?.profitMargin?.asOf, stale: fred?.profitMargin?.stale }).suffix}`}>💰 Profit Margin</span></h2>
+                        <h2><span className="tooltip-trigger" data-tooltip={`Profits ÷ GDP. High = pricing power.${freshnessNote({ value: fred?.profitMargin?.current, asOf: fred?.profitMargin?.asOf, stale: fred?.profitMargin?.stale }).suffix}`}>💰 Profit Margin</span></h2>
                         {fred?.profitMargin?.current != null && <span className="badge badge-blue">Corp Profits / GDP</span>}
                     </div>
                     <ErrorBoundary resetKey={refreshTick}>
@@ -619,7 +619,7 @@ export default function Dashboard() {
                 {/* S&P 500 EPS */}
                 <div className="card" style={{ animationDelay: '0.5s' }} data-jump="S&P 500 EPS" data-cached={saved('fred')}>
                     <div className="card-header">
-                        <h2><span className="tooltip-trigger" data-tooltip={`S&P 500 earnings per share, trailing 12 months (as-reported) — the E in P/E. Rising EPS means corporate America is earning more. History is inflation-adjusted (today's dollars).${freshnessNote({ value: fred?.spEps?.current, asOf: fred?.spEps?.asOf, stale: fred?.spEps?.stale }).suffix}`}>🧾 S&P 500 EPS</span></h2>
+                        <h2><span className="tooltip-trigger" data-tooltip={`S&P 500 earnings per share, last 12 months. History in today's dollars.${freshnessNote({ value: fred?.spEps?.current, asOf: fred?.spEps?.asOf, stale: fred?.spEps?.stale }).suffix}`}>🧾 S&P 500 EPS</span></h2>
                         {fred?.spEps?.current != null && <span className="badge badge-blue">Trailing 12M</span>}
                     </div>
                     <ErrorBoundary resetKey={refreshTick}>
@@ -717,7 +717,7 @@ export default function Dashboard() {
 
             {/* FOOTER */}
             <footer className="dashboard-footer">
-                <p>Jalal's Financial Dashboard v7.0 — Data from FRED, CNN, Polygon, Finnhub, CNBC, Nasdaq, Yahoo Finance, Frankfurter, Polymarket, the Ken French Data Library &amp; Google Sheets</p>
+                <p>Jalal's Financial Dashboard v7.0</p>
                 {process.env.NEXT_PUBLIC_BUILD_TIME && (
                     <p style={{ fontSize: '0.7rem', opacity: 0.6, marginTop: '4px' }}>
                         {/* Pinned to New York time: the server renders in UTC and the browser in local
@@ -808,7 +808,7 @@ export default function Dashboard() {
                                     ? 'status-warn'
                                     : ''
                                 }`}>
-                                [MKTS: {systemStatus.extra?.messages?.join(' | ') || 'LIVE OK'}]
+                                [MKTS: {systemStatus.extra?.messages?.map((m) => m.replace(/skipped (.+)$/i, (_, l) => `skipped ${l.split(',').length}`)).join(' · ') || 'LIVE OK'}]
                             </span>
                         )}
                     </div>

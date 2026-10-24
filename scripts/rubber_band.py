@@ -358,7 +358,7 @@ def verdict(dials):
     if slow["colour"] == "grey":
         bits.append("Not enough history yet to judge the rubber band.")
     elif slow["colour"] == "green":
-        bits.append(f"The rubber band is working: the last {slow['n']} dips paid {slow['excess_pct']:+.2f}% more than an ordinary day.")
+        bits.append(f"Working: the last {slow['n']} dips paid {slow['excess_pct']:+.2f}% over a normal day.")
     elif slow["colour"] == "amber":
         bits.append(f"Dip-buying is below water ({slow['excess_pct']:+.2f}%): {slow['red_days']} of the last {slow['window']} days lost money — STOP at {slow['stop_after']}.")
     else:
@@ -374,7 +374,7 @@ def verdict(dials):
     if mach["colour"] == "grey":
         bits.append("No machine curves this run.")
     elif mach["colour"] == "green":
-        bits.append("All legs inside their lines, nothing unprecedented.")
+        bits.append("All legs inside their lines.")
     else:
         bits.append("; ".join(mach["reasons"]) + ".")
     return {"colour": worst, "text": " ".join(bits)}

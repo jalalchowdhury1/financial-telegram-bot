@@ -168,7 +168,7 @@ describe('20Y / 30Y / 40Y (research portfolios)', () => {
         fireEvent.click(screen.getByRole('radio', { name: '20Y' }));
         expect(vals()).toEqual(['−15.1%', '−14.1%', '−13.1%', '−12.1%', '−11.1%']);
         const caption = document.querySelector('.factor-caption').textContent;
-        expect(caption).toMatch(/research portfolios vs whole market, total return, through Aug 2026/);
+        expect(caption).toMatch(/research portfolios vs market, through Aug 2026/);
         expect(caption).not.toMatch(/price ratio/);
     });
 

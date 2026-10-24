@@ -241,7 +241,7 @@ export default function FactorRow({ initialData = null, refreshKey = null, bust 
                         <span className={`factor-${tone(laggard.windows[activeWin].rel)}`}>{fmtPct(laggard.windows[activeWin].rel)}</span>
                     </>
                 )}
-                <span className="hide-sm"> · hover a chip for details, click for Yahoo Finance</span>
+                <span className="hide-sm"> · tap a chip for Yahoo</span>
             </>
         );
     } else {
@@ -314,7 +314,7 @@ export default function FactorRow({ initialData = null, refreshKey = null, bust 
                 {stale && <span className="factor-stale">🕐 stale · </span>}
                 {caption}
                 {status === 'ready' && !focus && isLong && data?.long?.through && (
-                    <span className="factor-asof"> · research portfolios vs whole market, total return, through {fmtMonth(data.long.through)}</span>
+                    <span className="factor-asof"> · research portfolios vs market, through {fmtMonth(data.long.through)}</span>
                 )}
                 {status === 'ready' && !focus && !isLong && asOfText && (
                     <span className="factor-asof"> · price ratio, {asOfText}</span>

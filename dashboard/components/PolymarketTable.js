@@ -254,7 +254,7 @@ export default function PolymarketTable({ refreshKey = null, bust = false }) {
           </div>
         </div>
 
-        <div className="pm-foot">Live from Polymarket · sports left out · tap any market for details</div>
+        <div className="pm-foot">Polymarket · no sports · tap for details</div>
       </div>
 
       <MarketModal bet={selected} isOpen={!!selected} onClose={close} />

@@ -75,7 +75,7 @@ export default function CustomIndicatorBar({ sheets, loading }) {
         <div className="indicator-bar">
             <div className={`indicator-pill${!loading && sheets?.NotSoBoring && sheets.NotSoBoring !== 'ON' ? ' pill-alert' : ''}`}>
                 <div className="label">
-                    <span className="tooltip-trigger" data-tooltip="Crash Detector: Monitors Tech (QQQ) and Bonds (TMF) for drops >6-7%. Defensive shift adds Gold and USD to dilute risk.">
+                    <span className="tooltip-trigger" data-tooltip="Watches QQQ and TMF for 6–7% drops; then adds gold + USD.">
                         <span className="emoji">🛡️</span>NotSoBoring
                     </span>
                 </div>
@@ -92,7 +92,7 @@ export default function CustomIndicatorBar({ sheets, loading }) {
                 className={`indicator-pill pill-link${!loading && sheets?.FrontRunner && !sheets.FrontRunner.startsWith('BIL') ? ' pill-alert' : ''}`}
             >
                 <div className="label">
-                    <span className="tooltip-trigger" data-tooltip="A contrarian strategy that rotates into Volatility (VIX) hedges when markets overheat (RSI > 79) and buys oversold Tech/Leveraged ETFs during deep dips. Click to open the Catalyst Radar.">
+                    <span className="tooltip-trigger" data-tooltip="VIX hedges when RSI tops 79; buys deep tech dips. Tap for Catalyst Radar.">
                         <span className="emoji">🔑</span>FrontRunner
                     </span>
                     <span className="pill-out" aria-hidden="true">↗</span>
@@ -130,7 +130,7 @@ export default function CustomIndicatorBar({ sheets, loading }) {
             </div>
             <div className={`indicator-pill${!loading && sheets?.VIX?.current && parseFloat(sheets.VIX.current) > parseFloat(sheets.VIX.threeMonth) ? ' pill-alert' : ''}`}>
                 <div className="label">
-                    <span className="tooltip-trigger" data-tooltip="Oversold Signal: Short-term panic (Current VIX) exceeds medium-term expectations (3M VIX). Often precedes a market recovery.">
+                    <span className="tooltip-trigger" data-tooltip="VIX above 3-month VIX: panic. Often before a rebound.">
                         <span className="emoji">🎢</span>VIX (Current | 3M)
                     </span>
                 </div>

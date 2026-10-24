@@ -83,13 +83,13 @@ export default function VolMetricsTable({ data: incoming = null, saved, waiting 
                     </div>
                 ) : (
                     <>
-                        <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: '4px 8px', fontSize: '0.8rem', padding: '4px 0' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: '4px 8px', fontSize: '0.8rem', padding: '4px 0', whiteSpace: 'nowrap', overflowX: 'auto' }}>
                             <span style={{ color: 'var(--text-muted)' }}>Ticker</span>
                             <span style={{ color: 'var(--text-muted)', ...cellRight }}>IV</span>
-                            <span className="tooltip-trigger" data-tooltip="Where today's IV sits between its 1-year low (0) and high (100)." style={{ color: 'var(--text-muted)', ...cellRight }}>Rank 1y</span>
-                            <span className="tooltip-trigger" data-tooltip="Share of the last year's days with IV at or below today's. ≤10 = historically cheap, ≥90 = panic-rich." style={{ color: 'var(--text-muted)', ...cellRight }}>%ile 1y</span>
-                            <span className="tooltip-trigger" data-tooltip="Realized volatility of the ETF itself over the last 21 trading days, annualized." style={{ color: 'var(--text-muted)', ...cellRight }}>RV 21d</span>
-                            <span className="tooltip-trigger" data-tooltip="Volatility risk premium: implied minus realized. Positive = options priced above delivered vol (normal); negative = market moving more than options imply (stress)." style={{ color: 'var(--text-muted)', ...cellRight }}>VRP</span>
+                            <span className="tooltip-trigger" data-tooltip="Today's IV between its 1-year low (0) and high (100)." style={{ color: 'var(--text-muted)', ...cellRight }}>Rank 1y</span>
+                            <span className="tooltip-trigger" data-tooltip="% of past-year days with IV at or below today. ≤10 cheap, ≥90 panic." style={{ color: 'var(--text-muted)', ...cellRight }}>%ile 1y</span>
+                            <span className="tooltip-trigger" data-tooltip="Actual swings, last 21 days, annualized." style={{ color: 'var(--text-muted)', ...cellRight }}>RV 21d</span>
+                            <span className="tooltip-trigger" data-tooltip="Implied minus realized. Above 0 = normal; below 0 = stress." style={{ color: 'var(--text-muted)', ...cellRight }}>VRP</span>
                             {rows.map((t) => (
                                 <VolRow key={t.ticker} t={t} />
                             ))}
@@ -126,9 +126,9 @@ function VolRow({ t }) {
 // ── Bottom half: VIX curve, TQQQ decay, expected moves ───────────────────────────────
 
 export const STATE_COPY = {
-    calm: { pill: '🟢 Calm', color: 'var(--green)', line: 'Short-term fear below 3-month fear: normal.' },
-    watch: { pill: '🟡 Watch', color: 'var(--orange)', line: 'Short-term fear is catching up with 3-month fear.' },
-    stress: { pill: '🔴 Stress', color: 'var(--red)', line: 'Short-term fear above 3-month fear: how selloffs look.' },
+    calm: { pill: '🟢 Calm', color: 'var(--green)', line: 'Short-term fear under 3-month: normal.' },
+    watch: { pill: '🟡 Watch', color: 'var(--orange)', line: 'Short-term fear catching up to 3-month.' },
+    stress: { pill: '🔴 Stress', color: 'var(--red)', line: 'Short-term fear over 3-month: selloff shape.' },
 };
 
 const SOURCE_NAMES = { cboe: 'CBOE', cnbc: 'CNBC', fred: 'FRED', yahoo: 'Yahoo', 'cnbc-quote': 'CNBC quote' };
@@ -155,7 +155,7 @@ function Regime({ regime }) {
                         {decay?.implied != null && <span className="vol-fact-sub"> · ≈{fmtDecay(decay.implied)} at VXN</span>}
                     </span>
                 </div>
-                <div className="vol-note">If QQQ is flat for a year at today&apos;s swings, TQQQ loses about this much.</div>
+                <div className="vol-note">Loss if QQQ ends flat, at today&apos;s swings.</div>
             </div>
             <div className="vol-fact">
                 <div className="vol-fact-head">
@@ -173,7 +173,7 @@ function Curve({ curve }) {
         return (
             <div className="vol-curve">
                 <div className="vol-curve-head"><span className="vol-fact-label">VIX curve</span></div>
-                <div className="vol-note">VIX curve unavailable right now. The table above is unaffected.</div>
+                <div className="vol-note">VIX curve unavailable right now. Table above is fine.</div>
             </div>
         );
     }
@@ -197,14 +197,15 @@ function Curve({ curve }) {
                 ))}
             </div>
             <div className="vol-note">
-                <strong style={{ color: copy.color }}>VIX ÷ VIX3M {curve.ratio.toFixed(2)}</strong> · calm under 0.90 · stress at 1.00+. {copy.line}
+                <strong style={{ color: copy.color }}>VIX ÷ VIX3M {curve.ratio.toFixed(2)}</strong> · calm under 0.90 · stress 1.00+
             </div>
+            <div className="vol-note">{copy.line}</div>
             {curve.frontInverted && (
-                <div className="vol-note">9-day above 1-month: something in the next two weeks is priced in (Fed, CPI…).</div>
+                <div className="vol-note">9-day over 1-month: an event is priced in.</div>
             )}
             {curve.stale && (
                 <div className="vol-note" style={{ color: 'var(--orange)' }}>
-                    🕐 Saved copy from {curve.asOf}. Live sources didn&apos;t answer.
+                    🕐 Saved copy from {curve.asOf}.
                 </div>
             )}
             {!curve.stale && curve.asOf && (

@@ -11,11 +11,11 @@ describe('JevPills — one plain "why" line per pill', () => {
     test('each verdict has its line, from the live payload', () => {
         render(<JevPills data={live} loading={false} />);
         const why = (label) => pill(label).querySelector('.jev-pill-why')?.textContent;
-        expect(why('Regime')).toBe('2 of 3 votes: uptrend + junk bonds beating safe bonds');
+        expect(why('Regime')).toBe('✓ uptrend, junk leading');
         expect(why('Recession')).toBe('0 of 4 warnings tripped');
-        expect(why('Breadth')).toBe('Average stock −4.3% vs SPY in 20 days · below its 50-day trend');
+        expect(why('Breadth')).toBe('Avg stock −4.3% vs SPY · below its 50-day trend');
         expect(why('Hedges')).toBe('Options cheap: bottom 15% of the year');
-        expect(why('Conflict')).toBe('Fearful crowd in an uptrend · near the high, average stock slipping');
+        expect(why('Conflict')).toBe('Fear in an uptrend · near the high, average stock slipping');
     });
 
     test('the line sits inside the pill button, so a tap still opens the full sheet', () => {
@@ -29,7 +29,7 @@ describe('JevPills — one plain "why" line per pill', () => {
         render(<JevPills data={data} loading={false} />);
         expect(pill('Breadth').querySelector('.jev-pill-why')).toBeNull();
         expect(pill('Hedges').querySelector('.jev-pill-why')).toBeNull();
-        expect(within(pill('Regime')).getByText('2 of 3 votes: uptrend + junk bonds beating safe bonds')).toBeInTheDocument();
+        expect(within(pill('Regime')).getByText('✓ uptrend, junk leading')).toBeInTheDocument();
     });
 
     test('Jev overrides the rule with another verdict: the line is labelled as the rule', () => {

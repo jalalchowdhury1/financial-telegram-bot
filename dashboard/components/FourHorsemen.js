@@ -154,14 +154,14 @@ export default function FourHorsemen({ fred, loading }) {
     ] : [];
 
     const riding = stats.filter((s) => s.warn?.bad).length;
-    const ridingNote = `Riding = claims or bankruptcies up over ${RISING_PCT}% in a year, Sahm ${SAHM_TRIGGER.toFixed(2)}+, or curve inverted: ${riding} of 4 riding.`;
+    const ridingNote = [`Riding: claims or bankruptcies up over ${RISING_PCT}% a year,`, `Sahm ${SAHM_TRIGGER.toFixed(2)}+, or curve below 0`];
     const histories = [claims?.history, unemployment?.history, spread?.history, bk?.history];
     const hasAnySeries = histories.some((h) => h?.length >= 2);
 
     return (
         <div className="card" style={{ gridColumn: '1 / -1', animationDelay: '0.5s' }}>
             <div className="card-header">
-                <h2><span className="tooltip-trigger" data-tooltip="Four classic recession tells — jobless claims, unemployment, the yield curve and bankruptcies — each shown as how far it has moved in 12 months against how far it had typically moved by the start of past recessions. The level is not the tell: in March 2020 claims sat near their calmest ever.">🐎 Four Horsemen — Recession Watch</span></h2>
+                <h2><span className="tooltip-trigger" data-tooltip="Four recession tells: each one's 1-year move vs its usual move before past recessions.">🐎 Four Horsemen — Recession Watch</span></h2>
                 {!loading && stats.length > 0 && (
                     <span className={`badge ${riding >= 3 ? 'badge-red' : riding >= 1 ? 'badge-yellow' : 'badge-green'}`}>
                         {riding} of 4 riding

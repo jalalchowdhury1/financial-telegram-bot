@@ -93,7 +93,7 @@ describe('RubberBandRadar', () => {
         expect(plot.classList.contains('chart-plot')).toBe(true);
         const labels = [...plot.querySelectorAll('.axis-layer .axis-lbl')].map((l) => l.textContent);
         expect(labels).toEqual(expect.arrayContaining(['2026', '0.0%', '▲ dips pay', '▼ dips lose']));
-        expect(screen.getByText(/slow \(30 dips\)/)).toHaveClass('band-legend');
+        expect(screen.getByText(/— 30 dips/)).toHaveClass('band-legend');
     });
 });
 

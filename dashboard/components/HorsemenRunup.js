@@ -75,8 +75,8 @@ const Note = ({ colour, children }) => (
     <span className="fh-note" style={{ color: colour }}>{children}</span>
 );
 
-/** `ridingNote`: the card's own "N of 4 riding" sentence, so the footer counts the way
- *  the badge does (it used to add a second, different "N of 3" count). */
+/** `ridingNote`: the card's own riding rule, so the footer and the badge share one definition
+ *  (it used to add a second, different "N of 3" count). */
 export default function RunupBars({ fred, now = Date.now(), ridingNote = null }) {
     const recessions = fred?.recessions || [];
     const rows = ROWS.map((r) => {
@@ -126,14 +126,14 @@ export default function RunupBars({ fred, now = Date.now(), ridingNote = null })
                             <Bar change={r.change} median={r.median} colour={colour} />
                         )}
                         <Note colour={colour}>
-                            {fmt(r.change, r.unit)} vs 1y · recessions began at {fmt(r.median, r.unit)} (median of {r.runups.length})
+                            {fmt(r.change, r.unit)} vs 1y{r.median != null && ` · ${r.runups.length} recessions began near ${fmt(r.median, r.unit)}`}
                         </Note>
                     </Row>
                 );
             })}
-            <div style={{ color: 'var(--text-muted)', fontSize: '0.6rem', marginTop: 6, opacity: 0.85 }}>
-                Dot = 12-month move. Red tick = the usual move before past recessions. The change
-                warns, not the level.{ridingNote ? ` ${ridingNote}` : ''}
+            <div style={{ color: 'var(--text-muted)', fontSize: '0.6rem', marginTop: 6, opacity: 0.85, whiteSpace: 'nowrap', overflowX: 'auto' }}>
+                <div>Dot = 1-year move · red tick = usual move before recessions</div>
+                {ridingNote && [].concat(ridingNote).map((t) => <div key={t}>{t}</div>)}
             </div>
         </div>
     );

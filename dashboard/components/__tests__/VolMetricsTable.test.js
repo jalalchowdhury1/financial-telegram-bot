@@ -56,14 +56,14 @@ it('renders the VIX curve, the call, TQQQ decay and the 5-day moves', async () =
     expect(screen.getByText(/≈12% at VXN/)).toBeInTheDocument();
     expect(screen.getByText('SPY ±2.1% · QQQ ±2.9%')).toBeInTheDocument();
     expect(screen.getByText('2026-09-25 close · CBOE')).toBeInTheDocument();
-    expect(screen.queryByText(/9-day above 1-month/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/9-day over 1-month/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Saved copy/)).not.toBeInTheDocument();
 });
 
 it('shows stress, the front inversion and a backup copy honestly', async () => {
     render(<VolMetricsTable data={withCurve({ ...calmCurve, ratio: 1.056, state: 'stress', frontInverted: true, stale: true, backup: 'KV 2026-09-25T21:00Z' })} />);
     await waitFor(() => expect(screen.getByText('🔴 Stress')).toBeInTheDocument());
-    expect(screen.getByText(/9-day above 1-month/)).toBeInTheDocument();
+    expect(screen.getByText(/9-day over 1-month/)).toBeInTheDocument();
     expect(screen.getByText(/Saved copy from 2026-09-25/)).toBeInTheDocument();
     expect(screen.queryByText(/close · CBOE/)).not.toBeInTheDocument();
 });

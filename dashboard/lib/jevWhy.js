@@ -36,9 +36,9 @@ const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 const PHRASES = {
     regime: {
         'SPY vs 200-day avg': (r) => ({ 1: 'uptrend', [-1]: 'downtrend' })[vote(r.effect)] || null,
-        'Fear & Greed': (r) => ({ 1: 'greedy crowd', [-1]: 'fearful crowd' })[vote(r.effect)] || null,
+        'Fear & Greed': (r) => ({ 1: 'greed', [-1]: 'fear' })[vote(r.effect)] || null,
         // A ratio: HYG can fall and still "beat" LQD, so never say junk bonds rose or fell.
-        'HYG/LQD 20d': (r) => ({ 1: 'junk bonds beating safe bonds', [-1]: 'junk bonds lagging safe bonds' })[vote(r.effect)] || null,
+        'HYG/LQD 20d': (r) => ({ 1: 'junk leading', [-1]: 'junk lagging' })[vote(r.effect)] || null,
     },
     recession: {
         'Sahm rule': (r) => (num(r.value) == null ? null : `Sahm ${r.value}`),
@@ -47,7 +47,7 @@ const PHRASES = {
         NFCI: (r) => (num(r.value) == null ? null : `money tight (NFCI ${minus(r.value)})`),
     },
     breadth: {
-        'RSP/SPY 20d': (r) => (num(r.value) == null ? null : `average stock ${minus(r.value)} vs SPY in 20 days`),
+        'RSP/SPY 20d': (r) => (num(r.value) == null ? null : `avg stock ${minus(r.value)} vs SPY`),
         'RSP/SPY vs 50d avg': () => 'below its 50-day trend',
         'IWM/SPY 20d': (r) => (num(r.value) == null ? null : `small caps ${minus(r.value)}`),
     },
@@ -58,18 +58,18 @@ const PHRASES = {
             if (r.effect === 'cheap') return `options cheap: bottom ${v}% of the year`;
             if (r.effect === 'expensive') return `options pricey: top ${100 - v}% of the year`;
             // "fair" can still sit low or high in the year (cheap also needs VRP < 6): state the fact.
-            return `options at the ${ordinal(v)} percentile of the year`;
+            return `options at the year's ${ordinal(v)} %ile`;
         },
-        VRP: (r) => (num(r.value) == null ? null : `options cost ${r.value} pts over real moves`),
+        VRP: (r) => (num(r.value) == null ? null : `options ${r.value} pts over real moves`),
     },
     conflict: {
         'sentiment vs price': (r) => {
             const fg = num((String(r.value).match(/F&G\s*(-?[\d.]+)/) || [])[1]);
             if (fg == null) return 'crowd mood fights the trend';
-            return fg < 50 ? 'fearful crowd in an uptrend' : 'greedy crowd in a downtrend';
+            return fg < 50 ? 'fear in an uptrend' : 'greed in a downtrend';
         },
         '2s10s vs 3m10y': () => 'two yield curves disagree',
-        'credit vs equities': () => 'junk bonds lagging safe bonds in an uptrend',
+        'credit vs equities': () => 'junk lagging in an uptrend',
         'breadth vs index': () => 'near the high, average stock slipping',
     },
 };
@@ -123,8 +123,8 @@ const COMPOSE = {
         if (!known) return null;
         const up = rows.filter((r) => vote(r.effect) === 1).map(say);
         const down = rows.filter((r) => vote(r.effect) === -1).map(say);
-        return `${up.length} of ${known} votes${up.length ? `: ${up.join(' + ')}` : ''}`
-            + `${down.length ? ` · against: ${down.join(' + ')}` : ''}${naNote(rows)}`;
+        const ticks = [up.length && `✓ ${up.join(', ')}`, down.length && `✗ ${down.join(', ')}`].filter(Boolean);
+        return `${ticks.join(' · ') || `0 of ${known} votes`}${naNote(rows)}`;
     },
     recession(rows, say) {
         const known = rows.filter(measured).length;

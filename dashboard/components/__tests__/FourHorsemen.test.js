@@ -127,7 +127,7 @@ describe('FourHorsemen (run-up bars)', () => {
     test('live data: riding count unchanged (bankruptcies only) and the footer says it the same way', () => {
         render(<FourHorsemen fred={live} loading={false} />);
         expect(screen.getByText('1 of 4 riding')).toBeInTheDocument();
-        expect(screen.getByText(/: 1 of 4 riding\./)).toBeInTheDocument();
+        expect(screen.getByText(/^Riding: claims or bankruptcies/)).toBeInTheDocument();
         expect(screen.getByText('Rising')).toBeInTheDocument();                // bankruptcies
         expect(screen.getByText('Contained')).toBeInTheDocument();             // claims
     });

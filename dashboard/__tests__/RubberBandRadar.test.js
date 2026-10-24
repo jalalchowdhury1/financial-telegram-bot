@@ -60,10 +60,10 @@ test('v1.1 card: tap opens one rule at a time, double-click opens, hedges leg an
     expect(screen.getByText('hedges')).toBeTruthy();              // the new leg
     expect(screen.getByText('hedge')).toBeTruthy();               // its "line" cell
     expect(screen.getByTestId('rb-hedge-check').textContent).toMatch(/book -4.3% \/ hedges -0.7%/);
-    expect(screen.getByText(/information only, not a rule/)).toBeTruthy();
+    expect(screen.getByText(/lag .* · info only/)).toBeTruthy();
 
     expect(screen.getByTestId('rb-mode').textContent).toBe('INVESTED');
-    fireEvent.click(screen.getByText(/the rule in one breath/));
+    fireEvent.click(screen.getByText(/▾ the rule/));
     expect(screen.getByTestId('rb-trigger-rule').textContent).toMatch(/5 closes in a row/);
     expect(screen.getByText(/rules v1.1/)).toBeTruthy();
 });

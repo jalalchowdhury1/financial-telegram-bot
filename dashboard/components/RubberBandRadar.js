@@ -42,11 +42,11 @@ const STATUS = { green: 'Safe', amber: 'Watch', red: 'Alarm', grey: 'No data' };
 const TRIPWIRES = ['slow', 'rip', 'machines'];
 const LOOK_ONLY = ['fast', 'age'];
 const PLAIN = {
-    slow: { q: 'Do dips bounce back?', hint: 'Buying QQQ after a sharp drop' },
-    rip: { q: 'Do rallies cool off?', hint: 'Selling after QQQ runs hot' },
-    machines: { q: 'Are the machines healthy?', hint: 'Each Composer backtest vs its limits' },
-    fast: { q: 'Early warning', hint: 'Same dip test, last 20 dips only' },
-    age: { q: 'Evidence age', hint: 'How long the last 30 dips took' },
+    slow: { q: 'Do dips bounce back?', hint: 'Buy QQQ after a drop' },
+    rip: { q: 'Do rallies cool off?', hint: 'QQQ after a hot run' },
+    machines: { q: 'Machines healthy?', hint: 'Backtests vs limits' },
+    fast: { q: 'Early warning', hint: 'Last 20 dips' },
+    age: { q: 'Evidence age', hint: 'Span of last 30 dips' },
 };
 const statusWord = (k, colour) => {
     if (k === 'age') return { green: 'Fresh', amber: 'Getting old', red: 'Old', grey: 'No data' }[colour];
@@ -96,49 +96,49 @@ const EXPLAIN = {
     slow: (d, c) => {
         const window = d.window ?? c.dip.stop_window, stopAfter = d.stop_after ?? c.dip.stop_of;
         return {
-            what: `After QQQ's last ${d.n} sharp drops (RSI-10 under ${c.dip.rsi_below}), did buying pay more than a normal day? Above 0 = yes.`,
-            today: `${signed(d.excess_pct)} extra per dip (noise ±${num(d.se_pct, 2)}%) · paid off ${pct0(d.hit)} of the time.`,
-            red: `Dips trail a normal day on ${stopAfter}+ of the last ${window} days. Now: ${d.red_days ?? 0}.`,
-            amber: `Today is below 0, or ${ceil75(stopAfter)}+ bad days.`,
-            record: `Since 1971: 8 alarms, none false, none since 1996. Misses slow bears like 2001 and 2008 (the machines box catches those).`,
+            what: `Did QQQ's last ${d.n} dips beat a normal day?`,
+            today: `${signed(d.excess_pct)} per dip (±${num(d.se_pct, 2)}%) · paid ${pct0(d.hit)}`,
+            red: `Behind on ${stopAfter}+ of the last ${window} days`,
+            amber: `Below 0 today, or ${ceil75(stopAfter)}+ bad days.`,
+            record: [`8 alarms since 1971, last in 1996`, `Misses slow bears`],
         };
     },
     fast: (d, c) => {
         const window = d.window ?? c.dip.stop_window, stopAfter = d.stop_after ?? c.dip.stop_of;
         return {
-            what: `The same dip test on only the last ${d.n} dips. Faster, but noisy.`,
-            today: `${signed(d.excess_pct)} per dip (noise ±${num(d.se_pct, 2)}%) · ${d.red_days ?? 0} of the last ${window} days below 0.`,
-            red: `${stopAfter}+ of ${window} days below 0. Never fires the trigger; can only turn OK into WATCH.`,
-            amber: `Today is below 0. A look, not an act.`,
-            record: `Spots real flips months early, but 12 false alarms since 1993, so it gets no vote.`,
+            what: `Same test, last ${d.n} dips. Faster, noisier.`,
+            today: `${signed(d.excess_pct)} per dip (±${num(d.se_pct, 2)}%) · ${d.red_days ?? 0}/${window} below 0`,
+            red: [`${stopAfter}+ of ${window} days below 0`, `Can only turn OK into WATCH`],
+            amber: `Below 0 today. Look only.`,
+            record: [`Early on real flips`, `12 false alarms since 1993: no vote`],
         };
     },
     age: (d, c) => ({
-        what: `How many years the last ${c.dip.slow_n} dips span. Old = the market has been too calm to test lately.`,
-        today: `${num(d.years, 1)} years · ${d.events_last_12m ?? '—'} dips in the last 12 months.`,
-        red: `Over ${d.red_years} years. Never counts in the verdict.`,
-        amber: `Over ${d.amber_years} years.`,
-        record: `Information only.`,
+        what: [`Years the last ${c.dip.slow_n} dips span`, `Old = too calm to test`],
+        today: `${num(d.years, 1)} yrs · ${d.events_last_12m ?? '—'} dips in 12 mo`,
+        red: `Over ${d.red_years} yrs. Never counts.`,
+        amber: `Over ${d.amber_years} yrs.`,
+        record: `Info only.`,
     }),
     rip: (d, c) => {
         const window = d.window ?? c.rip.hot_window, redAfter = d.red_after ?? c.rip.hot_of;
         return {
-            what: `After QQQ's last ${d.n} hot runs (RSI-10 over ${c.rip.rsi_above}), did it slip the next day? Below 0 = cools off, normal since 2000.`,
-            today: `${signed(d.excess_pct)} the next day (noise ±${num(d.se_pct, 2)}%) · cooled off ${pct0(1 - (d.hit ?? 0))} of the time.`,
-            red: `Hot runs keep going on ${redAfter}+ of the last ${window} days. Now: ${d.hot_days ?? 0}.`,
-            amber: `Today is above 0, or ${ceil75(redAfter)}+ hot days.`,
-            record: `Never red since 2000. Fires the trigger on its own.`,
+            what: `Did QQQ slip after its last ${d.n} hot runs?`,
+            today: `${signed(d.excess_pct)} next day (±${num(d.se_pct, 2)}%) · cooled ${pct0(1 - (d.hit ?? 0))}`,
+            red: `Kept going on ${redAfter}+ of the last ${window} days`,
+            amber: `Above 0 today, or ${ceil75(redAfter)}+ hot days.`,
+            record: `Never red since 2000. Fires alone.`,
         };
     },
     machines: (d, c) => {
         const m = c.machines;
         const lines = (d.legs || []).filter((l) => l.line_pct != null).map((l) => `${l.name} ${l.line_pct}%`).join(', ') || 'none written';
         return {
-            what: `Is any machine's backtest doing something it has never done? Checked nightly against its line and its own history.`,
-            today: `${d.hedge_check ? `Hedge check: ${d.hedge_check}. ` : ''}${d.reasons?.length ? d.reasons.join(' · ') : 'All legs inside their lines, nothing unprecedented.'}`,
-            red: `A leg passes its line (${lines}) · drops deeper than ever · stays under water longer than ever · or the book falls ${Math.abs(m.book_drop_pct)}%+ in ${m.fast_window_days} days while the hedges did not rise.`,
-            amber: `Within ${m.near_line_pts} points of a line · at ${Math.round(m.record_amber_frac * 100)}% of its worst drop · or at ${Math.round(m.underwater_amber_frac * 100)}% of its longest time under water (3+ months).`,
-            record: `Catches slow bears like 2001 and 2008, so it must be red ${c.rules.fire_after.machines} days in a row. A leg's record counts after ${m.min_history_days}+ days of history.`,
+            what: `Any backtest doing something new?`,
+            today: [...(d.hedge_check ? [`Hedges: ${d.hedge_check}`] : []), ...(d.reasons?.length ? d.reasons : ['All inside their lines'])],
+            red: [`Past its line: ${lines}`, `Deepest or longest drop ever`, `Book −${Math.abs(m.book_drop_pct)}%+ in ${m.fast_window_days} days, hedges did not rise`],
+            amber: [`Within ${m.near_line_pts} pts of a line`, `${Math.round(m.record_amber_frac * 100)}% of its worst drop`, `${Math.round(m.underwater_amber_frac * 100)}% of its longest under water`],
+            record: [`Catches 2001/2008-style bears`, `Fires after ${c.rules.fire_after.machines} red days in a row`],
         };
     },
 };
@@ -225,9 +225,9 @@ function LegBar({ l, spm }) {
     const used = legUsed(l, spm);
     const c = legColour(l, spm);
     const uw = l.months_underwater == null ? null
-        : l.longest_underwater_prior_months != null ? `${l.months_underwater} of ${l.longest_underwater_prior_months} mo under water`
+        : l.longest_underwater_prior_months != null ? `${l.months_underwater}/${l.longest_underwater_prior_months} mo under water`
             : `${l.months_underwater} mo under water`;
-    const lim = used ? `trips at ${signed(used.lim.v, 0)} (${used.lim.why})` : 'no limit yet';
+    const lim = used ? `trips at ${signed(used.lim.v, 0)}` : 'no limit yet';
     return (
         <div className="rb-leg">
             <div className="rb-leg-top">
@@ -250,11 +250,11 @@ function TripBody({ k, d, ctx, history }) {
             <>
                 <div className="rb-big-row">
                     <span className="rb-big">{minus(signed(d.excess_pct))}</span>
-                    <span className="rb-cap">extra per dip vs a normal day · paid off {pct0(d.hit)} of the time</span>
+                    <span className="rb-cap">per dip vs normal · paid {pct0(d.hit)}</span>
                 </div>
                 <Gauge value={d.excess_pct} scale={1} badSide="below" left="dips lose" right="dips pay" />
                 <HistoryChart history={history} main="slow" ghost="fast" badSide="below" up="dips pay" down="dips lose"
-                    legend="— slow (30 dips) · - - early warning (20 dips)" aria="Slow and fast dip-payoff lines" />
+                    legend="— 30 dips · - - 20 dips" aria="Slow and fast dip-payoff lines" />
             </>
         );
     }
@@ -263,7 +263,7 @@ function TripBody({ k, d, ctx, history }) {
             <>
                 <div className="rb-big-row">
                     <span className="rb-big">{minus(signed(d.excess_pct))}</span>
-                    <span className="rb-cap">next-day move after a hot run · below 0 = it cools off</span>
+                    <span className="rb-cap">next day after a hot run</span>
                 </div>
                 <Gauge value={d.excess_pct} scale={0.5} badSide="above" left="cools off" right="keeps running" />
                 <HistoryChart history={history} main="rip" badSide="above" up="keeps running" down="cools off"
@@ -280,12 +280,12 @@ function TripBody({ k, d, ctx, history }) {
             <div className="rb-big-row">
                 <span className="rb-big">{judged.length ? `${inside} of ${judged.length}` : '—'}</span>
                 <span className="rb-cap">
-                    legs inside their limits{closest ? ` · closest: ${closest.l.name}, ${Math.round(closest.used.frac * 100)}% of the way to ${closest.used.lim.why === 'worst ever' ? 'its worst-ever drop' : 'its line'}` : ''}
+                    inside limits{closest ? ` · closest: ${closest.l.name} ${Math.round(closest.used.frac * 100)}%` : ''}
                 </span>
             </div>
             {d.reasons?.length > 0 && <ul className="rb-reasons">{d.reasons.map((r) => <li key={r}>{r}</li>)}</ul>}
             <div className="rb-legs">{legs.map((l) => <LegBar key={l.name} l={l} spm={ctx.machines} />)}</div>
-            {d.hedge_check && <div data-testid="rb-hedge-check" className="rb-note">Hedge check: {d.hedge_check}</div>}
+            {d.hedge_check && <div data-testid="rb-hedge-check" className="rb-note">Hedges: {d.hedge_check}</div>}
         </>
     );
 }
@@ -318,8 +318,8 @@ function LookChip({ k, d, active, onToggle, onOpen }) {
     const grey = d.colour === 'grey';
     const big = grey ? '—' : k === 'age' ? `${num(d.years, 1)} yrs` : minus(signed(d.excess_pct));
     const sub = grey ? (d.reason || 'not enough data')
-        : k === 'age' ? `${d.events_last_12m ?? '—'} dips in the last 12 months · old after ${d.amber_years ?? '—'} yrs`
-            : `${PLAIN[k].hint} · look only`;
+        : k === 'age' ? `${d.events_last_12m ?? '—'} dips in 12 mo`
+            : PLAIN[k].hint;
     const word = statusWord(k, d.colour);
     return (
         <div data-testid="rb-dial" data-colour={d.colour} aria-expanded={active} aria-label={`${PLAIN[k].q} ${word}. Tap for the rule.`}
@@ -339,25 +339,25 @@ function ExplainPanel({ k, d, ctx, onClose }) {
     const e = EXPLAIN[k] ? EXPLAIN[k](d, ctx) : null;
     if (!e) return null;
     const rows = [
-        ['What it asks', e.what],
+        ['Asks', e.what],
         ['Today', e.today],
-        ['Red when', e.red],
-        ['Amber when', e.amber],
-        ['Track record', e.record],
+        ['Red', e.red],
+        ['Amber', e.amber],
+        ['Record', e.record],
     ];
     if (k === 'machines' && d.lag_pair) {
-        rows.push(['Also shown', `${d.lag_pair[0]} vs ${d.lag_pair[1]} lag: ${d.lag_months ?? '—'} month${d.lag_months === 1 ? '' : 's'}${d.lag_is_info_only === false ? ' (exit rule at 2)' : ' — information only, not a rule'}.`]);
+        rows.push(['Also', `${d.lag_pair[0]} vs ${d.lag_pair[1]} lag ${d.lag_months ?? '—'} mo${d.lag_is_info_only === false ? ' (exit rule at 2)' : ' · info only'}`]);
     }
     return (
         <div data-testid={`rb-explain-${k}`} role="region" aria-label={`${PLAIN[k].q} explained`} className="rb-explain" style={tone(d.colour)}>
             <div className="rb-explain-head">
                 <b>{PLAIN[k].q}</b>
                 <Chip text={statusWord(k, d.colour)} />
-                <button type="button" className="rb-close" onClick={onClose}>Close ✕</button>
+                <button type="button" className="rb-close" onClick={onClose} aria-label="Close">✕</button>
             </div>
             <dl className="rb-explain-grid">
                 {rows.map(([tag, text]) => (
-                    <Fragment key={tag}><dt>{tag}</dt><dd>{text}</dd></Fragment>
+                    <Fragment key={tag}><dt>{tag}</dt><dd>{[].concat(text).map((t) => <div key={t}>{t}</div>)}</dd></Fragment>
                 ))}
             </dl>
         </div>
@@ -442,19 +442,19 @@ function HistoryChart({ history, main, ghost = null, badSide, up, down, legend, 
 }
 
 const MODE = {
-    INVESTED: { badge: 'badge-green', word: 'INVESTED', colour: 'green', eli5: 'All machines running. Nothing to do.' },
-    PENDING_DEFENSIVE: { badge: 'badge-red', word: 'GO DEFENSIVE — waiting for you', colour: 'red', eli5: 'The 📡 thread has the 2-minute steps: sell half of each machine to cash, then reply "done".' },
-    DEFENSIVE: { badge: 'badge-yellow', word: 'DEFENSIVE — half in cash', colour: 'amber', eli5: 'Half the book sits in cash until the radar has been green enough closes in a row.' },
-    PENDING_REENTRY: { badge: 'badge-blue', word: 'RE-ENTER — waiting for you', colour: 'blue', eli5: 'The 📡 thread has the steps: put the cash back into each machine, then reply "done".' },
-    UNKNOWN: { badge: 'badge-blue', word: 'UNKNOWN', colour: 'grey', eli5: 'The trigger could not report its state — check the Mac mini log.' },
+    INVESTED: { badge: 'badge-green', word: 'INVESTED', colour: 'green', eli5: 'Nothing to do.' },
+    PENDING_DEFENSIVE: { badge: 'badge-red', word: 'GO DEFENSIVE — waiting for you', colour: 'red', eli5: 'Steps in 📡: sell half to cash, reply "done".' },
+    DEFENSIVE: { badge: 'badge-yellow', word: 'DEFENSIVE — half in cash', colour: 'amber', eli5: 'Half in cash until enough green closes.' },
+    PENDING_REENTRY: { badge: 'badge-blue', word: 'RE-ENTER — waiting for you', colour: 'blue', eli5: 'Steps in 📡: put the cash back, reply "done".' },
+    UNKNOWN: { badge: 'badge-blue', word: 'UNKNOWN', colour: 'grey', eli5: 'Trigger state missing. Check the Mac mini log.' },
 };
 
 // The trigger's loop, in order. "You are here" follows snapshot.defensive.mode.
 const STEPS = [
-    { mode: 'INVESTED', title: 'Invested', body: () => 'All machines running. Nothing to do.' },
-    { mode: 'PENDING_DEFENSIVE', title: 'A tripwire goes red', body: () => 'Sell half of each machine to cash. 📡 nags every hour until you reply "done".' },
-    { mode: 'DEFENSIVE', title: 'Defensive', body: () => 'Half the book waits in cash. Nothing to do.' },
-    { mode: 'PENDING_REENTRY', title: 'Back in', body: (r) => `After ${r.reentry_closes} green days in a row (dips paying over +${r.reentry_edge_pct}%), put the cash back.` },
+    { mode: 'INVESTED', title: 'Invested', body: () => 'Nothing to do.' },
+    { mode: 'PENDING_DEFENSIVE', title: 'A tripwire goes red', body: () => 'Sell half to cash. Reply "done".' },
+    { mode: 'DEFENSIVE', title: 'Defensive', body: () => 'Half in cash. Nothing to do.' },
+    { mode: 'PENDING_REENTRY', title: 'Back in', body: (r) => `${r.reentry_closes} green days: put cash back.` },
 ];
 
 /** The big answer: what to do today, why, and when the radar last looked. */
@@ -483,7 +483,7 @@ function Hero({ data, stale }) {
                 {act && <div className="rb-hero-act">{act}</div>}
             </div>
             <div className="rb-hero-side">
-                {def && <div className="rb-stat"><b>{def.green_streak ?? 0}</b><span>all-clear days in a row</span></div>}
+                {def && <div className="rb-stat"><b>{def.green_streak ?? 0}</b><span>green days</span></div>}
                 <div className="rb-stat">
                     <b>{dayName(data.asOf)}</b>
                     <span>{stale ? `STALE — ${data._meta?.ageDays ?? '?'} days old` : `last check${next ? ` · next ${next}` : ''}`}</span>
@@ -499,11 +499,11 @@ function Trigger({ def, rules, open, onToggle }) {
     const here = def ? STEPS.findIndex((s) => s.mode === def.mode) : -1;
     const st = def?.streak || {};
     const fa = rules.fire_after;
-    const rule = `Sell half of each machine when dips are red for ${fa.slow} close or rallies for ${fa.rip}, or the machines are red ${fa.machines} closes in a row. Buy back after ${rules.reentry_closes} green closes in a row with dips paying over +${rules.reentry_edge_pct}%. 📡 nags hourly until you reply "done"; if the alarm clears first, it stands down.`;
+    const rule = `Sell half when dips are red ${fa.slow} close or rallies ${fa.rip}, or machines ${fa.machines} closes in a row. Buy back after ${rules.reentry_closes} green closes with dips over +${rules.reentry_edge_pct}%. 📡 nags hourly till "done"; stands down if the alarm clears.`;
     return (
         <div data-testid="rb-trigger" className="rb-rail-box">
             <div className="rb-label-row">
-                <span className="rb-label">What happens if a tripwire goes red</span>
+                <span className="rb-label">If a tripwire goes red</span>
                 {mode ? <span className={`badge ${mode.badge}`} data-testid="rb-mode">{mode.word}</span> : <span className="badge badge-blue">state not published yet</span>}
             </div>
             <ol className="rb-rail">
@@ -519,11 +519,12 @@ function Trigger({ def, rules, open, onToggle }) {
             </ol>
             {def && (
                 <div className="rb-counters">
-                    Red closes in a row: dips <b>{st.slow ?? 0}</b>/{fa.slow} · rallies <b>{st.rip ?? 0}</b>/{fa.rip} · machines <b>{st.machines ?? 0}</b>/{fa.machines} · green run <b>{def.green_streak ?? 0}</b>/{rules.reentry_closes}{def.last_asof ? ` · counted to ${dayName(def.last_asof)}` : ''}
+                    <div>Red streak: dips <b>{st.slow ?? 0}</b>/{fa.slow} · rallies <b>{st.rip ?? 0}</b>/{fa.rip} · machines <b>{st.machines ?? 0}</b>/{fa.machines}</div>
+                    <div>Green streak: <b>{def.green_streak ?? 0}</b>/{rules.reentry_closes}{def.last_asof ? ` · ${dayName(def.last_asof)}` : ''}</div>
                 </div>
             )}
             <button type="button" className="rb-link" onClick={onToggle} aria-expanded={open}>
-                {open ? '▴ hide the rule' : '▾ the rule in one breath'}
+                {open ? '▴ hide the rule' : '▾ the rule'}
             </button>
             {open && <div data-testid="rb-trigger-rule" className="rb-rule">{rule}</div>}
         </div>
@@ -585,15 +586,14 @@ export default function RubberBandRadar({ onVerdict = null } = {}) {
                     <>
                         <Hero data={data} stale={stale} />
                         <div className="rb-label-row">
-                            <span className="rb-label">The 3 tripwires — any one red sends half the book to cash</span>
-                            <span className="rb-label-hint">tap a box for its rule</span>
+                            <span className="rb-label">Tripwires · any red = half to cash</span>
                         </div>
                         <div className="rb-trips">
                             {TRIPWIRES.map((k) => <TripCard key={k} {...box(k)} ctx={ctx} def={data.defensive} history={data.history} />)}
                         </div>
                         {panel(TRIPWIRES)}
                         <div className="rb-label-row">
-                            <span className="rb-label">Also watching — these never trip anything</span>
+                            <span className="rb-label">Look only</span>
                         </div>
                         <div className="rb-looks">
                             {LOOK_ONLY.map((k) => <LookChip key={k} {...box(k)} />)}
@@ -601,7 +601,7 @@ export default function RubberBandRadar({ onVerdict = null } = {}) {
                         {panel(LOOK_ONLY)}
                         <Trigger def={data.defensive} rules={ctx.rules} open={open === 'trigger'} onToggle={() => toggle('trigger')} />
                         <div className="rb-foot">
-                            Computed nightly on the Mac mini · rules v{ctx.version} · QQQ Wilder RSI-10: a dip = under {ctx.dip.rsi_below}, a hot run = over {ctx.rip.rsi_above}{stale ? ` · STALE (${data._meta?.ageDays}d old)` : ''}
+                            Nightly · rules v{ctx.version} · dip = RSI-10 under {ctx.dip.rsi_below} · hot = over {ctx.rip.rsi_above}{stale ? ` · STALE (${data._meta?.ageDays}d old)` : ''}
                         </div>
                     </>
                 )}

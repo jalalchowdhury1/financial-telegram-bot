@@ -6,25 +6,25 @@ import { useMark } from './MarkProvider';
 import { freshnessNote } from '../lib/freshness';
 
 const TOOLTIPS = {
-    nfci: 'National Financial Conditions Index. Measures the tightness of US financial systems. Below 0 means conditions are accommodative (good for stocks).',
-    m2: 'Total US Money Supply (Cash + Deposits). Growing liquidity acts as a tailwind for asset prices.',
-    retail: 'US Retail Sales (3-month rolling growth). Represents the health of the US consumer, which drives 70% of GDP.',
-    housing: 'US Housing Starts. A strong leading indicator of economic health due to the wide economic footprint of construction.',
-    indpro: 'US Industrial Production Index. Tracks manufacturing output, often signaling turning points in the economic cycle.',
-    jolts: 'Job Openings and Labor Turnover Survey. High openings indicate strong corporate demand for labor.',
-    durable: 'Durable Goods Orders (excluding transportation). Tracks corporate CapEx and business investment confidence.',
-    savings: 'US Personal Saving Rate. A healthy cushion ensures consumers can absorb inflation without cutting core spending.'
+    nfci: 'Chicago Fed money tightness. Below 0 = easy (good for stocks).',
+    m2: 'Cash + deposits. Growing = tailwind for stocks.',
+    retail: 'Retail sales, 3-month growth. Consumers drive 70% of GDP.',
+    housing: 'New homes started. OK also needs a rising trend.',
+    indpro: 'Factory output. Often turns before the economy.',
+    jolts: 'Job openings (JOLTS). High = firms want workers.',
+    durable: 'Big-ticket orders, ex transport. Tracks business investment.',
+    savings: 'Share of income saved. A cushion for spending.'
 };
 
 const SUBTITLES = {
     nfci: 'How tight money is (below 0 = easy)',
-    m2: 'Money supply growth (over 2% = growing)',
+    m2: 'Strong over 4% · OK over 2% a year',
     retail: 'Consumer spending strength',
-    housing: 'New homes (strong over 1,400K · OK over 1,300K and rising)',
+    housing: 'Strong over 1,400K · OK over 1,300K',
     indpro: '6-month manufacturing trend',
-    jolts: 'Job openings (strong over 7,000K · OK over 6,000K)',
+    jolts: 'Strong over 7,000K · OK over 6,000K',
     durable: 'Business investment (3mo trend)',
-    savings: 'Consumer cushion (healthy at 5%+ · OK at 3.5%+)'
+    savings: 'Healthy 5%+ · OK 3.5%+'
 };
 
 const BENCHMARKS = {
@@ -69,7 +69,7 @@ function ChecklistItem({ itemKey, item }) {
                 >
                     {item.label}
                 </span>
-                <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', lineHeight: 1.2 }}>
+                <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', lineHeight: 1.2, whiteSpace: 'nowrap' }}>
                     {SUBTITLES[itemKey]}
                 </span>
             </div>
@@ -112,12 +112,12 @@ export default function BullChecklist({ fred, loading }) {
                             const items = Object.values(fred.checklist);
                             const bullish = items.filter(i => i.bullish).length;
                             const pct = items.length ? (bullish / items.length) * 100 : 0;
-                            const regime = pct >= 75 ? '🟢 CONFIRMED BULL MARKET' : pct >= 50 ? '🟡 CAUTIOUS / MIXED' : '🔴 BEAR MARKET WARNING';
+                            const regime = pct >= 75 ? '🟢 BULL MARKET' : pct >= 50 ? '🟡 MIXED' : '🔴 BEAR WARNING';
                             const bg = pct >= 75 ? 'var(--green-bg)' : pct >= 50 ? 'var(--yellow-bg)' : 'var(--red-bg)';
                             const color = pct >= 75 ? 'var(--green)' : pct >= 50 ? 'var(--yellow)' : 'var(--red)';
                             return (
                                 <div className="checklist-score" style={{ background: bg, color }}>
-                                    {regime} — Score: {bullish}/{items.length} ({pct.toFixed(0)}% Bullish)
+                                    {regime} · {bullish}/{items.length} bullish
                                 </div>
                             );
                         })()}

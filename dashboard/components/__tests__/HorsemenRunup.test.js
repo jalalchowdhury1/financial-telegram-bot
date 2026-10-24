@@ -43,7 +43,7 @@ describe('RunupBars', () => {
 
     test('states how many recessions each comparison rests on', () => {
         render(<RunupBars fred={fred} />);
-        expect(screen.getByTestId('fh-row-claims').textContent).toMatch(/median of 2\)/);
+        expect(screen.getByTestId('fh-row-claims').textContent).toMatch(/2 recessions began near/);
     });
 
     test('renders nothing rather than throwing when a series is missing', () => {
