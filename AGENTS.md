@@ -263,7 +263,11 @@ The repo is **public** — keys NEVER go in code; they live in **Vercel env vars
   pattern — match `serve()` for any new route.)*
 - **Edge cache = one row in `lib/cdn.js`.** A route served through `serve(key, …)` is
   edge-cached only if `key` has a row in `CDN_POLICY`; no row → `no-store` as before. Only a
-  healthy live answer is ever cached (see "⚡ Loading speed" below). Never put
+  healthy live answer gets the full policy; a degraded one gets 2 min (see "⚡ Loading speed" below).
+- **CPU budget (24 Oct 2026):** the free Vercel team has 4 h Active CPU per rolling 30 days for ALL
+  his sites (over = every site pauses) and this project was #1. Every polled route needs an edge
+  row, price rows stretch to ≤ 2 h off-hours (never past the open), degraded answers sit 2 min,
+  `/api/freshness` caches a still-green reply ≤ 1 h; `__tests__/cpuBudget.test.js` is the tripwire. Never put
   `cache-control: max-age` on a data route — the browser must keep `no-store`.
 - **Extract** new features into standalone components in `dashboard/components/`; add
   `'use client'` to any component with client-side state/interactivity.
@@ -284,13 +288,15 @@ answered. Three fixes, each safe on its own:
    the next refresh HITs; Polymarket ≤1 h, rubber band + history ≤2 h, other daily data ≤3 h —
    a test pins these caps; raised 21 Oct 2026 for the Vercel Active CPU cap). Vercel
    strips that header at the edge; the browser still sees `cache-control: no-store`.
-   **Never cached:** anything with `_meta.stale` / `hasErrors` / `fallback`; a source
+   **Degraded = 2-min edge copy only (`DEGRADED_MAX_AGE`, no swr; was never cached until
+   24 Oct 2026):** anything with `_meta.stale` / `hasErrors` / `fallback`; a source
    label containing `(fallback)` (the Lambda-primary routes' direct-source answers — the
    same marker `health_check.py` reads); every last-good / last-resort / fallback tier;
    `jev-pills` when Jev or a sibling route failed; `sheets` when the VIX tag fell back to
-   the sheet's own value; every `?_fail=` request (on routes that parse faults); and
+   the sheet's own value. **Never cached:** every `?_fail=` request (on routes that parse faults); and
    every route without a policy row (`last-run`, `assessment`). So a degraded answer is retried by the
-   very next request, never pinned. Check it: repeat `curl -sI <url>/api/spy` → the
+   next 5-min refresh, never pinned. **Off-hours** (market not open) the ≤10-min price rows
+   get max-age up to 6900 s, capped at the seconds until the next open. Check it: repeat `curl -sI <url>/api/spy` → the
    second shows `x-vercel-cache: HIT`.
 2. **Cache busting.** The edge key includes the query string. The page's refresh button
    and the **R** key send `?_t=<now>` (always live); the automatic refresh (5 min while the US market is open, 30 min otherwise:
@@ -1670,7 +1676,7 @@ Now: fewer than 756 bars → the Sheet's own 3Y return (`_sheet_return_3y`) → 
    Gateway smoke test)? For dashboard changes: does `npm test` + `npm run build` pass? For
    any change: does `ci.yml` (pytest + jest + build) pass — that's the merge gate.
 9. Does every degraded answer set `_meta.stale` / `hasErrors` / `fallback`? Those flags
-   are what keep a bad answer OUT of the edge cache (`lib/cdn.js`). A route that hides
+   are what keep a bad answer to a 2-min edge copy (`lib/cdn.js`). A route that hides
    its degradation gets that bad answer pinned for up to its `CDN_POLICY` total.
 
 ## 6. Map / quick reference

@@ -12,9 +12,15 @@
  * So the oldest answer anyone can see is max-age + swr (the last column below).
  *
  * The rules that keep this honest:
- * - Only a HEALTHY LIVE answer is cached. Degraded (`_meta.stale` / `hasErrors`),
- *   last-known-good, last-resort and fallback answers are never cached, so the very
- *   next request retries the live sources.
+ * - Only a HEALTHY LIVE answer gets the full policy. Degraded (`_meta.stale` /
+ *   `hasErrors`), last-known-good, last-resort and fallback answers sit at the edge for
+ *   DEGRADED_MAX_AGE only (2 min, no swr): shorter than the page's 5-min refresh, so
+ *   the next refresh still retries the live sources, but the same-minute repeats
+ *   (jev-pills + /api/freshness reading siblings, two monitors at once) no longer
+ *   re-run a slow failing route (Vercel Active CPU cap, 24 Oct 2026).
+ * - Price rows (worst case ≤ 10 min) stretch to ≤ 2 h while the US market is not
+ *   open, never past the next open (lib/marketClock): nothing on them moves, and the
+ *   24/7 30-min /api/freshness probe was re-running every one (24 Oct 2026).
  * - Fault-injection requests (`?_fail=`) are never cached.
  * - The browser never caches (`cache-control: no-store` stays). Only Vercel's edge
  *   does, via `Vercel-CDN-Cache-Control`, which Vercel strips before the response
@@ -22,6 +28,7 @@
  * - The edge cache key includes the query string, so `?_t=<now>` (the page's manual
  *   refresh button, scripts/health_check.py) always reaches the live route.
  */
+import { marketStatus } from './marketClock';
 
 // [max-age, stale-while-revalidate] in seconds. Prices move → short; daily data → long.
 // Live rows: max-age just over the page's 5-min market-hours refresh (app/page.js,
@@ -42,7 +49,13 @@ export const CDN_POLICY = {
     breadth:          [7200, 3600], // ≤ 3 h: daily bars
     factors:          [7200, 3600], // ≤ 3 h: daily bars
     fred:             [7200, 3600], // ≤ 3 h: daily/monthly series (the page says "refreshes every 3 h")
+    freshness:        [3300, 300],  // ≤ 1 h: monitor probe; only a reply still green an hour on (app/api/freshness)
 };
+
+/** Degraded answers: a short edge copy, no swr (see the rules above). */
+export const DEGRADED_MAX_AGE = 120;
+/** Off-hours max-age ceiling for the price rows (+ their swr ≤ 2 h). */
+export const OFF_HOURS_MAX_AGE = 6900;
 
 // The Lambda-primary routes (spy, spy-daily-move, market-extra, polymarket) answer from
 // direct sources with hasErrors:false ON PURPOSE (a full direct build is good data) and
@@ -62,14 +75,21 @@ export function isDegraded(payload) {
 
 /**
  * Response headers for one answer. Always `cache-control: no-store` for the browser;
- * adds the edge policy only for a healthy, non-test answer from a route that has one.
- * `degraded` lets a route veto caching for a reason its payload doesn't flag.
+ * adds the edge policy only for a non-test answer from a route that has one (a short
+ * one when degraded). `degraded` flags a reason the payload itself doesn't.
  */
-export function cacheHeaders(key, { payload, testMode = false, degraded = false } = {}) {
+export function cacheHeaders(key, { payload, testMode = false, degraded = false, now = Date.now() } = {}) {
     const headers = { 'cache-control': 'no-store' };
     const policy = CDN_POLICY[key];
-    if (!policy || testMode || degraded || isDegraded(payload)) return headers;
-    const [maxAge, swr] = policy;
+    if (!policy || testMode) return headers;
+    const [base, swr] = policy;
+    if (degraded || isDegraded(payload)) {
+        headers['vercel-cdn-cache-control'] = `max-age=${Math.min(base, DEGRADED_MAX_AGE)}`;
+        return headers;
+    }
+    const st = marketStatus(now);
+    const offHours = base + swr <= 600 && st.state !== 'open';
+    const maxAge = offHours ? Math.max(base, Math.min(OFF_HOURS_MAX_AGE, Math.floor(st.ms / 1000))) : base;
     headers['vercel-cdn-cache-control'] = `max-age=${maxAge}, stale-while-revalidate=${swr}`;
     return headers;
 }

@@ -6,7 +6,8 @@
  * included in what is measured. Pure maths: lib/servedFreshness.js. No auth by design:
  * the body holds only pipeline names and hour counts.
  */
-import { buildFreshness, SERVED_ROUTES } from '../../../lib/servedFreshness';
+import { buildFreshness, isRed, SERVED_ROUTES } from '../../../lib/servedFreshness';
+import { cacheHeaders } from '../../../lib/cdn';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -27,6 +28,19 @@ async function sibling(origin, path) {
     }
 }
 
+/**
+ * Edge-cache the reply (≤ 1 h, lib/cdn.js `freshness`) only when every item would still
+ * be green an hour from now with nothing changing; anything red or close to it is
+ * re-measured by the very next probe. The 24/7 30-min fleet probe re-ran every market
+ * route each time (Vercel Active CPU cap, 24 Oct 2026).
+ */
+export function freshnessHeaders(body) {
+    const inAnHour = (h) => (h == null ? h : h + 1);
+    const greenLater = body.items.every((i) => !isRed(i)
+        && !isRed({ ...i, inputAgeH: inAnHour(i.inputAgeH), servedAgeH: inAnHour(i.servedAgeH) }));
+    return cacheHeaders('freshness', { degraded: !greenLater });
+}
+
 export async function GET(request) {
     request.headers.get('user-agent');
     const headers = { 'cache-control': 'no-store' };
@@ -39,7 +53,8 @@ export async function GET(request) {
             ...SERVED_ROUTES.map((r) => soft(`/api/${r}`)),
         ]);
         const servedMap = Object.fromEntries(SERVED_ROUTES.map((r, i) => [r, served[i]]));
-        return Response.json(buildFreshness({ rubberBand, history, served: servedMap }), { status: 200, headers });
+        const body = buildFreshness({ rubberBand, history, served: servedMap });
+        return Response.json(body, { status: 200, headers: freshnessHeaders(body) });
     } catch (e) {
         return Response.json({ error: String(e?.message || e).slice(0, 160) }, { status: 500, headers });
     }

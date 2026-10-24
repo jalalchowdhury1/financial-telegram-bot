@@ -274,7 +274,7 @@ describe('/api/sheets value guards', () => {
         expect(b.NotSoBoring).toBe('N/A');
         expect(b.VIX.fearGreed).toBe('N/A');
         expect(b._meta.hasErrors).toBe(true);
-        expect(res.headers.get('vercel-cdn-cache-control')).toBeNull();
+        expect(res.headers.get('vercel-cdn-cache-control')).toBe('max-age=120'); // degraded: short copy only
     });
 });
 

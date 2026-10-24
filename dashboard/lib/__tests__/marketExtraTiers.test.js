@@ -287,9 +287,9 @@ describe('per-metric last-known-good (the 12-blanks bug)', () => {
         expect(b._meta.hasErrors).toBe(true);
         expect(b._meta.messages.some((m) => /^unavailable:/.test(m))).toBe(false);
         expect(b._meta.messages.some((m) => /Stale \(last-known-good\)/.test(m))).toBe(true);
-        // degraded -> never edge-cached
+        // degraded -> only the short edge copy (lib/cdn DEGRADED_MAX_AGE)
         const res = await GET(req());
-        expect(res.headers.get('vercel-cdn-cache-control')).toBeNull();
+        expect(res.headers.get('vercel-cdn-cache-control')).toBe('max-age=120');
 
         // The re-saved copy keeps each borrowed metric's ORIGINAL savedAt.
         const stored = JSON.parse(fs.__mem.get('/tmp/lg-market-extra.json'));
