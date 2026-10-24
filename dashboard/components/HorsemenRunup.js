@@ -132,9 +132,8 @@ export default function RunupBars({ fred, now = Date.now(), ridingNote = null })
                 );
             })}
             <div style={{ color: 'var(--text-muted)', fontSize: '0.6rem', marginTop: 6, opacity: 0.85 }}>
-                Dot = how far it has moved in 12 months. Red tick = how far it had typically moved by the
-                start of past recessions (median). Levels don&apos;t warn — in March 2020 claims sat near
-                their calmest ever.{ridingNote ? ` ${ridingNote}` : ''}
+                Dot = 12-month move. Red tick = the usual move before past recessions. The change
+                warns, not the level.{ridingNote ? ` ${ridingNote}` : ''}
             </div>
         </div>
     );

@@ -154,8 +154,7 @@ export default function FourHorsemen({ fred, loading }) {
     ] : [];
 
     const riding = stats.filter((s) => s.warn?.bad).length;
-    const ridingNote = `Riding = past a warning line (claims or bankruptcies up more than ${RISING_PCT}% in a year, `
-        + `Sahm ${SAHM_TRIGGER.toFixed(2)}+, curve inverted): ${riding} of 4 riding.`;
+    const ridingNote = `Riding = claims or bankruptcies up ${RISING_PCT}%+ in a year, Sahm ${SAHM_TRIGGER.toFixed(2)}+, or curve inverted: ${riding} of 4 riding.`;
     const histories = [claims?.history, unemployment?.history, spread?.history, bk?.history];
     const hasAnySeries = histories.some((h) => h?.length >= 2);
 

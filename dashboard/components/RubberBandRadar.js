@@ -96,49 +96,49 @@ const EXPLAIN = {
     slow: (d, c) => {
         const window = d.window ?? c.dip.stop_window, stopAfter = d.stop_after ?? c.dip.stop_of;
         return {
-            what: `Of the last ${d.n} times QQQ got oversold (Wilder RSI-10 under ${c.dip.rsi_below} — the machine's own dip trigger), did buying that close beat an ordinary day? Above zero = the rubber band still snaps back. This is the dial the trigger listens to.`,
-            today: `${signed(d.excess_pct)} per dip vs an ordinary day (noise ±${num(d.se_pct, 2)}%) · dips paid ${pct0(d.hit)} of the time · evidence ${d.first_event ?? '—'} → ${d.last_event ?? '—'}.`,
-            red: `Below zero on ${stopAfter} of the last ${window} trading days — today it is ${d.red_days ?? 0} of ${window}.`,
-            amber: `Today's number is below zero, or ${ceil75(stopAfter)}+ of the last ${window} days were.`,
-            record: `1971→ backtest: 8 alarms, all in the 1970s–early 1990s, zero false alarms, no defensive day since 1996. Blind spot: the 2001 and 2008 grinding bears never showed here — Machine health covers those.`,
+            what: `After QQQ's last ${d.n} sharp drops (RSI-10 under ${c.dip.rsi_below}), did buying pay more than a normal day? Above 0 = yes.`,
+            today: `${signed(d.excess_pct)} extra per dip (noise ±${num(d.se_pct, 2)}%) · paid off ${pct0(d.hit)} of the time.`,
+            red: `Dips lose on ${stopAfter} of the last ${window} days. Now: ${d.red_days ?? 0}.`,
+            amber: `Today is below 0, or ${ceil75(stopAfter)}+ bad days.`,
+            record: `Since 1971: 8 alarms, none false, none since 1996. Misses slow bears like 2001 and 2008 (the machines box catches those).`,
         };
     },
     fast: (d, c) => {
         const window = d.window ?? c.dip.stop_window, stopAfter = d.stop_after ?? c.dip.stop_of;
         return {
-            what: `The same test on only the last ${d.n} dips. It reacts months earlier in a real regime flip (led by 200+ days in the 1970s) but is noisy: every alarm since 1993 was false.`,
-            today: `${signed(d.excess_pct)} per dip (noise ±${num(d.se_pct, 2)}%) · ${d.red_days ?? 0} of the last ${window} days below zero.`,
-            red: `Same count (${stopAfter} of ${window} days below zero) — shown so you can watch it, but it never fires the trigger. It can only nudge the verdict from OK to WATCH.`,
-            amber: `Today's number below zero. Read it as LOOK, not act.`,
-            record: `Leads the slow dial by months when a flip is real; 12 false alarms since 1993, so it never gets a vote.`,
+            what: `The same dip test on only the last ${d.n} dips. Faster, but noisy.`,
+            today: `${signed(d.excess_pct)} per dip (noise ±${num(d.se_pct, 2)}%) · ${d.red_days ?? 0} of the last ${window} days below 0.`,
+            red: `${stopAfter} of ${window} days below 0. Never fires the trigger; can only turn OK into WATCH.`,
+            amber: `Today is below 0. A look, not an act.`,
+            record: `Spots real flips months early, but 12 false alarms since 1993, so it gets no vote.`,
         };
     },
     age: (d, c) => ({
-        what: `How many years the ${c.dip.slow_n} dips behind "Dip pays?" span. Fresh evidence means the verdict is about today's market; old evidence means the market has been too calm to test the band lately.`,
-        today: `${num(d.years, 1)} years of evidence · ${d.events_last_12m ?? '—'} dips in the last 12 months.`,
-        red: `Over ${d.red_years} years old — but this dial never counts in the verdict. It is a trust gauge, not a forecast.`,
-        amber: `Over ${d.amber_years} years old.`,
-        record: `Information only, in every version of the rules.`,
+        what: `How many years the last ${c.dip.slow_n} dips span. Old = the market has been too calm to test lately.`,
+        today: `${num(d.years, 1)} years · ${d.events_last_12m ?? '—'} dips in the last 12 months.`,
+        red: `Over ${d.red_years} years. Never counts in the verdict.`,
+        amber: `Over ${d.amber_years} years.`,
+        record: `Information only.`,
     }),
     rip: (d, c) => {
         const window = d.window ?? c.rip.hot_window, redAfter = d.red_after ?? c.rip.hot_of;
         return {
-            what: `The other half of the machine: after the last ${d.n} overbought days (RSI-10 above ${c.rip.rsi_above}, the sell trigger), did the market fade the next day? Negative = rips fade = normal since 2000. Rips that keep running = the 1970s.`,
-            today: `${signed(d.excess_pct)} next-day drift after a rip (noise ±${num(d.se_pct, 2)}%) · rips faded ${pct0(1 - (d.hit ?? 0))} of the time.`,
-            red: `Rips kept running (above zero) on ${redAfter} of the last ${window} trading days — today ${d.hot_days ?? 0} of ${window}.`,
-            amber: `Today's number above zero, or ${ceil75(redAfter)}+ of the last ${window} days were.`,
-            record: `Never red since 2000. Fires the trigger on its own, like "Dip pays?".`,
+            what: `After QQQ's last ${d.n} hot runs (RSI-10 over ${c.rip.rsi_above}), did it slip the next day? Below 0 = cools off, normal since 2000.`,
+            today: `${signed(d.excess_pct)} the next day (noise ±${num(d.se_pct, 2)}%) · cooled off ${pct0(1 - (d.hit ?? 0))} of the time.`,
+            red: `Hot runs keep going on ${redAfter} of the last ${window} days. Now: ${d.hot_days ?? 0}.`,
+            amber: `Today is above 0, or ${ceil75(redAfter)}+ hot days.`,
+            record: `Never red since 2000. Fires the trigger on its own.`,
         };
     },
     machines: (d, c) => {
         const m = c.machines;
         const lines = (d.legs || []).filter((l) => l.line_pct != null).map((l) => `${l.name} ${l.line_pct}%`).join(', ') || 'none written';
         return {
-            what: `Are my own machines doing something they have never done? Each leg is its Composer backtest curve (not the account balance), checked every night against its written line and against its own history.`,
+            what: `Is any machine's backtest doing something it has never done? Checked nightly against its line and its own history.`,
             today: `${d.hedge_check ? `Hedge check: ${d.hedge_check}. ` : ''}${d.reasons?.length ? d.reasons.join(' · ') : 'All legs inside their lines, nothing unprecedented.'}`,
-            red: `Any leg through its written line (${lines}) · a drawdown deeper than that leg's worst completed one · underwater longer than it has ever been · or hedge failure: the book (C3 68 / m1 20 / hedges 12) down ${Math.abs(m.book_drop_pct)}%+ in ${m.fast_window_days} trading days while the GLD/BTAL hedges did not rise.`,
-            amber: `Within ${m.near_line_pts} points of a line · ${Math.round(m.record_amber_frac * 100)}% of the record drawdown · ${Math.round(m.underwater_amber_frac * 100)}% of the record underwater stretch (at least 3 months).`,
-            record: `Records only count once a leg has ${m.min_history_days}+ days of history before its peak (Composer era, 2013→ / 2016→). This is the dial that catches grinding bears like 2001 and 2008, so the trigger waits for ${c.rules.fire_after.machines} red closes in a row here. m1-vs-C3 lag is shown for information, never judged.`,
+            red: `A leg passes its line (${lines}) · drops deeper than ever · stays under water longer than ever · or the book falls ${Math.abs(m.book_drop_pct)}%+ in ${m.fast_window_days} days while the hedges did not rise.`,
+            amber: `Within ${m.near_line_pts} points of a line · at ${Math.round(m.record_amber_frac * 100)}% of its worst drop · or at ${Math.round(m.underwater_amber_frac * 100)}% of its longest time under water (3+ months).`,
+            record: `Catches slow bears like 2001 and 2008, so it must be red ${c.rules.fire_after.machines} days in a row. A leg's record counts after ${m.min_history_days}+ days of history.`,
         };
     },
 };
@@ -454,7 +454,7 @@ const STEPS = [
     { mode: 'INVESTED', title: 'Invested', body: () => 'All machines running. Nothing to do.' },
     { mode: 'PENDING_DEFENSIVE', title: 'A tripwire goes red', body: () => 'Sell half of each machine to cash. 📡 nags every hour until you reply "done".' },
     { mode: 'DEFENSIVE', title: 'Defensive', body: () => 'Half the book waits in cash. Nothing to do.' },
-    { mode: 'PENDING_REENTRY', title: 'Back in', body: (r) => `${r.reentry_closes} green days in a row with dips paying over +${r.reentry_edge_pct}% → put the cash back, then step 1.` },
+    { mode: 'PENDING_REENTRY', title: 'Back in', body: (r) => `After ${r.reentry_closes} green days in a row (dips paying over +${r.reentry_edge_pct}%), put the cash back.` },
 ];
 
 /** The big answer: what to do today, why, and when the radar last looked. */
@@ -499,7 +499,7 @@ function Trigger({ def, rules, open, onToggle }) {
     const here = def ? STEPS.findIndex((s) => s.mode === def.mode) : -1;
     const st = def?.streak || {};
     const fa = rules.fire_after;
-    const rule = `Fires when "Do dips bounce back?" or "Do rallies cool off?" is red for ${fa.slow} close, or "Are the machines healthy?" is red ${fa.machines} closes in a row → 📡 GO DEFENSIVE: sell half of each machine to cash, hourly nag until you reply "done". Back in after ${rules.reentry_closes} green closes in a row with dips paying above +${rules.reentry_edge_pct}% → 📡 RE-ENTER, nag until "done". If the alarm clears before you act, it stands down by itself; if the green run breaks before you re-enter, it holds.`;
+    const rule = `Sell half of each machine when dips or rallies are red for ${fa.slow} close, or the machines are red ${fa.machines} closes in a row. Buy back after ${rules.reentry_closes} green closes in a row with dips paying over +${rules.reentry_edge_pct}%. 📡 nags hourly until you reply "done"; if the alarm clears first, it stands down.`;
     return (
         <div data-testid="rb-trigger" className="rb-rail-box">
             <div className="rb-label-row">

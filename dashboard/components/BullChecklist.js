@@ -17,14 +17,14 @@ const TOOLTIPS = {
 };
 
 const SUBTITLES = {
-    nfci: 'System tightness (<0 = easy, >0 = tight)',
-    m2: 'YoY liquidity growth (>2% = expanding)',
+    nfci: 'How tight money is (below 0 = easy)',
+    m2: 'Money supply growth (over 2% = growing)',
     retail: 'Consumer spending strength',
-    housing: 'Housing market health (>1,400K = strong, >1,300K = OK)',
+    housing: 'New homes (strong over 1,400K · OK over 1,300K)',
     indpro: '6-month manufacturing trend',
-    jolts: 'Labor demand (>7,000K = strong, >6,000K = OK)',
+    jolts: 'Job openings (strong over 7,000K · OK over 6,000K)',
     durable: 'Business investment (3mo trend)',
-    savings: 'Consumer cushion (>5% = healthy, ≥ 3.5% = OK)'
+    savings: 'Consumer cushion (healthy over 5% · OK at 3.5%+)'
 };
 
 const BENCHMARKS = {

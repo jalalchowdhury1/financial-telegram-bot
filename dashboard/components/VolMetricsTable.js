@@ -126,9 +126,9 @@ function VolRow({ t }) {
 // ── Bottom half: VIX curve, TQQQ decay, expected moves ───────────────────────────────
 
 export const STATE_COPY = {
-    calm: { pill: '🟢 Calm', color: 'var(--green)', line: 'Near-term fear is below longer-term fear: the normal, calm shape.' },
-    watch: { pill: '🟡 Watch', color: 'var(--orange)', line: 'The curve is flattening: near-term fear is catching up with longer-term fear.' },
-    stress: { pill: '🔴 Stress', color: 'var(--red)', line: 'Near-term fear is above 3-month fear (backwardation): the shape of selloffs.' },
+    calm: { pill: '🟢 Calm', color: 'var(--green)', line: 'Short-term fear below 3-month fear: normal.' },
+    watch: { pill: '🟡 Watch', color: 'var(--orange)', line: 'Short-term fear is catching up with 3-month fear.' },
+    stress: { pill: '🔴 Stress', color: 'var(--red)', line: 'Short-term fear above 3-month fear: how selloffs look.' },
 };
 
 const SOURCE_NAMES = { cboe: 'CBOE', cnbc: 'CNBC', fred: 'FRED', yahoo: 'Yahoo', 'cnbc-quote': 'CNBC quote' };
@@ -155,14 +155,14 @@ function Regime({ regime }) {
                         {decay?.implied != null && <span className="vol-fact-sub"> · ≈{fmtDecay(decay.implied)} at VXN</span>}
                     </span>
                 </div>
-                <div className="vol-note">If QQQ ends a year flat at today&apos;s choppiness, TQQQ ends about this much lower (before fees).</div>
+                <div className="vol-note">If QQQ is flat for a year at today&apos;s swings, TQQQ loses about this much.</div>
             </div>
             <div className="vol-fact">
                 <div className="vol-fact-head">
                     <span className="vol-fact-label">Next 5 days <span style={{ textTransform: 'none' }}>±1σ</span></span>
                     <span className="vol-fact-value">SPY ±{fmt(moves?.SPY)}% · QQQ ±{fmt(moves?.QQQ)}%</span>
                 </div>
-                <div className="vol-note">About 2 weeks in 3 stay inside this range (from VIX and VXN).</div>
+                <div className="vol-note">2 weeks in 3 stay inside this range.</div>
             </div>
         </div>
     );
@@ -197,7 +197,7 @@ function Curve({ curve }) {
                 ))}
             </div>
             <div className="vol-note">
-                <strong style={{ color: copy.color }}>VIX ÷ VIX3M {curve.ratio.toFixed(2)}</strong> · calm &lt; 0.90 · stress ≥ 1.00. {copy.line}
+                <strong style={{ color: copy.color }}>VIX ÷ VIX3M {curve.ratio.toFixed(2)}</strong> · calm under 0.90 · stress at 1.00+. {copy.line}
             </div>
             {curve.frontInverted && (
                 <div className="vol-note">9-day above 1-month: something in the next two weeks is priced in (Fed, CPI…).</div>

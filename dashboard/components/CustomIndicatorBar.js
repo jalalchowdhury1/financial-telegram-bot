@@ -121,7 +121,7 @@ export default function CustomIndicatorBar({ sheets, loading }) {
                                 {isBullish ? '🟢' : '⚪'} {isBullish ? 'Bullish' : 'Neutral'} outlook → {dateStr}
                             </div>
                             <div className="pill-detail" style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                                Threshold: &gt;20% = bullish 6mo forward
+                                Bullish for 6 months if over 20%
                             </div>
                             {aaiiAsOf(sheets?.AAII)}
                         </>
