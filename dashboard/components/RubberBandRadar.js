@@ -452,9 +452,9 @@ const MODE = {
 // The trigger's loop, in order. "You are here" follows snapshot.defensive.mode.
 const STEPS = [
     { mode: 'INVESTED', title: 'Invested', body: () => 'Nothing to do.' },
-    { mode: 'PENDING_DEFENSIVE', title: 'A tripwire goes red', body: () => 'Sell half to cash. Reply "done".' },
-    { mode: 'DEFENSIVE', title: 'Defensive', body: () => 'Half in cash. Nothing to do.' },
-    { mode: 'PENDING_REENTRY', title: 'Back in', body: (r) => `${r.reentry_closes} green days: put cash back.` },
+    { mode: 'PENDING_DEFENSIVE', title: 'A tripwire goes red', body: () => 'Sell half, reply "done".' },
+    { mode: 'DEFENSIVE', title: 'Defensive', body: () => 'Half in cash. Wait.' },
+    { mode: 'PENDING_REENTRY', title: 'Back in', body: (r) => `${r.reentry_closes} green days: buy back.` },
 ];
 
 /** The big answer: what to do today, why, and when the radar last looked. */
