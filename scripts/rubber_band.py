@@ -723,11 +723,13 @@ def run(out_path=None, publish=True, alert=True, fetch_closes=None,
         url = publisher(out_path, state)
         log(f"  published → {url}")
         state["published_url"] = url
+    ok = True
     if alert and changes:
         ok = notifier(alert_text(snap, changes))
         log(f"  alert ({len(changes)} changes): {'sent' if ok else 'NOT sent'}")
-    state["last_snapshot"] = {"asOf": snap["asOf"], "dials": {k: {"colour": v["colour"]} for k, v in snap["dials"].items()},
-                              "verdict": {"colour": snap["verdict"]["colour"]}}
+    if ok:  # a lost alert keeps the old colours, so the next run finds the change and sends it again
+        state["last_snapshot"] = {"asOf": snap["asOf"], "dials": {k: {"colour": v["colour"]} for k, v in snap["dials"].items()},
+                                  "verdict": {"colour": snap["verdict"]["colour"]}}
     state["last_run"] = snap["generatedAt"]
     save_state(state)
     return snap

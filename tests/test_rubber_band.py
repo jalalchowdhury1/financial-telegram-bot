@@ -302,6 +302,21 @@ def test_run_end_to_end_with_injected_sources_alerts_only_on_change(tmp_path, mo
     assert len(sent) == 1 and "slow" in sent[0]
 
 
+def test_a_failed_alert_is_sent_again_next_run(tmp_path, monkeypatch):
+    monkeypatch.setattr(rb, "STATE_DIR", str(tmp_path))
+    px = _synthetic_closes(n=6000)
+    dates = [f"2000-01-{i:05d}" for i in range(len(px))]
+    base = dict(publish=False, fetch_closes=lambda: (dates, px), fetch_curves=lambda: {}, log=lambda *_: None)
+    rb.run(**base, notifier=lambda text: True)
+    st = rb.load_state(); st["last_snapshot"]["dials"]["slow"]["colour"] = "grey"; rb.save_state(st)
+    rb.run(**base, notifier=lambda text: False)  # Telegram down: the change must not be forgotten
+    sent = []
+    rb.run(**base, notifier=lambda text: sent.append(text) or True)
+    assert len(sent) == 1 and "slow" in sent[0]
+    rb.run(**base, notifier=lambda text: sent.append(text) or True)
+    assert len(sent) == 1                        # delivered once, then quiet
+
+
 def test_main_reports_a_failed_run_to_the_alert_thread(monkeypatch, tmp_path):
     monkeypatch.setattr(rb, "STATE_DIR", str(tmp_path))
     sent = []

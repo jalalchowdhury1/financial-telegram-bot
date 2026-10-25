@@ -43,7 +43,9 @@ test('price rows sit ≥ 1 h at the edge off-hours, but never past the next open
     for (const key of ['spy', 'spy-daily-move', 'market-extra', 'sheets', 'fear-greed', 'vol', 'jev-pills']) {
         expect(maxAge(cacheHeaders(key, { payload: {}, now: sat }))).toBeGreaterThanOrEqual(3600);
         expect(maxAge(cacheHeaders(key, { payload: {}, now: night }))).toBeGreaterThanOrEqual(3600);
-        expect(maxAge(cacheHeaders(key, { payload: {}, now: preOpen }))).toBe(1800);
+        expect(maxAge(cacheHeaders(key, { payload: {}, now: preOpen }))).toBe(1800 - CDN_POLICY[key][1]); // + swr ends at the open
+        expect(maxAge(cacheHeaders(key, { payload: {}, now: at('2026-10-21T20:02:00Z') }))).toBe(CDN_POLICY[key][0]); // Wed 16:02 ET: close still settling
+        expect(maxAge(cacheHeaders(key, { payload: {}, now: at('2026-10-21T20:06:00Z') }))).toBeGreaterThanOrEqual(3600);
         expect(maxAge(cacheHeaders(key, { payload: {}, now: at('2026-10-21T15:00:00Z') }))).toBe(CDN_POLICY[key][0]);
     }
 });

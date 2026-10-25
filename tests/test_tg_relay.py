@@ -21,8 +21,11 @@ class OpenTg(unittest.TestCase):
     def run_with(self, *answers):
         calls = []
 
+        self.timeouts = []
+
         def fake(req, timeout):
             calls.append((req.full_url, req.data))
+            self.timeouts.append(timeout)
             a = answers[len(calls) - 1]
             if isinstance(a, Exception):
                 raise a
@@ -35,6 +38,11 @@ class OpenTg(unittest.TestCase):
         out, calls = self.run_with("ok")
         self.assertEqual(out, "ok")
         self.assertEqual(calls, [("https://jalal-health.vercel.app/api/tg/defensive/botT/sendMessage", b"FAKE")])
+
+    def test_relay_wait_outlasts_its_worst_case(self):
+        # relay: 4 s flags + 4 s work, then it forwards itself; giving up sooner sends a twin
+        self.run_with("ok")
+        self.assertGreaterEqual(self.timeouts[0], 12)
 
     def test_fallback_on_5xx_401_404_and_network(self):
         for first in (_err(502), _err(401), _err(404), OSError("down")):

@@ -111,7 +111,7 @@ describe('fallbackSpy (/api/spy direct tiers)', () => {
         const p = bars(500, '2026-10-08');                  // ~2y, like the free tier
         const nq = bars(1000, '2026-10-09', { base: 400 - 499 * 0.5 }); // same price on the same dates
         src.polygonDaily.mockResolvedValue(poly(p));
-        src.finnhubQuote.mockResolvedValue({ current: 700, prevClose: p[p.length - 1].price });
+        src.finnhubQuote.mockResolvedValue({ current: 700, prevClose: p[p.length - 1].price, t: OPEN / 1000 });
         src.nasdaqHistory.mockResolvedValue(nq);
         const out = await fallbackSpy([], F(), { env: ENV, now: OPEN });
         expect(out._meta.source).toBe('Polygon + Finnhub (fallback)');
@@ -125,7 +125,7 @@ describe('fallbackSpy (/api/spy direct tiers)', () => {
     test('Nasdaq bars that do NOT line up leave 3Y null (honest N/A)', async () => {
         const p = bars(500, '2026-10-08');
         src.polygonDaily.mockResolvedValue(poly(p));
-        src.finnhubQuote.mockResolvedValue({ current: 700, prevClose: 649.5 });
+        src.finnhubQuote.mockResolvedValue({ current: 700, prevClose: 649.5, t: OPEN / 1000 });
         src.nasdaqHistory.mockResolvedValue(bars(1000, '2026-10-09', { base: 10 }));
         const msgs = [];
         const out = await fallbackSpy(msgs, F(), { env: ENV, now: OPEN });
@@ -222,8 +222,16 @@ describe('fallbackSpy (/api/spy direct tiers)', () => {
 
 describe('fallbackMove (/api/spy-daily-move direct tiers)', () => {
     test('Finnhub first', async () => {
-        src.finnhubQuote.mockResolvedValue({ current: 778.57, prevClose: 773.93 });
+        src.finnhubQuote.mockResolvedValue({ current: 778.57, prevClose: 773.93, t: OPEN / 1000 });
         expect(await fallbackMove([], F(), { env: ENV, now: OPEN })).toEqual({ value: '+0.60%', source: 'Finnhub (fallback)' });
+    });
+
+    test('a Finnhub quote from an older session is rejected (no yesterday move shown as today)', async () => {
+        src.finnhubQuote.mockResolvedValue({ current: 773.93, prevClose: 773.93, t: PRE / 1000 - 12 * 3600 });
+        src.cnbcQuotes.mockResolvedValue({ SPY: { price: 778.57, change: 4.64, changePct: 0.5995, asOf: '2026-10-09' } });
+        const msgs = [];
+        expect(await fallbackMove(msgs, F(), { env: ENV, now: OPEN })).toEqual({ value: '+0.60%', source: 'CNBC (fallback)', asOf: '2026-10-09' });
+        expect(msgs.join(' ')).toMatch(/Finnhub quote dated 2026-10-08, latest session 2026-10-09/);
     });
 
     test('_fail=finnhub → CNBC change_pct for the latest session', async () => {
@@ -311,7 +319,7 @@ describe('routes: fault names reach the tiers; stale builds are not "good"', () 
         sheetLambda();
         const h = bars(800, latestSessionDate());
         src.polygonDaily.mockResolvedValue(poly(h));
-        src.finnhubQuote.mockResolvedValue({ current: h[h.length - 1].price, prevClose: h[h.length - 2].price });
+        src.finnhubQuote.mockResolvedValue({ current: h[h.length - 1].price, prevClose: h[h.length - 2].price, t: Date.now() / 1000 });
         const b = await (await GET(req('/api/spy'))).json();
         expect(b._meta.source).not.toMatch(/Google Sheet/);
         expect(b._meta.stale).toBeFalsy();

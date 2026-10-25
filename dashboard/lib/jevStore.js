@@ -5,7 +5,9 @@
  * long as one warm instance. The pills route already has Upstash KV creds
  * (lib/jevLog.js), so a pill input's last-good goes to BOTH: /tmp for speed,
  * KV (`ftb:jev:lg:<key>`) so a cold instance during a FRED outage still finds
- * it. Every call is best-effort and never throws.
+ * it. Every call is best-effort and never throws. KV goes through lib/kv.js
+ * (no-store + 3 s timeout): /api/jev-pills sets fetchCache 'default-cache', and
+ * a bare fetch there froze the first GET in Next's Data Cache (audit 25 Oct 2026).
  *
  * KV write budget: a key is rewritten only when its value/asOf changed or the
  * local copy is older than REWRITE_MS, so a healthy day costs a handful of
@@ -13,7 +15,7 @@
  */
 
 import { loadLastGood, saveLastGood } from './store';
-import { kvGet, kvSet } from './jevLog';
+import { defaultKv } from './kv';
 
 export const KV_PREFIX = 'ftb:jev:lg:';
 export const REWRITE_MS = 6 * 3600e3;
@@ -30,7 +32,7 @@ function tooOld(savedAt, maxAgeMs) {
  * @returns {{load:(key:string,maxAgeMs?:number)=>Promise<{data:any,savedAt:string}|null>, save:(key:string,data:any)=>Promise<boolean>}}
  */
 export function makePillStore(deps = {}) {
-    const kv = deps.kv || { get: kvGet, set: kvSet };
+    const kv = deps.kv || defaultKv;
     const tmp = deps.tmp || { load: loadLastGood, save: saveLastGood };
     return {
         async load(key, maxAgeMs) {
