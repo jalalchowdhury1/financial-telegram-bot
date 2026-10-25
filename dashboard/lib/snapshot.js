@@ -50,6 +50,8 @@ export function writeSnap(key, data, now = Date.now(), store = storage()) {
 
 const hasKeys = (o) => !!o && typeof o === 'object' && Object.keys(o).length > 0;
 const real = (v) => typeof v === 'string' ? v.trim() !== '' && v !== 'N/A' : v != null;
+// A move like '-0.52%' — never a sheet error ('#N/A', 'Loading...') or a blank cell.
+const isMove = (v) => typeof v === 'string' && /^[-+]?\d/.test(v.trim()) && Number.isFinite(parseFloat(v));
 /**
  * Is this live answer real data? Every route answers 200 even when it fails, with its own
  * fallback body — often no `error` field ({fx:{}…}, tickers:[], value:null, all 'N/A').
@@ -59,7 +61,7 @@ const real = (v) => typeof v === 'string' ? v.trim() !== '' && v !== 'N/A' : v !
 const LIVE_TESTS = {
     spy: (d) => Number.isFinite(d.current),
     sheets: (d) => ['NotSoBoring', 'FrontRunner', 'AAIIDiff'].some((k) => real(d[k])) || real(d.VIX?.current),
-    spyDailyMove: (d) => real(d.value),
+    spyDailyMove: (d) => isMove(d.value),
     fg: (d) => Number.isFinite(d.score) && d._meta?.source !== 'Failed',
     fred: (d) => hasKeys(d.yieldCurve) || hasKeys(d.indicators),
     extra: (d) => ['fx', 'commodities', 'rates'].some((k) => hasKeys(d[k])),

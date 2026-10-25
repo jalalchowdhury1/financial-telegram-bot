@@ -86,6 +86,15 @@ test('isLiveAnswer: each route\'s 200-with-fallback body is not a live answer', 
 // passed, so the Jev card was never saved and the page jumped ~525px on every warm open.
 const jevLive = require('./fixtures/jev-pills-2026-10-04.json');
 
+test("isLiveAnswer(spyDailyMove): a sheet cell that is not a number ('#N/A', 'Loading...', '') is not live", () => {
+    for (const value of ['#N/A', 'Loading...', '', ' ', 'N/A', '#REF!', null]) {
+        expect(isLiveAnswer('spyDailyMove', { value, source: 'Google Sheets' })).toBe(false);
+    }
+    for (const value of ['-0.52%', '+0.54%', '0.00%', '1.2']) {
+        expect(isLiveAnswer('spyDailyMove', { value, source: 'Google Sheets' })).toBe(true);
+    }
+});
+
 test('isLiveAnswer(jev): the real payload is live, so it is saved and painted on the next open', () => {
     expect(Array.isArray(jevLive.pills)).toBe(false);
     expect(Object.keys(jevLive.pills)).toEqual(['regime', 'recession', 'breadth', 'hedging', 'conflict']);
