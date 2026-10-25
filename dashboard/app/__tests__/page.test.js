@@ -148,6 +148,19 @@ it('a SPY or F&G route that is down says so in one line after loading, instead o
     expect(global.fetch.mock.calls.some((c) => /^\/api\/spy\?_t=/.test(String(c[0])))).toBe(true);
 });
 
+it('🔝 a warm open where SPY fails but other feeds land live: the glance bar shows the saved time, never "just now"', async () => {
+    const { SNAP_PREFIX, savedLabel } = require('../../lib/snapshot');
+    const at = Date.now() - 3600e3;
+    window.localStorage.setItem(`${SNAP_PREFIX}spy`, JSON.stringify({ savedAt: at, data: spyPayload }));
+    mockRoutes({
+        '/api/spy': Promise.resolve({ status: 200, json: async () => ({ error: 'SPY temporarily unavailable' }) }),
+        '/api/market-extra': Promise.resolve({ status: 200, json: async () => ({ rates: { tnx: { current: 4.1 } } }) }),
+    });
+    render(<Dashboard />);
+    await waitFor(() => expect(screen.getByText(/Updated/)).toBeInTheDocument()); // extra landed live
+    expect(document.querySelector('.glance-bar .glance-saved').textContent).toBe(`🕐 Saved ${savedLabel(at)}`);
+});
+
 it('👋 since last visit: compares against the last visit, and a tab coming back never reads "flat" before the refresh lands', async () => {
     const real = Date.now.bind(Date);
     const at = real() - 2 * 3600e3;

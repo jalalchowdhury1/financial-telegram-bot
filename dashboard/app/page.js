@@ -737,7 +737,7 @@ export default function Dashboard() {
             <ErrorBoundary resetKey={refreshTick}>
                 <GlanceBar
                     spy={spy} spyDailyMove={spyDailyMove} fg={fg} fgColor={fgColor} when={spyWhen}
-                    updatedAt={updatedAt} saved={anySaved} stale={spyStale} loading={loading}
+                    updatedAt={updatedAt} saved={saved('spy', 'spyDailyMove', 'fg')} stale={spyStale}
                     onRefresh={refreshNow} busy={refreshing}
                     markValues={collectLiveValues(fred, extraMarkets, sheets)}
                 />

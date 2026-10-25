@@ -40,20 +40,18 @@ describe('glanceNumbers — the same numbers the cards show, never a guess', () 
     });
 });
 
-describe('glanceAge — the header badge rule', () => {
-    test('a saved copy with no live answer yet shows its time; otherwise the live age', () => {
-        expect(glanceAge({ updatedAt: null, saved: '10:42', loading: true })).toEqual({ saved: '10:42' });
-        expect(glanceAge({ updatedAt: null, saved: '10:42', loading: false })).toEqual({ saved: '10:42' });
-        expect(glanceAge({ updatedAt: 1000, saved: '10:42', loading: true })).toEqual({ saved: '10:42' });
-        expect(glanceAge({ updatedAt: 1000, saved: '10:42', loading: false })).toEqual({ at: 1000 });
-        expect(glanceAge({ updatedAt: 1000, saved: undefined, loading: false })).toEqual({ at: 1000 });
-        expect(glanceAge({ updatedAt: null, saved: undefined, loading: true })).toBeNull();
+describe("glanceAge — the bar's own numbers decide its age", () => {
+    test('SPY or F&G still a saved copy shows its time, even after other feeds landed live; otherwise the live age', () => {
+        expect(glanceAge({ updatedAt: null, saved: '10:42' })).toEqual({ saved: '10:42' });
+        expect(glanceAge({ updatedAt: Date.now(), saved: '10:42' })).toEqual({ saved: '10:42' }); // not "just now"
+        expect(glanceAge({ updatedAt: 1000, saved: undefined })).toEqual({ at: 1000 });
+        expect(glanceAge({ updatedAt: null, saved: undefined })).toBeNull();
     });
 });
 
 test("glanceAge: SPY served from the server's last-good copy shows that copy's time, whatever the live age says", () => {
-    expect(glanceAge({ updatedAt: 1000, stale: 'Thu 16:00', loading: false })).toEqual({ stale: 'Thu 16:00' });
-    expect(glanceAge({ updatedAt: 1000, saved: '10:42', stale: 'Thu 16:00', loading: true })).toEqual({ stale: 'Thu 16:00' });
+    expect(glanceAge({ updatedAt: 1000, stale: 'Thu 16:00' })).toEqual({ stale: 'Thu 16:00' });
+    expect(glanceAge({ updatedAt: 1000, saved: '10:42', stale: 'Thu 16:00' })).toEqual({ stale: 'Thu 16:00' });
 });
 
 test('shouldShowGlance: only once the anchor is wholly above the top of the screen', () => {

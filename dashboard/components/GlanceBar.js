@@ -5,9 +5,9 @@
  * live state and the refresh used to be a long thumb-scroll away.
  *  - Numbers come from the page's own state (lib/glance.js) — no fetch of its own. The move
  *    carries the SPY card's session word off the day ("▲0.74% Fri"). F&G down = SPY + ↻ stay.
- *  - The age is the header's: <UpdatedAgo> (amber past 10 min), or "🕐 Saved 10:42" while
- *    the page shows a saved copy and nothing live has landed, or "⚠ Stale Thu 16:00" while
- *    SPY is the server's last-good copy.
+ *  - The age is the header's <UpdatedAgo> (amber past 10 min), or "🕐 Saved 10:42" while
+ *    SPY or F&G is still a saved copy, or "⚠ Stale Thu 16:00" while SPY is the server's
+ *    last-good copy.
  *  - Tap the numbers → back to the top, noted like ☰ → ↑ Top so the ↩ pill can bring him
  *    back. ↻ = the header's refresh (skips the edge cache).
  *  - ● N (cyan) = the header's "new prints" chip in miniature: each tap walks to the next
@@ -25,7 +25,7 @@ import { jumpToNextMark, markSummary } from './MarkChip';
 // Market Pulse is the anchor; if it is not on the page (a crashed card), the header is.
 const ANCHORS = ['.market-pulse', '.dashboard-header'];
 
-export default function GlanceBar({ spy, spyDailyMove, fg, fgColor, when, updatedAt, saved, stale, loading, onRefresh, busy, markValues }) {
+export default function GlanceBar({ spy, spyDailyMove, fg, fgColor, when, updatedAt, saved, stale, onRefresh, busy, markValues }) {
     const [on, setOn] = useState(false);
     const marks = useMarkCounts(markValues);
 
@@ -55,7 +55,7 @@ export default function GlanceBar({ spy, spyDailyMove, fg, fgColor, when, update
 
     const n = glanceNumbers({ spy, spyDailyMove, fg, when });
     if (!n) return null;
-    const age = glanceAge({ updatedAt, saved, stale, loading });
+    const age = glanceAge({ updatedAt, saved, stale });
     const toTop = () => {
         const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
         noteJumpFrom();
