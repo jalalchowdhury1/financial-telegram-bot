@@ -355,3 +355,35 @@ describe('yesterday with mock fetch', () => {
         expect(result.pills.regime.verdict).toBe('risk-on');
     });
 });
+// ---------------------------------------------------------------------------
+// Every KV call skips Next's Data Cache and has a timeout (audit 25 Oct 2026):
+// jev-pills sets fetchCache 'default-cache', so a bare fetch() froze the
+// "Since yesterday" baseline and could answer writes from the cache.
+// ---------------------------------------------------------------------------
+
+describe('jevLog — no cached KV calls', () => {
+    let originalFetch;
+    beforeEach(() => { originalFetch = global.fetch; });
+    afterEach(() => { global.fetch = originalFetch; });
+
+    test('get, set, NX guard, lpush and lrange all pass cache no-store + an abort signal', async () => {
+        const fetch = mockFetchSequence([
+            { result: 'OK' },                                  // NX guard
+            { result: 'OK' },                                  // SET
+            { result: 1 },                                     // LPUSH
+            { result: ['2026-09-18'] },                        // LRANGE
+            { result: JSON.stringify({ pills: {} }) },         // GET
+        ]);
+        global.fetch = fetch;
+        await withEnv(ENV_OK, async () => {
+            await logVerdicts('2026-09-20', { pills: {} });
+            await yesterday();
+        });
+        expect(fetch).toHaveBeenCalledTimes(5);
+        for (const [, opts] of fetch.mock.calls) {
+            expect(opts.cache).toBe('no-store');
+            expect(opts.signal).toBeDefined();
+            expect(opts.headers.Authorization).toBe(`Bearer ${KV_TOKEN}`);
+        }
+    });
+});

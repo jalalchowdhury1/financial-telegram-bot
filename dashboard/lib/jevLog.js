@@ -7,7 +7,9 @@
  *   ftb:jev:seen:<date>     — NX guard with 40-day TTL
  *
  * Every function returns null/false on any failure (no KV env vars, network
- * error, parse error). Never throws.
+ * error, parse error). Never throws. Every call goes through lib/kv.js kvCall
+ * (cache 'no-store' + 3 s timeout): jev-pills sets fetchCache 'default-cache',
+ * under which a bare fetch() is answered from Next's Data Cache.
  *
  * Upstash REST protocol:
  *   GET /get/<key>         — returns { result: <stored-value>, error: null }
@@ -15,6 +17,8 @@
  *   POST /set/<key>/<val>/EX/<ttl>/NX  — path-form NX guard, no body; result === 'OK' means claimed
  *   POST /lpush/<key>/<val> — path-form LPUSH, no body
  */
+
+import { kvCall } from './kv';
 
 const BASE = () => process.env.KV_REST_API_URL || '';
 const TOKEN = () => process.env.KV_REST_API_TOKEN || '';
@@ -29,15 +33,9 @@ function canLog() {
 export async function kvGet(key) {
     if (!canLog()) return null;
     try {
-        const url = `${BASE()}/get/${encodeURIComponent(key)}`;
-        const res = await fetch(url, {
-            headers: { Authorization: `Bearer ${TOKEN()}` },
-        });
-        if (!res.ok) return null;
-        const data = await res.json();
+        const data = await kvCall(`/get/${encodeURIComponent(key)}`);
         // Upstash returns { result: <value>, error: null }
-        if (data.error) return null;
-        return data.result ?? null;
+        return data ? data.result ?? null : null;
     } catch {
         return null;
     }
@@ -50,18 +48,11 @@ export async function kvGet(key) {
 export async function kvSet(key, value) {
     if (!canLog()) return false;
     try {
-        const url = `${BASE()}/set/${encodeURIComponent(key)}`;
-        const res = await fetch(url, {
+        return !!(await kvCall(`/set/${encodeURIComponent(key)}`, {
             method: 'POST',
-            headers: {
-                Authorization: `Bearer ${TOKEN()}`,
-                'Content-Type': 'application/json',
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(value),
-        });
-        if (!res.ok) return false;
-        const data = await res.json();
-        return !data.error;
+        }));
     } catch {
         return false;
     }
@@ -75,14 +66,8 @@ export async function kvSet(key, value) {
 async function kvSetNx(key, value, ttl) {
     if (!canLog()) return false;
     try {
-        const url = `${BASE()}/set/${encodeURIComponent(key)}/${encodeURIComponent(String(value))}/EX/${ttl}/NX`;
-        const res = await fetch(url, {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${TOKEN()}` },
-        });
-        if (!res.ok) return false;
-        const data = await res.json();
-        if (data.error) return false;
+        const data = await kvCall(`/set/${encodeURIComponent(key)}/${encodeURIComponent(String(value))}/EX/${ttl}/NX`, { method: 'POST' });
+        if (!data) return false;
         // Upstash returns result: 'OK' when claimed, result: null when already exists
         if (data.result === 'OK') return true;
         return null;
@@ -98,14 +83,7 @@ async function kvSetNx(key, value, ttl) {
 async function kvLpush(key, element) {
     if (!canLog()) return false;
     try {
-        const url = `${BASE()}/lpush/${encodeURIComponent(key)}/${encodeURIComponent(String(element))}`;
-        const res = await fetch(url, {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${TOKEN()}` },
-        });
-        if (!res.ok) return false;
-        const data = await res.json();
-        return !data.error;
+        return !!(await kvCall(`/lpush/${encodeURIComponent(key)}/${encodeURIComponent(String(element))}`, { method: 'POST' }));
     } catch {
         return false;
     }
@@ -117,14 +95,8 @@ async function kvLpush(key, element) {
 async function kvLrange(key) {
     if (!canLog()) return null;
     try {
-        const url = `${BASE()}/lrange/${encodeURIComponent(key)}/0/-1`;
-        const res = await fetch(url, {
-            headers: { Authorization: `Bearer ${TOKEN()}` },
-        });
-        if (!res.ok) return null;
-        const data = await res.json();
-        if (data.error) return null;
-        return Array.isArray(data.result) ? data.result : null;
+        const data = await kvCall(`/lrange/${encodeURIComponent(key)}/0/-1`);
+        return data && Array.isArray(data.result) ? data.result : null;
     } catch {
         return null;
     }
