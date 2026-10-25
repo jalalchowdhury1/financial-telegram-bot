@@ -11,33 +11,33 @@ _spec.loader.exec_module(ts)
 MD = """# Tranche Map — EXECUTION SCHEDULE
 | done | date | step | owner | what | duration / note |
 |---|---|---|---|---|---|
-| [x] | 2026-09-15 Tue | S1.1 | Jalal | Message Composer support, 3 questions | reply 1-3 biz days |
-| [ ] | 2026-09-23 Wed | S2.1 | Jalal | SWITCH DAY. One sale: Main + Shartino → cash | 1 afternoon · radar rule |
-| [ ] | 2026-10-06 Tue | S2.4 | Jalal | Sweep each landing from checking → JPM SD | |
-| [ ] | 2026-10-24 Sat | S2.6 | Nabila | Day 31: fund book B | |
-not a row | [ ] | 2026-01-01 Thu | S9.9 | x | y | z |
+| [x] | 2030-09-15 Tue | S1.1 | Owner | Message support, 3 questions | reply 1-3 biz days |
+| [ ] | 2030-09-23 Wed | S2.1 | Owner | SWITCH DAY. One sale: Main + Old-B → cash | 1 afternoon · radar rule |
+| [ ] | 2030-10-06 Tue | S2.4 | Owner | Sweep each landing from checking → broker SD | |
+| [ ] | 2030-10-24 Sat | S2.6 | Spouse | Day 31: fund book B | |
+not a row | [ ] | 2030-01-01 Thu | S9.9 | x | y | z |
 """
 
 INS = {
     "accounts": [
-        {"id": "composer-taxable", "label": "Composer · taxable · Jalal", "owner": "Jalal", "login": "jalal"},
-        {"id": "composer-roth-nabila", "label": "Composer Roth IRA · Nabila", "owner": "Nabila", "login": "nabila"},
-        {"id": "jpm-sd-jalal", "label": "JPM Self-Directed", "owner": "Jalal"},
+        {"id": "composer-taxable", "label": "Composer · taxable · Owner", "owner": "Owner", "login": "owner"},
+        {"id": "composer-roth-spouse", "label": "Composer Roth IRA · Spouse", "owner": "Spouse", "login": "spouse"},
+        {"id": "broker-sd-owner", "label": "Broker Self-Directed", "owner": "Owner"},
     ],
     "instruments": [
         {"id": "Main", "name": "Main", "kind": "symphony", "account": "composer-taxable",
          "funded": {"until": "S2.1"}, "defensive": "withdraw-half"},
         {"id": "C8-T", "name": "C8-T", "kind": "symphony", "account": "composer-taxable",
          "funded": {"from": "S2.1"}, "defensive": "withdraw-half"},
-        {"id": "C3-nabila", "name": "C3", "kind": "symphony", "account": "composer-roth-nabila",
+        {"id": "C3-spouse", "name": "C3", "kind": "symphony", "account": "composer-roth-spouse",
          "funded": {"from": "S2.6"}, "defensive": "withdraw-half"},
-        {"id": "C9-nabila", "name": "C9", "kind": "symphony", "account": "composer-roth-nabila",
+        {"id": "C9-spouse", "name": "C9", "kind": "symphony", "account": "composer-roth-spouse",
          "funded": {"from": "S2.6"}, "defensive": "withdraw-half"},
         {"id": "hedges-mirror", "name": "Hedge sleeve mirror", "kind": "symphony", "account": None,
          "funded": None, "defensive": "never"},
-        {"id": "SGOV", "name": "SGOV", "kind": "etf", "account": "jpm-sd-jalal",
+        {"id": "SGOV", "name": "SGOV", "kind": "etf", "account": "broker-sd-owner",
          "funded": {"from": "S2.4"}, "defensive": "never"},
-        {"id": "SPY-2323", "name": "SPY", "kind": "etf", "account": "jpm-2323-nabila",
+        {"id": "SPY-0000", "name": "SPY", "kind": "etf", "account": "broker-0000-spouse",
          "funded": {"standing": True}, "defensive": "never"},
     ],
     "defensive": {"collisions": [
@@ -53,8 +53,8 @@ def test_parse_steps_reads_tick_date_id_owner_what_and_note_and_skips_non_rows()
     steps = ts.parse_steps(MD)
     assert [s["id"] for s in steps] == ["S1.1", "S2.1", "S2.4", "S2.6"]
     assert steps[0]["done"] is True and steps[1]["done"] is False
-    assert steps[0]["date"] == "2026-09-15" and steps[0]["owner"] == "Jalal"
-    assert steps[0]["what"].startswith("Message Composer support")
+    assert steps[0]["date"] == "2030-09-15" and steps[0]["owner"] == "Owner"
+    assert steps[0]["what"].startswith("Message support")
     assert steps[0]["note"] == "reply 1-3 biz days" and steps[2]["note"] == ""
     assert ts.ticks(steps) == {"S1.1": True, "S2.1": False, "S2.4": False, "S2.6": False}
 
@@ -62,17 +62,17 @@ def test_parse_steps_reads_tick_date_id_owner_what_and_note_and_skips_non_rows()
 def test_before_switch_day_only_the_old_taxable_symphonies_hold_money():
     tk = ts.ticks(ts.parse_steps(MD))
     got = ts.funded_symphonies(INS, tk)
-    assert [(f["name"], f["login"]) for f in got] == [("Main", "jalal")]
+    assert [(f["name"], f["login"]) for f in got] == [("Main", "owner")]
 
 
 def test_after_switch_day_c8t_replaces_main_and_the_mirror_and_etfs_never_appear():
     got = ts.funded_symphonies(INS, {"S2.1": True})
-    assert [(f["name"], f["login"], f["account"]) for f in got] == [("C8-T", "jalal", "Composer · taxable · Jalal")]
+    assert [(f["name"], f["login"], f["account"]) for f in got] == [("C8-T", "owner", "Composer · taxable · Owner")]
 
 
-def test_book_b_appears_under_nabilas_login_once_s26_is_ticked():
+def test_book_b_appears_under_spouses_login_once_s26_is_ticked():
     got = ts.funded_symphonies(INS, {"S2.1": True, "S2.6": True})
-    assert [(f["name"], f["login"]) for f in got] == [("C8-T", "jalal"), ("C3", "nabila"), ("C9", "nabila")]
+    assert [(f["name"], f["login"]) for f in got] == [("C8-T", "owner"), ("C3", "spouse"), ("C9", "spouse")]
 
 
 ALL_UNTICKED = {"S1.1": False, "S2.1": False, "S2.4": False, "S2.6": False}
@@ -111,7 +111,7 @@ def test_context_reads_both_files_and_degrades_to_empty_when_they_are_missing(tm
 
 
 def test_an_unreadable_calendar_names_nothing_even_when_the_instrument_list_is_present(tmp_path):
-    """Red team 8 Sep: md missing → ticks {} used to read as 'nothing ticked yet' → Main + Shartino named after they were sold."""
+    """Red team 8 Sep: md missing → ticks {} used to read as 'nothing ticked yet' → Main + Old-B named after they were sold."""
     ins = tmp_path / "i.json"
     ins.write_text(json.dumps(INS))
     ctx = ts.tranche_context("PENDING_DEFENSIVE", md_path=str(tmp_path / "renamed.md"), instruments_path=str(ins))
