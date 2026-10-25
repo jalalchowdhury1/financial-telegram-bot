@@ -160,7 +160,8 @@ def get_taps():
         print("  no DEFENSIVE_TAP_URL/KEY in .env — taps unavailable")
         return None
     try:
-        with urllib.request.urlopen(f"{url}?{urllib.parse.urlencode({'k': key})}", timeout=20) as r:
+        # Key in a header, never the URL (health-hub accepts x-app-key wherever ?k= works).
+        with urllib.request.urlopen(urllib.request.Request(url, headers={"x-app-key": key}), timeout=20) as r:
             return json.load(r).get("tap") or {}
     except Exception as e:                       # noqa: BLE001 — the reminder still goes out without taps
         print(f"  tap endpoint failed: {e}")
