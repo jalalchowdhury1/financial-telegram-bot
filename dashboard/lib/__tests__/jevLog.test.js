@@ -266,6 +266,20 @@ describe('logVerdicts — Upstash protocol', () => {
         expect(result).toBe(false);
     });
 
+    test('a failed SET or LPUSH deletes the NX guard so a later build retries the day', async () => {
+        for (const seq of [
+            [{ result: 'OK' }, { result: null, error: 'error' }, { result: 1 }],   // SET fails
+            [{ result: 'OK' }, { result: 'OK' }, { error: 'error' }, { result: 1 }], // LPUSH fails
+        ]) {
+            const fetch = mockFetchSequence(seq);
+            global.fetch = fetch;
+            await withEnv(ENV_OK, () => logVerdicts('2026-09-20', { pills: {} }));
+            const last = fetch.mock.calls[fetch.mock.calls.length - 1];
+            expect(last[0]).toBe(`${KV_BASE}/del/ftb%3Ajev%3Aseen%3A2026-09-20`);
+            expect(last[1].method).toBe('POST');
+        }
+    });
+
     test('returns true on successful full log (NX + SET + LPUSH)', async () => {
         const fetch = mockFetchSequence([
             { result: 'OK' },     // NX guard claimed

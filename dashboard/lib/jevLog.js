@@ -165,7 +165,8 @@ export async function listDays() {
  * 1. Claim the NX guard FIRST. If already claimed (already logged today),
  *    return true without any further writes.
  * 2. If claimed, SET ftb:jev:<date> to the payload, then LPUSH the date,
- *    and return the SET result.
+ *    and return the SET result. If either fails, DEL the guard so a later
+ *    build that day retries (else the day is lost for the 40-day TTL).
  *
  * @param {string} dateStr — 'YYYY-MM-DD'
  * @param {object} payload — verdicts + state hash + spy price + pills
@@ -189,9 +190,9 @@ export async function logVerdicts(dateStr, payload) {
         // Step 2: claimed — write the payload and push date
         const dateKey = `ftb:jev:${dateStr}`;
         const stored = await kvSet(dateKey, payload);
-        if (stored) {
-            await kvLpush('ftb:jev:days', dateStr);
-        }
+        const pushed = stored && await kvLpush('ftb:jev:days', dateStr);
+        // A failed SET/LPUSH gives the guard back, so the next build retries the day
+        if (!pushed) await kvCall(`/del/${encodeURIComponent(seenKey)}`, { method: 'POST' });
         return stored;
     } catch {
         return false;
