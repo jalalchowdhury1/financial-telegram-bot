@@ -117,6 +117,7 @@ export default function Dashboard() {
     const readBase = () => setSeenBase({ rec: readSeen(), at: Date.now() });
     // feed key → ms its last LIVE answer landed (the time a seen number is stamped with).
     const [landedAt, setLandedAt] = useState({});
+    const landedRef = useRef({}); // the same, readable inside fetchAll
     // Refresh behaviour: `loading` is the FIRST load only (the header badge reads
     // "Loading live data..." until every feed has answered once); cards key off their
     // own feed via `pending` below. Every
@@ -188,10 +189,17 @@ export default function Dashboard() {
                     live++;
                     setters[key](res);
                     dropSaved(key);
-                    setLandedAt((p) => ({ ...p, [key]: Date.now() }));
+                    landedRef.current = { ...landedRef.current, [key]: Date.now() };
+                    setLandedAt(landedRef.current);
                     setTimeout(() => writeSnap(key, res), 0); // off the render path
                 } else if (res != null && !(key in savedRef.current)) {
-                    setters[key](res); // no saved copy: the card shows the route's own degraded state
+                    if (landedRef.current[key]) {
+                        // a live answer is on screen: keep it, tagged 🕐 with the time it landed
+                        savedRef.current = { ...savedRef.current, [key]: landedRef.current[key] };
+                        setSavedAt(savedRef.current);
+                    } else {
+                        setters[key](res); // nothing live yet: the card shows the route's own degraded state
+                    }
                 }
                 setPending((p) => (p[key] ? { ...p, [key]: false } : p));
             };

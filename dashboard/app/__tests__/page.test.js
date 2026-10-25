@@ -113,6 +113,24 @@ it('a feed that fails on refresh keeps the card it already had', async () => {
     expect(screen.getByText('$612.34')).toBeInTheDocument();
 });
 
+it("a refresh that gets a route's fallback body keeps the live number, tagged 🕐 with when it landed", async () => {
+    mockRoutes({ '/api/market-extra': Promise.resolve({ status: 200, json: async () => ({}) }) });
+    render(<Dashboard />);
+    await waitFor(() => expect(screen.getByText('$612.34')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh all data' })).not.toBeDisabled());
+    const card = () => document.querySelector('[data-jump="SPY overview"]');
+    expect(card()).not.toHaveAttribute('data-cached');
+
+    mockRoutes({
+        '/api/market-extra': Promise.resolve({ status: 200, json: async () => ({}) }),
+        '/api/spy': Promise.resolve({ status: 200, json: async () => ({ error: 'SPY temporarily unavailable' }) }),
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh all data' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh all data' })).not.toBeDisabled());
+    expect(screen.getByText('$612.34')).toBeInTheDocument();
+    expect(card()).toHaveAttribute('data-cached');
+});
+
 it('👋 since last visit: compares against the last visit, and a tab coming back never reads "flat" before the refresh lands', async () => {
     const real = Date.now.bind(Date);
     const at = real() - 2 * 3600e3;
