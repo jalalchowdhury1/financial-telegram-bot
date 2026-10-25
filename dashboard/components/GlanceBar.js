@@ -65,7 +65,7 @@ export default function GlanceBar({ spy, spyDailyMove, fg, fgColor, when, update
     const said = `SPY ${n.price}${moveSaid}${n.fg != null ? `, Fear & Greed ${n.fg}` : ''}`;
 
     return (
-        <div className={`glance-bar${on ? ' is-on' : ''}`} role="region" aria-label="Glance bar">
+        <div className={`glance-bar${on ? ' is-on' : ''}${marks.total > 0 ? ' has-mark' : ''}`} role="region" aria-label="Glance bar">
             <button type="button" className="glance-main" onClick={toTop} tabIndex={on ? 0 : -1} aria-label={`${said} — back to top`}>
                 <span className="glance-k">SPY</span> <b>{n.price}</b>
                 {n.move && <> <span className={n.move.up ? 'stat-positive' : 'stat-negative'}>{n.move.text}</span></>}

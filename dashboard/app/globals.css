@@ -2469,6 +2469,10 @@ html:has(.offline-banner) .glance-bar {
 @media (max-width: 374px) {
   .glance-main .glance-when { display: none; }
 }
+/* 390px with the ● N dot: "Fri" cut F&G to "F&G …" (218 of 216px). The dot wins the room. */
+@media (max-width: 400px) {
+  .glance-bar.has-mark .glance-when { display: none; }
+}
 /* …and a saved copy reads "🕐 22:21" like the cards' corner tags (it filled 365.5 of 366px at
    390, and clipped F&G at 375). "Saved" stays for screen readers. */
 @media (max-width: 400px) {

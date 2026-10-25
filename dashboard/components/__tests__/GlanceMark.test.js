@@ -44,3 +44,13 @@ it('shows ● N and each tap walks to the next marked number, wrapping round', (
     act(() => { fireEvent.click(btn); fireEvent.click(btn); fireEvent.click(btn); });
     expect(seen).toEqual(['m1', 'm2', 'm1']);
 });
+
+it('the bar is tagged has-mark only while ● N shows, so a phone can drop "Fri" and keep F&G whole', () => {
+    counts = { print: 0, move: 0, total: 0 };
+    const { unmount } = render(<Page />);
+    expect(document.querySelector('.glance-bar')).not.toHaveClass('has-mark');
+    unmount();
+    counts = { print: 1, move: 0, total: 1 };
+    render(<Page />);
+    expect(document.querySelector('.glance-bar')).toHaveClass('has-mark');
+});
