@@ -54,9 +54,6 @@ class RouteKeepsFailReason(unittest.TestCase):
         self.assertIn("Series failed", m.group(1))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class FredExtras(unittest.TestCase):
     """FAKE payloads: the four non-FRED numbers must stay live on top of a FRED-down copy."""
@@ -129,3 +126,7 @@ class CatchupAlert(unittest.TestCase):
 
     def test_nightly_card_still_rings(self):
         self.assertNotIn("disable_notification", self.run_main(["fault_matrix.py"]))
+
+
+if __name__ == "__main__":
+    unittest.main()
