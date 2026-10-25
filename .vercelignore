@@ -1,0 +1,5 @@
+# The Vercel CLI ignores .gitignore: never upload secrets or local state if `vercel` runs here.
+.env*
+.claude
+.venv
+*.log
