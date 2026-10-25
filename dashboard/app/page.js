@@ -368,6 +368,11 @@ export default function Dashboard() {
     const marksOff = MARK_INPUTS.some((k) => k in savedAt);
     // The SPY move's session, named the way What moved names it: "today" during the
     // session, "Fri" all weekend and before Monday's open. Unknown market date = "today".
+    // The top bar fills at the real refresh pace (5 min open, 30 closed), started from when
+    // this refresh began; fixed per refresh so a re-render never jumps it.
+    const refreshBar = useMemo(() => ({
+        animation: `progress-fill ${Math.round(refreshMs() / 1000)}s linear ${-Math.max(0, (Date.now() - lastFetchRef.current) / 1000).toFixed(1)}s forwards`,
+    }), [lastUpdated]); // eslint-disable-line react-hooks/exhaustive-deps
     const spyWhen = useMemo(() => { try { return movedWhen({ spy, vol }) || 'today'; } catch { return 'today'; } }, [spy, vol]);
 
     return (
@@ -376,7 +381,7 @@ export default function Dashboard() {
         <PullToRefresh onRefresh={refreshNow} busy={refreshing} />
         <div className="dashboard">
             {/* Auto-Refresh Visualizer */}
-            {lastUpdated && <div key={lastUpdated} className="auto-refresh-bar" style={{ animation: 'progress-fill 300s linear forwards' }}></div>}
+            {lastUpdated && <div key={lastUpdated} className="auto-refresh-bar" style={refreshBar}></div>}
 
             {/* HEADER */}
             <header className="dashboard-header">

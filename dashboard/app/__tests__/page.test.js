@@ -381,3 +381,17 @@ it('↩ after a Market Pulse chip jump, the back pill offers the way back', asyn
     expect(screen.getByRole('button', { name: /^Back to / })).toHaveClass('is-on');
     act(() => clearJump());
 });
+
+it('the top refresh bar fills at the real refresh pace: 30 min while the market is closed, 5 min while open', async () => {
+    const bar = () => document.querySelector('.auto-refresh-bar');
+    jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-25T19:00:00Z')); // Sunday 3 PM ET
+    mockRoutes();
+    const { unmount } = render(<Dashboard />);
+    await waitFor(() => expect(bar()).not.toBeNull());
+    expect(bar().style.animation).toMatch(/^progress-fill 1800s linear -?\d+(\.\d+)?s forwards$/);
+    unmount();
+    Date.now.mockReturnValue(Date.parse('2026-10-26T15:00:00Z')); // Monday 11 AM ET
+    render(<Dashboard />);
+    await waitFor(() => expect(bar()).not.toBeNull());
+    expect(bar().style.animation).toMatch(/^progress-fill 300s /);
+});
