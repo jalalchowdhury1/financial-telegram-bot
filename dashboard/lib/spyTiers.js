@@ -136,13 +136,21 @@ export async function cnbcSpy(expected, { revalidate = 120 } = {}) {
     return { current: q.price, prevClose: q.price - q.change, changePct: q.changePct, asOf: q.asOf };
 }
 
+/** Finnhub SPY quote, rejected unless its last trade (`t`) is in the latest session (like cnbcSpy). */
+async function finnhubSpy(key, expected) {
+    const q = await finnhubQuote('SPY', key);
+    const asOf = q.t ? etParts(q.t * 1000).date : null;
+    if (!asOf || asOf < expected) throw new Error(`Finnhub quote dated ${asOf || '?'}, latest session ${expected}`);
+    return q;
+}
+
 /** Live spot for the overlay: Finnhub, then CNBC. Fetched once per request (memoized on ctx). */
 function spotOnce(ctx) {
     if (!ctx.spotP) {
         ctx.spotP = (async () => {
             const { finnhubKey, faults, messages, expected } = ctx;
             if (finnhubKey) {
-                try { return { ...(await gate('finnhub', faults, () => finnhubQuote('SPY', finnhubKey))), label: 'Finnhub' }; }
+                try { return { ...(await gate('finnhub', faults, () => finnhubSpy(finnhubKey, expected))), label: 'Finnhub' }; }
                 catch (e) { messages.push(`Finnhub spot failed: ${e.message}`); }
             }
             try { return { ...(await gate('cnbc', faults, () => cnbcSpy(expected))), label: 'CNBC' }; }
@@ -259,7 +267,7 @@ export async function fallbackMove(messages, faults = new Set(), { env = process
     const expected = latestSessionDate(now);
     if (env.FINNHUB_KEY) {
         try {
-            const q = await gate('finnhub', faults, () => finnhubQuote('SPY', env.FINNHUB_KEY));
+            const q = await gate('finnhub', faults, () => finnhubSpy(env.FINNHUB_KEY, expected));
             return { value: fmtPct(dailyChange(q.current, q.prevClose).pct), source: 'Finnhub (fallback)' };
         } catch (e) { messages.push(`Finnhub failed: ${e.message}`); }
     }

@@ -285,7 +285,7 @@ export async function finnhubQuote(symbol, key, { revalidate = 120 } = {}) {
     if (!key) throw new Error('Finnhub: no API key');
     const data = await withRetry(() => fetchJson(`https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${key}`, { revalidate }));
     if (data?.c == null || data.c === 0) throw new Error('Finnhub: no quote');
-    return { current: data.c, prevClose: data.pc ?? data.c };
+    return { current: data.c, prevClose: data.pc ?? data.c, t: data.t };
 }
 
 /** Compute the US Dollar Index (DXY) from USD-base rates (ICE formula). */
