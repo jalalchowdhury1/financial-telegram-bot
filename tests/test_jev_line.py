@@ -112,3 +112,18 @@ def test_handler_with_env_var_but_no_line_is_unchanged(monkeypatch):
     with patch('lambda_handler.fetch_jev_line', return_value=None):
         text = _run_handler(monkeypatch)
     assert text == 'sheet text'
+
+
+def test_brief_prints_na_when_spy_daily_change_is_unknown(monkeypatch):
+    # Audit 25 Oct 2026: the Google Sheet SPY tier has no previous close; the brief used to
+    # print "(+0.00%)", which reads as a flat day.
+    import lambda_handler
+    monkeypatch.delenv('JEV_PILLS_URL', raising=False)
+    monkeypatch.setattr(lambda_handler, 'fetch_google_sheet_indicators', lambda: '')
+    monkeypatch.setattr(lambda_handler, 'fetch_spy_with_fallback', lambda **k: {
+        'current': 778.57, 'dailyChange': None, 'ma200': {'pct': 7.7}, 'week52High': {'pct': -0.4},
+        'rsi': 63.1, 'return3y': 80.17, '_meta': {'source': 'Google Sheet'}})
+    sent = {}
+    monkeypatch.setattr(lambda_handler, 'digest_post', lambda *a, **k: sent.update(text=a[1]) or True)
+    lambda_handler.handle_eventbridge({'TELEGRAM_TOKEN': 't', 'TELEGRAM_CHAT_ID': 'c', 'FRED_API_KEY': 'f'}, '2026-09-19')
+    assert 'Price : $778.57 (n/a)' in sent['text']

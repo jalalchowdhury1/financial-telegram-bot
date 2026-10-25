@@ -960,7 +960,7 @@ def fetch_spy_with_fallback(fred_api_key: Optional[str] = None,
         return3y = indicators.get('return3y')
         ma200_pct = _calc_pct(current, ma200)
         high52w_pct = _calc_pct(current, week52High)
-        daily_change: Dict[str, float] = {'value': 0, 'pct': 0}
+        daily_change = None  # the sheet has no previous close: unknown, never a fake flat day
 
         # Fetch chart history from FRED for the SPY chart component
         if fred_api_key:
