@@ -101,3 +101,31 @@ class CatchUp(unittest.TestCase):
     def test_crashed_or_missing_run_reruns(self):
         self.assertTrue(self._needed("=== 72/72 passed ===\nTraceback (most recent call last):\n"))
         self.assertTrue(fault_matrix.catchup_needed("/nonexistent/ftb.log"))
+
+
+class CatchupAlert(unittest.TestCase):
+    """The 01:40 catch-up re-runs after a failed 21:40 that already rang: its card is quiet."""
+
+    def run_main(self, argv):
+        sent = []
+        tg = mock.MagicMock(side_effect=lambda token, method, data, src: sent.append(data) or mock.Mock())
+        with mock.patch.object(sys, "argv", argv), \
+                mock.patch.object(fault_matrix, "CASES", [("fred", "", "live")]), \
+                mock.patch.object(fault_matrix, "catchup_needed", return_value=True), \
+                mock.patch.object(fault_matrix, "check", return_value=(False, "FAKE fail", 1.0)), \
+                mock.patch.object(fault_matrix, "spy_3y_agrees", return_value=(True, "ok")), \
+                mock.patch.object(fault_matrix, "sheets_3y_agree", return_value=[]), \
+                mock.patch.object(fault_matrix, "signals_agree", return_value=[]), \
+                mock.patch.object(fault_matrix, "fred_extras_agree", return_value=[]), \
+                mock.patch.object(fault_matrix, "open_tg", tg), \
+                mock.patch.dict(os.environ, {"TELEGRAM_TOKEN": "FAKE", "FAULT_MATRIX_ALERT_CHAT": "1"}), \
+                mock.patch("sys.stdout", io.StringIO()):
+            self.assertEqual(fault_matrix.main(), 1)
+        self.assertEqual(len(sent), 1)
+        return sent[0].decode()
+
+    def test_catchup_card_is_silent(self):
+        self.assertIn("disable_notification=true", self.run_main(["fault_matrix.py", "--catchup"]))
+
+    def test_nightly_card_still_rings(self):
+        self.assertNotIn("disable_notification", self.run_main(["fault_matrix.py"]))

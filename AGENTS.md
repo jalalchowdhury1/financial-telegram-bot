@@ -701,7 +701,7 @@ Rule: every number has ≥2 independent live sources, then saved copies, then an
   Add a case there whenever you add a tier.
   Catch-up: `com.jalal.ftb-fault-matrix-catchup` (01:40, `--catchup`) re-runs ONLY when the log's
   last line isn't `=== N/N passed ===`, and prints nothing on a skip — keep it silent, or the
-  fleet row (which grades that last line) breaks (22 Oct 2026).
+  fleet row (which grades that last line) breaks (22 Oct 2026). Its FAIL card goes out quiet (`disable_notification`): 21:40 already rang.
   A `fred … live` FAIL ending "upstream down: FRED serving its maintenance page" = FRED itself is
   down (HTTP 200 HTML, API and fredgraph CSV alike; 21 Oct 2026): the route is right to serve the
   stale copy + live Horsemen. Not a regression; it clears when FRED is back. The reason is in

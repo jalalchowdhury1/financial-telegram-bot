@@ -333,12 +333,14 @@ def main():
         lines += [f'• <b>sheet 3Y</b>: {m}' for m in sheet_bad]
         lines += [f'• <b>signals</b>: {m}' for m in signal_bad]
         lines += [f'• <b>FRED-down extras</b>: {m}' for m in extra_bad]
+        # The 01:40 catch-up re-runs only after a failed 21:40, which already rang: post quietly.
         send(f'⚠️ <b>Dashboard backup · {bad}/{total} failed</b>\n' + '\n'.join(lines)
-             + '\n<blockquote><i>scripts/fault_matrix.py · nightly · run it again to recheck</i></blockquote>')
+             + '\n<blockquote><i>scripts/fault_matrix.py · nightly · run it again to recheck</i></blockquote>',
+             quiet='--catchup' in sys.argv)
     return 1 if bad else 0
 
 
-def send(text):
+def send(text, quiet=False):
     env = {}
     try:
         with open(os.path.join(REPO, '.env')) as f:
@@ -354,7 +356,8 @@ def send(text):
         print('alert skipped: no TELEGRAM_TOKEN / chat id')
         return
     data = urllib.parse.urlencode({'chat_id': chat, 'text': text, 'parse_mode': 'HTML',
-                                   'disable_web_page_preview': 'true'}).encode()
+                                   'disable_web_page_preview': 'true',
+                                   **({'disable_notification': 'true'} if quiet else {})}).encode()
     try:
         open_tg(token, 'sendMessage', data, 'faultmatrix').close()
     except Exception as e:
