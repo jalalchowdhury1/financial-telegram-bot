@@ -25,6 +25,7 @@ import JumpNav from '../components/JumpNav';
 import GlanceBar from '../components/GlanceBar';
 import BackPill from '../components/BackPill';
 import WhatMoved from '../components/WhatMoved';
+import StatusLine from '../components/StatusLine';
 import { UpdatedAgo, OfflineBanner, PullToRefresh } from '../components/PhonePolish';
 import { readSnap, writeSnap, savedLabel, purgeOldSnaps, isLiveAnswer } from '../lib/snapshot';
 import { readSeen, writeSeen, mergeSeen, pickSeen, SINCE_MIN_GAP_MS } from '../lib/lastVisit';
@@ -234,15 +235,13 @@ export default function Dashboard() {
             hasLoadedRef.current = true;
             const { sheets: sheetsRes, spy: spyRes, fg: fgRes, fred: fredRes, extra: extraRes } = got;
 
-            setSystemStatus({
-                spy: spyRes?._meta,
-                fred: fredRes?._meta,
-                fg: fgRes?._meta,
-                sheets: sheetsRes?._meta,
-                extra: extraRes?._meta
-            });
+            setSystemStatus({ spy: spyRes, fred: fredRes, fg: fgRes, sheets: sheetsRes, extra: extraRes });
 
             const errors = [];
+            // a fetch that failed outright (null) used to leave no trace here at all
+            for (const [k, label] of [['sheets', 'SHEETS'], ['spy', 'SPY'], ['fg', 'F&G'], ['fred', 'FRED'], ['extra', 'EXTRA']]) {
+                if (got[k] == null) errors.push(`[${label}] no answer`);
+            }
             if (sheetsRes?.error) errors.push(`[SHEETS] ${sheetsRes.error}`);
             if (spyRes?.error) errors.push(`[SPY] ${spyRes.error}`);
             if (fgRes?.error) errors.push(`[F&G] ${fgRes.error}`);
@@ -429,7 +428,7 @@ export default function Dashboard() {
             </ErrorBoundary>
 
             {/* CUSTOM INDICATOR BAR */}
-            <div className="saved-wrap" data-cached={saved('sheets')} style={{ display: 'contents', ...savedVar('sheets') }}>
+            <div className="saved-wrap" data-jump="Indicators" data-cached={saved('sheets')} style={{ display: 'contents', ...savedVar('sheets') }}>
                 <ErrorBoundary resetKey={refreshTick}><CustomIndicatorBar sheets={sheets} loading={pending.sheets && !sheets} /></ErrorBoundary>
             </div>
 
@@ -789,66 +788,10 @@ export default function Dashboard() {
                 </div>
             )}
 
-            {/* SYSTEM STATUS BAR */}
+            {/* SYSTEM STATUS BAR — one line; a degraded feed is an amber chip that jumps to its card */}
             {systemStatus && (
-                <div className="system-status-bar">
-                    <div className="status-items">
-                        <span className={`status-item ${systemStatus.spy?.hasErrors ? 'status-error' :
-                            systemStatus.spy?.source?.includes('FRED') ? 'status-warn' : ''
-                            }`}>
-                            [SPY: {
-                                systemStatus.spy?.source?.includes('yfinance') ? 'yfinance' :
-                                    systemStatus.spy?.source?.includes('Polygon') ? 'Polygon' :
-                                        systemStatus.spy?.source?.includes('Google Sheet') ? 'GSheet' :
-                                            systemStatus.spy?.source?.includes('FRED') ? 'FRED Fallback' :
-                                                systemStatus.spy?.source || 'OK'
-                            }]
-                        </span>
-                        <span className={`status-item ${systemStatus.fred?.hasErrors ? 'status-error' : ''}`}>
-                            [FRED: {systemStatus.fred?.messages?.[0]?.replace('Loaded ', '').replace(' series', '') || '18/18'}]
-                        </span>
-                        <span className={`status-item ${systemStatus.fg?.source?.includes('Stale') || systemStatus.fg?.source?.includes('Failed') ? 'status-error' :
-                            (systemStatus.fg?.source?.includes('VIX') || systemStatus.fg?.source?.includes('Proxy')) ? 'status-warn' :
-                                systemStatus.fg?.hasErrors ? 'status-warn' : ''
-                            }`}>
-                            [F&G: {
-                                // stale first: a cached copy's source still names CNN ("Stale cache (…) ← CNN")
-                                (systemStatus.fg?.stale && !systemStatus.fg?.proxy) ? 'STALE' :
-                                systemStatus.fg?.source?.includes('CNN') ? 'CNN' :
-                                    systemStatus.fg?.source?.includes('RapidAPI') ? 'RapidAPI' :
-                                        systemStatus.fg?.source?.includes('VIXCLS') ? 'FRED VIX' :
-                                            systemStatus.fg?.source?.includes('VIX') ? 'VIX Proxy' :
-                                                systemStatus.fg?.source?.includes('Stale') ? 'STALE' :
-                                                    systemStatus.fg?.source?.includes('Failed') ? 'FAILED' :
-                                                        systemStatus.fg?.hasErrors ? 'PARTIAL' : 'LIVE OK'
-                            }]
-                        </span>
-                        <span className={`status-item ${(systemStatus.sheets?.source?.includes('Failed') || systemStatus.sheets?.source?.includes('Static')) ? 'status-error' :
-                            systemStatus.sheets?.source?.includes('Stale') ? 'status-error' :
-                                (systemStatus.sheets?.source?.includes('Cached') || systemStatus.sheets?.source?.includes('Alt') || systemStatus.sheets?.source?.includes('Proxy') || systemStatus.sheets?.source?.includes('FRED')) ? 'status-warn' :
-                                    ''
-                            }`}>
-                            [SHEETS: {
-                                (systemStatus.sheets?.source?.includes('Failed') || systemStatus.sheets?.source?.includes('Static')) ? 'FAILED' :
-                                    systemStatus.sheets?.source?.includes('Stale') ? 'STALE' :
-                                        systemStatus.sheets?.source?.includes('Cached') ? 'CACHE' :
-                                            systemStatus.sheets?.source?.includes('Alt') ? 'ALT OK' :
-                                                (systemStatus.sheets?.source?.includes('Proxy') || systemStatus.sheets?.source?.includes('FRED')) ? 'FRED Proxy' :
-                                                    'LIVE OK'
-                            }]
-                        </span>
-                        {systemStatus.extra && (
-                            <span className={`status-item ${systemStatus.extra?.messages?.some(m => m.includes('unavailable'))
-                                ? 'status-error'
-                                : systemStatus.extra?.hasErrors
-                                    ? 'status-warn'
-                                    : ''
-                                }`}>
-                                [MKTS: {systemStatus.extra?.messages?.map((m) => m.replace(/skipped (.+)$/i, (_, l) => `skipped ${l.split(',').length}`)).join(' · ') || 'LIVE OK'}]
-                            </span>
-                        )}
-                    </div>
-                </div>
+                <StatusLine bodies={systemStatus}
+                    saved={{ spy: saved('spy'), fred: saved('fred'), fg: saved('fg'), sheets: saved('sheets'), extra: saved('extra') }} />
             )}
         </div>
         </MarkProvider>

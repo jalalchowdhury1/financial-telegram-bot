@@ -163,6 +163,18 @@ it('🔝 a warm open where SPY fails but other feeds land live: the glance bar s
     expect(document.querySelector('.glance-bar .glance-saved').textContent).toBe(`🕐 Saved ${savedLabel(at)}`);
 });
 
+it('every fetch failing: the footer reads "no data" for each feed (never LIVE OK / 18/18) and the log names them', async () => {
+    global.fetch = jest.fn(() => Promise.reject(new TypeError('Failed to fetch')));
+    jest.useFakeTimers();
+    render(<Dashboard />);
+    await act(async () => { await jest.advanceTimersByTimeAsync(4000); });
+    jest.useRealTimers();
+    const footer = document.querySelector('.system-status-bar').textContent;
+    expect(footer).toMatch(/SPY: no data/);
+    expect(footer).not.toMatch(/LIVE OK|18\/18|✓/);
+    expect(screen.getByText('[SPY] no answer')).toBeInTheDocument();
+});
+
 it('👋 since last visit: compares against the last visit, and a tab coming back never reads "flat" before the refresh lands', async () => {
     const real = Date.now.bind(Date);
     const at = real() - 2 * 3600e3;

@@ -275,29 +275,41 @@ body::before {
 
 .status-items {
   display: inline-flex;
-  flex-wrap: wrap;
-  gap: 8px 16px;
-  justify-content: center;
+  flex-wrap: nowrap;
+  gap: 16px;
   font-family: 'JetBrains Mono', monospace;
-  font-size: 0.65rem;
-  color: rgba(255, 255, 255, 0.2);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  letter-spacing: 0.03em;
+  white-space: nowrap;
 }
 
 .status-item {
+  flex: none;
   transition: color 0.2s ease;
   white-space: nowrap;
 }
 
+.status-item.status-ok {
+  color: var(--green);
+}
+
+/* a degraded feed: a chip that jumps to its card */
+.status-chip {
+  padding: 2px 8px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+
 .status-item.status-warn {
-  color: rgba(245, 158, 11, 0.6);
-  /* Amber for fallbacks */
+  color: var(--orange);
 }
 
 .status-item.status-error {
-  color: rgba(239, 68, 68, 0.6);
-  /* Red for missing data */
+  color: var(--red);
 }
 
 .market-pulse {
