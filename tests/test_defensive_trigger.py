@@ -251,13 +251,13 @@ def test_summary_shape_and_republish(tmp_path, monkeypatch):
 
 
 # --- Tranche Map wiring: the steps name the symphonies that hold money TODAY, never the radar's look-through book
-CTX_PRE_SWITCH = {"funded": [{"name": "Main", "login": "jalal", "account": "Composer · taxable · Jalal"},
-                             {"name": "Shartino", "login": "jalal", "account": "Composer · taxable · Jalal"}],
+CTX_PRE_SWITCH = {"funded": [{"name": "Main", "login": "jalal", "account": "Composer · taxable · Owner"},
+                             {"name": "Old-B", "login": "jalal", "account": "Composer · taxable · Owner"}],
                   "notes": ["Switch day while DEFENSIVE: HALF into C8-T."], "ticks": {}, "loaded": True}
-CTX_BOOK_B = {"funded": [{"name": "C8-T", "login": "jalal", "account": "Composer · taxable · Jalal"},
-                         {"name": "C3", "login": "nabila", "account": "Composer Roth IRA · Nabila"},
-                         {"name": "C9", "login": "nabila", "account": "Composer Roth IRA · Nabila"},
-                         {"name": "m1", "login": "nabila", "account": "Composer Roth IRA · Nabila"}],
+CTX_BOOK_B = {"funded": [{"name": "C8-T", "login": "jalal", "account": "Composer · taxable · Owner"},
+                         {"name": "C3", "login": "spouse", "account": "Composer Roth IRA · Spouse"},
+                         {"name": "C9", "login": "spouse", "account": "Composer Roth IRA · Spouse"},
+                         {"name": "m1", "login": "spouse", "account": "Composer Roth IRA · Spouse"}],
               "notes": [], "ticks": {"S2.1": True, "S2.6": True}, "loaded": True}
 
 
@@ -266,7 +266,7 @@ def test_fire_names_the_funded_symphonies_and_the_collision_note_not_the_radar_b
     st, _ = dt.evaluate(snap("2026-09-15", slow="red"), st, send=lambda t: sent.append(t) or True, now=T0,
                         ctx=lambda mode: CTX_PRE_SWITCH)
     msg = sent[0]
-    assert "Main" in msg and "Shartino" in msg and "Your Composer login" in msg
+    assert "Main" in msg and "Old-B" in msg and "Your Composer login" in msg
     assert "hedges" not in msg and "C3" not in msg
     assert "HALF into C8-T" in msg
     assert "Main" in st["pending"]["steps"]              # the hourly reminder repeats the same names
@@ -279,13 +279,13 @@ def test_fire_without_an_instrument_list_falls_back_to_the_book_and_says_so():
     assert "C3" in sent[0] and "hedges" in sent[0] and "Instrument list unavailable" in sent[0]
 
 
-def test_reenter_names_book_b_under_nabilas_login_and_c8t_under_jalals():
+def test_reenter_names_book_b_under_the_spouse_login_and_c8t_under_yours():
     st, sent = dt.fresh_state(), []
     st.update(mode="DEFENSIVE", green_streak=dt.REENTRY_CLOSES - 1, last_asof="2026-11-02")
     dt.evaluate(snap("2026-11-03"), st, send=lambda t: sent.append(t) or True, now=T0, ctx=lambda mode: CTX_BOOK_B)
     msg = sent[0]
     assert "re-enter" in msg and "C8-T" in msg and "C3" in msg and "C9" in msg and "m1" in msg
-    assert "Nabila's Composer login" in msg and "Your Composer login" in msg
+    assert "Spouse's Composer login" in msg and "Your Composer login" in msg
     assert "hedges" not in msg
 
 

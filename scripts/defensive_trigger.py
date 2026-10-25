@@ -178,14 +178,11 @@ def default_ctx(mode):
     return tranche.tranche_context(mode)
 
 
-_LOGIN = {"jalal": "Your Composer login", "nabila": "Nabila's Composer login"}
-
-
 def _by_login(funded):
-    for login in ("jalal", "nabila"):
+    # Logins come from the private INSTRUMENTS.json ("jalal" = his own, tranche_state's default); no other names in this public file.
+    for login in sorted({f["login"] for f in funded}, key=lambda l: (l != "jalal", l)):
         mine = [f for f in funded if f["login"] == login]
-        if mine:
-            yield _LOGIN.get(login, f"{login}'s Composer login"), mine
+        yield ("Your Composer login" if login == "jalal" else f"{login.capitalize()}'s Composer login"), mine
 
 
 def steps_defensive(snap, ctx=None):
