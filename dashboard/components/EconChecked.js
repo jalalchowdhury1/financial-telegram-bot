@@ -1,10 +1,12 @@
 'use client';
 import { useState } from 'react';
 import { freshnessNote } from '../lib/freshness';
+import { savedLabel } from '../lib/snapshot';
 
 /**
- * Header line "Econ checked 4:58 PM": when /api/fred last ran (New York time), not the
- * data's date — that used to read "Economic data as of …", which it never was. A tap
+ * Header line "Econ checked 16:58" ("Fri 16:58" on another day): when /api/fred last ran,
+ * in device time like every 🕐 tag, so a saved or server-stale copy never reads as today. Not
+ * the data's date — that used to read "Economic data as of …", which it never was. A tap
  * reveals the newest fresh print ("newest print: Initial Claims · Oct 23").
  */
 const NAMES = {
@@ -32,7 +34,7 @@ export function newestPrint(fred) {
 export default function EconChecked({ fred }) {
     const [open, setOpen] = useState(false);
     const newest = newestPrint(fred);
-    const label = `Econ checked ${new Date(fred._meta.fetchedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' })}`;
+    const label = `Econ checked ${savedLabel(Date.parse(fred._meta.fetchedAt))}`;
     const style = { fontSize: '0.7rem', opacity: 0.6, marginTop: '6px' };
     return (
         <>

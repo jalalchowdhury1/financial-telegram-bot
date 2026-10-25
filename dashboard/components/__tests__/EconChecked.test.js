@@ -1,5 +1,6 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import EconChecked, { newestPrint } from '../EconChecked';
+import { savedLabel } from '../../lib/snapshot';
 
 const m = (value, asOf, stale = false) => ({ value, asOf, stale, unavailable: value == null });
 const fred = {
@@ -20,9 +21,11 @@ it('skips stale and missing numbers: a stale print never counts as the newest', 
     expect(newestPrint(null)).toBeNull();
 });
 
-it('says "Econ checked" with the New York time, and a tap reveals the newest print on one line', () => {
+const checked = `Econ checked ${savedLabel(Date.parse(fred._meta.fetchedAt))}`;
+
+it('says "Econ checked" with the device time, and a tap reveals the newest print on one line', () => {
     render(<EconChecked fred={fred} />);
-    const btn = screen.getByRole('button', { name: /Econ checked 4:58 PM/ });
+    const btn = screen.getByRole('button', { name: checked });
     expect(document.body.textContent).not.toMatch(/as of/);
     expect(screen.queryByText(/newest print/)).toBeNull();
     fireEvent.click(btn);
@@ -33,6 +36,14 @@ it('says "Econ checked" with the New York time, and a tap reveals the newest pri
 
 it('with no usable print there is nothing to reveal: plain text, no button', () => {
     render(<EconChecked fred={{ _meta: fred._meta }} />);
-    expect(screen.getByText('Econ checked 4:58 PM')).toBeInTheDocument();
+    expect(screen.getByText(checked)).toBeInTheDocument();
     expect(screen.queryByRole('button')).toBeNull();
+});
+
+it('a copy checked days ago names its day, so a saved or server-stale FRED never reads as today', () => {
+    const at = Date.now() - 3 * 864e5;
+    render(<EconChecked fred={{ _meta: { fetchedAt: new Date(at).toISOString() } }} />);
+    const d = new Date(at);
+    const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    expect(screen.getByText(`Econ checked ${d.toLocaleDateString('en-US', { weekday: 'short' })} ${hm}`)).toBeInTheDocument();
 });
