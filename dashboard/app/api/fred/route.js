@@ -745,7 +745,9 @@ export async function GET(request) {
         // But only a genuinely live FRED payload becomes the new last-known-good.
         // A merged payload is mostly cached content; storing it would refresh
         // `savedAt` and let stale data survive past the 7-day window forever.
-        shouldStore: (p) => p && p._meta && p._meta.loadedCount > 0,
+        // And only a COMPLETE one: a partial load (some series failed → N/A tiles)
+        // must not overwrite a complete copy that a later full outage would serve.
+        shouldStore: (p) => p && p._meta && p._meta.loadedCount === FRED_REQUESTS.length,
         fallback: { error: 'FRED temporarily unavailable' },
         // Last resort (only if live FRED AND the /tmp last-good are both gone): the
         // financial-dashboard-history sheet's `dashboard_lkg` helper tab. See lib/sheetLkg.js.
