@@ -1,6 +1,7 @@
 import { fetchJson } from '../../../lib/fetcher';
 import { serve } from '../../../lib/store';
 import { faultsFrom } from '../../../lib/faults';
+import { assessmentAuthorized } from '../../../lib/claudeAssessment';
 
 export const fetchCache = 'default-cache';
 export const maxDuration = 30;
@@ -355,7 +356,8 @@ export async function GET(request) {
     const messages = [];
     const get = makeGet(Date.now() + DEADLINE_MS);
 
-    if (debug === 'compare') {
+    // Runs both paths uncached on every hit, so only with header x-assessment-secret (audit 25 Oct 2026).
+    if (debug === 'compare' && assessmentAuthorized(request)) {
         const head = (b) => b && Object.fromEntries(['trending', 'breaking', 'macro'].map((n) =>
             [n, { count: (b[n] || []).length, top: (b[n] || []).slice(0, 3).map((r) => r.title || r.question) }]));
         const [lam, direct] = await Promise.all([lambdaPoly(messages), directBoard(get, messages)]);

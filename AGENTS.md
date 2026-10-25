@@ -817,7 +817,8 @@ Three slices of polymarket.com, with **sports and esports dropped from all three
 is public and keyless. The Lambda (`bot/fetchers.py:fetch_polymarket_board`, **primary**) and
 the Vercel fallback (`dashboard/app/api/polymarket/route.js:directBoard`) hold the **same
 curation** (same feeds, filters, sports regex, topic table and row shapes), so change both
-together. `/api/polymarket?debug=compare` prints both side by side.
+together. `/api/polymarket?debug=compare` prints both side by side (needs header
+`x-assessment-secret` = env ASSESSMENT_SECRET; without it the param is ignored).
 1. **📈 Macro** = polymarket.com/dashboards/macro: Gamma `/events?tag_slug=` for `macro-graph,
    macro-single, macro-fed, macro-inflation, macro-jobs, macro-unemployment, macro-geopolitics`
    (that order, de-duped by slug), top **6**. Tile = the leading outcome's `label` + odds + a
