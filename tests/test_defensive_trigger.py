@@ -72,6 +72,21 @@ def test_machines_needs_five_consecutive_red_closes():
     assert st["mode"] == "PENDING_DEFENSIVE" and len(sent) == 1 and "deepest drawdown ever" in sent[0]
 
 
+def test_a_composer_outage_close_holds_the_machines_streak_instead_of_resetting_it():
+    d = closes(n=6)
+    red = lambda x: snap(x, machines="red", reasons=["C3 is in its deepest drawdown ever"])
+    st, sent = run([red(x) for x in d[:4]])
+    down = snap(d[4], machines="grey")                                   # every Composer leg failed
+    st, sent = run([down], st, sent)
+    assert st["streak"]["machines"] == 4 and sent == []
+    part = snap(d[5], machines="green")                                  # the red leg is the one missing
+    part["dials"]["machines"]["legs"] = [{"name": "C3", "missing": True}, {"name": "m1", "dd_pct": -1}]
+    st, sent = run([part], st, sent)
+    assert st["streak"]["machines"] == 4 and sent == []
+    st, sent = run([red(closes("2026-09-23")[0])], st, sent)
+    assert st["mode"] == "PENDING_DEFENSIVE" and st["streak"]["machines"] == 5
+
+
 def test_rip_red_fires_on_one_close():
     st, sent = run([snap(closes()[0], rip="red", hot_days=46)])
     assert st["mode"] == "PENDING_DEFENSIVE" and "Rips stopped fading" in sent[0]

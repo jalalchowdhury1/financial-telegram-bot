@@ -305,7 +305,12 @@ def evaluate(snap, st, send=send_telegram, now=None, log=print, ctx=None):
         log(f"  no new close (asOf {asof}) — nothing counted")
         return st, []
     col = dial_colours(snap)
+    mach = snap["dials"]["machines"]
+    blind = col["machines"] == "grey" or any(l.get("missing") and not l.get("unconfigured") for l in mach.get("legs") or [])
     for k in ("slow", "rip", "machines"):
+        if k == "machines" and blind:            # Composer down / a leg missing: hold the streak, don't count this close
+            log(f"  machines unknown (Composer curves missing) — streak held at {st['streak'][k]}")
+            continue
         st["streak"][k] = st["streak"][k] + 1 if col[k] == "red" else 0
     edge = snap["dials"]["slow"].get("excess_pct")
     green_ok = snap["verdict"]["colour"] == "green" and edge is not None and edge > REENTRY_EDGE_PCT
