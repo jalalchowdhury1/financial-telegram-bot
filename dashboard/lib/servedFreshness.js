@@ -118,6 +118,9 @@ export function servedCopyOf(payload) {
     const src = String(m.source || payload.source || '');
     if (/^(Unavailable|Failed|Static Defaults|none)$/i.test(src)) return null;
     const copy = !!m.lastGoodAt || /last-good|last-known-good|^Stale/i.test(src);
+    // A flagged-stale build (lib/spyTiers: `_meta.stale` + `asOf` = its last close) shows that
+    // older close, so it is as old as that session, not live (audit 25 Oct 2026).
+    if (!copy && m.stale && isDate(m.asOf)) return { copy: true, savedMs: closeMsOf(m.asOf) ?? etWallToMs(m.asOf, 16 * 60) };
     if (!copy) return { copy: false };
     const t = Date.parse(m.lastGoodAt || (ISO_RE.exec(src) || [])[1] || '');
     return { copy: true, savedMs: Number.isFinite(t) ? t : null };

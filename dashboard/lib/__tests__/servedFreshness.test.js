@@ -124,6 +124,12 @@ describe('served:* items (market routes)', () => {
         const fg = { score: 45, _meta: { source: 'Stale cache (2026-10-08T21:00:00.000Z) ← CNN', stale: true } };
         expect(isRed(servedCopyItem('fear-greed', fg, NOW))).toBe(true);
     });
+    test('flagged-stale spy build (old close, spyTiers shape) → aged from that close → red', () => {
+        const stale = { current: 770.1, _meta: { source: 'Yahoo Finance (fallback, last close 2026-10-08)', hasErrors: true, stale: true, asOf: '2026-10-08' } };
+        const it = servedCopyItem('spy', stale, NOW);
+        expect(it.servedAgeH).toBe(30.8);
+        expect(isRed(it)).toBe(true);
+    });
     test('Unavailable / error / no answer → servedAgeH null → red past grace', () => {
         for (const p of [{ _meta: { source: 'Unavailable' } }, { score: 'N/A', error: 'Fear & Greed unavailable', _meta: { source: 'Failed' } }, null]) {
             const it = servedCopyItem('x', p, NOW);
