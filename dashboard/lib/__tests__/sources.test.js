@@ -153,6 +153,15 @@ describe('cnbcQuotes', () => {
         expect(out['.VXN'].lastTime).toBe('2026-07-14'); // CNBC sends date-only off-hours
         expect(out['.VXN'].asOf).toBe('2026-07-14');
     });
+    test('keeps a futures settleDate (ISO only) so a weekend quote can be dated by its settle', async () => {
+        mockFetch({ QuickQuoteResult: { QuickQuote: [
+            { symbol: '@CL.1', last: '103.27', change: '0.00', change_pct: '0.00', last_time: '2026-10-24', settleDate: '2026-10-23' },
+            { symbol: '.DXY', last: '101.75', change: '0.00', change_pct: '0.00', last_time: '2026-10-23' },
+        ] } });
+        const out = await cnbcQuotes(['@CL.1', '.DXY']);
+        expect(out['@CL.1']).toMatchObject({ asOf: '2026-10-24', settleDate: '2026-10-23', change: 0 });
+        expect(out['.DXY'].settleDate).toBeNull();
+    });
     test('throws when no parseable quotes', async () => {
         mockFetch({ QuickQuoteResult: { QuickQuote: [{ symbol: '@HG.1', last: 'N/A' }] } });
         await expect(cnbcQuotes(['@HG.1'])).rejects.toThrow();

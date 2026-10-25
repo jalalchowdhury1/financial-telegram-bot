@@ -180,6 +180,7 @@ export async function cnbcQuotes(symbols, { revalidate = 1800, timeout = 6000, t
             open: parseFloat(it.open),
             asOf: typeof it.last_time === 'string' ? it.last_time.slice(0, 10) : null,
             lastTime: typeof it.last_time === 'string' ? it.last_time : null,
+            settleDate: /^\d{4}-\d{2}-\d{2}/.test(it.settleDate || '') ? it.settleDate.slice(0, 10) : null,
         };
     }
     if (!Object.keys(out).length) throw new Error(`CNBC: no quotes for ${symbols.join(',')}`);

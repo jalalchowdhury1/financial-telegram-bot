@@ -133,6 +133,30 @@ describe('parsers + freshness', () => {
         expect(m.dailyChange.value).toBeCloseTo(0.17, 6);
     });
 
+    test('CNBC weekend: Friday\'s settle dated Saturday is Friday\'s bar, so the change is Friday\'s move', () => {
+        // Live 25 Oct 2026: '@CL.1' last 103.27, change 0.00, last_time 2026-10-24, settleDate 2026-10-23.
+        const sun = Date.parse('2026-10-25T15:00:00Z');
+        const fri = { price: 103.27, change: 0, asOf: '2026-10-24', settleDate: '2026-10-23' };
+        for (const h of [[{ date: '2026-10-22', price: 99.47 }, { date: '2026-10-23', price: 103.27 }], [{ date: '2026-10-21', price: 98 }, { date: '2026-10-22', price: 99.47 }]]) {
+            const m = tiers.cnbcMetricFrom(fri, h, { now: sun });
+            expect(m.lastDate).toBe('2026-10-23');
+            expect(m.history.map((b) => b.date)).not.toContain('2026-10-24');
+            expect(m.dailyChange.pct).toBeCloseTo(3.82, 2);
+        }
+        // Sunday evening the futures trade again: a real new price keeps its own date.
+        const m = tiers.cnbcMetricFrom({ price: 104, change: 0.73, asOf: '2026-10-25', settleDate: '2026-10-23' }, [{ date: '2026-10-22', price: 99.47 }, { date: '2026-10-23', price: 103.27 }], { now: sun });
+        expect(m.lastDate).toBe('2026-10-25');
+        expect(m.dailyChange.value).toBeCloseTo(0.73, 6);
+    });
+
+    test('dropPhantomBar: a weekend bar that only repeats Friday goes; a real one stays', () => {
+        const fri = [{ date: '2026-10-22', price: 99.47 }, { date: '2026-10-23', price: 103.27 }];
+        expect(tiers.dropPhantomBar([...fri, { date: '2026-10-24', price: 103.27 }])).toEqual(fri);
+        expect(tiers.dropPhantomBar([...fri, { date: '2026-10-25', price: 104 }])).toHaveLength(3);
+        expect(tiers.dropPhantomBar(fri)).toBe(fri);
+        expect(tiers.dropPhantomBar([{ date: '2026-10-21', price: 1 }, { date: '2026-10-22', price: 1 }])).toHaveLength(2); // a flat weekday is real
+    });
+
     test('Fawaz: a stale date is refused', () => {
         expect(tiers.fawazPair(FAWAZ, 'bdt', { now: NOW.getTime() })).toEqual({ current: 123.05, asOf: '2026-10-09' });
         expect(() => tiers.fawazPair({ ...FAWAZ, date: '2026-09-01' }, 'bdt', { now: NOW.getTime() })).toThrow(/stale/);
@@ -336,6 +360,27 @@ describe('per-metric last-known-good (the 12-blanks bug)', () => {
         await flush();
         expect(kvMod.defaultKv.set).not.toHaveBeenCalled();
         expect(JSON.stringify(kvMod.__m.get('ftb:lg:market-extra'))).toBe(full);
+    });
+
+    test('Lambda oil on a weekend: the phantom Saturday bar is dropped, so the change is Friday\'s +3.82%', async () => {
+        process.env.LAMBDA_URL = 'https://lambda.test';
+        const realFetch = global.fetch;
+        const m = (v) => ({ current: v, dailyChange: { value: 0, pct: 0 }, history: [], lastDate: '2026-10-09' });
+        const cl = { current: 103.27, dailyChange: { value: 0, pct: 0 }, lastDate: '2026-10-24',
+            history: [{ date: '2026-10-22', price: 99.47 }, { date: '2026-10-23', price: 103.27 }, { date: '2026-10-24', price: 103.27 }] };
+        global.fetch = jest.fn(async () => ({ ok: true, json: async () => ({
+            fx: { usdcad: m(1.37), usdinr: m(84.1), usdbdt: m(123.2), dxy: m(102.2) },
+            commodities: { gc: m(2650), cl, btc: m(62000) },
+            rates: { tnx: m(5.24), t2y: m(4.8), mortgageRate: m(7.4) },
+            _meta: { source: 'Lambda', hasErrors: false, messages: [], sourceLog: { cl: 'CNBC' } },
+        }) }));
+        try {
+            const b = await get('?_fail=polygon');
+            expect(b.commodities.cl.lastDate).toBe('2026-10-23');
+            expect(b.commodities.cl.current).toBe(103.27);
+            expect(b.commodities.cl.history.map((x) => x.date)).toEqual(['2026-10-22', '2026-10-23']);
+            expect(b.commodities.cl.dailyChange.pct).toBeCloseTo(3.82, 2);
+        } finally { global.fetch = realFetch; }
     });
 
     test('Lambda up but missing real-estate prints -> filled stale from last good', async () => {

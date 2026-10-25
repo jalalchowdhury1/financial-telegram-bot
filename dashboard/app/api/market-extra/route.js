@@ -2,7 +2,7 @@ import { polygonDaily, erApiRates, frankfurterRates, fawazRates, dxyFromUsdRates
 import { serve } from '../../../lib/store';
 import { faultsFrom, gate } from '../../../lib/faults';
 import { assessmentAuthorized } from '../../../lib/claudeAssessment';
-import { makeTiers, mergeLastGood } from '../../../lib/marketExtraTiers';
+import { makeTiers, mergeLastGood, dropPhantomBar, seriesMetric } from '../../../lib/marketExtraTiers';
 
 export const fetchCache = 'default-cache';
 export const maxDuration = 30;
@@ -227,6 +227,9 @@ export async function GET(request) {
     return serve('market-extra', async () => {
         if (lam) {
             const log = (lam._meta = lam._meta || {}).sourceLog = lam._meta.sourceLog || {};
+            // Weekend oil: re-derive from the bars without the Lambda's phantom Saturday bar.
+            const cl = lam.commodities?.cl, clBars = dropPhantomBar(cl?.history);
+            if (clBars !== cl?.history) lam.commodities.cl = { ...cl, ...seriesMetric(clBars) };
             const nullPaths = BASE_PATHS.filter((p) => { const m = getPath(lam, p); return !m || m.current == null; });
             const fills = await Promise.all(nullPaths.map((p) => withinDeadline(directMetric(p, ctx), deadlineAt).then((r) => [p, r])));
             const filled = [];

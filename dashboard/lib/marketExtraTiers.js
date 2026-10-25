@@ -25,6 +25,7 @@ import { fetchJson, fetchText } from './fetcher';
 import { splitCsvLine } from './horsemen';
 import { loadLastGood, loadLastGoodKV } from './store';
 import { defaultKv } from './kv';
+import { sessionOf } from './marketClock';
 
 export const HIST = 260;
 const DAY_MS = 864e5;
@@ -113,8 +114,26 @@ export function parsePmmsCsv(csv) {
  */
 export function cnbcMetricFrom(quote, bars, { freshDays = FRESH_DAYS.cnbc, now = Date.now() } = {}) {
     let asc = Array.isArray(bars) ? bars.filter((b) => b?.date && finite(b.price)) : [];
-    if (quote && finite(quote.price) && quote.asOf) asc = ascUnique([...asc, { date: quote.asOf, price: quote.price }]);
+    if (quote && finite(quote.price) && quote.asOf) {
+        // All weekend CNBC dates Friday's oil settle Saturday (last_time 2026-10-24, change 0.00,
+        // settleDate 2026-10-23): that price IS Friday's bar, not a flat Saturday.
+        const date = quote.settleDate && quote.change === 0 && !sessionOf(quote.asOf) ? quote.settleDate : quote.asOf;
+        asc = ascUnique([...asc, { date, price: quote.price }]);
+    }
     return seriesMetric(asc, { freshDays, now });
+}
+
+/**
+ * Drop a last bar dated off-session (weekend / NYSE holiday) that only repeats the bar
+ * before it: the Lambda appends CNBC's Saturday-dated Friday settle as a new bar, which
+ * zeroes dailyChange (What moved then drops the day's oil move). A real Sunday-evening
+ * futures price differs from Friday's, so it stays. Returns `asc` itself when unchanged.
+ */
+export function dropPhantomBar(asc) {
+    const n = Array.isArray(asc) ? asc.length : 0;
+    if (n < 2) return asc;
+    const last = asc[n - 1];
+    return !sessionOf(last.date) && last.price === asc[n - 2].price ? asc.slice(0, -1) : asc;
 }
 
 /** Fawaz currency-api payload → { current, asOf } for one USD pair, or throws. */
