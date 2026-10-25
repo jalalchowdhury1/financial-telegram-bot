@@ -104,11 +104,11 @@ def test_handler_with_env_var_appends_line(monkeypatch):
     with patch('lambda_handler.fetch_jev_line', return_value='🧭 *Jev regime*\nRegime risk-on') as f:
         text = _run_handler(monkeypatch)
     f.assert_called_once_with('https://x.test/api/jev-pills')
-    assert text.endswith('Regime risk-on')
+    assert 'Regime risk-on' in text
 
 
 def test_handler_with_env_var_but_no_line_is_unchanged(monkeypatch):
     monkeypatch.setenv('JEV_PILLS_URL', 'https://x.test/api/jev-pills')
     with patch('lambda_handler.fetch_jev_line', return_value=None):
         text = _run_handler(monkeypatch)
-    assert text == 'sheet text'
+    assert text == 'sheet text\n\n⚠️ Missing today: SPY'   # the fixture's SPY fetch fails

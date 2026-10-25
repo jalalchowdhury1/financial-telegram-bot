@@ -41,7 +41,8 @@ present ⇒ HTTP, else EventBridge):
    `/api/spy-daily-move`, `/api/market-extra`, `/api/polymarket`) consumed by the
    Next.js dashboard. Entry: `handle_http_api`. These four paths are in `_PUBLIC_GET_PATHS`
    (no auth). Any other path requires an `x-bot-secret` header equal to the last 10 chars of
-   `TELEGRAM_TOKEN` (and currently there are no such paths wired up).
+   `TELEGRAM_TOKEN`, but the HTTP path is never given `TELEGRAM_TOKEN`, so every other path is
+   a 401 (none are wired up). A new protected route needs its own secret.
 
 The **dashboard** is a Next.js app in `/dashboard`, deployed on **Vercel**
 (deploys when a push to `main` changes `dashboard/`, via `.github/workflows/deploy-dashboard.yml`): <https://financial-telegram-bot-beryl.vercel.app/>.
