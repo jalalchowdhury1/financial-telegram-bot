@@ -159,6 +159,21 @@ def test_nag_picks_up_a_done_tap_only_when_it_came_after_the_alert():
     assert st["mode"] == "DEFENSIVE" and "ack" in out and st["pending"] is None and "still open" not in sent[-1]
 
 
+def test_a_done_tap_after_an_automatic_stand_down_is_logged_not_dropped():
+    sent = []
+    st, _ = run([snap(closes()[0], slow="red"), snap(closes("2026-09-16")[0], slow="amber")], sent=sent)
+    assert st["mode"] == "INVESTED" and st["pending"] is None and "stand down" in sent[-1]
+    fired_at = datetime.fromisoformat(st["history"][-2]["t"])
+    stray = {"kind": "done", "at": (fired_at + timedelta(hours=20)).isoformat(), "via": "text"}
+    st, out = dt.nag(st, send=lambda *a: sent.append(a[0]) or True, taps=lambda: stray, now=T0 + timedelta(days=1, hours=2), log=lambda *_: None)
+    assert st["mode"] == "INVESTED" and out == []                        # a typed "done" never re-opens a closed move
+    tap = {"kind": "done", "at": (fired_at + timedelta(hours=20)).isoformat(), "via": "button"}
+    st, out = dt.nag(st, send=lambda *a: sent.append(a[0]) or True, taps=lambda: tap, now=T0 + timedelta(days=1, hours=3), log=lambda *_: None)
+    assert st["mode"] == "DEFENSIVE" and out == ["ack"] and "book 50% cash" in sent[-1]
+    st, out = dt.nag(st, send=lambda *a: sent.append(a[0]) or True, taps=lambda: tap, now=T0 + timedelta(days=1, hours=4), log=lambda *_: None)
+    assert st["mode"] == "DEFENSIVE" and out == []                       # a second tap is a no-op
+
+
 def test_a_snooze_tap_quiets_the_next_reminder_and_reminders_carry_buttons():
     sent, buttons = [], []
     def send2(t, b=None):

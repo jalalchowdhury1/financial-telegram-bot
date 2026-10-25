@@ -432,6 +432,20 @@ def _nag(st, send, taps, now, log):
                 elif tap["kind"] == "snooze":
                     p["snooze_until"] = (tap_at + timedelta(hours=1)).isoformat()
                     log(f"  snoozed until {p['snooze_until']}")
+        elif tap and tap["kind"] == "done":
+            # A ✅ Done button tapped after the alarm stood itself down (stand-down / hold) still means
+            # Jalal moved the cash: log the move it was for instead of dropping the tap.
+            tap_at = datetime.fromisoformat(tap["at"].replace("Z", "+00:00"))
+            h = st.get("history") or []
+            auto = len(h) >= 2 and h[-1]["note"] in ("alarm cleared before action", "green streak broke before re-entry")
+            if auto and tap.get("via") == "button" and tap_at >= datetime.fromisoformat(h[-2]["t"]):
+                log(f"  Done tap after the {h[-2]['to']} alert stood down — logging it")
+                st["mode"] = h[-2]["to"]
+                st, ok = ack(st, send, now, log)
+                if ok:
+                    sent.append("ack")
+            else:
+                log(f"  Done tap with nothing pending (mode {st['mode']}) — ignored")
 
     p = st.get("pending")
     if p:
