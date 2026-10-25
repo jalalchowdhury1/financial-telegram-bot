@@ -69,6 +69,7 @@ export async function claudeAssessment(prompt) {
         messages: [{ role: 'user', content: prompt }],
     });
     if (msg.stop_reason === 'refusal') throw new Error('claude refused');
+    if (msg.stop_reason === 'max_tokens') throw new Error('claude reply cut off');
     const text = (msg.content || [])
         .filter((b) => b.type === 'text')
         .map((b) => b.text)

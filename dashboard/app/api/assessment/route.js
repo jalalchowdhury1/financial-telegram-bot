@@ -149,6 +149,7 @@ Output the assessment now:`;
 
                 const res = await fetch(conf.url, {
                     method: 'POST',
+                    signal: AbortSignal.timeout(15000), // a hung provider moves on, not holds the billed function
                     headers: headers,
                     body: JSON.stringify({
                         model: conf.model,
@@ -167,6 +168,11 @@ Output the assessment now:`;
                     continue; // Model failed (rate limit, etc). Automatically step to the next one!
                 }
 
+                // Cut off at max_tokens (a reasoning model can spend most of the 350) = not an answer.
+                if (result.choices?.[0]?.finish_reason === 'length') {
+                    lastError = `[${conf.name}] reply cut off at max_tokens`;
+                    continue;
+                }
                 assessment = result.choices?.[0]?.message?.content?.trim();
 
                 if (assessment) {
