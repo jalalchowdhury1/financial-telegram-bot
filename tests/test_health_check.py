@@ -149,10 +149,19 @@ def test_check_report_delivered_with_a_lost_section_warns():
 def test_check_report_delivered_lambda_failed_but_runner_sent_never_redispatches():
     """A redispatch here was a SECOND brief: the runner had already sent it."""
     ev = {"cloudwatch_readable": True, "markers": ["REPORT_FAILED ok=false reason=telegram_delivery sections=2"],
-          "gha_success_today": True}
+          "gha_success_today": True, "gha_sent_since_midnight": True}
     f = hc.check_report_delivered(ev)
     assert f["severity"] == "warn"
     assert f["remediation"] == "manual"
+
+
+def test_check_report_delivered_yesterdays_runner_send_does_not_block_todays_redispatch():
+    """gha_success_today is a 24 h window: yesterday's late runner send is still in it at 14:00 UTC."""
+    ev = {"cloudwatch_readable": True, "markers": ["REPORT_FAILED ok=false reason=empty_content sections=0"],
+          "gha_success_today": True, "gha_sent_since_midnight": False}
+    f = hc.check_report_delivered(ev)
+    assert f["severity"] == "critical"
+    assert f["remediation"] == "auto:redispatch_daily_report"
 
 
 def test_check_report_delivered_no_marker_is_critical():

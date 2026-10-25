@@ -411,8 +411,9 @@ def check_report_delivered(evidence):
         return _finding(fid, "ok", "Daily report delivered today",
                         evidence={"markers": markers})
     if any("REPORT_FAILED" in m for m in markers):
-        if evidence.get("gha_success_today"):
-            # The runner already sent today's brief: a redispatch would be a second one.
+        if evidence.get("gha_sent_since_midnight"):
+            # The runner already sent today's brief (since 00:00 UTC, not the 24 h window):
+            # a redispatch would be a second one.
             return _finding(fid, "warn", "Lambda report FAILED; the backstop runner delivered it",
                             detail="CloudWatch shows REPORT_FAILED, but daily_report.yml sent the brief.",
                             remediation="manual", evidence=evidence)

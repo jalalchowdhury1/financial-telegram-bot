@@ -79,7 +79,7 @@ jobs:
       # repository_dispatch / auto-remediation runs always send.
       # Fail-safe: if the CloudWatch check errors, we default to sending (a rare double is
       # better than a silent miss).
-      - name: Skip if the Lambda already delivered today (scheduled runs only)
+      - name: Skip if today's report already went out (scheduled runs only)
         id: guard
         if: github.event_name == 'schedule'
         env:

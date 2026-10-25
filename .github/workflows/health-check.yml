@@ -88,7 +88,11 @@ jobs:
           # Only runs that actually SENT: a guard-skipped run also ends "success".
           GHA_24H=$(bash scripts/runner_sent.sh)
           GHA_BOOL=$([ "${GHA_24H:-0}" -gt 0 ] && echo true || echo false)
-          echo "{\"cloudwatch_readable\": $READABLE, \"markers\": $MARKERS, \"gha_success_today\": $GHA_BOOL}" > delivery_evidence.json
+          # Since 00:00 UTC only: proof the runner covered TODAY's failed Lambda (yesterday's
+          # late send inside the 24 h window must not block today's redispatch).
+          GHA_TODAY=$(bash scripts/runner_sent.sh $(( $(date +%s) % 86400 )))
+          GHA_TODAY_BOOL=$([ "${GHA_TODAY:-0}" -gt 0 ] && echo true || echo false)
+          echo "{\"cloudwatch_readable\": $READABLE, \"markers\": $MARKERS, \"gha_success_today\": $GHA_BOOL, \"gha_sent_since_midnight\": $GHA_TODAY_BOOL}" > delivery_evidence.json
           cat delivery_evidence.json
 
       - name: Gather recent CI run conclusions (active workflows only, with timestamps)
