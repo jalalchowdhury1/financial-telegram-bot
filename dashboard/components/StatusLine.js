@@ -62,8 +62,12 @@ export function statusFeeds(bodies = {}, saved = {}) {
     });
 }
 
+// Problems lead the line (red, then amber): on a phone it scrolls sideways, and a down feed
+// at the end sat past the screen edge while four green ones filled the view.
+const RANK = { error: 0, warn: 1, ok: 2 };
+
 export default function StatusLine({ bodies, saved }) {
-    const feeds = statusFeeds(bodies, saved);
+    const feeds = statusFeeds(bodies, saved).sort((a, b) => RANK[a.level] - RANK[b.level]);
     const allOk = feeds.every((f) => f.level === 'ok');
     return (
         <div className="system-status-bar">

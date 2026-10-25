@@ -58,3 +58,11 @@ test("SPY from the server's last-good copy is amber 'stale'", () => {
     b.spy._meta = { source: 'KV last-good (2026-10-23T20:00:00.000Z) ← yfinance', stale: true, hasErrors: true };
     expect(statusFeeds(b, {}).find((x) => x.key === 'spy')).toMatchObject({ text: 'stale', level: 'warn' });
 });
+
+test('problem chips lead the line (red, then amber), so on a phone a down feed is never past the screen edge', () => {
+    const b = healthy();
+    b.extra = { fx: {}, commodities: {}, rates: {}, _meta: { hasErrors: true } };
+    render(<StatusLine bodies={b} saved={{ sheets: '10:42' }} />);
+    expect([...document.querySelectorAll('.status-item')].map((e) => e.textContent))
+        .toEqual(['⚠ Markets: no data', '🕐 Sheets: saved 10:42', 'SPY yfinance', 'FRED 17/17', 'F&G CNN']);
+});
