@@ -3,8 +3,8 @@
 # Install with: pip install -r aws/requirements-lambda.txt -t ./package/
 
 pandas==2.2.3
-requests==2.32.3
+requests==2.33.1
 python-telegram-bot==21.0
-python-dotenv==1.0.0
+python-dotenv==1.2.4
 pytz==2024.1
 yfinance==0.2.54
