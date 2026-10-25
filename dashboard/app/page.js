@@ -489,7 +489,7 @@ export default function Dashboard() {
                                 {/* Hero price */}
                                 <div className="hero-price-section">
                                     <div className="hero-price">${spy.current.toFixed(2)}</div>
-                                    {spyDailyMove?.value ? (
+                                    {isLiveAnswer('spyDailyMove', spyDailyMove) ? (
                                         <div className={`daily-change-badge ${parseFloat(spyDailyMove.value) >= 0 ? 'daily-up' : 'daily-down'}`}>
                                             {parseFloat(spyDailyMove.value) >= 0 ? '▲' : '▼'} {spyDailyMove.value} {spyWhen}
                                         </div>

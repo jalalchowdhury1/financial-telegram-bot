@@ -275,6 +275,13 @@ describe('honest labels on the SPY and Fear & Greed cards', () => {
         expect(badge().textContent).toBe('▲ $1.20 (+0.20%) today');
     });
 
+    it("a junk SPY move ('#N/A') never draws a red '▼ #N/A' badge: the card falls back to SPY's own change", async () => {
+        mockRoutes({ '/api/spy-daily-move': ok({ value: '#N/A' }) });
+        render(<Dashboard />);
+        await waitFor(() => expect(badge()).not.toBeNull());
+        expect(badge().textContent).toBe('▲ $1.20 (+0.20%) today');
+    });
+
     it("Fear & Greed on its VIX proxy (previousYear 'N/A') shows — in that cell, never NaN", async () => {
         mockRoutes({
             '/api/fear-greed': ok({
