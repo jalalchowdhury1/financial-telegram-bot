@@ -924,4 +924,17 @@ describe('logTodaysVerdicts', () => {
         const log = jest.fn().mockRejectedValue(new Error('kv down'));
         expect(await logTodaysVerdicts(payload, raw, new Set(), { now, log })).toBe(false);
     });
+
+    test('an evening build logs under the New York date, not the next UTC day', async () => {
+        const log = jest.fn().mockResolvedValue(true);
+        await logTodaysVerdicts(payload, raw, new Set(), { now: new Date('2026-10-20T01:30:00Z'), log });
+        expect(log.mock.calls[0][0]).toBe('2026-10-19');
+    });
+
+    test('a degraded build never becomes the baseline', async () => {
+        const log = jest.fn().mockResolvedValue(true);
+        const degraded = { ...payload, _meta: { hasErrors: true } };
+        expect(await logTodaysVerdicts(degraded, raw, new Set(), { now, log })).toBe(false);
+        expect(log).not.toHaveBeenCalled();
+    });
 });

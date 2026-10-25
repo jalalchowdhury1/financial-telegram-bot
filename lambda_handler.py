@@ -7,6 +7,7 @@ Also handles HTTP GET requests from the Next.js dashboard via Function URL.
 CloudWatch Logs: all print() calls are automatically captured.
 """
 
+import hmac
 import json
 import logging
 import os
@@ -80,7 +81,8 @@ def handle_http_api(event: Dict[str, Any], env_vars: Dict[str, str]) -> Dict[str
     if path not in _PUBLIC_GET_PATHS:
         headers = {k.lower(): v for k, v in event.get('headers', {}).items()}
         bot_secret = ''.join(deque(env_vars.get('TELEGRAM_TOKEN', ''), maxlen=10))
-        if headers.get('x-bot-secret') != bot_secret:
+        # An unset secret must never match an empty header (the HTTP path gets no TELEGRAM_TOKEN).
+        if not bot_secret or not hmac.compare_digest(headers.get('x-bot-secret', '').encode(), bot_secret.encode()):
             return _err(401, 'Unauthorized')
 
     fred_api_key = env_vars.get('FRED_API_KEY', '')
@@ -160,7 +162,7 @@ def handle_eventbridge(env_vars: Dict[str, str], run_time: str) -> Dict[str, Any
     except Exception as e:
         err = f'Google Sheets fetch failed: {e}'
         logger.error(err)
-        errors.append(err)
+        errors.append('Google Sheets')
 
     # 2. SPY snapshot
     logger.info('Step 2/2 – Fetching SPY data...')
@@ -196,7 +198,7 @@ def handle_eventbridge(env_vars: Dict[str, str], run_time: str) -> Dict[str, Any
     except Exception as e:
         err = f'SPY fetch failed: {e}'
         logger.error(err)
-        errors.append(err)
+        errors.append('SPY')
 
     # 3. Jev regime line — OPTIONAL. Only when JEV_PILLS_URL is set on the Lambda
     # (hand-managed env var, see AGENTS.md §2 config drift). Unset ⇒ nothing
@@ -219,9 +221,12 @@ def handle_eventbridge(env_vars: Dict[str, str], run_time: str) -> Dict[str, Any
 
     separator = '\n\n' + '─' * 30 + '\n\n'
     full_report = separator.join(report_sections)
+    # A lost section must show: say so in the brief, and sig '' so it is never a quiet heartbeat.
+    if errors:
+        full_report += f"\n\n⚠️ Missing today: {', '.join(errors)}"
 
     logger.info('Sending report to Telegram...')
-    success = digest_post("report", full_report, "Markdown", sig=signal_sig(full_report)) or \
+    success = digest_post("report", full_report, "Markdown", sig='' if errors else signal_sig(full_report)) or \
         send_to_telegram(telegram_token, telegram_chat_id, caption=full_report, silent=True)  # ~04:15 ET — no buzz (11 Sep 2026)
 
     if success:

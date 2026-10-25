@@ -19,6 +19,7 @@
  */
 
 import { kvCall } from './kv';
+import { etParts } from './marketClock';
 
 const BASE = () => process.env.KV_REST_API_URL || '';
 const TOKEN = () => process.env.KV_REST_API_TOKEN || '';
@@ -129,7 +130,7 @@ export async function yesterday() {
     try {
         const days = await kvLrange('ftb:jev:days');
         if (!days || !days.length) return null;
-        const todayStr = new Date().toISOString().slice(0, 10);
+        const todayStr = etParts(Date.now()).date; // the log is keyed by New York date
         const sorted = [...days].sort().reverse();
         for (const d of sorted) {
             if (d < todayStr) {

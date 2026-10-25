@@ -19,6 +19,7 @@ import { FRESH, claims4wkFromHistory, sahmFromHistory, parseTreasurySpreadCsv, r
 import { makePillStore } from '../../../lib/jevStore';
 import { fetchSheetLkg } from '../../../lib/sheetLkg';
 import { parseFredGraphCsv } from '../../../lib/horsemen';
+import { etParts } from '../../../lib/marketClock';
 
 export const fetchCache = 'default-cache';
 // Outage path: sibling wait (10 s) + backup tiers with their own timeouts. Valid on every Vercel plan.
@@ -238,11 +239,13 @@ export async function repairPillInputs(raw, { fredKey, faults = new Set(), now =
 /**
  * Log today's verdicts (best effort, never throws). The log is first-write-wins
  * per day and becomes tomorrow's "since yesterday" baseline, so a fault-injected
- * (?_fail=) request must never write it.
+ * (?_fail=) or degraded request must never write it. Keyed by the New York date:
+ * the UTC date flips at 8 PM ET and an evening build would claim tomorrow's slot.
  */
 export async function logTodaysVerdicts(payload, raw, faults, { now = new Date(), log = logVerdicts } = {}) {
     if (faults && faults.size > 0) return false;
-    const todayStr = now.toISOString().slice(0, 10);
+    if (payload._meta?.hasErrors) return false;
+    const todayStr = etParts(now.getTime()).date;
     try {
         return await log(todayStr, {
             date: todayStr,

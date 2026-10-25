@@ -401,10 +401,21 @@ def check_indicators_na(metrics):
 def check_report_delivered(evidence):
     fid = "report_delivered_today"
     markers = evidence.get("markers", [])
-    if any("REPORT_DELIVERED" in m for m in markers):
+    delivered = [m for m in markers if "REPORT_DELIVERED" in m]
+    if delivered:
+        lost = re.search(r"errors=(\d+)", delivered[-1])
+        if lost and int(lost.group(1)) > 0:
+            return _finding(fid, "warn", "Daily report went out with a section missing",
+                            detail=f"Newest Lambda marker: {delivered[-1].strip()} (a fetch failed; see CloudWatch).",
+                            remediation="manual", evidence={"markers": markers})
         return _finding(fid, "ok", "Daily report delivered today",
                         evidence={"markers": markers})
     if any("REPORT_FAILED" in m for m in markers):
+        if evidence.get("gha_success_today"):
+            # The runner already sent today's brief: a redispatch would be a second one.
+            return _finding(fid, "warn", "Lambda report FAILED; the backstop runner delivered it",
+                            detail="CloudWatch shows REPORT_FAILED, but daily_report.yml sent the brief.",
+                            remediation="manual", evidence=evidence)
         return _finding(fid, "critical", "Daily report FAILED today",
                         detail="CloudWatch shows a REPORT_FAILED marker for today.",
                         remediation="auto:redispatch_daily_report", evidence={"markers": markers})
@@ -730,9 +741,8 @@ def main(argv):
         chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
         if not token or not chat_id:
             print("TELEGRAM_TOKEN/CHAT_ID not set; cannot notify.")
-            return 0
-        send_to_telegram(token, chat_id, caption=format_summary(report))
-        return 0
+            return 1   # an alert that never went out must turn the run red
+        return 0 if send_to_telegram(token, chat_id, caption=format_summary(report)) else 1
 
     report = run_all_checks(_now_iso())
     with open("health-report.json", "w") as fh:

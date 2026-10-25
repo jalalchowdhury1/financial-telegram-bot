@@ -85,7 +85,8 @@ jobs:
           # check run just past midnight UTC (e.g. a manual run at 8pm ET) sees zero runs
           # "today", false-flags critical, and auto-redispatches a duplicate report
           # (happened 2026-08-07T00:02Z).
-          GHA_24H=$(gh run list --workflow daily_report.yml --status success --limit 20 --json createdAt --jq '[.[] | select((now - (.createdAt | fromdateiso8601)) < 86400)] | length' 2>/dev/null || echo 0)
+          # Only runs that actually SENT: a guard-skipped run also ends "success".
+          GHA_24H=$(bash scripts/runner_sent.sh)
           GHA_BOOL=$([ "${GHA_24H:-0}" -gt 0 ] && echo true || echo false)
           echo "{\"cloudwatch_readable\": $READABLE, \"markers\": $MARKERS, \"gha_success_today\": $GHA_BOOL}" > delivery_evidence.json
           cat delivery_evidence.json
@@ -154,7 +155,8 @@ jobs:
           fi
 
       - name: Auto-remediate a confirmed missed report
-        if: steps.sev.outputs.overall == 'critical'
+        # !cancelled(): a failed alert send (step above goes red) must not stop the fix.
+        if: ${{ !cancelled() && steps.sev.outputs.overall == 'critical' }}
         run: |
           set -uo pipefail
           if python -c "import json,sys; r=json.load(open('health-report.json')); sys.exit(0 if any(f['id']=='report_delivered_today' and f['remediation']=='auto:redispatch_daily_report' for f in r['findings']) else 1)"; then

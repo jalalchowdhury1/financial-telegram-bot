@@ -368,6 +368,20 @@ describe('yesterday with mock fetch', () => {
         expect(result.date).toBe('2026-09-18');
         expect(result.pills.regime.verdict).toBe('risk-on');
     });
+
+    test('in the evening, today (New York) is not "yesterday"', async () => {
+        const spy = jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-20T01:30:00Z')); // 21:30 ET 19 Oct
+        global.fetch = mockFetchSequence([
+            { result: ['2026-10-19', '2026-10-18'], error: null },
+            { result: JSON.stringify({ pills: {} }), error: null },
+        ]);
+        try {
+            const result = await withEnv(ENV_OK, () => yesterday());
+            expect(result.date).toBe('2026-10-18');
+        } finally {
+            spy.mockRestore();
+        }
+    });
 });
 // ---------------------------------------------------------------------------
 // Every KV call skips Next's Data Cache and has a timeout (audit 25 Oct 2026):
