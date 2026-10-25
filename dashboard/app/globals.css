@@ -1954,6 +1954,11 @@ a.factor-chip { text-decoration: none; } /* chips link to Yahoo Finance */
 .factor-caption strong { color: var(--text-secondary); font-weight: 600; }
 .factor-caption .factor-up, .factor-caption .factor-down { font-weight: 600; }
 .factor-stale { color: var(--orange); font-weight: 600; }
+.factor-cap-short { display: none; }
+@media (max-width: 480px) {
+  .factor-cap-short { display: inline; }
+  .factor-cap-long { display: none; }
+}
 
 @media (max-width: 900px) {
   .factor-grid { gap: 8px; }

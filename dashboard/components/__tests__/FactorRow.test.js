@@ -44,6 +44,13 @@ it('fetches and shows every factor for the default 6M window, leader first in th
     expect(document.querySelector('.factor-chip.is-leader').textContent).toMatch(/Momentum/);
 });
 
+it('a phone gets a short caption that keeps the as-of date at its end; the desk keeps the long one', async () => {
+    render(<FactorRow />);
+    await ready();
+    expect(document.querySelector('.factor-cap-short').textContent).toBe('Momentum +6.2% leads · Low vol −4.0% lags · Sep 25');
+    expect(document.querySelector('.factor-cap-long').textContent).toMatch(/^6M leader Momentum \+6\.2% · laggard Low vol −4\.0%.* · price ratio, through Sep 25$/);
+});
+
 it('switching the timeline re-renders every chip and is remembered', async () => {
     render(<FactorRow />);
     await ready();
@@ -170,6 +177,14 @@ describe('20Y / 30Y / 40Y (research portfolios)', () => {
         const caption = document.querySelector('.factor-caption').textContent;
         expect(caption).toMatch(/research portfolios vs market, through Aug 2026/);
         expect(caption).not.toMatch(/price ratio/);
+    });
+
+    it('the short phone caption of a long window ends with its month', async () => {
+        global.fetch = jest.fn().mockResolvedValue({ json: async () => withLong });
+        render(<FactorRow />);
+        await ready();
+        fireEvent.click(screen.getByRole('radio', { name: '20Y' }));
+        expect(document.querySelector('.factor-cap-short').textContent).toMatch(/ lags · Aug 2026$/);
     });
 
     it('a tapped chip explains the long window: proxy, per-year gap, dividends included', async () => {

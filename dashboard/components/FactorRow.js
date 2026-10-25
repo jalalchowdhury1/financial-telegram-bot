@@ -247,6 +247,22 @@ export default function FactorRow({ initialData = null, refreshKey = null, bust 
     } else {
         caption = 'No factor data for this window.';
     }
+    // Phone: the long caption cut off its as-of date ("…price ratio, throu…"), the honest
+    // bit. A short one keeps the date at its end; CSS shows one of the two (≤480px).
+    const shortDate = status !== 'ready' ? '' : isLong ? fmtMonth(data?.long?.through) : (data?.asOf ? fmtDate(data.asOf) : '');
+    const short = status === 'ready' && !focus && leader && (
+        <>
+            <strong>{leader.label}</strong>{' '}
+            <span className={`factor-${tone(leader.windows[activeWin].rel)}`}>{fmtPct(leader.windows[activeWin].rel)}</span> leads
+            {laggard && (
+                <>
+                    {' · '}<strong>{laggard.label}</strong>{' '}
+                    <span className={`factor-${tone(laggard.windows[activeWin].rel)}`}>{fmtPct(laggard.windows[activeWin].rel)}</span> lags
+                </>
+            )}
+            {shortDate && ` · ${shortDate}`}
+        </>
+    );
 
     return (
         <section className="factor-row" aria-label="Factor performance versus the S&P 500" data-jump="Factors" data-cached={savedAt ? savedLabel(savedAt) : undefined}>
@@ -312,13 +328,16 @@ export default function FactorRow({ initialData = null, refreshKey = null, bust 
 
             <div className="factor-caption" aria-live="polite">
                 {stale && <span className="factor-stale">🕐 stale · </span>}
-                {caption}
-                {status === 'ready' && !focus && isLong && data?.long?.through && (
-                    <span className="factor-asof"> · research portfolios vs market, through {fmtMonth(data.long.through)}</span>
-                )}
-                {status === 'ready' && !focus && !isLong && asOfText && (
-                    <span className="factor-asof"> · price ratio, {asOfText}</span>
-                )}
+                <span className={short ? 'factor-cap-long' : undefined}>
+                    {caption}
+                    {status === 'ready' && !focus && isLong && data?.long?.through && (
+                        <span className="factor-asof"> · research portfolios vs market, through {fmtMonth(data.long.through)}</span>
+                    )}
+                    {status === 'ready' && !focus && !isLong && asOfText && (
+                        <span className="factor-asof"> · price ratio, {asOfText}</span>
+                    )}
+                </span>
+                {short && <span className="factor-cap-short">{short}</span>}
             </div>
         </section>
     );
