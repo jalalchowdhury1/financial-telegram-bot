@@ -2711,6 +2711,33 @@ html:not(:has(.jump-fab)) .back-pill {
 .sheet-x { position: relative; }
 .sheet-x::before { content: ''; position: absolute; inset: -7px; }
 
+/* ● sheet (components/MarksSheet.js): one line per lit number. The label and card name
+   ellipsize; "prev → now" never does. */
+.marks-sheet { max-width: 460px; padding: 20px; }
+/* the sticky header's bleed must match this sheet's own padding, or it overflows sideways */
+.marks-sheet .marks-sheet-head { top: -20px; margin: -20px -20px 8px; padding: 20px 20px 12px; align-items: center; }
+.marks-sheet-head .jev-modal-title { font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.marks-row {
+  display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; padding: 0 6px;
+  background: none; border: 0; border-bottom: 1px solid rgba(255, 255, 255, 0.06); border-radius: 0;
+  color: var(--text-primary); font: inherit; font-size: 0.86rem; text-align: left; cursor: pointer;
+  white-space: nowrap;
+}
+.marks-row:last-child { border-bottom: 0; }
+.marks-row:hover { background: rgba(34, 211, 238, 0.08); }
+.marks-row:focus-visible { outline: 2px solid var(--mark); outline-offset: -2px; }
+.marks-glyph { flex: 0 0 10px; color: var(--mark); display: inline-flex; justify-content: center; }
+.marks-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.marks-pair { flex: 0 0 auto; font-variant-numeric: tabular-nums; font-weight: 600; }
+.marks-card { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text-secondary); font-size: 0.78rem; }
+.mark.jump-flash { border-radius: 4px; }
+@media (max-width: 480px) {
+  .marks-sheet { padding: 14px; }
+  .marks-sheet .marks-sheet-head { top: -14px; margin: -14px -14px 6px; padding: 14px 14px 10px; }
+  .marks-row { gap: 6px; padding: 0 2px; font-size: 0.8rem; }
+  .marks-card { font-size: 0.7rem; }
+}
+
 /* 🧷 Sheets hold the page still (components/useSheetLock.js puts .sheet-open on <html>
    and locks scroll). A swipe that reaches the end of a sheet stays in the sheet. */
 .jev-modal-backdrop, .jev-modal { overscroll-behavior: contain; }

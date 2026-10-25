@@ -37,6 +37,11 @@ describe('rendering', () => {
         expect(up.container.querySelector('.mark-glyph').textContent).toBe('⌃');
     });
 
+    test('a marked number carries its key, so the ● sheet can jump to it', () => {
+        const { container } = render(<Delta mark={printMark} chartKey="sahmRule">5.0%</Delta>);
+        expect(container.querySelector('[data-mark-key="sahmRule"]')).toHaveAttribute('data-mark', 'print');
+    });
+
     test('the current value is always rendered, marked or not', () => {
         render(<Delta mark={printMark}>5.0%</Delta>);
         expect(screen.getByText('5.0%')).toBeInTheDocument();

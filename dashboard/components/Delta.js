@@ -300,6 +300,7 @@ export default function Delta({ mark, format, className, children, chartKey, raw
             tabIndex={0}
             className={`mark ${className || ''}`}
             data-mark={mark.kind}
+            data-mark-key={chartKey} // the ● sheet finds the number by its key (MarksSheet.js)
             data-open={open ? 'true' : undefined}
             aria-label={`${prevText} before this change. Activate to see details${chart ? ' and its chart' : ''}.`}
             aria-expanded={open}

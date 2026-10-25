@@ -10,8 +10,8 @@
  *    last-good copy.
  *  - Tap the numbers → back to the top, noted like ☰ → ↑ Top so the ↩ pill can bring him
  *    back. ↻ = the header's refresh (skips the edge cache).
- *  - ● N (cyan) = the header's "new prints" chip in miniature: each tap walks to the next
- *    marked number, sharing the chip's cursor. Only there when something is lit.
+ *  - ● N (cyan) = the header's "new prints" chip in miniature: a tap opens the same ● sheet
+ *    (every lit number, tap one to jump to it). Only there when something is lit.
  *  - Hidden near the top; CSS also hides it while a sheet (html.sheet-open), the jump menu
  *    or the offline banner is up. Reduced motion: no slide.
  */
@@ -20,7 +20,7 @@ import { UpdatedAgo } from './PhonePolish';
 import { glanceNumbers, glanceAge, shouldShowGlance } from '../lib/glance';
 import { noteJumpFrom } from './JumpNav';
 import { useMarkCounts } from './MarkProvider';
-import { jumpToNextMark, markSummary } from './MarkChip';
+import { openMarksSheet, markSummary } from './MarkChip';
 
 // Market Pulse is the anchor; if it is not on the page (a crashed card), the header is.
 const ANCHORS = ['.market-pulse', '.dashboard-header'];
@@ -88,10 +88,10 @@ export default function GlanceBar({ spy, spyDailyMove, fg, fgColor, when, update
                 <button
                     type="button"
                     className="glance-mark"
-                    onClick={jumpToNextMark}
+                    onClick={openMarksSheet}
                     tabIndex={on ? 0 : -1}
-                    aria-label={`Jump to the next changed number (${markSummary(marks)})`}
-                    title={`${markSummary(marks)} — tap for the next one`}
+                    aria-label={`See what changed (${markSummary(marks)})`}
+                    title={`${markSummary(marks)} — tap to see them`}
                 >
                     <span className="mark-chip-dot" aria-hidden="true" />{marks.total}
                 </button>

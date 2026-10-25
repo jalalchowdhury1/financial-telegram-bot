@@ -20,6 +20,7 @@ import RubberBandRadar from '../components/RubberBandRadar';
 import FactorRow from '../components/FactorRow';
 import Delta from '../components/Delta';
 import MarkChip from '../components/MarkChip';
+import MarksSheet from '../components/MarksSheet';
 import { MarkProvider, useMark, collectLiveValues } from '../components/MarkProvider';
 import JumpNav from '../components/JumpNav';
 import GlanceBar from '../components/GlanceBar';
@@ -752,6 +753,8 @@ export default function Dashboard() {
                     markValues={collectLiveValues(fred, extraMarkets, sheets)}
                 />
             </ErrorBoundary>
+            {/* ● sheet — the chip and the glance bar's ● N open it: every lit number, tap one to jump */}
+            <ErrorBoundary resetKey={refreshTick}><MarksSheet values={collectLiveValues(fred, extraMarkets, sheets)} /></ErrorBoundary>
             {/* ↩ Back pill — after any jump, one tap back to where he was */}
             <ErrorBoundary resetKey={refreshTick}><BackPill /></ErrorBoundary>
 

@@ -4,22 +4,15 @@
  * "Updated …" badge. It renders ONLY when something is actually lit, so a quiet
  * day — 52% of them — adds nothing to the page at all.
  *
- * Clicking it walks through the marked numbers on the page, one per click.
+ * Tapping it (or the glance bar's ● N) opens the ● sheet (MarksSheet.js): every lit number,
+ * biggest change first, each row a jump to that number.
  */
 import { useMarkCounts } from './MarkProvider';
 
-// One shared cursor: the header chip and the glance bar's dot walk the SAME list, so
-// tapping either one always goes to the next mark, never back to one already seen.
-let cursor = 0;
-export function jumpToNextMark() {
-    const marks = document.querySelectorAll('[data-mark]');
-    if (!marks.length) return null;
-    const el = marks[cursor % marks.length];
-    cursor += 1;
-    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    return el;
-}
-export function resetMarkCursor() { cursor = 0; }
+// The chip and the glance bar's dot open the ONE sheet page.js mounts.
+const openers = new Set();
+export function openMarksSheet() { openers.forEach((fn) => fn()); }
+export function onOpenMarks(fn) { openers.add(fn); return () => openers.delete(fn); }
 
 /** "3 new prints · 1 outsized move" — shared by the chip and the glance bar. */
 export function markSummary({ print, move }) {
@@ -34,8 +27,8 @@ export default function MarkChip({ values }) {
     if (!counts.total) return null;
 
     return (
-        <button type="button" className="mark-chip" onClick={jumpToNextMark}
-            title="Jump to the next number that changed">
+        <button type="button" className="mark-chip" onClick={openMarksSheet}
+            title="See every number that changed">
             <span className="mark-chip-dot" />
             {markSummary(counts)}
         </button>

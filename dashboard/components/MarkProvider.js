@@ -10,7 +10,7 @@
  * They never see where the baseline came from.
  */
 import { createContext, useContext, useMemo } from 'react';
-import { markFor, todayET, chartFor } from '../lib/marks';
+import { markFor, todayET, chartFor, SHEET_METRICS } from '../lib/marks';
 
 const MarkContext = createContext({ entries: {}, today: null });
 // 📈 90-day series (/api/history `series`). Its own context and its own prop: charts stay
@@ -66,6 +66,15 @@ export function useMarkCounts(values) {
         }
         return { print, move, total: print + move };
     }, [values, entries, today]);
+}
+
+/** The lit numbers themselves, for the ● sheet: `[{ key, label, kind, prev, value, … }]`. Same rule as the counts. */
+export function useMarkList(values) {
+    const { entries, today } = useContext(MarkContext);
+    return useMemo(() => Object.entries(values || {}).flatMap(([key, live]) => {
+        const m = markFor(key, Number(live), entries[key], today);
+        return m ? [{ key, label: SHEET_METRICS[key]?.label || key, ...m }] : [];
+    }), [values, entries, today]);
 }
 
 /**
