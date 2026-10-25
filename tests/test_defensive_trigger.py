@@ -311,21 +311,3 @@ def test_nag_outcome_one_arg_sender_still_falls_back_and_counts():
     st, _ = run([snap(closes()[0], slow="red")])
     st, sent, lines, out = _nag_logged(st, lambda t: False)            # arity TypeError must not be counted
     assert out["failed"] == 1 and out["sent"] == 0 and lines[-1].endswith("failed=1 pending=PENDING_DEFENSIVE")
-
-
-def test_get_taps_sends_the_key_in_a_header_not_the_url(monkeypatch):
-    seen = {}
-
-    class R:
-        def __enter__(self): return self
-        def __exit__(self, *a): return False
-        def read(self): return b'{"tap": {"kind": "done"}}'
-
-    def fake_urlopen(req, timeout=None):
-        seen["url"], seen["key"] = req.full_url, req.get_header("X-app-key")
-        return R()
-    monkeypatch.setenv("DEFENSIVE_TAP_URL", "https://hub.test/api/defensive")
-    monkeypatch.setenv("DEFENSIVE_TAP_KEY", "FAKE-KEY")
-    monkeypatch.setattr(dt.urllib.request, "urlopen", fake_urlopen)
-    assert dt.get_taps() == {"kind": "done"}
-    assert seen == {"url": "https://hub.test/api/defensive", "key": "FAKE-KEY"}

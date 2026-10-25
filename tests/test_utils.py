@@ -50,15 +50,16 @@ def test_split_message_respects_limit_and_splits_long_lines():
 
 
 @patch('bot.utils.requests.post')
-def test_digest_key_goes_in_a_header_never_the_url(mock_post, monkeypatch, capsys):
-    # Audit 25 Oct 2026: ?k=<DIGEST_KEY> landed in request logs and in exception text.
+def test_digest_failure_log_never_prints_the_key(mock_post, monkeypatch, capsys):
+    # Audit 25 Oct 2026: ?k=<DIGEST_KEY> landed in exception text. Stays ?k= until
+    # health-hub's header auth is deployed (live digest.js reads only q.k).
     from bot.utils import digest_post
     monkeypatch.setenv('DIGEST_URL', 'https://digest.test/api/digest')
     monkeypatch.setenv('DIGEST_KEY', 'fake-digest-key')
     mock_post.return_value = MagicMock(status_code=200, json=lambda: {'ok': True})
     assert digest_post('report', 'hi') is True
     _, kw = mock_post.call_args
-    assert kw['headers'] == {'x-digest-key': 'fake-digest-key'} and 'params' not in kw
+    assert kw['params'] == {'k': 'fake-digest-key'}
     mock_post.side_effect = ConnectionError('Max retries exceeded with url: /api/digest?k=fake-digest-key')
     assert digest_post('report', 'hi') is False
     assert 'fake-digest-key' not in capsys.readouterr().out
