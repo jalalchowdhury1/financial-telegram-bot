@@ -50,12 +50,27 @@ export default function JumpNav() {
     const [show, setShow] = useState(false);
     const [open, setOpen] = useState(false);
     const [sections, setSections] = useState([]);
+    // Phone: the ☰ sat over right-aligned numbers (TQQQ decay, Housing Starts) while he
+    // scrolled. It fades on a scroll down and is back on any scroll up or ~1 s of rest.
+    const [away, setAway] = useState(false);
 
     useEffect(() => {
-        const onScroll = () => setShow(window.scrollY > SHOW_AFTER_PX);
+        let lastY = window.scrollY;
+        let idle = 0;
+        const onScroll = () => {
+            const y = window.scrollY;
+            setShow(y > SHOW_AFTER_PX);
+            if (y < lastY) { setAway(false); lastY = y; }
+            else if (y > lastY + 8) {
+                if (window.matchMedia?.('(max-width: 640px)').matches) setAway(true);
+                lastY = y;
+            }
+            clearTimeout(idle);
+            idle = setTimeout(() => setAway(false), 900);
+        };
         onScroll();
         window.addEventListener('scroll', onScroll, { passive: true });
-        return () => window.removeEventListener('scroll', onScroll);
+        return () => { window.removeEventListener('scroll', onScroll); clearTimeout(idle); };
     }, []);
 
     useEffect(() => {
@@ -98,7 +113,7 @@ export default function JumpNav() {
             )}
             <button
                 type="button"
-                className={`jump-fab${open ? ' is-open' : ''}`}
+                className={`jump-fab${open ? ' is-open' : away ? ' is-hidden' : ''}`}
                 onClick={toggle}
                 aria-haspopup="true"
                 aria-expanded={open}

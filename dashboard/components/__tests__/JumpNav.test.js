@@ -92,3 +92,41 @@ it('↩ a menu jump and ↑ Top both remember where he was (for the back pill)',
 it('collectSections is safe with no document root', () => {
     expect(collectSections(null)).toEqual([]);
 });
+
+describe('☰ fades while scrolling down on a phone', () => {
+    const fab = () => document.querySelector('.jump-fab');
+    const phone = (on) => { window.matchMedia = jest.fn((q) => ({ matches: on && q === '(max-width: 640px)' })); };
+    afterEach(() => { jest.useRealTimers(); delete window.matchMedia; });
+
+    it('hides on a scroll down, comes back on any scroll up or after the page rests ~1 s', () => {
+        jest.useFakeTimers();
+        phone(true);
+        render(<Page />);
+        scrollTo(900);
+        scrollTo(1000);
+        expect(fab()).toHaveClass('is-hidden'); // still mounted: the ↩ pill sits relative to it
+        scrollTo(990);
+        expect(fab()).not.toHaveClass('is-hidden');
+        scrollTo(1200);
+        expect(fab()).toHaveClass('is-hidden');
+        act(() => { jest.advanceTimersByTime(950); });
+        expect(fab()).not.toHaveClass('is-hidden');
+    });
+
+    it('never hides while its menu is open', () => {
+        phone(true);
+        render(<Page />);
+        scrollTo(900);
+        fireEvent.click(screen.getByRole('button', { name: 'Jump to a section' }));
+        scrollTo(1200);
+        expect(fab()).not.toHaveClass('is-hidden');
+    });
+
+    it('a desk keeps it in view', () => {
+        phone(false);
+        render(<Page />);
+        scrollTo(900);
+        scrollTo(1400);
+        expect(fab()).not.toHaveClass('is-hidden');
+    });
+});

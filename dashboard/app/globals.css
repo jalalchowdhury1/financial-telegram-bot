@@ -2036,6 +2036,15 @@ a.factor-chip { text-decoration: none; } /* chips link to Yahoo Finance */
 }
 .jump-fab:focus-visible, .jump-item:focus-visible { outline: 2px solid var(--purple); outline-offset: 2px; }
 .jump-fab.is-open { background: var(--purple-bg); }
+/* phone: faded while scrolling down (JumpNav `away`), still mounted so the ↩ pill keeps its spot */
+.jump-fab { transition: opacity 0.2s ease; }
+.jump-fab.is-hidden { opacity: 0; pointer-events: none; }
+@media (max-width: 640px) {
+  .dashboard { padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); } /* the last line clears the ☰ */
+}
+@media (prefers-reduced-motion: reduce) {
+  .jump-fab { transition: none; }
+}
 
 .jump-backdrop { position: fixed; inset: 0; z-index: 898; background: rgba(0, 0, 0, 0.35); }
 
