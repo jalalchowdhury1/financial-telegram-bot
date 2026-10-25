@@ -59,7 +59,8 @@ const isMove = (v) => typeof v === 'string' && /^[-+]?\d/.test(v.trim()) && Numb
  * Unknown feeds fall back to "no `error` field".
  */
 const LIVE_TESTS = {
-    spy: (d) => Number.isFinite(d.current),
+    // every number the SPY card draws, so a copy with a hole in it is never saved
+    spy: (d) => [d.current, d.rsi, d.ma200?.value, d.ma200?.pct, d.week52High?.value, d.week52High?.pct].every(Number.isFinite),
     sheets: (d) => ['NotSoBoring', 'FrontRunner', 'AAIIDiff'].some((k) => real(d[k])) || real(d.VIX?.current),
     spyDailyMove: (d) => isMove(d.value),
     fg: (d) => Number.isFinite(d.score) && d._meta?.source !== 'Failed',

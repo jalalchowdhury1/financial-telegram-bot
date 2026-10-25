@@ -77,7 +77,8 @@ test('isLiveAnswer: each route\'s 200-with-fallback body is not a live answer', 
     expect(isLiveAnswer('fg', { score: 37, _meta: { source: 'Stale Cache' } })).toBe(true); // real CNN numbers, labelled by its card
     expect(isLiveAnswer('jev', { enabled: false })).toBe(true); // kill switch: hide the row
     expect(isLiveAnswer('sheets', { NotSoBoring: 'OFF', FrontRunner: 'N/A' })).toBe(true);
-    expect(isLiveAnswer('spy', { current: 771.35 })).toBe(true);
+    expect(isLiveAnswer('spy', { current: 771.35, rsi: 55, ma200: { value: 700, pct: 10.2 }, week52High: { value: 780, pct: -1.1 } })).toBe(true);
+    expect(isLiveAnswer('spy', { current: 771.35 })).toBe(false); // the card would throw on its missing numbers
     expect(isLiveAnswer('fred', { yieldCurve: { current: 0.36 } })).toBe(true);
 });
 

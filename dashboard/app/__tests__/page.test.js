@@ -43,6 +43,28 @@ it('a malformed payload breaks only its own card, never the page', async () => {
     expect(screen.getByText('Jalal\'s Financial Dashboard')).toBeInTheDocument();
 });
 
+it('a SPY answer with a hole in it (rsi null) breaks only the SPY card, and is never saved', async () => {
+    const bad = { current: 700, rsi: null, ma200: {}, week52High: {} };
+    expect(require('../../lib/snapshot').isLiveAnswer('spy', bad)).toBe(false);
+    mockRoutes({
+        '/api/spy': Promise.resolve({ status: 200, json: async () => bad }),
+        '/api/fear-greed': Promise.resolve({ status: 200, json: async () => ({ score: 45, rating: 'FEAR', _meta: { source: 'CNN' } }) }),
+    });
+    render(<Dashboard />);
+    await waitFor(() => expect(document.querySelectorAll('.fg-history-item')).toHaveLength(4));
+    expect(screen.getByText('📊 SPY Market Overview')).toBeInTheDocument();
+});
+
+it('every route failing with a 500 whose JSON has no error field still draws the page', async () => {
+    global.fetch = jest.fn(() => Promise.resolve({ status: 500, json: async () => ({ message: 'boom' }) }));
+    jest.useFakeTimers();
+    render(<Dashboard />);
+    await act(async () => { await jest.advanceTimersByTimeAsync(4000); }); // getJson retries a 5xx once
+    jest.useRealTimers();
+    expect(screen.getByText('📊 SPY Market Overview')).toBeInTheDocument();
+    expect(screen.getByText('😨 Fear & Greed Index')).toBeInTheDocument();
+});
+
 it('shows the SPY price while a slow route (market-extra) is still loading', async () => {
     mockRoutes();
     render(<Dashboard />);

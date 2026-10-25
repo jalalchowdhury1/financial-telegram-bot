@@ -74,6 +74,13 @@ function HeroValue({ markKey, raw, stale, format, style, children }) {
     );
 }
 
+/**
+ * A card body rendered as its own component, so the card's <ErrorBoundary> catches a throw
+ * in it: JSX written inline in Dashboard runs in Dashboard's own render, outside every
+ * boundary, and one bad field (spy.rsi null) blanked the whole page.
+ */
+function Body({ children }) { return children(); }
+
 // ============ MAIN DASHBOARD ============
 export default function Dashboard() {
     const [sheets, setSheets] = useState(null);
@@ -438,7 +445,7 @@ export default function Dashboard() {
                         {spy && !spy.error && <span className={`badge ${spy.rsi > 70 ? 'badge-red' : spy.rsi < 30 ? 'badge-green' : 'badge-blue'}`}>{spy.rsi > 70 ? 'Overbought' : spy.rsi < 30 ? 'Oversold' : 'Neutral'}</span>}
                     </div>
                     <ErrorBoundary resetKey={refreshTick}>
-                        {!spy || spy.error ? <Skeleton count={5} /> : (
+                        <Body>{() => !spy || spy.error ? <Skeleton count={5} /> : (
                             <>
                                 {/* Hero price */}
                                 <div className="hero-price-section">
@@ -491,7 +498,7 @@ export default function Dashboard() {
                                     </div>
                                 </div>
                             </>
-                        )}
+                        )}</Body>
                     </ErrorBoundary>
                 </div>
 
@@ -508,7 +515,7 @@ export default function Dashboard() {
                         </div>
                     )}
                     <ErrorBoundary resetKey={refreshTick}>
-                        {!fg || fg.error ? <Skeleton type="gauge" /> : (
+                        <Body>{() => !fg || fg.error ? <Skeleton type="gauge" /> : (
                             <>
                                 {/* Hero score */}
                                 <div className="hero-price-section">
@@ -543,7 +550,7 @@ export default function Dashboard() {
                                     })}
                                 </div>
                             </>
-                        )}
+                        )}</Body>
                     </ErrorBoundary>
                 </div>
 
@@ -554,7 +561,7 @@ export default function Dashboard() {
                         {fred?.yieldCurve?.current != null && <span className={`badge ${fred.yieldCurve.current >= 0 ? 'badge-green' : 'badge-red'}`}>{fred.yieldCurve.current >= 0 ? 'Positive' : 'Inverted'}</span>}
                     </div>
                     <ErrorBoundary resetKey={refreshTick}>
-                        {!fred ? <Skeleton count={2} /> : (fred.error || fred.yieldCurve?.current == null) ? (
+                        <Body>{() => !fred ? <Skeleton count={2} /> : (fred.error || fred.yieldCurve?.current == null) ? (
                             <div className="hero-price-section">
                                 <div className="hero-price" style={{ fontSize: '2.2rem', color: 'var(--yellow)' }}>N/A</div>
                                 <div className="hero-change" style={{ color: 'var(--text-muted)', fontSize: '0.72rem', marginTop: '4px' }}>
@@ -578,7 +585,7 @@ export default function Dashboard() {
                                 </div>
                                 <MiniChart history={fred.yieldCurve.history} color="#818cf8" gradientId="yieldGrad" showZero={true} recessions={fred.recessions || []} />
                             </>
-                        )}
+                        )}</Body>
                     </ErrorBoundary>
                 </div>
 
@@ -589,7 +596,7 @@ export default function Dashboard() {
                         {fred?.profitMargin?.current != null && <span className="badge badge-blue">Corp Profits / GDP</span>}
                     </div>
                     <ErrorBoundary resetKey={refreshTick}>
-                        {!fred ? <Skeleton count={2} /> : (fred.error || fred.profitMargin?.current == null) ? (
+                        <Body>{() => !fred ? <Skeleton count={2} /> : (fred.error || fred.profitMargin?.current == null) ? (
                             <div className="hero-price-section">
                                 <div className="hero-price" style={{ fontSize: '2.2rem', color: 'var(--yellow)' }}>N/A</div>
                                 <div className="hero-change" style={{ color: 'var(--text-muted)', fontSize: '0.72rem', marginTop: '4px' }}>
@@ -612,7 +619,7 @@ export default function Dashboard() {
                                 </div>
                                 <MiniChart history={fred.profitMargin.history} color="#22c55e" gradientId="profitGrad" recessions={fred.recessions || []} />
                             </>
-                        )}
+                        )}</Body>
                     </ErrorBoundary>
                 </div>
 
@@ -623,7 +630,7 @@ export default function Dashboard() {
                         {fred?.spEps?.current != null && <span className="badge badge-blue">Trailing 12M</span>}
                     </div>
                     <ErrorBoundary resetKey={refreshTick}>
-                        {!fred ? <Skeleton count={2} /> : (fred.error || fred.spEps?.current == null) ? (
+                        <Body>{() => !fred ? <Skeleton count={2} /> : (fred.error || fred.spEps?.current == null) ? (
                             <div className="hero-price-section">
                                 <div className="hero-price" style={{ fontSize: '2.2rem', color: 'var(--yellow)' }}>N/A</div>
                                 <div className="hero-change" style={{ color: 'var(--text-muted)', fontSize: '0.72rem', marginTop: '4px' }}>
@@ -647,7 +654,7 @@ export default function Dashboard() {
                                 </div>
                                 <MiniChart history={fred.spEps.history} color="#38bdf8" gradientId="epsGrad" recessions={fred.recessions || []} cadence="monthly" />
                             </>
-                        )}
+                        )}</Body>
                     </ErrorBoundary>
                 </div>
 
@@ -667,9 +674,9 @@ export default function Dashboard() {
                         <span className="badge badge-blue">Price + 200d MA</span>
                     </div>
                     <ErrorBoundary resetKey={refreshTick}>
-                        {!spy || spy.error || !spy.chartHistory ? <Skeleton count={4} /> : (
+                        <Body>{() => !spy || spy.error || !spy.chartHistory ? <Skeleton count={4} /> : (
                             <SpyChart chartHistory={spy.chartHistory} recessions={fred?.recessions || []} current={spy.current} />
-                        )}
+                        )}</Body>
                     </ErrorBoundary>
                 </div>
 
