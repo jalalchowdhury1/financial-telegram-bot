@@ -19,8 +19,10 @@
  *   (jev-pills + /api/freshness reading siblings, two monitors at once) no longer
  *   re-run a slow failing route (Vercel Active CPU cap, 24 Oct 2026).
  * - Price rows (worst case ≤ 10 min) stretch to ≤ 2 h while the US market is not
- *   open, never past the next open (lib/marketClock): nothing on them moves, and the
- *   24/7 30-min /api/freshness probe was re-running every one (24 Oct 2026).
+ *   open, never past the next open, swr included (lib/marketClock): nothing on them
+ *   moves, and the 24/7 30-min /api/freshness probe was re-running every one (24 Oct
+ *   2026). Not in the first CLOSE_SETTLE_MIN after a close, while the official close
+ *   can still replace the last trade (audit 25 Oct 2026).
  * - Fault-injection requests (`?_fail=`) are never cached.
  * - The browser never caches (`cache-control: no-store` stays). Only Vercel's edge
  *   does, via `Vercel-CDN-Cache-Control`, which Vercel strips before the response
@@ -28,7 +30,7 @@
  * - The edge cache key includes the query string, so `?_t=<now>` (the page's manual
  *   refresh button, scripts/health_check.py) always reaches the live route.
  */
-import { marketStatus } from './marketClock';
+import { marketStatus, etParts, sessionOf } from './marketClock';
 
 // [max-age, stale-while-revalidate] in seconds. Prices move → short; daily data → long.
 // Live rows: max-age just over the page's 5-min market-hours refresh (app/page.js,
@@ -56,6 +58,8 @@ export const CDN_POLICY = {
 export const DEGRADED_MAX_AGE = 120;
 /** Off-hours max-age ceiling for the price rows (+ their swr ≤ 2 h). */
 export const OFF_HOURS_MAX_AGE = 6900;
+/** Minutes after a close before the off-hours stretch starts. */
+export const CLOSE_SETTLE_MIN = 5;
 
 // The Lambda-primary routes (spy, spy-daily-move, market-extra, polymarket) answer from
 // direct sources with hasErrors:false ON PURPOSE (a full direct build is good data) and
@@ -88,8 +92,11 @@ export function cacheHeaders(key, { payload, testMode = false, degraded = false,
         return headers;
     }
     const st = marketStatus(now);
-    const offHours = base + swr <= 600 && st.state !== 'open';
-    const maxAge = offHours ? Math.max(base, Math.min(OFF_HOURS_MAX_AGE, Math.floor(st.ms / 1000))) : base;
+    const { date, min } = etParts(now);
+    const today = sessionOf(date);
+    const settling = !!today && min >= today.close && min < today.close + CLOSE_SETTLE_MIN;
+    const offHours = base + swr <= 600 && st.state !== 'open' && !settling;
+    const maxAge = offHours ? Math.max(base, Math.min(OFF_HOURS_MAX_AGE, Math.floor(st.ms / 1000) - swr)) : base;
     headers['vercel-cdn-cache-control'] = `max-age=${maxAge}, stale-while-revalidate=${swr}`;
     return headers;
 }

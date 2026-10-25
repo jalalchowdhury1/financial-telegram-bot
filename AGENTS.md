@@ -296,7 +296,7 @@ answered. Three fixes, each safe on its own:
    the sheet's own value. **Never cached:** every `?_fail=` request (on routes that parse faults); and
    every route without a policy row (`last-run`, `assessment`). So a degraded answer is retried by the
    next 5-min refresh, never pinned. **Off-hours** (market not open) the ≤10-min price rows
-   get max-age up to 6900 s, capped at the seconds until the next open. Check it: repeat `curl -sI <url>/api/spy` → the
+   get max-age up to 6900 s, capped so max-age + swr ends at the next open (none in the 5 min after a close). Check it: repeat `curl -sI <url>/api/spy` → the
    second shows `x-vercel-cache: HIT`.
 2. **Cache busting.** The edge key includes the query string. The page's refresh button
    and the **R** key send `?_t=<now>` (always live); the automatic refresh (5 min while the US market is open, 30 min otherwise:
