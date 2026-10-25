@@ -249,6 +249,22 @@ body::before {
   right: 15px;
 }
 
+/* A card whose feed is down after loading: one line, tap = refresh */
+.card-unavailable {
+  display: block;
+  width: 100%;
+  padding: 18px 0;
+  background: none;
+  border: 0;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
 /* ========== SYSTEM STATUS BAR ========== */
 .system-status-bar {
   padding: 16px 16px 24px 16px;

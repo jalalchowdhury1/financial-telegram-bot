@@ -81,6 +81,11 @@ function HeroValue({ markKey, raw, stale, format, style, children }) {
  */
 function Body({ children }) { return children(); }
 
+/** A card whose feed answered with nothing usable: one line, and tapping it is the refresh. */
+function Unavailable({ what, onRetry }) {
+    return <button type="button" className="card-unavailable" onClick={onRetry}>{what} unavailable · tap ↻</button>;
+}
+
 // ============ MAIN DASHBOARD ============
 export default function Dashboard() {
     const [sheets, setSheets] = useState(null);
@@ -339,6 +344,8 @@ export default function Dashboard() {
         return l ? { '--saved': JSON.stringify(l) } : null;
     };
     const anySaved = saved(...Object.keys(savedAt));
+    // every number the SPY card draws is there (a hole in it is "unavailable", not a crash)
+    const spyOk = isLiveAnswer('spy', spy);
     // 👋 What is on screen now, LIVE only and landed on THIS visit — a saved copy, or the
     // numbers left on screen while the tab was hidden, are not a new look.
     const liveOnly = (key, v) => (!(key in savedAt) && landedAt[key] > seenBase.at ? v : null);
@@ -447,13 +454,13 @@ export default function Dashboard() {
             <div className="dashboard-grid">
 
                 {/* ========== REDESIGNED SPY CARD ========== */}
-                <div className={`card${spy && !spy.error && (spy.rsi < 30 || spy.rsi > 70) ? ' card-alert' : ''}`} style={{ animationDelay: '0.2s' }} data-jump="SPY overview" data-cached={saved('spy', 'spyDailyMove')}>
+                <div className={`card${spyOk && (spy.rsi < 30 || spy.rsi > 70) ? ' card-alert' : ''}`} style={{ animationDelay: '0.2s' }} data-jump="SPY overview" data-cached={saved('spy', 'spyDailyMove')}>
                     <div className="card-header">
                         <h2>📊 SPY Market Overview</h2>
-                        {spy && !spy.error && <span className={`badge ${spy.rsi > 70 ? 'badge-red' : spy.rsi < 30 ? 'badge-green' : 'badge-blue'}`}>{spy.rsi > 70 ? 'Overbought' : spy.rsi < 30 ? 'Oversold' : 'Neutral'}</span>}
+                        {spyOk && <span className={`badge ${spy.rsi > 70 ? 'badge-red' : spy.rsi < 30 ? 'badge-green' : 'badge-blue'}`}>{spy.rsi > 70 ? 'Overbought' : spy.rsi < 30 ? 'Oversold' : 'Neutral'}</span>}
                     </div>
                     <ErrorBoundary resetKey={refreshTick}>
-                        <Body>{() => !spy || spy.error ? <Skeleton count={5} /> : (
+                        <Body>{() => !spyOk ? (pending.spy ? <Skeleton count={5} /> : <Unavailable what="SPY" onRetry={refreshNow} />) : (
                             <>
                                 {/* Hero price */}
                                 <div className="hero-price-section">
@@ -523,7 +530,7 @@ export default function Dashboard() {
                         </div>
                     )}
                     <ErrorBoundary resetKey={refreshTick}>
-                        <Body>{() => !fg || fg.error ? <Skeleton type="gauge" /> : (
+                        <Body>{() => !fg || fg.error ? (pending.fg ? <Skeleton type="gauge" /> : <Unavailable what="F&G" onRetry={refreshNow} />) : (
                             <>
                                 {/* Hero score */}
                                 <div className="hero-price-section">
@@ -682,7 +689,7 @@ export default function Dashboard() {
                         <span className="badge badge-blue">Price + 200d MA</span>
                     </div>
                     <ErrorBoundary resetKey={refreshTick}>
-                        <Body>{() => !spy || spy.error || !spy.chartHistory ? <Skeleton count={4} /> : (
+                        <Body>{() => !spyOk || !spy.chartHistory ? (pending.spy ? <Skeleton count={4} /> : <Unavailable what="SPY chart" onRetry={refreshNow} />) : (
                             <SpyChart chartHistory={spy.chartHistory} recessions={fred?.recessions || []} current={spy.current} />
                         )}</Body>
                     </ErrorBoundary>

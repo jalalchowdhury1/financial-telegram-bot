@@ -131,6 +131,23 @@ it("a refresh that gets a route's fallback body keeps the live number, tagged �
     expect(card()).toHaveAttribute('data-cached');
 });
 
+it('a SPY or F&G route that is down says so in one line after loading, instead of shimmering forever', async () => {
+    const down = Promise.resolve({ status: 200, json: async () => ({ error: 'x' }) });
+    mockRoutes({ '/api/spy': down, '/api/fear-greed': down, '/api/market-extra': Promise.resolve({ status: 200, json: async () => ({}) }) });
+    render(<Dashboard />);
+    await waitFor(() => expect(screen.getByText('SPY unavailable · tap ↻')).toBeInTheDocument());
+    expect(screen.getByText('F&G unavailable · tap ↻')).toBeInTheDocument();
+    expect(screen.getByText('SPY chart unavailable · tap ↻')).toBeInTheDocument();
+    for (const jump of ['SPY overview', 'Fear & Greed', 'SPY chart']) {
+        expect(document.querySelector(`[data-jump="${jump}"] .skeleton`)).toBeNull();
+    }
+    // tapping it is the refresh, live (skips the edge cache)
+    global.fetch.mockClear();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh all data' })).not.toBeDisabled());
+    fireEvent.click(screen.getByText('SPY unavailable · tap ↻'));
+    expect(global.fetch.mock.calls.some((c) => /^\/api\/spy\?_t=/.test(String(c[0])))).toBe(true);
+});
+
 it('👋 since last visit: compares against the last visit, and a tab coming back never reads "flat" before the refresh lands', async () => {
     const real = Date.now.bind(Date);
     const at = real() - 2 * 3600e3;
