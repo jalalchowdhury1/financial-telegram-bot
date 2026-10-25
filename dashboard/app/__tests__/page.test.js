@@ -135,6 +135,28 @@ it("a refresh that gets a route's fallback body keeps the live number, tagged �
     expect(card()).toHaveAttribute('data-cached');
 });
 
+it('a refresh whose fetch fails outright keeps the live numbers, tagged 🕐 — card, glance bar and footer all say saved', async () => {
+    mockRoutes({ '/api/market-extra': Promise.resolve({ status: 200, json: async () => ({}) }) });
+    render(<Dashboard />);
+    await waitFor(() => expect(screen.getByText('$612.34')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh all data' })).not.toBeDisabled());
+    const card = () => document.querySelector('[data-jump="SPY overview"]');
+    expect(card()).not.toHaveAttribute('data-cached');
+
+    global.fetch.mockImplementation(() => Promise.reject(new TypeError('Failed to fetch')));
+    jest.useFakeTimers();
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh all data' }));
+    await act(async () => { await jest.advanceTimersByTimeAsync(4000); });
+    jest.useRealTimers();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh all data' })).not.toBeDisabled());
+    expect(screen.getByText('$612.34')).toBeInTheDocument();
+    expect(card()).toHaveAttribute('data-cached');
+    expect(document.querySelector('.glance-bar .glance-saved').textContent).toMatch(/^🕐 Saved \d\d:\d\d$/);
+    const footer = document.querySelector('.system-status-bar').textContent;
+    expect(footer).toMatch(/SPY: saved \d\d:\d\d/);
+    expect(footer).not.toMatch(/SPY: no data/);
+});
+
 it('a SPY or F&G route that is down says so in one line after loading, instead of shimmering forever', async () => {
     const down = Promise.resolve({ status: 200, json: async () => ({ error: 'x' }) });
     mockRoutes({ '/api/spy': down, '/api/fear-greed': down, '/api/market-extra': Promise.resolve({ status: 200, json: async () => ({}) }) });

@@ -204,8 +204,8 @@ export default function Dashboard() {
             const load = async ({ key, path }) => {
                 const res = await getJson(path, { bust });
                 got[key] = res;
-                // A failure answer (an error, or a route's 200 fallback body) never replaces
-                // a saved copy on screen — it stays, tagged 🕐 — and is never saved.
+                // A failure answer (an error, a route's 200 fallback body, or no answer at all)
+                // never replaces a saved copy on screen — it stays, tagged 🕐 — and is never saved.
                 if (isLiveAnswer(key, res)) {
                     live++;
                     setters[key](res);
@@ -213,12 +213,12 @@ export default function Dashboard() {
                     landedRef.current = { ...landedRef.current, [key]: Date.now() };
                     setLandedAt(landedRef.current);
                     setTimeout(() => writeSnap(key, res), 0); // off the render path
-                } else if (res != null && !(key in savedRef.current)) {
+                } else if (!(key in savedRef.current)) {
                     if (landedRef.current[key]) {
                         // a live answer is on screen: keep it, tagged 🕐 with the time it landed
                         savedRef.current = { ...savedRef.current, [key]: landedRef.current[key] };
                         setSavedAt(savedRef.current);
-                    } else {
+                    } else if (res != null) {
                         setters[key](res); // nothing live yet: the card shows the route's own degraded state
                     }
                 }
