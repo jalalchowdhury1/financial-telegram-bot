@@ -225,3 +225,11 @@ def test_a_bankruptcies_dry_run_is_strict():
     nothing passes a plain run. Off main (a PR, a branch) it runs --strict and fails instead."""
     rebuild = next(s for s in _steps(_load("rebake-bankruptcies.yml"), "rebake") if s.get("id") == "rebake")
     assert "${{ github.ref != 'refs/heads/main' && '--strict' || '' }}" in rebuild["run"]
+
+
+def test_lambda_smoke_fails_when_no_gateway_answers():
+    # Audit 25 Oct 2026: a Lambda-only import error 500s every gateway, so tested=0 used to
+    # pass green with a warning and leave the broken code live.
+    run = next(s["run"] for s in _steps(_load("deploy-lambda.yml"), "deploy") if "Smoke test" in s.get("name", ""))
+    block = run.split('if [ "$tested" -eq 0 ]; then', 1)[1].split("else", 1)[0]
+    assert "hard_fail=1" in block and "::error::" in block

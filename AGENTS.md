@@ -81,8 +81,8 @@ The deploy: builds the zip (deps from `aws/requirements-lambda.txt` + `lambda_ha
 work) → `update-function-code` from S3 (serialized via a `concurrency` group +
 `function-updated` waits + retried up to 5× on `ResourceConflictException`) → waits →
 **smoke-tests the live API Gateway** (discovers all HTTP APIs, hits `GET /api/spy` on each;
-the gateway(s) that return 200 must return valid JSON with no bare `NaN`/`Infinity` or the
-deploy fails). Runs with `secrets.AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY` (the scoped IAM
+at least one must answer 200, and the gateway(s) that return 200 must return valid JSON with
+no bare `NaN`/`Infinity`, or the deploy fails). Runs with `secrets.AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY` (the scoped IAM
 user **`github-deploy-bot`**, not root).
 
 ### ⚠️ Config drift — the deploy only updates *code*
