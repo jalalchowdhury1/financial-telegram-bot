@@ -65,11 +65,13 @@ it('every route failing with a 500 whose JSON has no error field still draws the
     expect(screen.getByText('😨 Fear & Greed Index')).toBeInTheDocument();
 });
 
-it('shows the SPY price while a slow route (market-extra) is still loading', async () => {
-    mockRoutes();
+it('one hung route (market-extra) never holds the header on "Loading live data" once the core feeds are in', async () => {
+    mockRoutes(); // market-extra never answers
     render(<Dashboard />);
     await waitFor(() => expect(screen.getByText('$612.34')).toBeInTheDocument());
-    expect(screen.getByText(/Loading live data/)).toBeInTheDocument(); // the page as a whole is still loading
+    await waitFor(() => expect(screen.getByText(/Updated/)).toBeInTheDocument());
+    expect(screen.queryByText(/Loading live data/)).toBeNull();
+    expect(document.querySelector('[data-jump="Markets"] .skeleton')).not.toBeNull(); // its own card still waits
 });
 
 it('automatic loads carry no cache-buster; the refresh button and R do', async () => {

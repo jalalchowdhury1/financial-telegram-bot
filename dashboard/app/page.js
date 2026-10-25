@@ -180,6 +180,19 @@ export default function Dashboard() {
         lastFetchRef.current = Date.now();
         const got = {};
         let live = 0;
+        // "Updated …" only when something live actually landed: a cycle where every feed
+        // failed (offline, a phone waking up) must not make saved numbers look fresh.
+        const stamp = () => {
+            if (!live) return;
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            setLastUpdated(`${year}-${month}-${day} ${hours}:${minutes}`);
+            setUpdatedAt(now.getTime());
+        };
         try {
             // Every feed lands on its own. null = the fetch itself failed (the routes
             // answer 200 even when degraded): keep the previous payload rather than
@@ -212,7 +225,11 @@ export default function Dashboard() {
             // those landed, so its reads HIT the edge copies instead of running each route a
             // second time (Vercel Active CPU, 21 Oct 2026).
             const loads = Object.fromEntries(FEEDS.filter((f) => f.key !== 'jev').map((f) => [f.key, load(f)]));
-            await Promise.all([...Object.values(loads), Promise.all(['spy', 'sheets', 'fg', 'fred', 'vol'].map((k) => loads[k]))
+            // Once the core feeds are in, the header stops saying "Loading…" and stamps
+            // "Updated": one hung route (market-extra) held it for the full 60 s timeout.
+            // Each slower card keeps its own skeleton until its feed lands.
+            const core = Promise.all(['spy', 'sheets', 'fg', 'fred'].map((k) => loads[k])).then(() => { setLoading(false); stamp(); });
+            await Promise.all([...Object.values(loads), core, Promise.all(['spy', 'sheets', 'fg', 'fred', 'vol'].map((k) => loads[k]))
                 .then(() => load(FEEDS.find((f) => f.key === 'jev')))]);
             hasLoadedRef.current = true;
             const { sheets: sheetsRes, spy: spyRes, fg: fgRes, fred: fredRes, extra: extraRes } = got;
@@ -233,18 +250,7 @@ export default function Dashboard() {
             if (extraRes?.error) errors.push(`[EXTRA] ${extraRes.error}`);
             setApiErrors(errors);
 
-            // "Updated …" only when something live actually landed: a cycle where every feed
-            // failed (offline, a phone waking up) must not make saved numbers look fresh.
-            const now = new Date();
-            if (live) {
-                const year = now.getFullYear();
-                const month = String(now.getMonth() + 1).padStart(2, '0');
-                const day = String(now.getDate()).padStart(2, '0');
-                const hours = String(now.getHours()).padStart(2, '0');
-                const minutes = String(now.getMinutes()).padStart(2, '0');
-                setLastUpdated(`${year}-${month}-${day} ${hours}:${minutes}`);
-                setUpdatedAt(now.getTime());
-            }
+            stamp();
             setRefreshTick((t) => t + 1);
         } catch (e) {
             console.error('Dashboard fetch error:', e);
