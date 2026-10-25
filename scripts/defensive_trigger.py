@@ -54,6 +54,8 @@ REENTRY_CLOSES = 10
 REENTRY_EDGE_PCT = 0.2                               # slow dial's excess must be above this on every green close
 STALE_BUSINESS_DAYS = 4                              # no new close for this long = the trigger is blind, say so
 STEPS_EVERY_N_REMINDERS = 6                          # repeat the full steps every ~6 hours of nagging
+MACHINES_HOLD_MAX = 2                                # a missing-leg hold lasts this many closes, then they count again
+TAP_AFTER_STAND_DOWN_DAYS = 3                        # a Done tap this long after a stand-down is stale, not a move
 ACK_RE = re.compile(r"^\s*(done|✅|defensive done|re-?entered|back in|cash is in|cash is back)\b", re.I)
 MODES = ("INVESTED", "PENDING_DEFENSIVE", "DEFENSIVE", "PENDING_REENTRY")
 def BUTTONS(kind="PENDING_DEFENSIVE"):
@@ -307,10 +309,13 @@ def evaluate(snap, st, send=send_telegram, now=None, log=print, ctx=None):
     col = dial_colours(snap)
     mach = snap["dials"]["machines"]
     blind = col["machines"] == "grey" or any(l.get("missing") and not l.get("unconfigured") for l in mach.get("legs") or [])
+    st["machines_held"] = st.get("machines_held", 0) + 1 if blind else 0
     for k in ("slow", "rip", "machines"):
         if k == "machines" and blind:            # Composer down / a leg missing: hold the streak, don't count this close
-            log(f"  machines unknown (Composer curves missing) — streak held at {st['streak'][k]}")
-            continue
+            if st["machines_held"] <= MACHINES_HOLD_MAX:
+                log(f"  machines unknown (Composer curves missing) — streak held at {st['streak'][k]}")
+                continue
+            log(f"  machines curves missing {st['machines_held']} closes in a row — counting what is left")
         st["streak"][k] = st["streak"][k] + 1 if col[k] == "red" else 0
     edge = snap["dials"]["slow"].get("excess_pct")
     green_ok = snap["verdict"]["colour"] == "green" and edge is not None and edge > REENTRY_EDGE_PCT
@@ -438,7 +443,8 @@ def _nag(st, send, taps, now, log):
             tap_at = datetime.fromisoformat(tap["at"].replace("Z", "+00:00"))
             h = st.get("history") or []
             auto = len(h) >= 2 and h[-1]["note"] in ("alarm cleared before action", "green streak broke before re-entry")
-            if auto and tap.get("via") == "button" and tap_at >= datetime.fromisoformat(h[-2]["t"]):
+            if (auto and tap.get("via") == "button" and tap_at >= datetime.fromisoformat(h[-2]["t"])
+                    and tap_at - datetime.fromisoformat(h[-1]["t"]) <= timedelta(days=TAP_AFTER_STAND_DOWN_DAYS)):
                 log(f"  Done tap after the {h[-2]['to']} alert stood down — logging it")
                 st["mode"] = h[-2]["to"]
                 st, ok = ack(st, send, now, log)

@@ -87,6 +87,17 @@ def test_a_composer_outage_close_holds_the_machines_streak_instead_of_resetting_
     assert st["mode"] == "PENDING_DEFENSIVE" and st["streak"]["machines"] == 5
 
 
+def test_a_leg_that_stays_missing_holds_only_two_closes_then_red_counts_again():
+    d = closes(n=8)
+    st, sent = run([snap(x, machines="red") for x in d[:3]])
+    stuck = lambda x: dict(snap(x, machines="red"), dials=dict(snap(x, machines="red")["dials"],
+                           machines={"colour": "red", "reasons": [], "legs": [{"name": "C3", "missing": True}]}))
+    st, sent = run([stuck(x) for x in d[3:5]], st, sent)
+    assert st["streak"]["machines"] == 3                                 # two closes held
+    st, sent = run([stuck(x) for x in d[5:7]], st, sent)
+    assert st["streak"]["machines"] == 5 and st["mode"] == "PENDING_DEFENSIVE"   # then the red legs left count
+
+
 def test_rip_red_fires_on_one_close():
     st, sent = run([snap(closes()[0], rip="red", hot_days=46)])
     assert st["mode"] == "PENDING_DEFENSIVE" and "Rips stopped fading" in sent[0]
@@ -172,6 +183,15 @@ def test_a_done_tap_after_an_automatic_stand_down_is_logged_not_dropped():
     assert st["mode"] == "DEFENSIVE" and out == ["ack"] and "book 50% cash" in sent[-1]
     st, out = dt.nag(st, send=lambda *a: sent.append(a[0]) or True, taps=lambda: tap, now=T0 + timedelta(days=1, hours=4), log=lambda *_: None)
     assert st["mode"] == "DEFENSIVE" and out == []                       # a second tap is a no-op
+
+
+def test_an_old_done_tap_weeks_after_a_stand_down_is_ignored():
+    sent = []
+    st, _ = run([snap(closes()[0], slow="red"), snap(closes("2026-09-16")[0], slow="amber")], sent=sent)
+    stood_down = datetime.fromisoformat(st["history"][-1]["t"])
+    old = {"kind": "done", "at": (stood_down + timedelta(days=20)).isoformat(), "via": "button"}
+    st, out = dt.nag(st, send=lambda *a: sent.append(a[0]) or True, taps=lambda: old, now=stood_down + timedelta(days=20, hours=1), log=lambda *_: None)
+    assert st["mode"] == "INVESTED" and "ack" not in out
 
 
 def test_a_snooze_tap_quiets_the_next_reminder_and_reminders_carry_buttons():
