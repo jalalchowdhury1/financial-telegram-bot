@@ -3,10 +3,10 @@ name: Daily Financial Report
 
 on:
   schedule:
-    # 09:45 UTC — 30 min after the EventBridge/Lambda send (~09:15), so the guard step
-    # below can see the Lambda's CloudWatch marker and SKIP if it already delivered (no
-    # double-report). If the Lambda missed (as on 2026-06-02), the runner sends here — a
-    # reliable morning backstop that no longer depends on the flaky EventBridge schedule.
+    # 09:45 UTC — after the EventBridge/Lambda send, so the guard step below can see the
+    # Lambda's CloudWatch marker and SKIP if it already delivered (no double-report). If the
+    # Lambda missed (as on 2026-06-02), the runner sends here. GitHub starts this cron hours
+    # late (13–17 UTC seen in Oct 2026), often after health-check.yml already redispatched it.
     - cron: '45 9 * * *'
   workflow_dispatch:
     inputs:
@@ -74,13 +74,16 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # On the morning cron only, skip if the Lambda already delivered today (prevents a
-      # double-report). Manual / repository_dispatch / auto-remediation runs always send.
+      # On the morning cron only, skip if the Lambda or an earlier runner (e.g. the health
+      # check's redispatch) already delivered today (prevents a double-report). Manual /
+      # repository_dispatch / auto-remediation runs always send.
       # Fail-safe: if the CloudWatch check errors, we default to sending (a rare double is
       # better than a silent miss).
       - name: Skip if the Lambda already delivered today (scheduled runs only)
         id: guard
         if: github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -uo pipefail
           START_MS=$(python -c "import time;print(int((time.time()-86400)*1000))")
@@ -92,8 +95,13 @@ jobs:
           if [ -n "$MARKERS" ]; then
             echo "Lambda already delivered today — skipping runner send (no double-report)."
             echo "skip=true" >> "$GITHUB_OUTPUT"
+          # Runner sends start at varying times, so look back only to 00:00 UTC (yesterday's
+          # late send must not count as today's).
+          elif [ "$(bash scripts/runner_sent.sh $(( $(date +%s) % 86400 )))" -gt 0 ]; then
+            echo "A runner already sent today's report — skipping (no double-report)."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
           else
-            echo "No Lambda delivery in the last 24h — runner will send the report."
+            echo "No delivery in the last 24h — runner will send the report."
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 

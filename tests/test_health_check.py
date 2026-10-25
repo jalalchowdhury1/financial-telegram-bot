@@ -15,7 +15,7 @@ _spec.loader.exec_module(hc)
 def test_notify_runs_as_script_without_bot_import_error(tmp_path):
     """Regression: running `python scripts/health_check.py --notify <warn report>` must
     resolve `from bot.utils import ...` (repo root on sys.path). With no TELEGRAM env it
-    no-ops the send and exits 0 — but it MUST reach that import without ModuleNotFoundError."""
+    cannot send and exits 1 — but it MUST reach that import without ModuleNotFoundError."""
     report = {"overall": "warn", "findings": [
         {"id": "x", "severity": "warn", "title": "t", "detail": "", "remediation": "manual", "evidence": {}}]}
     f = tmp_path / "r.json"
@@ -25,7 +25,20 @@ def test_notify_runs_as_script_without_bot_import_error(tmp_path):
     proc = subprocess.run([sys.executable, script, "--notify", str(f)],
                           capture_output=True, text=True, env=env)
     assert "No module named 'bot'" not in proc.stderr, proc.stderr
-    assert proc.returncode == 0, proc.stderr
+    assert "TELEGRAM_TOKEN/CHAT_ID not set" in proc.stdout
+    assert proc.returncode == 1, proc.stderr   # an alert that never went out turns the run red
+
+
+def test_notify_exit_code_follows_the_send(tmp_path, monkeypatch):
+    f = tmp_path / "r.json"
+    f.write_text(json.dumps({"overall": "critical", "findings": []}))
+    monkeypatch.setenv("TELEGRAM_TOKEN", "t")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "c")
+    import bot.utils
+    monkeypatch.setattr(bot.utils, "send_to_telegram", lambda *a, **k: False)
+    assert hc.main(["x", "--notify", str(f)]) == 1
+    monkeypatch.setattr(bot.utils, "send_to_telegram", lambda *a, **k: True)
+    assert hc.main(["x", "--notify", str(f)]) == 0
 
 
 def test_check_endpoint_ok():
@@ -124,6 +137,22 @@ def test_check_report_delivered_failed_marker_is_critical():
     f = hc.check_report_delivered(ev)
     assert f["severity"] == "critical"
     assert f["remediation"] == "auto:redispatch_daily_report"
+
+
+def test_check_report_delivered_with_a_lost_section_warns():
+    ev = {"cloudwatch_readable": True, "markers": ["REPORT_DELIVERED ok=true sections=1 errors=1"], "gha_success_today": False}
+    f = hc.check_report_delivered(ev)
+    assert f["severity"] == "warn"
+    assert f["remediation"] == "manual"
+
+
+def test_check_report_delivered_lambda_failed_but_runner_sent_never_redispatches():
+    """A redispatch here was a SECOND brief: the runner had already sent it."""
+    ev = {"cloudwatch_readable": True, "markers": ["REPORT_FAILED ok=false reason=telegram_delivery sections=2"],
+          "gha_success_today": True}
+    f = hc.check_report_delivered(ev)
+    assert f["severity"] == "warn"
+    assert f["remediation"] == "manual"
 
 
 def test_check_report_delivered_no_marker_is_critical():
