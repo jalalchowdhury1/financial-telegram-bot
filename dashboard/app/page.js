@@ -351,6 +351,7 @@ export default function Dashboard() {
     const anySaved = saved(...Object.keys(savedAt));
     // every number the SPY card draws is there (a hole in it is "unavailable", not a crash)
     const spyOk = isLiveAnswer('spy', spy);
+    const fgOk = isLiveAnswer('fg', fg); // a real score, never a NaN drawn from an odd body
     // the server's last-good copy (lib/store.js): "Thu 16:00", the time that copy is from
     const spyStale = spyOk && spy._meta?.stale ? (savedLabel(Date.parse(spy._meta.lastGoodAt)) || 'copy') : undefined;
     // 👋 What is on screen now, LIVE only and landed on THIS visit — a saved copy, or the
@@ -534,16 +535,16 @@ export default function Dashboard() {
                 <div className="card" style={{ animationDelay: '0.3s' }} data-jump="Fear & Greed" data-cached={saved('fg')}>
                     <div className="card-header">
                         <h2>😨 Fear & Greed Index</h2>
-                        {fg && !fg.error && <span className={`badge ${fg.score < 45 ? 'badge-red' : fg.score > 55 ? 'badge-green' : 'badge-yellow'}`}>{fg.rating}</span>}
+                        {fgOk && <span className={`badge ${fg.score < 45 ? 'badge-red' : fg.score > 55 ? 'badge-green' : 'badge-yellow'}`}>{fg.rating}</span>}
                     </div>
                     {/* A VIX proxy is a different gauge and a cached copy is not today's: say so on the card. */}
-                    {fg && !fg.error && (fg._meta?.proxy || fg._meta?.stale) && (
+                    {fgOk && (fg._meta?.proxy || fg._meta?.stale) && (
                         <div data-testid="fg-provenance" style={{ fontSize: '0.7rem', color: 'var(--orange)', fontWeight: 700, margin: '-4px 0 6px' }}>
                             {fg._meta?.proxy ? '⚠ VIX proxy, not CNN Fear & Greed' : `⚠ STALE · cached ${String(fg._meta?.lastGoodAt || '').slice(0, 10)}`}
                         </div>
                     )}
                     <ErrorBoundary resetKey={refreshTick}>
-                        <Body>{() => !fg || fg.error ? (pending.fg ? <Skeleton type="gauge" /> : <Unavailable what="F&G" onRetry={refreshNow} />) : (
+                        <Body>{() => !fgOk ? (pending.fg ? <Skeleton type="gauge" /> : <Unavailable what="F&G" onRetry={refreshNow} />) : (
                             <>
                                 {/* Hero score */}
                                 <div className="hero-price-section">

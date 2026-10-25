@@ -63,6 +63,8 @@ it('every route failing with a 500 whose JSON has no error field still draws the
     jest.useRealTimers();
     expect(screen.getByText('📊 SPY Market Overview')).toBeInTheDocument();
     expect(screen.getByText('😨 Fear & Greed Index')).toBeInTheDocument();
+    expect(screen.getByText('F&G unavailable · tap ↻')).toBeInTheDocument(); // not a NaN score
+    expect(document.body.textContent).not.toMatch(/NaN/);
 });
 
 it('one hung route (market-extra) never holds the header on "Loading live data" once the core feeds are in', async () => {
