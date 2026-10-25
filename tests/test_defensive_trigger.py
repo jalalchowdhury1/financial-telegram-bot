@@ -137,6 +137,16 @@ def test_nag_reminds_only_while_pending_and_repeats_steps_every_sixth_time():
     assert out == []
 
 
+def test_a_lost_fire_alert_puts_the_steps_on_the_next_reminder():
+    st, _ = dt.evaluate(snap(closes()[0], slow="red"), dt.fresh_state(), send=lambda *a: False, now=T0, log=lambda *_: None)
+    assert st["mode"] == "PENDING_DEFENSIVE" and st["pending"]["delivered"] is False
+    sent = []
+    st, _ = dt.nag(st, send=lambda t: sent.append(t) or True, taps=lambda: {}, now=T0 + timedelta(hours=1), log=lambda *_: None)
+    assert "#1" in sent[-1] and "Withdraw" in sent[-1] and "delivered" not in st["pending"]
+    st, _ = dt.nag(st, send=lambda t: sent.append(t) or True, taps=lambda: {}, now=T0 + timedelta(hours=2), log=lambda *_: None)
+    assert "#2" in sent[-1] and "Withdraw" not in sent[-1]               # back to the short form once one got through
+
+
 def test_nag_picks_up_a_done_tap_only_when_it_came_after_the_alert():
     sent = []
     st, _ = run([snap(closes()[0], slow="red")], sent=sent)

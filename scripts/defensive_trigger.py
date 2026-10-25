@@ -279,7 +279,7 @@ def msg_reminder(st):
     what, how = ("go defensive", "50% to cash") if p["kind"] == "PENDING_DEFENSIVE" else ("re-enter", "cash back in")
     text = (f"🛑 <b>Defensive · {what} still open</b>\n"
             f"<i>{how} · reminder #{p['reminders']}</i>")
-    if p["reminders"] % STEPS_EVERY_N_REMINDERS == 0 and p.get("steps"):
+    if (p["reminders"] % STEPS_EVERY_N_REMINDERS == 0 or p.get("delivered") is False) and p.get("steps"):
         text += "\n\n" + p["steps"]
     return text
 
@@ -327,6 +327,8 @@ def evaluate(snap, st, send=send_telegram, now=None, log=print, ctx=None):
         _record(st, now, asof, mode, note)
         if (_send_with_buttons(send, text, mode) if mode.startswith("PENDING") else _send_quiet(send, text)):
             sent.append(text)
+        elif st["pending"]:
+            st["pending"]["delivered"] = False   # the alert with the steps never arrived: the next reminder carries them
         log(f"  → {mode}: {note}")
 
     m = st["mode"]
@@ -440,6 +442,7 @@ def _nag(st, send, taps, now, log):
             text = msg_reminder(st)
             if _send_with_buttons(send, text, p["kind"]):
                 sent.append(text)
+                p.pop("delivered", None)
 
     if st.get("last_asof"):
         days = business_days_between(date.fromisoformat(st["last_asof"]), now_local.date())
