@@ -46,11 +46,31 @@ jobs:
       group: deploy-dashboard
       cancel-in-progress: true
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
+    permissions:
+      contents: read
     steps:
       - name: Wait 90 s so a burst of pushes becomes one deploy
         if: github.event_name == 'push'
         run: sleep 90
+
+      # The release gate: a red suite stops here and the hook never fires (same as ci.yml's
+      # dashboard-tests job). After the wait, so a cancelled burst run costs no test time.
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Install dashboard deps
+        working-directory: dashboard
+        run: npm ci
+
+      - name: Run dashboard tests
+        working-directory: dashboard
+        run: npm test -- --watchAll=false
 
       - name: Trigger the Vercel deploy hook
         env:
@@ -69,5 +89,5 @@ jobs:
           curl -sS -m 20 "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
             -d chat_id="$TELEGRAM_CHAT_ID" -d parse_mode=HTML \
             --data-urlencode "text=🔴 <b>Dashboard deploy did not start</b>
-          The deploy hook failed, so the dashboard is still on the previous version.
+          The tests or the deploy hook failed, so the dashboard is still on the previous version.
           <blockquote><i>financial-telegram-bot · ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}</i></blockquote>" >/dev/null

@@ -37,6 +37,14 @@ jobs:
         with:
           python-version: '3.11'
 
+      # The release gate: a red suite stops here, before anything is packaged or shipped
+      # (same as ci.yml's backend-tests job).
+      - name: Install test deps
+        run: pip install -r requirements-dev.txt
+
+      - name: Run backend tests
+        run: python -m pytest tests/ -q
+
       - name: Build deployment package
         run: |
           rm -rf package deployment_full.zip

@@ -45,7 +45,7 @@ present ⇒ HTTP, else EventBridge):
    a 401 (none are wired up). A new protected route needs its own secret.
 
 The **dashboard** is a Next.js app in `/dashboard`, deployed on **Vercel**
-(deploys when a push to `main` changes `dashboard/`, via `.github/workflows/deploy-dashboard.yml`): <https://financial-telegram-bot-beryl.vercel.app/>.
+(deploys when a push to `main` changes `dashboard/`, via `.github/workflows/deploy-dashboard.yml`, which runs `npm ci` + `npm test -- --watchAll=false` in `dashboard/` first: red tests = no deploy hook, no deploy): <https://financial-telegram-bot-beryl.vercel.app/>.
 
 ### Architecture you MUST get right (this trips people up)
 
@@ -76,7 +76,8 @@ Browser ─▶ Vercel (Next.js /dashboard) ─▶ /api/* route ─┬─▶ API 
 `lambda_handler.py`, `bot/**`, `aws/requirements-lambda.txt`, or the deploy workflow
 itself. You can also run it manually: Actions ▸ **Deploy to AWS Lambda** ▸ Run workflow.
 
-The deploy: builds the zip (deps from `aws/requirements-lambda.txt` + `lambda_handler.py`
+The deploy: **runs the backend tests first** (`pip install -r requirements-dev.txt`,
+`python -m pytest tests/ -q`; a red suite stops the deploy before anything ships) → builds the zip (deps from `aws/requirements-lambda.txt` + `lambda_handler.py`
 + `bot/*.py`) → uploads to S3 (`financial-telegram-bot-deployments`, key
 `lambda-deployments/deployment_<TS>.zip`; the package is >50 MB so direct upload won't
 work) → `update-function-code` from S3 (serialized via a `concurrency` group +
@@ -197,7 +198,8 @@ Deploys only when a push to `main` changes `dashboard/` (10 Oct 2026). Vercel's 
 auto-deploy is OFF (`dashboard/vercel.json`: `git.deploymentEnabled: false`, never remove it):
 the account shares 100 deploys/day across all projects, and every bot-only push used to cost one.
 `.github/workflows/deploy-dashboard.yml` calls a Vercel deploy hook (secret `VERCEL_DEPLOY_HOOK`)
-90 s after a dashboard push (bursts collapse into one deploy) and after a successful bankruptcies
+90 s after a dashboard push (bursts collapse into one deploy), once `npm test` in `dashboard/`
+is green (red tests = the hook never fires, 25 Oct 2026), and after a successful bankruptcies
 or long-history rebake on `main` that moved main (never after a PR or other-branch dry run, nor
 after a green rebake that merged nothing: for a workflow_run, `github.sha` is main's newest
 commit, 11 Oct 2026). Its concurrency group sits on the deploy JOB: at workflow level it was
