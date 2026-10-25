@@ -716,10 +716,10 @@ describe('repairPillInputs', () => {
     });
 
     test('repairs sahm from horsemen unemployment history when available', async () => {
-        // Need 12 months of data. Min of 12 = 3.5, last 3 mean = (4.0+4.1+4.2)/3 = 4.1
-        // Sahm = 4.1 - 3.5 = 0.6
-        const values = [3.5, 3.6, 3.7, 3.8, 3.9, 4.0, 3.9, 3.8, 3.9, 4.0, 4.1, 4.2];
-        const history = values.map((v, i) => ({ date: `2026-${String(i + 1).padStart(2, '0')}-01`, value: v }));
+        // Need 15 months (Oct 2025 → Dec 2026). Lowest 3-mo average of the prior 12 = 3.5,
+        // current 3-mo average = (4.1+4.2+4.3)/3 = 4.2 → Sahm = 0.7
+        const values = [3.5, 3.5, 3.5, 3.6, 3.7, 3.8, 3.9, 4.0, 3.9, 3.8, 3.9, 4.0, 4.1, 4.2, 4.3];
+        const history = values.map((v, i) => ({ date: `${2025 + Math.floor((i + 9) / 12)}-${String(((i + 9) % 12) + 1).padStart(2, '0')}-01`, value: v }));
         const raw = {
             fred: {
                 indicators: {},
@@ -729,7 +729,7 @@ describe('repairPillInputs', () => {
             },
         };
         const inputSources = await repairPillInputs(raw, { now: new Date('2027-01-15') });
-        expect(raw.fred.indicators.sahmRule.value).toBeCloseTo(0.6, 5);
+        expect(raw.fred.indicators.sahmRule.value).toBeCloseTo(0.7, 5);
         expect(raw.fred.indicators.sahmRule.source).toBe('horsemen');
         expect(inputSources.sahm).toBe('horsemen');
     });

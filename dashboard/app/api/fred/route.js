@@ -9,6 +9,7 @@ import { resolvePeRatio } from '../../../lib/peRatio';
 import { resolveLeg, buildCopperGold, westmetallCopperLeg, LB_PER_TONNE } from '../../../lib/copperGold';
 import { resolveSpEps, parseMultplEps, parseShillerCsv, toMonthlyHistory } from '../../../lib/spEps';
 import { resolveBankruptcies } from '../../../lib/bankruptcies';
+import { sahmFromHistory } from '../../../lib/jevInputs';
 import bakedBankruptcies from '../../../lib/data/bankruptciesBaked.json';
 import { cnbcQuotes, cnbcHistory, goldApiSpot, polygonDaily, fredObservations, yahooChart, treasuryYieldCurveCsv, blsSeries, fredGraphCsv, dolWeeklyClaimsXml, westmetallTable } from '../../../lib/sources';
 import { resolveHorseman, buildHorseman, needsRepair, isUpgrade, mergeHorsemenOverBase, overlayLiveExtras, parseTreasuryCsv, parseBlsSeries, parseFredGraphCsv, parseDolClaimsXml } from '../../../lib/horsemen';
@@ -411,11 +412,10 @@ function buildResponse(series, peRatio, now, peSource = null, peAsOf = null) {
     const profitMargin = { ...pm, current: pm.value, date: profitMarginHistory[0]?.date || '', history: [...profitMarginHistory].reverse() };
 
     // ── Economic indicators ──
-    const unrate3mo = unrate.length >= 3 ? unrate.slice(0, 3).reduce((s, v) => s + v.value, 0) / 3 : null;
-    // 12-month low MUST slice: unrate now carries FULL history for the Horsemen
-    // chart, and a min over all of it would break the Sahm rule.
-    const unrate12moLow = unrate.length > 0 ? Math.min(...unrate.slice(0, 12).map(u => u.value)) : null;
-    const sahmRule = unrate3mo !== null && unrate12moLow !== null ? unrate3mo - unrate12moLow : undefined;
+    // Standard Sahm rule (sahmFromHistory): current 3-mo average minus the lowest 3-mo
+    // average of the prior 12 months. MUST slice: unrate (newest first) carries FULL
+    // history for the Horsemen chart, and a min over all of it would break the rule.
+    const sahmRule = sahmFromHistory([...unrate.slice(0, 15)].reverse()) ?? undefined;
 
     const sentimentCurrent = umcsent[0]?.value;
     const sentimentPrev = umcsent[1]?.value;

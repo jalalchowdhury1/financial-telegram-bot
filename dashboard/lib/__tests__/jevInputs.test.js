@@ -66,33 +66,38 @@ describe('claims4wkFromHistory', () => {
 // ---------------------------------------------------------------------------
 
 describe('sahmFromHistory', () => {
-    function makeUnrateHistory(values) {
-        return values.map((v, i) => ({ date: `202${Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, '0')}-01`, value: v }));
-    }
+    // Real FRED UNRATE (current vintage) May 2023 → Aug 2024. The official rule
+    // (FRED SAHMCURRENT) fired at 0.50 in Jul 2024 and 0.57 in Aug 2024; the old
+    // "3-mo average minus the lowest single month" formula read 0.37 / 0.47 (safe).
+    const UNRATE_2023_05 = [3.6, 3.6, 3.5, 3.7, 3.7, 3.9, 3.7, 3.8, 3.7, 3.9, 3.9, 3.9, 3.9, 4.1, 4.2, 4.2];
+    const monthly = (values, y = 2023, m = 5) => values.map((v, i) => {
+        const k = (m - 1) + i;
+        return { date: `${y + Math.floor(k / 12)}-${String((k % 12) + 1).padStart(2, '0')}-01`, value: v };
+    });
 
-    test('computes sahm from 12+ months of UNRATE data', () => {
-        // Last 3 months: 4.0, 4.1, 4.2 → mean = 4.1
-        // Min of all 12: 3.5 (first value)
-        // Sahm = 4.1 - 3.5 = 0.6
-        const values = [3.5, 3.6, 3.7, 3.8, 3.9, 4.0, 3.9, 3.8, 3.9, 4.0, 4.1, 4.2];
-        expect(sahmFromHistory(makeUnrateHistory(values))).toBeCloseTo(0.6, 5);
+    test('known numbers: Jul 2024 = 0.50 and Aug 2024 = 0.57 (FRED SAHMCURRENT)', () => {
+        expect(sahmFromHistory(monthly(UNRATE_2023_05.slice(0, 15)))).toBeCloseTo(0.5, 2);
+        expect(sahmFromHistory(monthly(UNRATE_2023_05))).toBeCloseTo(0.5667, 3);
+        expect(sahmFromHistory(monthly(UNRATE_2023_05.slice(0, 15)))).toBeGreaterThanOrEqual(0.5 - 1e-9);
+    });
+
+    test('compares 3-mo averages, not single months: one low month does not set the floor', () => {
+        // A one-month dip to 3.0 lifts the old single-month formula; the 3-mo averages barely move.
+        const values = [4.0, 4.0, 4.0, 4.0, 3.0, 4.0, 4.0, 4.0, 4.0, 4.0, 4.0, 4.0, 4.0, 4.0, 4.0];
+        expect(sahmFromHistory(monthly(values))).toBeCloseTo(0.3333, 3);       // 4.0 − (4+3+4)/3
     });
 
     test('known number: Sahm = 0.0 when unemployment is stable', () => {
-        const values = Array(14).fill(4.0);
-        expect(sahmFromHistory(values.map((v, i) => ({ date: `2026-${String(i + 1).padStart(2, '0')}-01`, value: v })))).toBeCloseTo(0, 5);
+        expect(sahmFromHistory(monthly(Array(15).fill(4.0)))).toBeCloseTo(0, 5);
     });
 
-    test('known number: Sahm = 0.2 when last 3 months avg is 0.2 above the 12-month low', () => {
-        // Min of 12 = 4.0, last 3 mean = (4.1+4.2+4.3)/3 = 4.2 → sahm 0.2
-        const values = [4.0, 4.0, 4.0, 4.0, 4.0, 4.0, 4.0, 4.0, 4.0, 4.1, 4.2, 4.3];
-        expect(sahmFromHistory(values.map((v, i) => ({ date: `2026-${String(i + 1).padStart(2, '0')}-01`, value: v })))).toBeCloseTo(0.2, 5);
+    test('uses only the newest 15 months of a long history', () => {
+        expect(sahmFromHistory(monthly([2.0, 2.0, 2.0, ...UNRATE_2023_05.slice(0, 15)], 2023, 2))).toBeCloseTo(0.5, 2);
     });
 
-    test('returns null when less than 12 points', () => {
+    test('returns null when less than 15 points', () => {
         expect(sahmFromHistory([])).toBeNull();
-        const short = Array(11).fill(0).map((v, i) => ({ date: `2026-${String(i + 1).padStart(2, '0')}-01`, value: 4.0 }));
-        expect(sahmFromHistory(short)).toBeNull();
+        expect(sahmFromHistory(monthly(Array(14).fill(4.0)))).toBeNull();
         expect(sahmFromHistory(null)).toBeNull();
     });
 
@@ -100,17 +105,6 @@ describe('sahmFromHistory', () => {
         expect(sahmFromHistory(null)).toBeNull();
         expect(sahmFromHistory(undefined)).toBeNull();
         expect(sahmFromHistory('not-an-array')).toBeNull();
-    });
-
-    test('computed value can be near-zero when unemployment barely changes', () => {
-        // Last 3 months: 4.0, 4.01, 4.02 → mean ≈ 4.01
-        // Min of last 12: 3.98 (value[2])
-        // Sahm ≈ 4.01 - 3.98 = 0.03
-        const values = [4.1, 4.0, 3.98, 4.0, 4.0, 4.0, 4.0, 4.0, 4.0, 4.0, 4.01, 4.02];
-        const history = values.map((v, i) => ({ date: `2026-${String(i + 1).padStart(2, '0')}-01`, value: v }));
-        const result = sahmFromHistory(history);
-        expect(result).toBeCloseTo(0.03, 5);
-        expect(result).toBeGreaterThan(0);
     });
 });
 

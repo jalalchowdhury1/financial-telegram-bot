@@ -1391,7 +1391,7 @@ Now: fewer than 756 bars → the Sheet's own 3Y return (`_sheet_return_3y`) → 
   Sahm ≥ 0.5, spread < 0, bankruptcies YoY > +10%; header badge counts "N of 4 riding".
   All data rides on the `/api/fred` payload's `horsemen` block; no new endpoint. Because
   the card needs full histories, the ICSA and UNRATE `FRED_REQUESTS` limits are `100000`
-  — which is WHY `unrate12moLow` (Sahm rule) must stay `unrate.slice(0, 12)`: a min over
+  — which is WHY the Sahm rule must stay on `unrate.slice(0, 15)` (3-mo average minus the lowest 3-mo average of the prior 12 months, `sahmFromHistory`): a min over
   the full history would break it. (MiniChart kept its `weekly` cadence /
   `defaultTimeframe` / `fmt` props from the first iteration — unused by this card now
   but tested and harmless.)
