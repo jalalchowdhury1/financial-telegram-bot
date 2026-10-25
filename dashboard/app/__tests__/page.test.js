@@ -260,6 +260,24 @@ describe('honest labels on the SPY and Fear & Greed cards', () => {
         expect(document.querySelector('[data-testid="fg-provenance"]')).toBeNull();
     });
 
+    it("SPY served from the server's last-good copy says STALE + its time on the card and in the glance bar", async () => {
+        const { savedLabel } = require('../../lib/snapshot');
+        const lastGoodAt = '2026-10-23T20:00:00.000Z';
+        mockRoutes({ '/api/spy': ok({ ...spyPayload, _meta: { source: 'KV last-good', stale: true, lastGoodAt, hasErrors: true } }) });
+        render(<Dashboard />);
+        await waitFor(() => expect(document.querySelector('[data-testid="spy-provenance"]')).not.toBeNull());
+        const when = savedLabel(Date.parse(lastGoodAt));
+        expect(document.querySelector('[data-testid="spy-provenance"]').textContent).toBe(`⚠ STALE · cached ${when}`);
+        expect(document.querySelector('.glance-bar .glance-saved').textContent).toBe(`⚠ Stale ${when}`);
+    });
+
+    it('live SPY carries no stale line', async () => {
+        mockRoutes();
+        render(<Dashboard />);
+        await waitFor(() => expect(screen.getByText('$612.34')).toBeInTheDocument());
+        expect(document.querySelector('[data-testid="spy-provenance"]')).toBeNull();
+    });
+
     it('📈 the CNN score opens its chart (sheet + CNN since 2021); the VIX proxy is a different number: no chart', async () => {
         const fg = (meta) => ok({ score: 45, rating: 'FEAR', previousClose: 38, previousWeek: 40, previousMonth: 38, previousYear: 49, _meta: meta });
         const history = ok({ today: '2026-10-10', metrics: {}, series: { from: '2026-09-21', days: 20, v: { cnnFearGreed: Array.from({ length: 20 }, (_, i) => 40 + (i % 6)) } } });

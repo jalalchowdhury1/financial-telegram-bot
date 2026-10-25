@@ -346,6 +346,8 @@ export default function Dashboard() {
     const anySaved = saved(...Object.keys(savedAt));
     // every number the SPY card draws is there (a hole in it is "unavailable", not a crash)
     const spyOk = isLiveAnswer('spy', spy);
+    // the server's last-good copy (lib/store.js): "Thu 16:00", the time that copy is from
+    const spyStale = spyOk && spy._meta?.stale ? (savedLabel(Date.parse(spy._meta.lastGoodAt)) || 'copy') : undefined;
     // 👋 What is on screen now, LIVE only and landed on THIS visit — a saved copy, or the
     // numbers left on screen while the tab was hidden, are not a new look.
     const liveOnly = (key, v) => (!(key in savedAt) && landedAt[key] > seenBase.at ? v : null);
@@ -459,6 +461,12 @@ export default function Dashboard() {
                         <h2>📊 SPY Market Overview</h2>
                         {spyOk && <span className={`badge ${spy.rsi > 70 ? 'badge-red' : spy.rsi < 30 ? 'badge-green' : 'badge-blue'}`}>{spy.rsi > 70 ? 'Overbought' : spy.rsi < 30 ? 'Oversold' : 'Neutral'}</span>}
                     </div>
+                    {/* the server's last-good copy is not today's price: say so on the card, like F&G */}
+                    {spyStale && (
+                        <div data-testid="spy-provenance" style={{ fontSize: '0.7rem', color: 'var(--orange)', fontWeight: 700, margin: '-4px 0 6px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            ⚠ STALE · cached {spyStale}
+                        </div>
+                    )}
                     <ErrorBoundary resetKey={refreshTick}>
                         <Body>{() => !spyOk ? (pending.spy ? <Skeleton count={5} /> : <Unavailable what="SPY" onRetry={refreshNow} />) : (
                             <>
@@ -729,7 +737,7 @@ export default function Dashboard() {
             <ErrorBoundary resetKey={refreshTick}>
                 <GlanceBar
                     spy={spy} spyDailyMove={spyDailyMove} fg={fg} fgColor={fgColor} when={spyWhen}
-                    updatedAt={updatedAt} saved={anySaved} loading={loading}
+                    updatedAt={updatedAt} saved={anySaved} stale={spyStale} loading={loading}
                     onRefresh={refreshNow} busy={refreshing}
                     markValues={collectLiveValues(fred, extraMarkets, sheets)}
                 />

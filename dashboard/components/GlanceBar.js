@@ -6,7 +6,8 @@
  *  - Numbers come from the page's own state (lib/glance.js) — no fetch of its own. The move
  *    carries the SPY card's session word off the day ("▲0.74% Fri"). F&G down = SPY + ↻ stay.
  *  - The age is the header's: <UpdatedAgo> (amber past 10 min), or "🕐 Saved 10:42" while
- *    the page shows a saved copy and nothing live has landed.
+ *    the page shows a saved copy and nothing live has landed, or "⚠ Stale Thu 16:00" while
+ *    SPY is the server's last-good copy.
  *  - Tap the numbers → back to the top, noted like ☰ → ↑ Top so the ↩ pill can bring him
  *    back. ↻ = the header's refresh (skips the edge cache).
  *  - ● N (cyan) = the header's "new prints" chip in miniature: each tap walks to the next
@@ -24,7 +25,7 @@ import { jumpToNextMark, markSummary } from './MarkChip';
 // Market Pulse is the anchor; if it is not on the page (a crashed card), the header is.
 const ANCHORS = ['.market-pulse', '.dashboard-header'];
 
-export default function GlanceBar({ spy, spyDailyMove, fg, fgColor, when, updatedAt, saved, loading, onRefresh, busy, markValues }) {
+export default function GlanceBar({ spy, spyDailyMove, fg, fgColor, when, updatedAt, saved, stale, loading, onRefresh, busy, markValues }) {
     const [on, setOn] = useState(false);
     const marks = useMarkCounts(markValues);
 
@@ -54,7 +55,7 @@ export default function GlanceBar({ spy, spyDailyMove, fg, fgColor, when, update
 
     const n = glanceNumbers({ spy, spyDailyMove, fg, when });
     if (!n) return null;
-    const age = glanceAge({ updatedAt, saved, loading });
+    const age = glanceAge({ updatedAt, saved, stale, loading });
     const toTop = () => {
         const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
         noteJumpFrom();
@@ -79,7 +80,8 @@ export default function GlanceBar({ spy, spyDailyMove, fg, fgColor, when, update
             {age && (
                 <>
                     <span className="glance-sep" aria-hidden="true"> · </span>
-                    {age.saved ? <span className="glance-saved">🕐 <span className="glance-saved-word">Saved </span>{age.saved}</span> : <UpdatedAgo at={age.at} />}
+                    {age.stale ? <span className="glance-saved">⚠ <span className="glance-saved-word">Stale </span>{age.stale}</span>
+                        : age.saved ? <span className="glance-saved">🕐 <span className="glance-saved-word">Saved </span>{age.saved}</span> : <UpdatedAgo at={age.at} />}
                 </>
             )}
             {marks.total > 0 && (

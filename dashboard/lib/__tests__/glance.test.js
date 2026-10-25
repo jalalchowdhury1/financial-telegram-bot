@@ -51,6 +51,11 @@ describe('glanceAge — the header badge rule', () => {
     });
 });
 
+test("glanceAge: SPY served from the server's last-good copy shows that copy's time, whatever the live age says", () => {
+    expect(glanceAge({ updatedAt: 1000, stale: 'Thu 16:00', loading: false })).toEqual({ stale: 'Thu 16:00' });
+    expect(glanceAge({ updatedAt: 1000, saved: '10:42', stale: 'Thu 16:00', loading: true })).toEqual({ stale: 'Thu 16:00' });
+});
+
 test('shouldShowGlance: only once the anchor is wholly above the top of the screen', () => {
     expect(shouldShowGlance(-1)).toBe(true);
     expect(shouldShowGlance(0)).toBe(false);

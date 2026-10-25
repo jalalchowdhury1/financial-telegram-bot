@@ -28,8 +28,11 @@ export function glanceNumbers({ spy, spyDailyMove, fg, when } = {}) {
 /**
  * The header badge's rule: while a saved copy is on screen and no live answer has landed
  * (first load, or a cycle where every feed failed) → {saved: '10:42'}; else {at: ms}; else null.
+ * First of all, SPY served from the server's last-good copy → {stale: 'Thu 16:00'}: the
+ * price on the bar is that old, however recently the page refreshed.
  */
-export function glanceAge({ updatedAt, saved, loading } = {}) {
+export function glanceAge({ updatedAt, saved, stale, loading } = {}) {
+    if (stale) return { stale };
     if (saved && (loading || !updatedAt)) return { saved };
     return fin(updatedAt) ? { at: updatedAt } : null;
 }
