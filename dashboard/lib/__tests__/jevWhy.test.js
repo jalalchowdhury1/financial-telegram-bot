@@ -79,6 +79,11 @@ describe('pillWhy — each verdict reads from the rows that fired', () => {
         expect(why(data({ hyg: { chg20Pct: -2 } }), 'conflict')).toBe('Junk lagging in an uptrend');
         expect(why(data({ ten: -0.2 }), 'conflict')).toBe('Two yield curves disagree');
     });
+    test('conflict: "in an uptrend" is said once, so two pairs fit the desktop pill', () => {
+        const line = why(data({ fg: { score: 22 }, hyg: { chg20Pct: -2 } }), 'conflict');
+        expect(line).toBe('Fear in an uptrend · junk lagging');
+        expect(line.length).toBeLessThanOrEqual(33);
+    });
 });
 
 describe('pillWhy — missing data shows nothing, never a guess', () => {

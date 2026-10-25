@@ -138,3 +138,57 @@ describe('served:* items (market routes)', () => {
         }
     });
 });
+
+// A live payload is as old as its own newest market date (audit 25 Oct 2026): a feed that
+// still answers but stopped moving must not grade green. Shapes: live /api/market-extra
+// (metric lastDate) and /api/fear-greed (CNN asOf ISO; VIX proxies a plain date).
+describe('served:* live payloads graded by their own dates', () => {
+    const mx = (tnx, cl = tnx, t2y = tnx) => ({
+        fx: { usdcad: { current: 1.3998, lastDate: '2026-10-01' } },          // Polygon FX: not graded
+        commodities: { cl: { current: 103.27, lastDate: cl }, btc: { current: 80769, lastDate: '2026-10-01' } },
+        rates: { tnx: { current: 5, lastDate: tnx }, t2y: { current: 4.69, lastDate: t2y }, mortgageRate: { current: 7.32, lastDate: '2026-09-01' } },
+        _meta: { source: 'yfinance/Polygon/Finnhub/FRED/ER-API', hasErrors: false },
+    });
+    const red = (name, p, now) => isRed(servedCopyItem(name, p, t(now)));
+
+    test('weekend (Sun 25 Oct): Friday yields + oil → green; the 10Y still on Thursday → red', () => {
+        const now = '2026-10-25T21:53:00Z';
+        expect(red('market-extra', mx('2026-10-23'), now)).toBe(false);
+        expect(servedCopyItem('market-extra', mx('2026-10-23'), t(now)).servedAgeH).toBe(49.9);
+        expect(red('market-extra', mx('2026-10-22', '2026-10-23'), now)).toBe(true);
+        expect(red('market-extra', mx('2026-10-23', '2026-10-25'), now)).toBe(false);   // Sunday-evening oil bar
+    });
+    test('weekday night (Tue 03:00Z): Monday yields + oil dated today → green; FRED a session late → red', () => {
+        const now = '2026-10-20T03:00:00Z';                                             // Mon close 20:00Z, input 7 h
+        expect(red('market-extra', mx('2026-10-19', '2026-10-20'), now)).toBe(false);
+        expect(red('market-extra', mx('2026-10-16', '2026-10-20'), now)).toBe(true);
+        expect(red('market-extra', mx('2026-10-19', '2026-10-16'), now)).toBe(true);    // oil frozen
+    });
+    test('weekday daytime (before the close): yesterday\'s yields are the newest → green', () => {
+        expect(red('market-extra', mx('2026-10-19', '2026-10-20'), '2026-10-20T17:00:00Z')).toBe(false);
+    });
+    test('bond-market holidays with NYSE open publish no yields: prior day stays green', () => {
+        // Columbus Day Mon 12 Oct 2026, Veterans Day Wed 11 Nov 2026 (no Treasury CSV row).
+        expect(red('market-extra', mx('2026-10-09', '2026-10-12'), '2026-10-13T03:00:00Z')).toBe(false);
+        expect(red('market-extra', mx('2026-11-10', '2026-11-11'), '2026-11-12T04:00:00Z')).toBe(false);
+        expect(red('market-extra', mx('2026-11-09', '2026-11-11'), '2026-11-12T04:00:00Z')).toBe(true);
+    });
+    test('no dated metric → falls back to the input age (as before)', () => {
+        const it = servedCopyItem('market-extra', { fx: { usdcad: { current: 1.4 } }, _meta: { source: 'Lambda' } }, t('2026-10-20T03:00:00Z'));
+        expect(it.servedAgeH).toBe(it.inputAgeH);
+    });
+    test('fear-greed: CNN asOf after the newest close → green; frozen 2 days → red; proxy date', () => {
+        const fg = (asOf, meta = { source: 'CNN', hasErrors: false }) => ({ score: 20.98, rating: 'extreme fear', asOf, _meta: meta });
+        const now = '2026-10-25T21:53:00Z';
+        expect(red('fear-greed', fg('2026-10-23T23:59:44+00:00'), now)).toBe(false);
+        expect(red('fear-greed', fg('2026-10-21T23:59:44+00:00'), now)).toBe(true);
+        expect(red('fear-greed', fg('2026-10-20T15:00:00+00:00'), '2026-10-20T17:00:00Z')).toBe(false); // intraday print
+        expect(red('fear-greed', fg('2026-10-23', { source: 'CBOE VIX Proxy', proxy: true }), now)).toBe(false);
+        expect(red('fear-greed', fg('2026-10-22', { source: 'CBOE VIX Proxy', proxy: true }), now)).toBe(true);
+        expect(red('fear-greed', fg(undefined), now)).toBe(false);                     // no date: input age
+    });
+    test('spy-daily-move carries no date: graded as before', () => {
+        const it = servedCopyItem('spy-daily-move', { value: '-0.52%', source: 'Google Sheets' }, t('2026-10-25T21:53:00Z'));
+        expect(it.servedAgeH).toBe(it.inputAgeH);
+    });
+});

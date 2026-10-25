@@ -77,18 +77,25 @@ describe('sahmFromHistory', () => {
 
     test('known numbers: Jul 2024 = 0.50 and Aug 2024 = 0.57 (FRED SAHMCURRENT)', () => {
         expect(sahmFromHistory(monthly(UNRATE_2023_05.slice(0, 15)))).toBeCloseTo(0.5, 2);
-        expect(sahmFromHistory(monthly(UNRATE_2023_05))).toBeCloseTo(0.5667, 3);
+        expect(sahmFromHistory(monthly(UNRATE_2023_05))).toBe(0.57);
         expect(sahmFromHistory(monthly(UNRATE_2023_05.slice(0, 15)))).toBeGreaterThanOrEqual(0.5 - 1e-9);
     });
 
     test('compares 3-mo averages, not single months: one low month does not set the floor', () => {
         // A one-month dip to 3.0 lifts the old single-month formula; the 3-mo averages barely move.
         const values = [4.0, 4.0, 4.0, 4.0, 3.0, 4.0, 4.0, 4.0, 4.0, 4.0, 4.0, 4.0, 4.0, 4.0, 4.0];
-        expect(sahmFromHistory(monthly(values))).toBeCloseTo(0.3333, 3);       // 4.0 − (4+3+4)/3
+        expect(sahmFromHistory(monthly(values))).toBe(0.33);       // 4.0 − (4+3+4)/3
     });
 
     test('known number: Sahm = 0.0 when unemployment is stable', () => {
         expect(sahmFromHistory(monthly(Array(15).fill(4.0)))).toBeCloseTo(0, 5);
+    });
+
+    test('rounds to FRED\'s 2 dp: float noise never shows as -0.00', () => {
+        // Raw maths gives -8.88e-16 here, and (-8.88e-16).toFixed(2) is '-0.00' on the card.
+        const v = sahmFromHistory(monthly([3.9, 4.4, 4.1, 4.5, 4.4, 4.4, 3.9, 4.1, 4.5, 4.1, 4.5, 4.4, 3.9, 3.9, 4.4]));
+        expect(Object.is(v, 0)).toBe(true);
+        expect(v.toFixed(2)).toBe('0.00');
     });
 
     test('uses only the newest 15 months of a long history', () => {
