@@ -79,3 +79,24 @@ describe('makePillStore.save', () => {
         expect(await makePillStore(d).save('k', { value: 1, asOf: 'x' })).toBe(false);
     });
 });
+
+describe('makePillStore default KV', () => {
+    test('reads KV uncached with a timeout (never Next\'s Data Cache)', async () => {
+        const env = { ...process.env };
+        process.env.KV_REST_API_URL = 'https://kv.example';
+        process.env.KV_REST_API_TOKEN = 'fake-token';
+        const realFetch = global.fetch;
+        global.fetch = jest.fn(async () => ({ ok: true, json: async () => ({ result: null }) }));
+        try {
+            const s = makePillStore({ tmp: { load: () => null, save: () => {} } });
+            await s.load('k');
+            const [url, init] = global.fetch.mock.calls[0];
+            expect(url).toBe(`https://kv.example/get/${encodeURIComponent(KV_PREFIX + 'k')}`);
+            expect(init.cache).toBe('no-store');
+            expect(init.signal).toBeDefined();
+        } finally {
+            global.fetch = realFetch;
+            process.env = env;
+        }
+    });
+});
