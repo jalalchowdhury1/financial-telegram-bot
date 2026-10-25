@@ -150,7 +150,8 @@ const COMPOSE = {
     },
     conflict(rows, say) {
         const fired = rows.filter((r) => r.hit);
-        if (fired.length) return fired.map(say).join(' · ');
+        // Say "in an uptrend" once: "fear in an uptrend · junk lagging", not twice (desktop pill cut it mid-word).
+        if (fired.length) return fired.map(say).join(' · ').replace(/(in an uptrend.*) in an uptrend/, '$1');
         const known = rows.filter(measured).length;
         const gone = rows.length - known;
         if (!known) return null;
