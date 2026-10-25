@@ -53,6 +53,9 @@ describe('next releases line', () => {
     test('the prerendered page carries no time-baked line (nothing until mounted)', () => {
         // react-dom/server needs TextEncoder, which jsdom lacks
         if (typeof global.TextEncoder === 'undefined') global.TextEncoder = require('util').TextEncoder;
+        // React 19's stream build opens a MessageChannel at load (jsdom has none); renderToString
+        // is the legacy build and never posts to it, so an inert stub is enough
+        if (typeof global.MessageChannel === 'undefined') global.MessageChannel = class { constructor() { this.port1 = {}; this.port2 = { postMessage() {} }; } };
         const { renderToString } = require('react-dom/server');
         jest.useFakeTimers().setSystemTime(new Date('2026-10-14T11:20:00Z'));
         expect(renderToString(<MarketClock />)).toBe('');

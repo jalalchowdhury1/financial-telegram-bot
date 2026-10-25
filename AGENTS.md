@@ -14,7 +14,7 @@ than speed. When in doubt, prefer a graceful fallback over a hard change, and ve
 deploy actually worked before claiming success.
 
 Repo slug: **`jalalchowdhury1/financial-telegram-bot`** (public). Stack: Python 3.11
-(Lambda + bot package) + JavaScript/Next.js 13.5 (dashboard). AWS account `463256610967`,
+(Lambda + bot package) + JavaScript/Next.js 15.5 (dashboard). AWS account `463256610967`,
 region `us-east-1`.
 
 ---
@@ -208,7 +208,7 @@ out its 90 s. A push that changes ONLY `dashboard/scripts/`
 or `__tests__/` files deploys nothing (11 Oct 2026): neither reaches the site. Need a deploy without a dashboard change: Actions → Deploy dashboard → Run workflow.
 No PR preview deploys any more. Tests: from `dashboard/`,
 `npm test` (Jest) and `npm run build` must pass before merge; `npm run test:watch` for
-watch mode; `--testPathPattern <Name>` filters. Next.js 13.5.6, React 18 (App Router).
+watch mode; `--testPathPattern <Name>` filters. Next.js 15.5.28, React 19 (App Router; 25 Oct 2026, was 13.5.6). The last open alerts are postcss inside Next 15 (build-time CSS only); they clear on Next 16.
 
 ### Environment / secrets (Vercel, Production + Preview)
 The repo is **public** — keys NEVER go in code; they live in **Vercel env vars**:
