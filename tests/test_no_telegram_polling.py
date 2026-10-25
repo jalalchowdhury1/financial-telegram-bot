@@ -33,11 +33,9 @@ def test_no_source_polls_telegram_or_deletes_a_webhook():
 def test_serve_mode_runs_flask_in_the_foreground_and_never_touches_telegram():
     import bot.main as m
     with patch.object(m, 'load_environment_variables', return_value={}), \
-         patch.object(m, 'BackgroundScheduler') as sched, \
          patch.object(m, 'run_flask') as flask, \
          patch('requests.post') as post, patch('requests.get') as get:
         m.main()
-    sched.return_value.start.assert_called_once()
     flask.assert_called_once_with()
     post.assert_not_called()
     get.assert_not_called()

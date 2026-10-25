@@ -1705,17 +1705,19 @@ Now: fewer than 756 bars → the Sheet's own 3Y return (`_sheet_return_3y`) → 
 - `scripts/rubber_band.py` — Rubber Band Radar engine (pure maths + Mac mini nightly I/O; see
   §3 and `docs/rubber-band.md`). `scripts/rubber_band_nightly.sh` — its launchd wrapper.
 - `bot/config.py` — `URLS` (Google-Sheet/data source URLs, mirror `dashboard/lib/constants.js`)
-  + `FRED_SERIES` IDs + `TIMEZONE`/`REPORT_TIME` (for the `bot/main.py` scheduler).
+  + `FRED_SERIES` IDs + `TIMEZONE` (used by `lambda_handler.py`).
 - `bot/utils.py` — env loading (`load_environment_variables`, requires
   `FRED_API_KEY`/`TELEGRAM_TOKEN`/`TELEGRAM_CHAT_ID`), `send_to_telegram` (Markdown→plain
   retry + >4096 chunking), `report_marker` (the `REPORT_DELIVERED`/`REPORT_FAILED` CloudWatch line).
 - `bot/main.py` — local/runner entry: `python -m bot.main report` → `run_report()`
   (Google-Sheet text only; SPY summary commented out). Bare `python -m bot.main` runs a
-  Flask health server (foreground) + APScheduler — the long-running mode used by Render
+  Flask health server (foreground) and NOTHING else — the long-running mode used by Render
   (`render.yaml`, `startCommand: python -m bot.main`; Render service `srv-d6asj3h4tr6s73evgh90`,
   free plan, redeploys on EVERY push to main, sleeps after 15 min idle; its "deploy failed"
-  emails go to the owner's Gmail). Nothing uses it any more — suspending it in the Render
-  dashboard is the owner's call. **It must never poll Telegram (2026-10-10).** `TELEGRAM_TOKEN` is @TweetSyn_bot, whose
+  emails go to the owner's Gmail). Nothing uses it any more, and it now sends nothing: its
+  04:15 APScheduler report (a duplicate of the Lambda's) was removed 25 Oct 2026
+  (`tests/test_no_render_scheduler.py` guards it); Flask stays so Render sees a live service.
+  Suspending it in the Render dashboard is the owner's call. **It must never poll Telegram (2026-10-10).** `TELEGRAM_TOKEN` is @TweetSyn_bot, whose
   webhook is health-hub's `/api/defensive` (digest-card + defensive buttons); the old
   `run_polling()` deleted that webhook on every start → 26 wipes 26 Sep–10 Oct, each within
   ~1 min of a push. `tests/test_no_telegram_polling.py` fails on any `run_polling` /

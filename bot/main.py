@@ -1,30 +1,25 @@
 """
 Modular entrypoint for the financial-telegram-bot.
 Orchestrates data fetching and lightweight Telegram text reporting.
-Includes a Flask health-check server and APScheduler for cloud deployment.
+Includes a Flask health-check server for cloud deployment (no scheduler: the daily report
+is the Lambda's, with daily_report.yml's `python -m bot.main report` as the backstop).
 """
 
 import sys
 import os
 import time
-import pytz
 import logging
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
 from flask import Flask
-from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.cron import CronTrigger
 
 # Import from the modular bot package
 from bot.utils import load_environment_variables, send_to_telegram, report_marker
 from bot.fetchers import fetch_google_sheet_indicators
 
-from bot.config import TIMEZONE, REPORT_TIME
-
 # Flask app for health checks
 flask_app = Flask(__name__)
-global_scheduler: Optional[BackgroundScheduler] = None
 
 @flask_app.route('/')
 def health_check():
@@ -78,26 +73,13 @@ def run_flask():
 
 def main():
     """Start the integrated bot service"""
-    global global_scheduler
     print("Starting Lightweight Financial Bot Service...")
 
     load_environment_variables()  # fail fast on missing env, as before
-    tz = pytz.timezone(TIMEZONE)
 
-    # 1. Start Scheduler
-    scheduler = BackgroundScheduler(timezone=tz)
-    global_scheduler = scheduler
-    scheduler.add_job(
-        run_report,
-        trigger=CronTrigger(hour=REPORT_TIME['hour'], minute=REPORT_TIME['minute'], timezone=tz),
-        id='daily_report',
-        name=f"Daily Report at {REPORT_TIME['hour']}:{REPORT_TIME['minute']} {TIMEZONE}",
-        replace_existing=True
-    )
-    scheduler.start()
-    print(f"✓ Scheduler started (Daily at {REPORT_TIME['hour']}:{REPORT_TIME['minute']})")
-
-    # 2. Flask in the foreground keeps the web process (Render) alive.
+    # No scheduler (removed 25 Oct 2026): Render's 04:15 run_report() duplicated the
+    # Lambda's daily report, and nothing uses this service any more.
+    # Flask in the foreground keeps the web process (Render) alive.
     # NO Telegram polling here, ever (removed 2026-10-10). TELEGRAM_TOKEN is @TweetSyn_bot,
     # the alerts bot, whose updates belong to health-hub's webhook (/api/defensive: the
     # Silent-digest card buttons). run_polling() calls deleteWebhook on start, and Render

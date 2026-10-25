@@ -70,9 +70,5 @@ REGIME_COLORS = {
     'BEAR': '#FFB6C1'
 }
 
-# Scheduling (for bot/main.py)
+# Report timezone (lambda_handler.py)
 TIMEZONE = "America/New_York"
-REPORT_TIME = {
-    'hour': 4,
-    'minute': 15
-}
