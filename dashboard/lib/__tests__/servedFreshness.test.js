@@ -173,6 +173,11 @@ describe('served:* live payloads graded by their own dates', () => {
         expect(red('market-extra', mx('2026-11-10', '2026-11-11'), '2026-11-12T04:00:00Z')).toBe(false);
         expect(red('market-extra', mx('2026-11-09', '2026-11-11'), '2026-11-12T04:00:00Z')).toBe(true);
     });
+    test('Veterans Day on a Sunday is observed Monday: no yields that day (no 11/12/2018 row), Friday stays green', () => {
+        // Sun 11 Nov 2029 → bonds shut Mon 12 Nov; 23:30 ET that night
+        expect(red('market-extra', mx('2029-11-09', '2029-11-12'), '2029-11-13T04:30:00Z')).toBe(false);
+        expect(red('market-extra', mx('2029-11-09', '2029-11-13'), '2029-11-14T04:30:00Z')).toBe(true);
+    });
     test('no dated metric → falls back to the input age (as before)', () => {
         const it = servedCopyItem('market-extra', { fx: { usdcad: { current: 1.4 } }, _meta: { source: 'Lambda' } }, t('2026-10-20T03:00:00Z'));
         expect(it.servedAgeH).toBe(it.inputAgeH);

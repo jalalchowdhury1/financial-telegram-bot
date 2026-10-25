@@ -131,12 +131,14 @@ export function servedCopyOf(payload) {
 // the oldest of the 10Y, 2Y and oil (Polygon FX/gold bars are not dated against the close);
 // fear-greed = its asOf (CNN ISO time, or a VIX proxy's date). No date → the input age.
 const dayMs = (d) => (isDate(d) ? closeMsOf(d) ?? etWallToMs(d, 16 * 60) : null);
-// Bond-market holidays with NYSE open (Columbus Day, Veterans Day on a weekday): Treasury
-// publishes no yields (no 10/12/2026 or 11/11/2025 CSV row), so the prior day's still stands.
+// Bond-market holidays with NYSE open (Columbus Day, Veterans Day on a weekday or observed
+// Monday 12th after a Sunday): Treasury publishes no yields (no 10/12/2026, 11/11/2025 or
+// 11/12/2018 CSV row), so the prior day's still stands.
 const bondClosed = (d) => {
     const [, m, day] = d.split('-').map(Number);
     const wd = new Date(`${d}T12:00:00Z`).getUTCDay();
-    return (m === 10 && wd === 1 && day >= 8 && day <= 14) || (m === 11 && day === 11 && wd >= 1 && wd <= 5);
+    return (m === 10 && wd === 1 && day >= 8 && day <= 14) || (m === 11 && day === 11 && wd >= 1 && wd <= 5)
+        || (m === 11 && day === 12 && wd === 1);
 };
 function yieldThroughMs(date) {
     let ms = dayMs(date);
