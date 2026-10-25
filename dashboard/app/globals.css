@@ -2818,6 +2818,13 @@ html:not(:has(.jump-fab)) .back-pill {
     flex-wrap: nowrap; overflow-x: auto; overflow-y: visible;
     gap: 4px; padding: 2px 0; margin-bottom: 12px; border-radius: 0;
   }
+  /* a chip past the edge fades out, so the row reads as "scrolls sideways" (it was cut hard:
+     "BTC −0." at 390). The end padding = the fade, so the last chip is clear when scrolled to. */
+  .moved-strip {
+    padding-right: 24px;
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent);
+  }
   .moved-strip .moved-title { display: none; } /* the chips explain themselves */
   .moved-strip.is-waiting { min-height: 30px; }
   .moved-strip.is-waiting .moved-title { display: inline; }
