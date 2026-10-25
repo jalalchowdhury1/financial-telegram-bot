@@ -36,6 +36,7 @@ import { refreshMs } from '../lib/marketClock';
 import EconChecked from '../components/EconChecked';
 import { movedWhen } from '../lib/whatMoved';
 import { fgHistoryCells } from '../lib/fgHistory';
+import { staleOf } from '../lib/glance';
 
 // useLayoutEffect warns during the static prerender; on the server nothing runs anyway.
 const useIsoLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
@@ -354,8 +355,9 @@ export default function Dashboard() {
     // every number the SPY card draws is there (a hole in it is "unavailable", not a crash)
     const spyOk = isLiveAnswer('spy', spy);
     const fgOk = isLiveAnswer('fg', fg); // a real score, never a NaN drawn from an odd body
-    // the server's last-good copy (lib/store.js): "Thu 16:00", the time that copy is from
-    const spyStale = spyOk && spy._meta?.stale ? (savedLabel(Date.parse(spy._meta.lastGoodAt)) || 'copy') : undefined;
+    // the server's last-good copy (lib/store.js): "Thu 16:00", the time that copy is from;
+    // or a flagged older-close build: "Wed close"
+    const spyStale = spyOk ? staleOf(spy)?.label : undefined;
     // 👋 What is on screen now, LIVE only and landed on THIS visit — a saved copy, or the
     // numbers left on screen while the tab was hidden, are not a new look.
     const liveOnly = (key, v) => (!(key in savedAt) && landedAt[key] > seenBase.at ? v : null);
@@ -475,7 +477,7 @@ export default function Dashboard() {
                     {/* the server's last-good copy is not today's price: say so on the card, like F&G */}
                     {spyStale && (
                         <div data-testid="spy-provenance" style={{ fontSize: '0.7rem', color: 'var(--orange)', fontWeight: 700, margin: '-4px 0 6px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            ⚠ STALE · cached {spyStale}
+                            ⚠ STALE · {/ close$/.test(spyStale) ? spyStale : `cached ${spyStale}`}
                         </div>
                     )}
                     <ErrorBoundary resetKey={refreshTick}>

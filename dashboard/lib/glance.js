@@ -2,6 +2,8 @@
  * 🔝 Glance bar (components/GlanceBar.js) — what it carries. Pure: it reads the payloads the
  * page already holds, so the bar can never show a number the cards below don't.
  */
+import { savedLabel } from './snapshot';
+
 const fin = (v) => typeof v === 'number' && Number.isFinite(v);
 
 /**
@@ -38,4 +40,21 @@ export function glanceAge({ updatedAt, saved, stale } = {}) {
 }
 
 /** Show once the anchor (Market Pulse) has scrolled wholly above the top of the screen. */
+/**
+ * A body the server flagged stale (a VIX proxy is a different gauge, not an old one):
+ * {ms, label} — "Thu 16:00" from its last-good copy, "Wed close" from the close it carries
+ * (lib/spyTiers.js's older-close build has asOf, no lastGoodAt), else "copy". Null = not stale.
+ */
+export function staleOf(body, now = Date.now()) {
+    const m = body?._meta;
+    if (!m?.stale || m.proxy) return null;
+    const at = Date.parse(m.lastGoodAt);
+    if (Number.isFinite(at)) return { ms: at, label: savedLabel(at, now) };
+    const day = /^\d{4}-\d{2}-\d{2}/.exec(m.asOf || '')?.[0];
+    if (!day) return { ms: -Infinity, label: 'copy' };
+    const noon = Date.parse(`${day}T12:00:00Z`); // a calendar day: read at UTC noon so no device timezone moves it
+    const name = new Date(noon).toLocaleDateString('en-US', now - noon > 6 * 864e5 ? { month: 'short', day: 'numeric', timeZone: 'UTC' } : { weekday: 'short', timeZone: 'UTC' });
+    return { ms: noon, label: `${name} close` };
+}
+
 export const shouldShowGlance = (anchorBottom) => fin(anchorBottom) && anchorBottom < 0;

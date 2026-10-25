@@ -1,4 +1,5 @@
-import { glanceNumbers, glanceAge, shouldShowGlance } from '../glance';
+import { glanceNumbers, glanceAge, shouldShowGlance, staleOf } from '../glance';
+import { savedLabel } from '../snapshot';
 
 const spy = { current: 769.64, dailyChange: { value: 5.65, pct: 0.7395 }, rsi: 56.48 };
 const fg = { score: 31.2, rating: 'fear' };
@@ -60,4 +61,18 @@ test('shouldShowGlance: only once the anchor is wholly above the top of the scre
     expect(shouldShowGlance(120)).toBe(false);
     expect(shouldShowGlance(undefined)).toBe(false);
     expect(shouldShowGlance(NaN)).toBe(false);
+});
+
+test('staleOf: a server-stale body says when its copy is from — last-good time, else the close it carries, else "copy"', () => {
+    const now = Date.parse('2026-10-25T15:00:00Z');
+    const lg = '2026-10-23T20:00:00.000Z';
+    expect(staleOf({ _meta: { stale: true, lastGoodAt: lg } }, now)).toEqual({ ms: Date.parse(lg), label: savedLabel(Date.parse(lg), now) });
+    // lib/spyTiers.js's flagged older-close build has asOf, no lastGoodAt: name the close, never "cached copy"
+    expect(staleOf({ _meta: { stale: true, asOf: '2026-10-21' } }, now)).toEqual({ ms: Date.parse('2026-10-21T12:00:00Z'), label: 'Wed close' });
+    expect(staleOf({ _meta: { stale: true, asOf: '2026-10-09' } }, now).label).toBe('Oct 9 close');
+    expect(staleOf({ _meta: { stale: true } }, now)).toEqual({ ms: -Infinity, label: 'copy' });
+    // live, or a VIX proxy (a different gauge, not an old one): not stale
+    expect(staleOf({ _meta: { source: 'CNN' } }, now)).toBeNull();
+    expect(staleOf({ _meta: { stale: true, proxy: true } }, now)).toBeNull();
+    expect(staleOf(null, now)).toBeNull();
 });

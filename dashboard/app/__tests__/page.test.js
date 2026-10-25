@@ -322,6 +322,18 @@ describe('honest labels on the SPY and Fear & Greed cards', () => {
         expect(document.querySelector('.glance-bar .glance-saved').textContent).toBe(`⚠ Stale ${when}`);
     });
 
+    it("SPY's flagged older-close build (asOf, no lastGoodAt) names that close, never \"cached copy\"", async () => {
+        const { staleOf } = require('../../lib/glance');
+        const meta = { source: 'Yahoo Finance (fallback, last close 2026-10-21)', stale: true, hasErrors: true, asOf: '2026-10-21' };
+        mockRoutes({ '/api/spy': ok({ ...spyPayload, _meta: meta }) });
+        render(<Dashboard />);
+        await waitFor(() => expect(document.querySelector('[data-testid="spy-provenance"]')).not.toBeNull());
+        const { label } = staleOf({ _meta: meta });
+        expect(label).toMatch(/ close$/);
+        expect(document.querySelector('[data-testid="spy-provenance"]').textContent).toBe(`⚠ STALE · ${label}`);
+        expect(document.querySelector('.glance-bar .glance-saved').textContent).toBe(`⚠ Stale ${label}`);
+    });
+
     it('live SPY carries no stale line', async () => {
         mockRoutes();
         render(<Dashboard />);
