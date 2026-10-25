@@ -40,13 +40,13 @@ export function claims4wkFromHistory(history) {
  * Sahm rule (FRED SAHMCURRENT): the 3-month average of UNRATE minus the lowest
  * 3-month average of the prior 12 months, from an ascending monthly UNRATE
  * history (each point has a date and value in percent, e.g. 4.1 for 4.1%).
- * Returns the raw difference in points. null if < 15 points.
+ * Returns the difference in points at FRED's 2 dp (+0 turns -0 into 0). null if < 15 points.
  */
 export function sahmFromHistory(history) {
     if (!Array.isArray(history) || history.length < 15) return null;
     const v = history.slice(-15).map((p) => p.value);
     const ma = v.slice(2).map((x, i) => (v[i] + v[i + 1] + x) / 3); // 13 averages, newest last
-    return ma[12] - Math.min(...ma.slice(0, 12));
+    return Math.round((ma[12] - Math.min(...ma.slice(0, 12))) * 100) / 100 + 0;
 }
 
 /** MM/DD/YYYY → YYYY-MM-DD, or null. */
