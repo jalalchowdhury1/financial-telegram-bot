@@ -6,6 +6,8 @@ export const fetchCache = 'default-cache';
 
 // A hung Lambda must not hold the fallback tiers back until API Gateway's ~29 s cap.
 const LAMBDA_TIMEOUT_MS = 10000;
+// The Lambda reads Sheet B12 raw: '#N/A', 'Loading...' or a blank cell is not a move.
+const isMove = (v) => typeof v === 'string' && /^[-+]?\d/.test(v.trim()) && Number.isFinite(parseFloat(v));
 
 async function lambdaMove(messages) {
     const lambdaUrl = process.env.LAMBDA_URL;
@@ -14,7 +16,7 @@ async function lambdaMove(messages) {
         const res = await fetch(`${lambdaUrl}/api/spy-daily-move`, { cache: 'no-store', signal: AbortSignal.timeout(LAMBDA_TIMEOUT_MS) });
         if (!res.ok) { messages.push(`Lambda HTTP ${res.status}`); return null; }
         const j = await res.json();
-        if (j && j.value != null && !j.error) return j;
+        if (j && isMove(j.value) && !j.error) return j;
         messages.push(`Lambda returned no usable value (${j?.error || 'null'})`);
     } catch (e) { messages.push(`Lambda failed: ${e.message}`); }
     return null;
@@ -40,7 +42,7 @@ export async function GET(request) {
         const fb = await fallbackMove(messages, faults);
         return { ...fb, _meta: { messages } };
     }, {
-        isGood: (x) => x && x.value != null,
+        isGood: (x) => x && isMove(x.value),
         fallback: { value: null, source: 'Unavailable' },
         faults,
     });
