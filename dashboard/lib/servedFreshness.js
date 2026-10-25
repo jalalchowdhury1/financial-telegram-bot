@@ -126,12 +126,53 @@ export function servedCopyOf(payload) {
     return { copy: true, savedMs: Number.isFinite(t) ? t : null };
 }
 
+// A LIVE payload is as old as its own newest market date when it carries one (audit 25 Oct
+// 2026): a feed that still answers but stopped moving must not grade green. market-extra =
+// the oldest of the 10Y, 2Y and oil (Polygon FX/gold bars are not dated against the close);
+// fear-greed = its asOf (CNN ISO time, or a VIX proxy's date). No date → the input age.
+const dayMs = (d) => (isDate(d) ? closeMsOf(d) ?? etWallToMs(d, 16 * 60) : null);
+// Bond-market holidays with NYSE open (Columbus Day, Veterans Day on a weekday): Treasury
+// publishes no yields (no 10/12/2026 or 11/11/2025 CSV row), so the prior day's still stands.
+const bondClosed = (d) => {
+    const [, m, day] = d.split('-').map(Number);
+    const wd = new Date(`${d}T12:00:00Z`).getUTCDay();
+    return (m === 10 && wd === 1 && day >= 8 && day <= 14) || (m === 11 && day === 11 && wd >= 1 && wd <= 5);
+};
+function yieldThroughMs(date) {
+    let ms = dayMs(date);
+    if (ms == null) return null;
+    for (let i = 1, d = date; i <= 5; i++) {
+        d = addDays(d, 1);
+        if (!sessionOf(d)) continue;
+        if (!bondClosed(d)) break;
+        ms = closeMsOf(d);
+    }
+    return ms;
+}
+export function liveAsOfMs(name, payload) {
+    if (name === 'fear-greed') {
+        const a = payload.asOf;
+        if (isDate(a)) return dayMs(a);
+        const ms = Date.parse(a ?? '');
+        return Number.isFinite(ms) ? ms : null;
+    }
+    if (name === 'market-extra') {
+        const r = payload.rates || {};
+        const ms = [yieldThroughMs(r.tnx?.lastDate), yieldThroughMs(r.t2y?.lastDate), dayMs(payload.commodities?.cl?.lastDate)]
+            .filter((x) => x != null);
+        return ms.length ? Math.min(...ms) : null;
+    }
+    return null;
+}
+
 export function servedCopyItem(name, payload, now = Date.now()) {
     const newest = latestCloseMs(now);
     const inputAgeH = newest == null ? null : round1((now - newest) / H);
     const s = servedCopyOf(payload);
     let servedAgeH = null;
-    if (s && !s.copy) servedAgeH = inputAgeH;
+    const own = s && !s.copy ? liveAsOfMs(name, payload) : null;
+    if (own != null) servedAgeH = round1(Math.max(0, now - own) / H);
+    else if (s && !s.copy) servedAgeH = inputAgeH;
     else if (s && s.savedMs != null) servedAgeH = round1((now - s.savedMs) / H);
     return { name: `served:${name}`, inputAgeH, servedAgeH, graceH: SERVED_COPY_GRACE_H };
 }
