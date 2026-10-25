@@ -308,7 +308,7 @@ answered. Three fixes, each safe on its own:
    must test the live route, never the edge copy. `FactorRow` busts on the same signal.
 3. **Progressive feeds (`app/page.js` `FEEDS` + `pending`).** Each of the 8 feeds sets its
    own state the moment it answers; each card shows its skeleton only while ITS feed is
-   pending. The status footer + "Updated" badge still wait for all 8.
+   pending. "Updated" stamps once spy/sheets/fg/fred are in; the status footer waits for all 8.
    `jev-pills` is asked for only after spy/sheets/fear-greed/fred/vol land: the route reads
    those siblings over HTTP, and asked in the same second they all MISSed and ran twice;
    asked after, its reads HIT the edge copies (21 Oct 2026).
@@ -628,7 +628,80 @@ blocks headed `QoL ship 6 · lane A / B / C / integrate`.
    keeps SVG text.
 - Pre-existing, not fixed here: desk warm-open CLS ~0.17 (indicator pills grow 77→134px as
   data lands; reserving their height would fix it). Not done from honest-labels: chart change
-  labels with unit + window ("▼ 0.69 pts · 5Y") and "Economic data checked …".
+  labels with unit + window ("▼ 0.69 pts · 5Y"). ("Econ checked …" shipped 2026-10-25.)
+
+### 🛡️ QoL + robustness batch: honest staleness · ● sheet · status line · phone fits — 2026-10-25
+Branch `qol-2026-10-25` (30 commits). Theme: **nothing he trades on may look fresher than it
+is**, one bad field never blanks the page, and every phone line keeps its key number.
+**Staleness on screen (`app/page.js`, `lib/glance.js`, `lib/snapshot.js`)**
+1. **Junk SPY move refused twice.** `/api/spy-daily-move` `isMove` (route) and `LIVE_TESTS.spyDailyMove`
+   (snapshot) accept only a real `-0.52%`-style string: Sheet B12 `'#N/A'`, `'Loading...'`, blank
+   fall through to Finnhub/CNBC/Nasdaq, are never edge-cached as good, never saved. The SPY card
+   badge uses `isLiveAnswer('spyDailyMove', …)` too, so an old saved `#N/A` never draws red.
+2. **SPY card is "unavailable", never a crash or an endless shimmer.** `LIVE_TESTS.spy` needs
+   EVERY number the card draws (current, rsi, ma200, week52High). Card bodies render inside
+   `<Body>{() => …}</Body>` so their `<ErrorBoundary>` catches a throw (inline JSX runs in
+   Dashboard's render, outside every boundary). Skeleton only while `pending.<feed>`; after that
+   `<Unavailable what="SPY">` "SPY unavailable · tap ↻" (= refresh). Same for F&G (`fgOk`: a real
+   score, never NaN) and the SPY chart.
+3. **A failed refresh keeps the numbers, tagged 🕐.** In `fetchAll` `load`: a non-live answer
+   (fallback body OR `null`) with a live answer already on screen marks that feed saved at
+   `landedRef.current[key]` (a ref, readable inside fetchAll). Glance bar + footer then say
+   "saved 18:42". `null` fetches are now named in the diagnostic log ("[SPY] no answer").
+4. **Server-stale copies named.** `staleOf(body)` (`lib/glance.js`): `_meta.stale` (not a VIX
+   proxy) → "Thu 16:00" from `lastGoodAt`, or "Wed close" from `asOf` (spyTiers' older-close
+   build), date once a week old. SPY card: `data-testid="spy-provenance"` "⚠ STALE · cached Thu
+   16:00" / "⚠ STALE · Wed close". Glance bar: `glanceAge({updatedAt, saved, stale})` → stale (the
+   OLDEST of SPY, its move, F&G) beats saved (`saved('spy','spyDailyMove','fg')`, not `anySaved`)
+   beats "just now". ≤400px with the ● dot the stale label drops its time (`.glance-stale-time`).
+5. **Header.** "Updated" stamps once spy/sheets/fg/fred are in (`core` promise + `stamp()`), so a
+   hung market-extra no longer holds "Loading live data" 60 s; still only when ≥1 feed was live.
+   `EconChecked.js`: "Econ checked 18:57" (today) / "Fri 18:57", device time via `savedLabel`
+   (it is when /api/fred ran, NOT the data's date); tap → `newestPrint(fred)` "newest print:
+   Copper/Gold · Oct 24" (fresh numbers only, date read at UTC noon). "AI-powered" copy removed.
+6. **Refresh bar** fills over `refreshMs()` (5 min open / 30 closed) from `lastFetchRef`, memoised
+   on `lastUpdated` so a re-render never restarts it.
+**Feeds (`/api/market-extra`, `lib/marketExtraTiers.js`, `lib/servedFreshness.js`)**
+7. **10Y/2Y from Treasury when newer.** The Lambda's are FRED, a session late; the route asks
+   `tiers.tnx/t2y` (one shared CSV, 30 min fetch cache, fault `?_fail=treasury`) and swaps in a
+   strictly newer `lastDate`; source log "US Treasury (fresher)". Never replaces a null Lambda value
+   (that is the fill path).
+8. **Weekend oil keeps Friday's move.** `dropPhantomBar` drops an off-session last bar that only
+   repeats the prior price (CNBC dates Friday's settle Saturday, change 0.00); `cnbcMetricFrom`
+   dates such a quote by `settleDate` (`lib/sources.js cnbcQuotes` now passes it). A Sunday-evening
+   futures price differs, so it stays.
+9. **Freshness grades live payloads by their own dates.** `liveAsOfMs`: `served:market-extra` =
+   oldest of 10Y, 2Y, oil dates; `served:fear-greed` = its `asOf`. `bondClosed` covers Columbus Day
+   and Veterans Day (weekday, or Mon 12 Nov after a Sunday) so no-yield days stay green. No date →
+   the old input-age grade.
+**● sheet + footer + phone fits**
+10. **● N opens a list** (`MarksSheet.js`, mounted once in page.js). Header chip and glance ● call
+   `openMarksSheet()` (MarkChip.js); rows from `useMarkList` (MarkProvider.js) = the SAME `markFor`
+   rule as the count, biggest relative change first, "Sahm Rule 0.03 → −0.00 · Economy". Tap = close,
+   then scroll + `jump-flash` + back pill AFTER the sheet lock lets go (`go` effect). Finds the
+   number by `Delta`'s `data-mark-key`. Portalled to body (backdrop-filter trap). The old
+   `jumpToNextMark`/`resetMarkCursor` cursor is gone.
+11. **Status footer = `StatusLine.js`** (`statusFeeds(bodies, saved)`): one line, "✓ feeds live"
+   only when all are ok; a saved feed = amber "🕐 FRED: saved 10:42", a non-live body = red "⚠ SPY:
+   no data", both tappable (`jumpToCard`, Sheets → new `data-jump="Indicators"`). Problems sort
+   FIRST (phone scrolls sideways). FRED count is real (17/17), never the old hard-coded 18/18.
+12. **Phone fits (≤480/400/640px).** Factor caption short form keeps its date (".factor-cap-short"
+   "… lags · Oct 23"); What moved row fades its last 24px; ☰ fades on scroll down (`is-hidden`,
+   back on scroll up / 900 ms rest, never while open; page gets 80px bottom room); glance bar drops
+   the session word while ● shows (`.has-mark`). Jev Conflict line says "in an uptrend" once
+   (`lib/jevWhy.js`). `sahmFromHistory` rounds to 2 dp (+0), never "-0.00".
+**Traps, don't regress**
+- A sheet error string is not a move: keep `isMove` in BOTH the route and snapshot.js.
+- Card JSX that dereferences payload fields goes inside `<Body>` under its boundary, never inline.
+- Glance age precedence is stale > saved > at; its `saved` is ONLY its own three feeds.
+- `liveAsOfMs` must keep the bond-holiday walk, or Columbus/Veterans Day nights go red.
+- `useMarkList` and `useMarkCounts` must share `markFor`, or the chip count and the list disagree.
+- Every footer/glance/caption line stays one line (`nowrap`; scroll sideways, never wrap).
+**Test:** `cd dashboard && npx jest` (new or extended: StatusLine, MarksSheet, EconChecked, JumpNav,
+marketExtraTiers, servedFreshness, spyDailyMoveRoute, glance; page.test.js covers fallback-keeps,
+null-refresh, Unavailable, spy-provenance) + `npm run build`. Live: `?_fail=treasury` on
+`/api/market-extra`; Playwright `route()` a 500 / `{value:'#N/A'}` / `_meta.stale` body, check
+the SPY card + glance bar at 390px and desk width.
 
 ### 🔸 AAII direct (`/api/aaii` + `lib/aaii.js`) — 2026-09-27
 AAII no longer flows through a Google Sheet. The old chain (sentiment-scraper GHA →
@@ -712,6 +785,7 @@ Rule: every number has ≥2 independent live sources, then saved copies, then an
 - **Freshness:** `/api/freshness` also reports `served:<route>` for spy, spy-daily-move,
   market-extra, fred, sheets, fear-greed (`lib/servedFreshness.js servedCopyItem`): a saved copy
   older than the newest NYSE close (past 6 h grace) or nothing served → red in the fleet row.
+  A LIVE market-extra / fear-greed ages from its own dates (`liveAsOfMs`, 2026-10-25).
 - **3Y convention (decided 2026-10-09): same date 3 years back.** `SPY_DAILY_MOVE` (n8n) already
   uses it; `SPY_INDICATORS` B5 switched 2026-10-10 (formula in "SPY waterfall" above; only read
   when the Lambda's yfinance, Polygon AND Nasdaq all fail).
@@ -944,7 +1018,7 @@ so `isGood` rejects an empty digest rather than letting it claim "nothing change
   reconcile `_meta` after backfilling** (drop the stale "unavailable: N" note, recompute
   `hasErrors` + the count from what's *still* missing). If you skip this, the page-bottom
   status footer shows red even when every metric was filled.
-- The footer (`dashboard/app/page.js`, `.system-status-bar`) colors each source from its
+- The footer (`components/StatusLine.js`, `.system-status-bar`) colors each source from its
   route's `_meta`/`source` string: red if `hasErrors`/Failed/Static/Stale, yellow for
   degraded sources (FRED proxies/VIX proxy/cached), green otherwise. **Green must mean
   the data is actually healthy** — don't hardcode a status; derive it. (Note: `buildSpy` in
@@ -1754,7 +1828,7 @@ Now: fewer than 756 bars → the Sheet's own 3Y return (`_sheet_return_3y`) → 
   — the NYSE open/closed pill (hand-copied holiday calendar, see §3) and the "Since
   Thu 09:05" catch-up line (`fd:seen:v1`). The 90-day tap charts are `buildChartSeries` /
   `chartFor` in `lib/marks.js` (`/api/history` `series`).
-- `dashboard/app/page.js` — dashboard page + the `.system-status-bar` footer.
+- `dashboard/app/page.js` — dashboard page; the `.system-status-bar` footer is `components/StatusLine.js`.
 - `dashboard/components/*.js` — UI (MarketModal, PolymarketTable, SpyChart, Gauge,
   EconomicIndicatorGrid, BullChecklist, ExtraMarketsGrid, MarketPulse, MiniChart,
   FourHorsemen, CustomIndicatorBar, Skeleton, ErrorBoundary (with `resetKey`), FactorRow,
