@@ -334,6 +334,29 @@ describe('honest labels on the SPY and Fear & Greed cards', () => {
         expect(document.querySelector('.glance-bar .glance-saved').textContent).toBe(`⚠ Stale ${label}`);
     });
 
+    it("the glance bar's age follows ALL its numbers: a stale F&G or SPY move shows the oldest copy's time, never \"just now\"", async () => {
+        const { savedLabel } = require('../../lib/snapshot');
+        const fgAt = '2026-10-20T21:00:00.000Z';
+        const moveAt = '2026-10-22T20:00:00.000Z';
+        mockRoutes({
+            '/api/fear-greed': ok({ score: 21, rating: 'extreme fear', _meta: { source: `KV last-good (${fgAt}) ← CNN`, stale: true, lastGoodAt: fgAt, hasErrors: true } }),
+            '/api/spy-daily-move': ok({ value: '-0.52%', _meta: { stale: true, lastGoodAt: moveAt, hasErrors: true } }),
+        });
+        const r = render(<Dashboard />);
+        await waitFor(() => expect(document.querySelector('[data-testid="fg-provenance"]')).not.toBeNull());
+        await waitFor(() => expect(document.querySelector('.glance-bar .glance-saved')).not.toBeNull());
+        expect(document.querySelector('[data-testid="spy-provenance"]')).toBeNull(); // SPY itself is live
+        expect(document.querySelector('.glance-bar .glance-saved').textContent).toBe(`⚠ Stale ${savedLabel(Date.parse(fgAt))}`);
+        r.unmount();
+        await act(async () => { await new Promise((res) => setTimeout(res, 0)); });
+        window.localStorage.clear();
+
+        mockRoutes({ '/api/spy-daily-move': ok({ value: '-0.52%', _meta: { stale: true, lastGoodAt: moveAt, hasErrors: true } }) });
+        render(<Dashboard />);
+        await waitFor(() => expect(document.querySelector('.glance-bar .glance-saved')).not.toBeNull());
+        expect(document.querySelector('.glance-bar .glance-saved').textContent).toBe(`⚠ Stale ${savedLabel(Date.parse(moveAt))}`);
+    });
+
     it('live SPY carries no stale line', async () => {
         mockRoutes();
         render(<Dashboard />);

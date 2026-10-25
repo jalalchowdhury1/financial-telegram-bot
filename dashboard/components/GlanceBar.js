@@ -6,8 +6,8 @@
  *  - Numbers come from the page's own state (lib/glance.js) — no fetch of its own. The move
  *    carries the SPY card's session word off the day ("▲0.74% Fri"). F&G down = SPY + ↻ stay.
  *  - The age is the header's <UpdatedAgo> (amber past 10 min), or "🕐 Saved 10:42" while
- *    SPY or F&G is still a saved copy, or "⚠ Stale Thu 16:00" while SPY is the server's
- *    last-good copy.
+ *    SPY or F&G is still a saved copy, or "⚠ Stale Thu 16:00" while SPY, its move or F&G is
+ *    the server's stale copy (the oldest one).
  *  - Tap the numbers → back to the top, noted like ☰ → ↑ Top so the ↩ pill can bring him
  *    back. ↻ = the header's refresh (skips the edge cache).
  *  - ● N (cyan) = the header's "new prints" chip in miniature: a tap opens the same ● sheet

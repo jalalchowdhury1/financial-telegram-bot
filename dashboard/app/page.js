@@ -358,6 +358,9 @@ export default function Dashboard() {
     // the server's last-good copy (lib/store.js): "Thu 16:00", the time that copy is from;
     // or a flagged older-close build: "Wed close"
     const spyStale = spyOk ? staleOf(spy)?.label : undefined;
+    // 🔝 the glance bar's: the OLDEST server-stale copy among ITS numbers (SPY, its move, F&G)
+    const glanceStale = [spyOk && spy, isLiveAnswer('spyDailyMove', spyDailyMove) && spyDailyMove, fgOk && fg]
+        .map((b) => b && staleOf(b)).filter(Boolean).sort((a, b) => a.ms - b.ms)[0]?.label;
     // 👋 What is on screen now, LIVE only and landed on THIS visit — a saved copy, or the
     // numbers left on screen while the tab was hidden, are not a new look.
     const liveOnly = (key, v) => (!(key in savedAt) && landedAt[key] > seenBase.at ? v : null);
@@ -750,7 +753,7 @@ export default function Dashboard() {
             <ErrorBoundary resetKey={refreshTick}>
                 <GlanceBar
                     spy={spy} spyDailyMove={spyDailyMove} fg={fg} fgColor={fgColor} when={spyWhen}
-                    updatedAt={updatedAt} saved={saved('spy', 'spyDailyMove', 'fg')} stale={spyStale}
+                    updatedAt={updatedAt} saved={saved('spy', 'spyDailyMove', 'fg')} stale={glanceStale}
                     onRefresh={refreshNow} busy={refreshing}
                     markValues={collectLiveValues(fred, extraMarkets, sheets)}
                 />

@@ -28,8 +28,8 @@ export function glanceNumbers({ spy, spyDailyMove, fg, when } = {}) {
 }
 
 /**
- * The bar's age follows its OWN numbers, not the page's: SPY served from the server's
- * last-good copy → {stale: 'Thu 16:00'}; SPY or F&G still this device's saved copy →
+ * The bar's age follows its OWN numbers, not the page's: SPY, its move or F&G served from
+ * the server's stale copy → {stale: 'Thu 16:00'} (the oldest); SPY or F&G still this device's saved copy →
  * {saved: '10:42'} (even after other feeds landed live, so a 3-day-old price never reads
  * "just now"); else {at: ms}; else null.
  */
