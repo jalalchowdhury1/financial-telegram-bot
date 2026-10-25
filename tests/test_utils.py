@@ -47,3 +47,18 @@ def test_split_message_respects_limit_and_splits_long_lines():
     chunks2 = _split_message("y" * 9000, limit=4096)
     assert all(len(c) <= 4096 for c in chunks2)
     assert sum(c.count("y") for c in chunks2) == 9000
+
+
+@patch('bot.utils.requests.post')
+def test_digest_key_goes_in_a_header_never_the_url(mock_post, monkeypatch, capsys):
+    # Audit 25 Oct 2026: ?k=<DIGEST_KEY> landed in request logs and in exception text.
+    from bot.utils import digest_post
+    monkeypatch.setenv('DIGEST_URL', 'https://digest.test/api/digest')
+    monkeypatch.setenv('DIGEST_KEY', 'fake-digest-key')
+    mock_post.return_value = MagicMock(status_code=200, json=lambda: {'ok': True})
+    assert digest_post('report', 'hi') is True
+    _, kw = mock_post.call_args
+    assert kw['headers'] == {'x-digest-key': 'fake-digest-key'} and 'params' not in kw
+    mock_post.side_effect = ConnectionError('Max retries exceeded with url: /api/digest?k=fake-digest-key')
+    assert digest_post('report', 'hi') is False
+    assert 'fake-digest-key' not in capsys.readouterr().out

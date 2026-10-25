@@ -99,10 +99,11 @@ def digest_post(item_id, text, parse_mode="HTML", photo=None, caption=None, sig=
         body = {"id": item_id, "text": text, "parse_mode": parse_mode, "photo": photo, "caption": caption}
         if sig:
             body["sig"] = sig
-        r = requests.post(url, params={"k": key}, timeout=10, json=body)
+        # Key in a header, not ?k=: a URL lands in request logs and in exception text.
+        r = requests.post(url, headers={"x-digest-key": key}, timeout=10, json=body)
         return r.status_code == 200 and r.json().get("ok") is True
     except Exception as e:  # noqa: BLE001
-        print(f"digest hand-off failed ({e}); sending directly")
+        print(f"digest hand-off failed ({type(e).__name__}); sending directly")
         return False
 
 
