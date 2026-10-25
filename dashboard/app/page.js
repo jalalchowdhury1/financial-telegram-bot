@@ -32,6 +32,7 @@ import { readSeen, writeSeen, mergeSeen, pickSeen, SINCE_MIN_GAP_MS } from '../l
 import SinceLastVisit from '../components/SinceLastVisit';
 import MarketClock from '../components/MarketClock';
 import { refreshMs } from '../lib/marketClock';
+import EconChecked from '../components/EconChecked';
 import { movedWhen } from '../lib/whatMoved';
 import { fgHistoryCells } from '../lib/fgHistory';
 
@@ -386,7 +387,7 @@ export default function Dashboard() {
             {/* HEADER */}
             <header className="dashboard-header">
                 <h1>Jalal's Financial Dashboard</h1>
-                <p className="subtitle">Live market data, economic indicators & AI-powered assessment</p>
+                <p className="subtitle">Live market data & economic indicators</p>
                 <div className="header-status">
                     {/* amber, not live-green, while the page shows a saved copy */}
                     <div className={`live-badge${anySaved && (loading || !updatedAt) ? ' is-saved' : ''}`}>
@@ -415,9 +416,7 @@ export default function Dashboard() {
                 {/* 🕰️ NYSE open/closed + countdown, computed on the device */}
                 <div className="mkt-clock-row"><ErrorBoundary><MarketClock /></ErrorBoundary></div>
                 {fred?._meta?.fetchedAt && (
-                    <p className="subtitle data-asof" style={{ fontSize: '0.7rem', opacity: 0.6, marginTop: '6px' }}>
-                        Economic data as of {new Date(fred._meta.fetchedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}<span className="hide-sm"> · every 3 h · tap a number for its chart</span>
-                    </p>
+                    <EconChecked fred={fred} />
                 )}
             </header>
 

@@ -2,7 +2,7 @@ import './globals.css';
 
 export const metadata = {
     title: 'Financial Dashboard — Live Market Intelligence',
-    description: 'Premium live financial dashboard with SPY analytics, Fear & Greed Index, economic indicators, and AI-powered market assessment.',
+    description: 'Premium live financial dashboard with SPY analytics, Fear & Greed Index, and economic indicators.',
 };
 
 // The page paints with system fonts at once (display=swap) and switches when these

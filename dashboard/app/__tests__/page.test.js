@@ -395,3 +395,10 @@ it('the top refresh bar fills at the real refresh pace: 30 min while the market 
     await waitFor(() => expect(bar()).not.toBeNull());
     expect(bar().style.animation).toMatch(/^progress-fill 300s /);
 });
+
+it('the header claims no AI: nothing on the page calls /api/assessment', async () => {
+    mockRoutes();
+    render(<Dashboard />);
+    await waitFor(() => expect(screen.getByText('$612.34')).toBeInTheDocument());
+    expect(document.querySelector('.dashboard-header .subtitle').textContent).toBe('Live market data & economic indicators');
+});

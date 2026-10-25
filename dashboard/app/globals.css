@@ -1328,6 +1328,8 @@ body::before {
   margin-top: 12px;
 }
 .hide-sm { display: inline; }
+.data-asof-btn { padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; white-space: nowrap; text-decoration: underline dotted; text-underline-offset: 2px; }
+.data-asof-newest { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* The three header controls are sized as ONE set, not three independent ones.
    .live-badge in particular carried margin-top:12px from when it was a standalone
