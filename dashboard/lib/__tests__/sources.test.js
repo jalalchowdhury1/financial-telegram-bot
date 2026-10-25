@@ -186,6 +186,11 @@ describe('cnbcHistory', () => {
         expect(global.fetch).toHaveBeenCalledTimes(2);
         expect(global.fetch.mock.calls[0][0]).toContain('/charts/3M.json?symbol=XLP');
         expect(global.fetch.mock.calls[1][0]).toContain('/charts/1Y.json?symbol=XLP');
+        // CNBC + Next's Data Cache replay the error per URL: the fallback goes out fresh, uncached.
+        expect(global.fetch.mock.calls[0][0]).not.toContain('&_=');
+        expect(global.fetch.mock.calls[0][1].next.revalidate).toBe(1800);
+        expect(global.fetch.mock.calls[1][0]).toMatch(/&_=\d+$/);
+        expect(global.fetch.mock.calls[1][1].next.revalidate).toBe(0);
     });
     test('the error names the CNBC status when every range fails', async () => {
         mockFetch({ status: 'ERROR', statusMessage: 'Error in getting bars for symbol: XLF and barType: ONE_DAY 503 Backend fetch failed' });

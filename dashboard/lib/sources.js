@@ -197,15 +197,17 @@ export async function cnbcQuotes(symbols, { revalidate = 1800, timeout = 6000, t
  * and '1Y' failed for SPY while '3M' worked. So a fast empty/ERROR answer tries the next
  * daily range ('1Y' = same 499 bars, '6M' = ~750) before giving up. A thrown fetch error
  * (timeout, network) still propagates at once so the caller's time budget holds.
+ * CNBC replays an error per exact URL for hours, and Next's Data Cache keeps any 200 for
+ * `revalidate` s, so each fallback range goes out with a fresh `&_=` and no Data Cache.
  */
 const CNBC_DAILY_RANGES = ['3M', '1Y', '6M'];
 
 export async function cnbcHistory(symbol, { range = '3M', revalidate = 1800, timeout = 6000, tries = 2 } = {}) {
     const ranges = [range, ...CNBC_DAILY_RANGES.filter((r) => r !== range)];
     let why = 'empty history';
-    for (const r of ranges) {
-        const url = `https://ts-api.cnbc.com/harmony/app/charts/${r}.json?symbol=${encodeURIComponent(symbol)}`;
-        const data = await withRetry(() => fetchJson(url, { revalidate, timeout }), { tries });
+    for (const [i, r] of ranges.entries()) {
+        const url = `https://ts-api.cnbc.com/harmony/app/charts/${r}.json?symbol=${encodeURIComponent(symbol)}${i ? `&_=${Date.now()}${i}` : ''}`;
+        const data = await withRetry(() => fetchJson(url, { revalidate: i ? 0 : revalidate, timeout }), { tries });
         const history = [];
         for (const b of data?.barData?.priceBars || []) {
             const price = parseFloat(b.close);
