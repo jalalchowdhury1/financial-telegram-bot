@@ -56,6 +56,8 @@ export default function GlanceBar({ spy, spyDailyMove, fg, fgColor, when, update
     const n = glanceNumbers({ spy, spyDailyMove, fg, when });
     if (!n) return null;
     const age = glanceAge({ updatedAt, saved, stale });
+    // "Fri 16:00" → "Fri" + " 16:00": a 390px phone with the ● dot drops the time so F&G keeps its number
+    const staleParts = age?.stale && /^(.*\S) (\d\d:\d\d|close)$/.exec(age.stale);
     const toTop = () => {
         const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
         noteJumpFrom();
@@ -80,7 +82,7 @@ export default function GlanceBar({ spy, spyDailyMove, fg, fgColor, when, update
             {age && (
                 <>
                     <span className="glance-sep" aria-hidden="true"> · </span>
-                    {age.stale ? <span className="glance-saved">⚠ <span className="glance-saved-word">Stale </span>{age.stale}</span>
+                    {age.stale ? <span className="glance-saved">⚠ <span className="glance-saved-word">Stale </span>{staleParts ? <>{staleParts[1]}<span className="glance-stale-time"> {staleParts[2]}</span></> : age.stale}</span>
                         : age.saved ? <span className="glance-saved">🕐 <span className="glance-saved-word">Saved </span>{age.saved}</span> : <UpdatedAgo at={age.at} />}
                 </>
             )}

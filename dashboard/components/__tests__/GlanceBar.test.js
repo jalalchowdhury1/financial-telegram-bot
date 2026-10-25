@@ -103,3 +103,16 @@ it('F&G that is not a number is simply left out', () => {
     expect(bar().textContent).not.toMatch(/F&G|NaN/);
     expect(bar().textContent).toMatch(/SPY 769\.64/);
 });
+
+it('a stale label keeps its time (or "close") in its own span, so a phone with the ● dot can drop it and keep F&G', () => {
+    const { rerender } = render(<Page stale="Fri 16:00" />);
+    const saved = () => document.querySelector('.glance-saved');
+    expect(saved().textContent).toBe('⚠ Stale Fri 16:00');
+    expect(saved().querySelector('.glance-stale-time').textContent).toBe(' 16:00');
+    rerender(<Page stale="Wed close" />);
+    expect(saved().querySelector('.glance-stale-time').textContent).toBe(' close');
+    // a bare time (today) or "copy" has nothing to drop
+    rerender(<Page stale="16:00" />);
+    expect(saved().textContent).toBe('⚠ Stale 16:00');
+    expect(saved().querySelector('.glance-stale-time')).toBeNull();
+});
