@@ -143,8 +143,11 @@ jobs:
             fi
           done
 
+          # Both gateways answer 200 on a healthy deploy (q1zp14pxal, 14wb2ubzh3). None = the new
+          # code is broken on Lambda (an import error 500s every route), so fail the deploy.
           if [ "$tested" -eq 0 ]; then
-            echo "::warning::No API Gateway returned 200 for /api/spy — could not smoke-test the live path (deploy of code still succeeded)."
+            echo "::error::No API Gateway returned 200 for /api/spy — the new Lambda code looks broken."
+            hard_fail=1
           else
             echo "Smoke-tested $tested live gateway endpoint(s)."
           fi

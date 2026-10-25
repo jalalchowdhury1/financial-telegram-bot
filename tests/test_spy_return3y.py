@@ -67,7 +67,9 @@ def test_sheet_layer_prefers_the_same_date_3y_then_parses_a_percent_cell(monkeyp
     monkeypatch.setattr(f, '_fetch_yfinance', lambda *a, **k: None)
     monkeypatch.setattr(f.requests, 'get', lambda *a, **k: R())
     monkeypatch.setattr(f, '_get_sheet_csv', lambda url, **kw: '\n'.join(['x,y'] * 10 + ['3 YR Return,80.17%']))
-    assert f.fetch_spy_with_fallback()['return3y'] == 80.17
+    out = f.fetch_spy_with_fallback()
+    assert out['return3y'] == 80.17
+    assert out['dailyChange'] is None   # the sheet has no previous close: unknown, not +0.00%
 
     def boom(url, **kw):
         raise TimeoutError('sheet stalled')

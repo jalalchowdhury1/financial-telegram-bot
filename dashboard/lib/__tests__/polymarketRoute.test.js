@@ -64,8 +64,8 @@ jest.mock('../fetcher', () => ({
 }));
 
 const { GET } = require('../../app/api/polymarket/route');
-const call = async (q = '?_fail=none,tmplg') => {
-    const res = await GET(new Request(`https://x.test/api/polymarket${q}`, { headers: { 'user-agent': 'jest' } }));
+const call = async (q = '?_fail=none,tmplg', headers = {}) => {
+    const res = await GET(new Request(`https://x.test/api/polymarket${q}`, { headers: { 'user-agent': 'jest', ...headers } }));
     return { res, b: await res.json() };
 };
 const LAMBDA_BOARD = {
@@ -220,8 +220,18 @@ describe('/api/polymarket', () => {
         expect(b._meta.source).toBe('Unavailable');
     });
 
+    test('?debug=compare without the secret header is the normal board, not the uncached compare', async () => {
+        process.env.ASSESSMENT_SECRET = 'test-secret-not-real';
+        const { b } = await call('?debug=compare&_fail=none,tmplg', { 'x-assessment-secret': 'nope' });
+        expect(b.lambda).toBeUndefined();
+        expect(b._meta).toBeDefined();
+        delete process.env.ASSESSMENT_SECRET;
+    });
+
     test('?debug=compare shows both paths side by side', async () => {
-        const { b } = await call('?debug=compare');
+        process.env.ASSESSMENT_SECRET = 'test-secret-not-real';
+        const { b } = await call('?debug=compare', { 'x-assessment-secret': 'test-secret-not-real' });
+        delete process.env.ASSESSMENT_SECRET;
         expect(b.lambda.trending.count).toBe(2);
         expect(b.fallback.trending.top[0]).toBe('Balance of Power: 2026 Midterms');
         expect(b.fallback.sources).toEqual({ trending: 'featured', breaking: 'biggest-movers', macro: 'macro-tags' });

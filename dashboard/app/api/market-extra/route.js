@@ -1,6 +1,7 @@
 import { polygonDaily, erApiRates, frankfurterRates, fawazRates, dxyFromUsdRates, coinbaseSpot, coingeckoPrice, krakenSpot, fredObservations, dailyChange, goldApiSpot } from '../../../lib/sources';
 import { serve } from '../../../lib/store';
 import { faultsFrom, gate } from '../../../lib/faults';
+import { assessmentAuthorized } from '../../../lib/claudeAssessment';
 import { makeTiers, mergeLastGood } from '../../../lib/marketExtraTiers';
 
 export const fetchCache = 'default-cache';
@@ -210,7 +211,8 @@ export async function GET(request) {
     ]);
     const ctx = { apiKey, poly, er, faults, tiers };
 
-    if (debug === 'compare') {
+    // Runs both paths uncached on every hit, so only with header x-assessment-secret (audit 25 Oct 2026).
+    if (debug === 'compare' && assessmentAuthorized(request)) {
         const direct = await buildDirect(ctx, [], deadlineAt);
         const summ = (o) => o ? {
             usdcad: o.fx?.usdcad?.current, usdinr: o.fx?.usdinr?.current, usdbdt: o.fx?.usdbdt?.current, dxy: o.fx?.dxy?.current,

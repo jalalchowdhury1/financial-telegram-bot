@@ -92,6 +92,7 @@ test.each([
     ['API error', () => create.mockRejectedValue(new Error('529 overloaded'))],
     ['refusal', () => create.mockResolvedValue(msg('', 'refusal'))],
     ['empty text', () => create.mockResolvedValue(msg('   '))],
+    ['cut off at max_tokens', () => create.mockResolvedValue(msg('Macro is', 'max_tokens'))],
 ])('any Claude failure (%s) falls back to the old cascade', async (_name, arrange) => {
     withClaude();
     arrange();
@@ -99,6 +100,19 @@ test.each([
     expect(body.assessment).toContain('old cascade text');
     expect(body.assessment).toContain('Provider: OpenRouter DeepSeek V4 Flash');
     expect(global.fetch).toHaveBeenCalled();
+});
+
+test('a cascade reply cut off at max_tokens is skipped; the next provider serves, with a timeout', async () => {
+    process.env.GROQ_API_KEY = 'gsk-test';
+    process.env.OPENROUTER_API_KEY = 'sk-or-test';
+    const reply = (content, finish_reason) => new Response(JSON.stringify({ choices: [{ message: { content }, finish_reason }] }), { status: 200 });
+    global.fetch = jest.fn()
+        .mockResolvedValueOnce(reply('Macro is mixed. Claims are', 'length'))
+        .mockResolvedValue(reply('full answer', 'stop'));
+    const body = await (await post()).json();
+    expect(body.assessment).toContain('full answer');
+    expect(body.assessment).toContain('Provider: OpenRouter Free (Auto)');
+    expect(global.fetch.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal);
 });
 
 test('over the daily cap: Claude is skipped, the old cascade serves', async () => {

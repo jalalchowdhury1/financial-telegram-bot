@@ -182,14 +182,14 @@ def handle_eventbridge(env_vars: Dict[str, str], run_time: str) -> Dict[str, Any
         ret3y      = spy.get('return3y')
         source     = (spy.get('_meta') or {}).get('source', 'unknown')
 
-        daily = spy.get('dailyChange') or {}
-        chg_pct = daily.get('pct') or 0
+        chg_pct = (spy.get('dailyChange') or {}).get('pct')
+        chg_str = f'{chg_pct:+.2f}%' if isinstance(chg_pct, (int, float)) else 'n/a'
 
         # 3Y return is genuinely optional — show n/a rather than a fake +0.0%.
         ret3y_str = f'{ret3y:+.1f}%' if isinstance(ret3y, (int, float)) else 'n/a'
         spy_text = (
             f'📈 *SPY Snapshot* _({source})_\n'
-            f'Price : ${price:,.2f} ({chg_pct:+.2f}%)\n'
+            f'Price : ${price:,.2f} ({chg_str})\n'
             f'vs MA200 : {ma200_pct:+.2f}% | 52W High : {high52_pct:+.2f}%\n'
             f'RSI(9) : {rsi:.1f} | 3Y Return : {ret3y_str}'
         )
