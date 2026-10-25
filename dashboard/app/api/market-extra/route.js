@@ -231,9 +231,16 @@ export async function GET(request) {
             const cl = lam.commodities?.cl, clBars = dropPhantomBar(cl?.history);
             if (clBars !== cl?.history) lam.commodities.cl = { ...cl, ...seriesMetric(clBars) };
             const nullPaths = BASE_PATHS.filter((p) => { const m = getPath(lam, p); return !m || m.current == null; });
+            // The Lambda's 10Y/2Y come from FRED, a session behind US Treasury (their origin):
+            // take Treasury's when it is newer. One shared CSV, fetch-cached 30 min (makeTiers).
+            const treasury = Promise.all(['tnx', 't2y'].map((k) => withinDeadline(safe(() => gate('treasury', faults, () => tiers[k]())), deadlineAt).then((t) => [k, t])));
             const fills = await Promise.all(nullPaths.map((p) => withinDeadline(directMetric(p, ctx), deadlineAt).then((r) => [p, r])));
             const filled = [];
             for (const [p, r] of fills) if (r?.metric?.current != null) { setPath(lam, p, r.metric); log[p.split('.').pop()] = `${r.src} (filled)`; filled.push(p.split('.').pop()); }
+            for (const [k, t] of await treasury) {
+                const m = lam.rates?.[k];
+                if (t?.current != null && m?.current != null && t.lastDate > (m.lastDate || '')) { lam.rates[k] = t; log[k] = 'US Treasury (fresher)'; }
+            }
             if (!lam.fx) lam.fx = {};
             addCrosses(lam, log);
             // Reconcile the Lambda's _meta with what we actually serve after the

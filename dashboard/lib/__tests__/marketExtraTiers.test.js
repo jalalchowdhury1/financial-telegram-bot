@@ -383,6 +383,36 @@ describe('per-metric last-known-good (the 12-blanks bug)', () => {
         } finally { global.fetch = realFetch; }
     });
 
+    test('Lambda 10Y/2Y from FRED a session behind -> the newer US Treasury print wins; same date or ?_fail=treasury keeps the Lambda', async () => {
+        process.env.LAMBDA_URL = 'https://lambda.test';
+        const realFetch = global.fetch;
+        const m = (v, lastDate = '2026-10-09') => ({ current: v, dailyChange: { value: -0.17, pct: -3.3 }, history: [{ date: lastDate, price: v }], lastDate });
+        const lam = (tnxDate) => ({
+            fx: { usdcad: m(1.37), usdinr: m(84.1), usdbdt: m(123.2), dxy: m(102.2) },
+            commodities: { gc: m(2650), cl: m(91.6), btc: m(62000) },
+            rates: { tnx: m(5.22, tnxDate), t2y: m(4.75, tnxDate), mortgageRate: m(7.4) },
+            _meta: { source: 'Lambda', hasErrors: false, messages: [], sourceLog: { tnx: 'FRED', t2y: 'FRED' } },
+        });
+        try {
+            global.fetch = jest.fn(async () => ({ ok: true, json: async () => lam('2026-10-08') }));
+            let b = await get('?_fail=polygon');
+            expect(b.rates.tnx).toMatchObject({ current: 5.24, lastDate: '2026-10-09' });
+            expect(b.rates.tnx.dailyChange.value).toBeCloseTo(0.02, 6);
+            expect(b.rates.t2y).toMatchObject({ current: 4.8, lastDate: '2026-10-09' });
+            expect(b._meta.sourceLog).toMatchObject({ tnx: 'US Treasury (fresher)', t2y: 'US Treasury (fresher)' });
+
+            global.fetch = jest.fn(async () => ({ ok: true, json: async () => lam('2026-10-08') }));
+            b = await get('?_fail=polygon,treasury');
+            expect(b.rates.tnx).toMatchObject({ current: 5.22, lastDate: '2026-10-08' });
+            expect(b._meta.sourceLog.tnx).toBe('FRED');
+
+            global.fetch = jest.fn(async () => ({ ok: true, json: async () => lam('2026-10-09') }));
+            b = await get('?_fail=polygon');
+            expect(b.rates.tnx).toMatchObject({ current: 5.22, lastDate: '2026-10-09' });
+            expect(b._meta.sourceLog.tnx).toBe('FRED');
+        } finally { global.fetch = realFetch; }
+    });
+
     test('Lambda up but missing real-estate prints -> filled stale from last good', async () => {
         const re = { current: 2100, dailyChange: { value: 0, pct: 0 }, history: [], lastDate: '2026-09-01' };
         fs.__mem.set('/tmp/lg-market-extra.json', JSON.stringify({ data: { realEstate: { rentIndex: re, atnhpi: { ...re, current: 400 } } }, savedAt: '2026-10-08T00:00:00.000Z' }));
