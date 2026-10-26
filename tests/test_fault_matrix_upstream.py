@@ -95,6 +95,19 @@ class CatchUp(unittest.TestCase):
     def test_red_last_run_reruns(self):
         self.assertTrue(self._needed("=== 72/72 passed ===\nFAIL fred\n=== 57/60 passed ===\n"))
 
+    def test_skip_still_leaves_a_trace(self):
+        # 26 Oct 2026: a silent skip read as "01:40 missed" to the blackout guard
+        p = os.path.join(os.path.dirname(__file__), "_catchup_stamp.log")
+        try:
+            with mock.patch.object(sys, "argv", ["fault_matrix.py", "--catchup"]), \
+                    mock.patch.object(fault_matrix, "catchup_needed", return_value=False), \
+                    mock.patch.object(fault_matrix, "CATCHUP_STAMP", p):
+                self.assertIsNone(fault_matrix.main())
+            self.assertRegex(open(p).read(), r"^\[\d{4}-\d\d-\d\d [\d:]{8}\] catchup skipped: last run N/N\n$")
+        finally:
+            if os.path.exists(p):
+                os.remove(p)
+
     def test_crashed_or_missing_run_reruns(self):
         self.assertTrue(self._needed("=== 72/72 passed ===\nTraceback (most recent call last):\n"))
         self.assertTrue(fault_matrix.catchup_needed("/nonexistent/ftb.log"))
@@ -109,6 +122,7 @@ class CatchupAlert(unittest.TestCase):
         with mock.patch.object(sys, "argv", argv), \
                 mock.patch.object(fault_matrix, "CASES", [("fred", "", "live")]), \
                 mock.patch.object(fault_matrix, "catchup_needed", return_value=True), \
+                mock.patch.object(fault_matrix, "CATCHUP_STAMP", os.devnull), \
                 mock.patch.object(fault_matrix, "check", return_value=(False, "FAKE fail", 1.0)), \
                 mock.patch.object(fault_matrix, "spy_3y_agrees", return_value=(True, "ok")), \
                 mock.patch.object(fault_matrix, "sheets_3y_agree", return_value=[]), \

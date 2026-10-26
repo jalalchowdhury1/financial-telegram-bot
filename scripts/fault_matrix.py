@@ -292,9 +292,18 @@ def catchup_needed(log=os.path.expanduser('~/Library/Logs/ftb-fault-matrix.log')
     return not (lines and re.match(r'^=== (\d+)/\1 passed ===$', lines[-1]))
 
 
+# The catch-up's own trace: the 06:00 blackout guard reads ~/Library/Logs/<label>.log, and a
+# skip writes nothing to the shared log (26 Oct 2026: a clean night read as "01:40 missed").
+CATCHUP_STAMP = os.path.expanduser('~/Library/Logs/ftb-fault-matrix-catchup.log')
+
+
 def main():
-    if '--catchup' in sys.argv and not catchup_needed():
-        return  # silent: printing would change the log's last line
+    if '--catchup' in sys.argv:
+        need = catchup_needed()
+        with open(CATCHUP_STAMP, 'a') as f:
+            f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] catchup {'re-running' if need else 'skipped: last run N/N'}\n")
+        if not need:
+            return  # silent: printing would change the log's last line
     alert = '--no-alert' not in sys.argv
     # normal loads first (warms caches), then fault cases in modest parallel
     normal = [c for c in CASES if not c[1]]
