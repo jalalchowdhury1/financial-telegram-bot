@@ -1039,6 +1039,9 @@ so `isGood` rejects an empty digest rather than letting it claim "nothing change
   (`fetch_rubber_band_line`) that must never fail the brief.
 - Alerts (colour change or failed run) go to the owner's alert thread from the Mac mini,
   chat id via the launchd env — never in the repo.
+- The Mac's fleet check greps the wrapper's last line `=== exit 0 / evaluate 0 ===` exactly
+  (github-notion-sync `fleet_health.py`, rubber-band row). Change that echo → change the row too
+  (its roster test reads this script and fails on drift; 26 Oct a reworded line turned a good run red).
 - **Card layout (10 Oct 2026 redesign, owner: "make it intuitive").** Top to bottom: one big
   answer (hero: "Stay invested" / "Go defensive…", from `defensive.mode` then verdict colour);
   **the 3 tripwires** (slow, rip, machines — the only dials that fire the trigger) as plain

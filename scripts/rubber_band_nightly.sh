@@ -20,5 +20,6 @@ erc=$?
 if [ $erc -ne 0 ]; then
   "$PY" -c 'import sys; sys.path.insert(0, "scripts"); from defensive_trigger import send_telegram; send_telegram("🪢 <b>Defensive trigger · evaluate FAILED</b> (exit " + sys.argv[1] + ")\nGO DEFENSIVE was not checked tonight. See ~/Library/Logs/rubber-band.log")' "$erc"
 fi
+# The Mac fleet check greps this exact line; reword it only together with its rubber-band row.
 echo "=== exit $rc / evaluate $erc ==="
 [ $rc -eq 0 ] && [ $erc -eq 0 ]
