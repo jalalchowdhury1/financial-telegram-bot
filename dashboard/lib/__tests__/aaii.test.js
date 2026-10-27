@@ -189,6 +189,20 @@ describe('resolveAaii caching', () => {
         const old = await resolveAaii({ fetchText: fakeFetch(), store: memStore(), baked: { ...baked, data: { ...baked.data, as_of: '2026-08-01' } }, now: NOW });
         expect(old.payload.source).toBe('aaii.com');
     });
+    test('same week: an aaii.com copy from the Mac beats a live Substack read and a cached one (26 Oct: Vercel got 503)', async () => {
+        const store = memStore();
+        const blocked = fakeFetch({ fail: [AAII_URL] });
+        await resolveAaii({ fetchText: blocked, store, now: NOW }); // caches the Substack 23 Sep here
+        const baked = { data: { bull: 32.7, neutral: 19.2, bear: 48.1, diff: '15.40%', as_of: '2026-09-23', source: 'aaii.com', stale: false }, savedAt: '2026-09-24T18:00:00Z' };
+        const warm = await resolveAaii({ fetchText: blocked, store, baked, now: NOW });
+        expect(warm.payload.source).toBe('aaii.com');
+        expect(warm.messages.join(' ')).toMatch(/same week from substack/);
+        const cold = await resolveAaii({ fetchText: blocked, store: memStore(), baked, now: NOW });
+        expect(cold.payload.source).toBe('aaii.com');
+        // a same-week MacroMicro copy does NOT beat a live read: only aaii.com itself does
+        const mm = await resolveAaii({ fetchText: blocked, store: memStore(), baked: { ...baked, data: { ...baked.data, source: 'macromicro' } }, now: NOW });
+        expect(mm.payload.source).toBe('substack');
+    });
     test('fault-test calls never write the cache', async () => {
         const store = memStore();
         await resolveAaii({ fetchText: fakeFetch(), store, faults: new Set(['aaii_http']), now: NOW });

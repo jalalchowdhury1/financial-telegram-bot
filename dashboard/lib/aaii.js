@@ -192,6 +192,14 @@ export async function fetchAaiiLive({ fetchText, trip = () => {}, now = new Date
 
 export const AAII_KV_KEY = 'ftb:aaii:newest';
 
+/** Survey `a` beats `b`: a newer week, or the same week read from aaii.com itself (e.g. by the
+ *  Mac job, 26 Oct: aaii.com's Imperva shield 503s Vercel but not the Mac) over a backup source. */
+export function beats(a, b) {
+    return a.as_of > b.as_of || (a.as_of === b.as_of && a.source === 'aaii.com' && b.source !== 'aaii.com');
+}
+const newest = (xs) => xs.filter((x) => x?.data?.as_of)
+    .sort((a, b) => (beats(a.data, b.data) ? -1 : beats(b.data, a.data) ? 1 : 0))[0] || null;
+
 /** The KV copy of the newest survey ever seen, or null. Never throws. */
 async function loadKv(kv, now) {
     if (!kv) return null;
@@ -229,11 +237,11 @@ export async function resolveAaii({ fetchText, store, kv = null, baked = null, f
     const kvCopy = useBackups ? await loadKv(kv, now) : null;
     // lib/data/aaiiNewest.json, committed by the Mac MacroMicro job (scripts/aaii-mac)
     const bakedCopy = useBackups && baked?.data?.as_of && ageDays(baked.data.as_of, now) <= LAST_GOOD_MAX_MS / 864e5 ? baked : null;
-    const pushed = [kvCopy, bakedCopy].filter(Boolean).sort((a, b) => (a.data.as_of < b.data.as_of ? 1 : -1))[0] || null;
+    const pushed = newest([kvCopy, bakedCopy]);
 
     if (!testMode) {
         const fresh = store.load('aaii-live', FRESH_CACHE_MS);
-        if (fresh?.data?.as_of && !(pushed && pushed.data.as_of > fresh.data.as_of)) {
+        if (fresh?.data?.as_of && !(pushed && beats(pushed.data, fresh.data))) {
             return { payload: toPayload(fresh.data, fresh.data.source, now), cachedAt: fresh.savedAt, messages: [`cached from ${fresh.savedAt}`] };
         }
     }
@@ -241,16 +249,15 @@ export async function resolveAaii({ fetchText, store, kv = null, baked = null, f
     const { payload, messages } = await fetchAaiiLive({ fetchText, trip, now });
     const lg = useBackups ? store.load('aaii-live', LAST_GOOD_MAX_MS) : null;
     // the newest saved survey week across both backups
-    const saved = [lg, kvCopy, bakedCopy].filter((x) => x?.data?.as_of)
-        .sort((a, b) => (a.data.as_of < b.data.as_of ? 1 : -1))[0] || null;
+    const saved = newest([lg, kvCopy, bakedCopy]);
 
     if (payload) {
-        if (saved && saved.data.as_of > payload.as_of) {
+        if (saved && beats(saved.data, payload)) {
             if (!testMode) store.save('aaii-live', saved.data); // keep the newer copy warm here
             return {
                 payload: toPayload(saved.data, saved.data.source, now),
                 cachedAt: saved.savedAt,
-                messages: [...messages, `live tier had an older survey (${payload.as_of}); keeping ${saved.data.as_of} from ${saved.savedAt}`],
+                messages: [...messages, `live tier had ${saved.data.as_of > payload.as_of ? 'an older survey' : `the same week from ${payload.source}`} (${payload.as_of}); keeping ${saved.data.as_of} from ${saved.savedAt}`],
             };
         }
         if (!testMode) {

@@ -47,3 +47,10 @@ test('only a strictly newer week is pushed', () => {
     assert.equal(shouldPush({ data: { as_of: '2026-10-07' } }, p), false);
     assert.equal(shouldPush({ data: { as_of: '2026-10-14' } }, p), false);
 });
+
+test('same week: an aaii.com read replaces a MacroMicro copy, never another aaii.com one (26 Oct)', () => {
+    const p = { as_of: '2026-10-21', source: 'aaii.com' };
+    assert.equal(shouldPush({ data: { as_of: '2026-10-21', source: 'macromicro' } }, p), true);
+    assert.equal(shouldPush({ data: { as_of: '2026-10-21', source: 'aaii.com' } }, p), false);
+    assert.equal(shouldPush({ data: { as_of: '2026-10-21', source: 'aaii.com' } }, { ...p, source: 'macromicro' }), false);
+});

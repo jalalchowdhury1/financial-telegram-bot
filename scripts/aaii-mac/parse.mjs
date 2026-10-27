@@ -45,8 +45,10 @@ export function toPayload(stats) {
     };
 }
 
-/** Push only a strictly newer survey week; never overwrite a newer or equal one. */
+/** Push a strictly newer survey week, or the same week read from aaii.com itself over a backup
+ *  source (the dashboard's beats() rule); never overwrite a newer one. */
 export function shouldPush(kvValue, payload) {
     const cur = kvValue?.data?.as_of;
-    return !cur || payload.as_of > cur;
+    return !cur || payload.as_of > cur
+        || (payload.as_of === cur && payload.source === 'aaii.com' && kvValue.data.source !== 'aaii.com');
 }

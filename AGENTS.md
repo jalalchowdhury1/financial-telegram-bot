@@ -731,6 +731,10 @@ service-account key leaked; the sheet stays as frozen history — **never read i
   (ignored once its week is > 21 days old). Pill label then reads `· macromicro`. Log:
   `~/Library/Logs/aaii-macromicro.log`. `--dry-run` reads only. Tests: `node --test` there.
   Pin playwright-core to a version that drives the installed Chrome (1.48 did not drive Chrome 154).
+  **aaii.com first (26 Oct):** before MacroMicro the job reads aaii.com directly (Imperva 503s
+  Vercel's IPs, not the Mac's; 60 s timeout × 3 tries, it can take 40 s) and commits a SAME-week
+  aaii.com copy over a MacroMicro one. `beats()` in lib/aaii.js: same week, aaii.com wins over a
+  live Substack read — keep both rules in step, or the "primary = aaii.com" fleet row goes red.
 - **Contract (other repos read it — do not rename):** `GET /api/aaii` → 200
   `{bull, neutral, bear, diff, as_of, source: 'aaii.com'|'substack', stale, _meta}`;
   `diff` = bear − bull as `"15.40%"` (the exact string the sheet's E2 held). Total
