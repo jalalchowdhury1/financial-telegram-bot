@@ -48,7 +48,8 @@ export default function SpyChart({ chartHistory, recessions = [], current = null
     const sliceLen = Math.min(tfDays[activeTf] || full.length, full.length);
     // ~1,200 points is plenty for a 540-wide chart; 33 years of days is 8,500.
     const step = Math.ceil(sliceLen / 1200);
-    const data = full.slice(-sliceLen).filter((_, i, a) => (a.length - 1 - i) % step === 0);
+    const win = full.slice(-sliceLen);
+    const data = win.filter((_, i) => (win.length - 1 - i) % step === 0);
 
     const w = 540, h = 220, padR = 8, padT = 12, padB = 24;
     const prices = data.map(d => d.price);
@@ -98,13 +99,14 @@ export default function SpyChart({ chartHistory, recessions = [], current = null
         ...yearLabels.map((yl) => ({ x: clampUnits(yl.x, (yl.label.length * LABEL_CHAR_PX) / 2, w, plotPx), y: h, text: yl.label, ax: 'middle', ay: 'bottom' })),
     ];
 
-    // Golden / Death Cross detection
+    // Golden / Death Cross detection, on every day (thinning would move the date); idx = its drawn point
     let lastCross = null;
-    for (let i = 1; i < data.length; i++) {
-        const prev50above = data[i - 1].ma50 > data[i - 1].ma200;
-        const curr50above = data[i].ma50 > data[i].ma200;
-        if (!prev50above && curr50above) lastCross = { type: 'golden', date: data[i].date, idx: i };
-        else if (prev50above && !curr50above) lastCross = { type: 'death', date: data[i].date, idx: i };
+    for (let i = 1; i < win.length; i++) {
+        const prev50above = win[i - 1].ma50 > win[i - 1].ma200;
+        const curr50above = win[i].ma50 > win[i].ma200;
+        const idx = data.length - 1 - Math.floor((win.length - 1 - i) / step);
+        if (!prev50above && curr50above) lastCross = { type: 'golden', date: win[i].date, idx };
+        else if (prev50above && !curr50above) lastCross = { type: 'death', date: win[i].date, idx };
     }
 
     // Price range labels
