@@ -3,25 +3,52 @@ import { useState, useEffect, useRef } from 'react';
 import { yearTicks, indexFromPointer, tfAvailable, fmtDay, readChoice, saveChoice, unitsForPx, gutterFor, clampUnits, LABEL_CHAR_PX } from '../lib/chartAxis';
 import useElementWidth from './useElementWidth';
 import AxisLabels from './AxisLabels';
+import { decodeLong } from '../lib/longHistory';
 
 const TF_KEYS = ['1Y', '5Y', '10Y', 'ALL'];
 const STORE_KEY = 'ftb:tf:spy';
+
+/** Baked closes strictly before the live window, then the live bars; 50/200d MAs over the whole run.
+ *  The live bars alone when the two disagree (the backup path charts the S&P INDEX, ~10x SPY). */
+export function joinBaked(baked, live) {
+    const cut = live[0].date;
+    const before = (baked || []).filter((p) => p.date < cut);
+    const at = (baked || []).find((p) => p.date >= cut);
+    if (!before.length || !at || Math.abs(at.value / live[0].price - 1) > 0.05) return live;
+    const prices = [...before.map((p) => p.value), ...live.map((d) => d.price)];
+    const dates = [...before.map((p) => p.date), ...live.map((d) => d.date)];
+    let s50 = 0, s200 = 0;
+    return prices.map((p, i) => {
+        s50 += p - (i >= 50 ? prices[i - 50] : 0);
+        s200 += p - (i >= 200 ? prices[i - 200] : 0);
+        const r = (v) => Math.round(v * 100) / 100;
+        return { date: dates[i], price: p, ma50: r(s50 / Math.min(i + 1, 50)), ma200: r(s200 / Math.min(i + 1, 200)) };
+    });
+}
 
 export default function SpyChart({ chartHistory, recessions = [], current = null }) {
     const [timeframe, setTimeframe] = useState('5Y');
     const [hover, setHover] = useState(null);
     const svgRef = useRef(null);
     const [plotRef, plotPx] = useElementWidth(); // real px width → 10px labels spaced honestly
+    const [baked, setBaked] = useState(null);
     useEffect(() => { const v = readChoice(STORE_KEY); if (v) setTimeframe(v); }, []);
+    // /api/spy carries ~14 months; the baked daily file (scripts/bake_spy_daily.py) fills 5Y/10Y/ALL.
+    useEffect(() => {
+        fetch('/history/spy-daily.json').then((r) => (r.ok ? r.json() : null)).then(decodeLong).then(setBaked).catch(() => {});
+    }, []);
     if (!chartHistory || chartHistory.length < 2) return null;
 
-    const tfDays = { '1Y': 252, '5Y': 1260, '10Y': 2520, 'ALL': chartHistory.length };
-    // Only offer tabs the history covers (the Polygon path carries ~14 months, so
-    // "5Y" there was 14 months under a 5Y label). Fall back to 5Y, then ALL.
-    const usable = TF_KEYS.filter((tf) => tfAvailable(tf === 'ALL' ? null : tfDays[tf], chartHistory.length));
+    const full = joinBaked(baked, chartHistory);
+    const tfDays = { '1Y': 252, '5Y': 1260, '10Y': 2520, 'ALL': full.length };
+    // Only offer tabs the history covers (until the baked file lands, or on the index
+    // backup path, that is ~14 months). Fall back to 5Y, then ALL.
+    const usable = TF_KEYS.filter((tf) => tfAvailable(tf === 'ALL' ? null : tfDays[tf], full.length));
     const activeTf = usable.includes(timeframe) ? timeframe : usable.includes('5Y') ? '5Y' : 'ALL';
-    const sliceLen = Math.min(tfDays[activeTf] || chartHistory.length, chartHistory.length);
-    const data = chartHistory.slice(-sliceLen);
+    const sliceLen = Math.min(tfDays[activeTf] || full.length, full.length);
+    // ~1,200 points is plenty for a 540-wide chart; 33 years of days is 8,500.
+    const step = Math.ceil(sliceLen / 1200);
+    const data = full.slice(-sliceLen).filter((_, i, a) => (a.length - 1 - i) % step === 0);
 
     const w = 540, h = 220, padR = 8, padT = 12, padB = 24;
     const prices = data.map(d => d.price);

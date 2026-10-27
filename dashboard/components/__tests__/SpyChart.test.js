@@ -1,5 +1,5 @@
-import { render, screen, fireEvent } from '@testing-library/react';
-import SpyChart from '../SpyChart';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import SpyChart, { joinBaked } from '../SpyChart';
 
 if (!window.PointerEvent) {
     window.PointerEvent = class PointerEvent extends MouseEvent {
@@ -19,7 +19,31 @@ const bars = (n, p0, step = 0.1) => {
     return out;
 };
 
-beforeEach(() => window.localStorage.clear());
+beforeEach(() => {
+    window.localStorage.clear();
+    global.fetch = jest.fn(() => Promise.reject(new Error('no baked file')));
+});
+
+// the baked file's shape: {from, t: day offsets, v}
+const bakedFile = (from, n, v) => ({ from, t: [...Array(n).keys()], v: Array(n).fill(v) });
+
+test('the baked daily file unlocks 5Y / 10Y / ALL', async () => {
+    global.fetch = jest.fn(() => Promise.resolve({ ok: true, json: () => bakedFile('2010-01-01', 6000, 600) }));
+    render(<SpyChart chartHistory={bars(302, 600)} current={630} />);
+    await waitFor(() => expect(screen.getByRole('button', { name: '5Y' })).not.toBeDisabled());
+    await waitFor(() => expect(screen.getByRole('button', { name: '10Y' })).not.toBeDisabled());
+    expect(global.fetch).toHaveBeenCalledWith('/history/spy-daily.json');
+});
+
+test('joinBaked: baked closes only before the live window, MAs over the whole run; index path keeps live only', () => {
+    const live = bars(302, 600, 0);
+    const baked = Array.from({ length: 1100 }, (_, i) => ({ date: new Date(Date.UTC(2024, 0, 1) + i * 864e5).toISOString().slice(0, 10), value: 600 }));
+    const out = joinBaked(baked, live);
+    expect(out.length).toBe(baked.filter((p) => p.date < live[0].date).length + 302);
+    expect(out[out.length - 1]).toEqual({ date: live[301].date, price: 600, ma50: 600, ma200: 600 });
+    expect(joinBaked(baked, bars(302, 6000, 0))).toHaveLength(302); // S&P index points ≠ SPY dollars
+    expect(joinBaked(null, live)).toBe(live);
+});
 
 test('14 months of bars (the Polygon path) cannot pose as a 5Y chart', () => {
     render(<SpyChart chartHistory={bars(302, 600)} current={630} />);

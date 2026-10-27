@@ -65,7 +65,15 @@ jobs:
           python-version: '3.11'
 
       - name: Install deps
-        run: pip install 'xlrd==2.0.1'
+        run: pip install 'xlrd==2.0.1' 'yfinance==0.2.54'
+
+      # SPY chart's 5Y/10Y/ALL (public/history/spy-daily.json). A failure keeps the old file;
+      # /api/spy's 14 live months cover a missed quarter.
+      - name: Re-bake SPY daily
+        if: github.ref == 'refs/heads/main'
+        continue-on-error: true
+        working-directory: dashboard
+        run: python scripts/bake_spy_daily.py
 
       - name: Dry run (pull request or another branch — nothing written)
         if: github.ref != 'refs/heads/main'
