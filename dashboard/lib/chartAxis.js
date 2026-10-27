@@ -36,6 +36,32 @@ export function yearTicks(dates, toX, { maxLabels = 8, minGap = 26 } = {}) {
     return kept.filter((t, i) => !(kept[i + 1] && kept[i + 1].x - t.x < minGap));
 }
 
+/**
+ * Ticks for a window under ~18 months, where year labels say nothing: up to ~10 weeks →
+ * one per week ('Oct 6'), else one per month ('Oct'; January shows its year). A label
+ * closer than minGap to the last kept one is skipped.
+ */
+export function shortTicks(dates, toX, { minGap = 40 } = {}) {
+    const day = (iso) => Date.parse(`${iso}T00:00:00Z`) / 864e5;
+    const weekly = dates.length > 1 && day(dates[dates.length - 1]) - day(dates[0]) <= 70;
+    const out = [];
+    let lastKey = null, lastDay = -Infinity;
+    for (let i = 0; i < dates.length; i++) {
+        const iso = String(dates[i]), m = Number(iso.slice(5, 7));
+        let label = null;
+        if (weekly) {
+            if (day(iso) - lastDay >= 7) { lastDay = day(iso); label = `${MONTHS[m - 1]} ${Number(iso.slice(8, 10))}`; }
+        } else if (iso.slice(0, 7) !== lastKey) {
+            lastKey = iso.slice(0, 7);
+            if (i > 0) label = m === 1 ? iso.slice(0, 4) : MONTHS[m - 1]; // the first point is mid-month
+        }
+        if (label == null) continue;
+        const x = toX(i);
+        if (!out.length || x - out[out.length - 1].x >= minGap) out.push({ x, label });
+    }
+    return out;
+}
+
 /** Index of the data point under a pointer event, or null if it can't be known. */
 export function indexFromPointer(clientX, rect, n, { w, padL, padR }) {
     if (!rect || !(rect.width > 0) || !(n >= 2) || !Number.isFinite(clientX)) return null;

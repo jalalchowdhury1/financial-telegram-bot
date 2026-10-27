@@ -104,3 +104,31 @@ test('baked SPY file: daily since 1993, sane closes, fresh enough to meet the li
     expect(pts.every((p) => p.value > 20 && p.value < 5000)).toBe(true); // SPY dollars, not index points
     expect((Date.now() - Date.parse(body.to)) / 864e5).toBeLessThan(300);
 });
+
+test('1M / 3M / 6M tabs work on the live 14 months and label weeks / months, not years', () => {
+    const { container } = render(<SpyChart chartHistory={bars(302, 600)} current={630} />);
+    for (const tf of ['1M', '3M', '6M']) expect(screen.getByRole('button', { name: tf })).not.toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: '1M' }));
+    expect(screen.getByRole('button', { name: '1M' }).style.color).toBe('rgb(56, 189, 248)');
+    const x = [...container.querySelectorAll('.axis-lbl')].map((t) => t.textContent).filter((t) => !t.startsWith('$'));
+    expect(x.length).toBeGreaterThan(1);
+    expect(x.every((t) => /^[A-Z][a-z]{2} \d{1,2}$/.test(t))).toBe(true); // 'Sep 8', never '2026'
+    expect(window.localStorage.getItem('ftb:tf:spy')).toBe('1M');
+});
+
+test('📅 picks any from / to dates; a range with no trading days says so and keeps the tab', () => {
+    // flat 600 until 2026-06-30, then 660: the return over picked dates shows exactly which bars were used
+    const hist = bars(302, 600, 0).map((d) => (d.date > '2026-06-30' ? { ...d, price: 660 } : d));
+    render(<SpyChart chartHistory={hist} current={660} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Pick dates' }));
+    fireEvent.change(screen.getByLabelText('From'), { target: { value: '2026-06-01' } });
+    fireEvent.change(screen.getByLabelText('To'), { target: { value: '2026-06-30' } });
+    expect(screen.getByText(/% return/).textContent).toBe('+0.0% return');
+    fireEvent.change(screen.getByLabelText('To'), { target: { value: '2026-07-31' } });
+    expect(screen.getByText(/% return/).textContent).toBe('+10.0% return');
+    expect(screen.getByRole('button', { name: 'ALL' }).style.background).toBe('rgba(255, 255, 255, 0.05)'); // no preset lit
+    fireEvent.change(screen.getByLabelText('From'), { target: { value: '2027-01-01' } });
+    expect(screen.getByText(/Under 2 trading days/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '1Y' })); // a tab closes the picker
+    expect(screen.queryByLabelText('From')).toBeNull();
+});

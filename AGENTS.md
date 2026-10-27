@@ -1245,6 +1245,12 @@ measures what is SERVED, not whether a writer ran. The fleet monitor (github-not
   (no popover uses it). Tests: `SpyChart.test.js` (join, tabs unlock, and the committed file
   must be < 300 days old: a bake older than ~437 days = no overlap = tabs grey again);
   `tests/test_rebake_long_history_workflow.py` checks the step is still there.
+- **SPY tabs 1M 3M 6M 1Y 5Y 10Y ALL + 📅 (2026-10-27, his ask):** 📅 opens From/To date
+  boxes (1993-01-29 → last bar) over the joined history; a preset tab closes it. Picked dates
+  aren't remembered (only the preset, `ftb:tf:spy`). Dates with < 2 trading days keep the
+  preset and say so. Under ~18 months (550 days) the x-axis uses `shortTicks`
+  (`lib/chartAxis.js`): weekly 'Oct 6' up to 70 days, else months ('Oct'; January = the
+  year). Chips are one nowrap row; the return label drops below them on a phone.
 - The Sheet SPY path charts FRED's S&P 500 INDEX (~10x SPY). SpyChart gets `current` and,
   when the chart is ~index scale, labels index points (no `$`) with a one-line note.
 

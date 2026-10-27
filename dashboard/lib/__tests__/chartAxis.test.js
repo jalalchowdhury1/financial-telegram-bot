@@ -1,4 +1,4 @@
-import { yearTicks, indexFromPointer, tfAvailable, fmtDay, readChoice, saveChoice, unitsForPx, spreadLabels, axisPos, gutterFor, clampUnits } from '../chartAxis';
+import { yearTicks, shortTicks, indexFromPointer, tfAvailable, fmtDay, readChoice, saveChoice, unitsForPx, spreadLabels, axisPos, gutterFor, clampUnits } from '../chartAxis';
 
 const quarterly = (from, to) => {
     const out = [];
@@ -122,5 +122,23 @@ describe('readable axis labels (HTML over the SVG)', () => {
         expect(clampUnits(2, 12, 480, 336)).toBeCloseTo(unitsForPx(12, 480, 336), 6);
         expect(clampUnits(240, 12, 480, 336)).toBe(240);
         expect(clampUnits(475, 12, 480, null)).toBe(475); // not measured: left alone
+    });
+});
+
+describe('shortTicks (SPY 1M–1Y and picked dates)', () => {
+    const days = (from, n) => Array.from({ length: n }, (_, i) => new Date(Date.parse(`${from}T00:00:00Z`) + i * 864e5).toISOString().slice(0, 10));
+    const x = (i) => i * 10;
+    test('a month or so → one label per week, "Mon D"', () => {
+        const t = shortTicks(days('2026-09-28', 30), x, { minGap: 0 });
+        expect(t.map((l) => l.label)).toEqual(['Sep 28', 'Oct 5', 'Oct 12', 'Oct 19', 'Oct 26']);
+    });
+    test('half a year → months, January shows its year, no label for the mid-month first point', () => {
+        const t = shortTicks(days('2025-10-15', 180), x, { minGap: 0 });
+        expect(t.map((l) => l.label)).toEqual(['Nov', 'Dec', '2026', 'Feb', 'Mar', 'Apr']);
+    });
+    test('labels closer than minGap are skipped', () => {
+        const t = shortTicks(days('2025-10-15', 180), (i) => i, { minGap: 50 });
+        expect(t.every((l, i) => i === 0 || l.x - t[i - 1].x >= 50)).toBe(true);
+        expect(t.length).toBeLessThan(6);
     });
 });

@@ -1,12 +1,13 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
-import { yearTicks, indexFromPointer, tfAvailable, fmtDay, readChoice, saveChoice, unitsForPx, gutterFor, clampUnits, LABEL_CHAR_PX } from '../lib/chartAxis';
+import { yearTicks, shortTicks, indexFromPointer, tfAvailable, fmtDay, readChoice, saveChoice, unitsForPx, gutterFor, clampUnits, LABEL_CHAR_PX } from '../lib/chartAxis';
 import useElementWidth from './useElementWidth';
 import AxisLabels from './AxisLabels';
 import { decodeLong } from '../lib/longHistory';
 
-const TF_KEYS = ['1Y', '5Y', '10Y', 'ALL'];
+const TF_KEYS = ['1M', '3M', '6M', '1Y', '5Y', '10Y', 'ALL'];
 const STORE_KEY = 'ftb:tf:spy';
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 /** Baked closes strictly before the live window, then the live bars; 50/200d MAs over the whole run.
  *  The live bars alone when the two disagree (the backup path charts the S&P INDEX, ~10x SPY). */
@@ -32,6 +33,7 @@ export default function SpyChart({ chartHistory, recessions = [], current = null
     const svgRef = useRef(null);
     const [plotRef, plotPx] = useElementWidth(); // real px width → 10px labels spaced honestly
     const [baked, setBaked] = useState(null);
+    const [dateRange, setDateRange] = useState(null); // 📅 {from, to} ISO dates, or null = a preset tab
     useEffect(() => { const v = readChoice(STORE_KEY); if (v) setTimeframe(v); }, []);
     // /api/spy carries ~14 months; the baked daily file (scripts/bake_spy_daily.py) fills 5Y/10Y/ALL.
     useEffect(() => {
@@ -40,15 +42,18 @@ export default function SpyChart({ chartHistory, recessions = [], current = null
     if (!chartHistory || chartHistory.length < 2) return null;
 
     const full = joinBaked(baked, chartHistory);
-    const tfDays = { '1Y': 252, '5Y': 1260, '10Y': 2520, 'ALL': full.length };
+    const tfDays = { '1M': 21, '3M': 63, '6M': 126, '1Y': 252, '5Y': 1260, '10Y': 2520, 'ALL': full.length };
     // Only offer tabs the history covers (until the baked file lands, or on the index
     // backup path, that is ~14 months). Fall back to 5Y, then ALL.
     const usable = TF_KEYS.filter((tf) => tfAvailable(tf === 'ALL' ? null : tfDays[tf], full.length));
     const activeTf = usable.includes(timeframe) ? timeframe : usable.includes('5Y') ? '5Y' : 'ALL';
     const sliceLen = Math.min(tfDays[activeTf] || full.length, full.length);
     // ~1,200 points is plenty for a 540-wide chart; 33 years of days is 8,500.
-    const step = Math.ceil(sliceLen / 1200);
-    const win = full.slice(-sliceLen);
+    // 📅 dates: the bars between them; fewer than 2 trading days keeps the preset tab, with a note.
+    const picked = dateRange ? full.filter((d) => d.date >= dateRange.from && d.date <= dateRange.to) : null;
+    const tooFew = picked != null && picked.length < 2;
+    const win = picked && !tooFew ? picked : full.slice(-sliceLen);
+    const step = Math.ceil(win.length / 1200);
     const data = win.filter((_, i) => (win.length - 1 - i) % step === 0);
 
     const w = 540, h = 220, padR = 8, padT = 12, padB = 24;
@@ -91,8 +96,12 @@ export default function SpyChart({ chartHistory, recessions = [], current = null
     };
     const visibleRecessions = recessions.filter(r => r.start <= dates[dates.length - 1] && r.end >= dates[0]);
 
-    // Year labels on x-axis, thinned so they never overlap (at a real 10px once measured)
-    const yearLabels = yearTicks(dates, toX, { minGap: Math.max(26, unitsForPx(LABEL_CHAR_PX * 4 + 10, w, plotPx) ?? 26) });
+    // Year labels on x-axis, thinned so they never overlap (at a real 10px once measured);
+    // under ~18 months, months or weeks instead.
+    const spanDays = (Date.parse(dates[dates.length - 1]) - Date.parse(dates[0])) / 864e5;
+    const yearLabels = spanDays > 550
+        ? yearTicks(dates, toX, { minGap: Math.max(26, unitsForPx(LABEL_CHAR_PX * 4 + 10, w, plotPx) ?? 26) })
+        : shortTicks(dates, toX, { minGap: unitsForPx(LABEL_CHAR_PX * 6 + 10, w, plotPx) ?? 40 });
     const lblGap = unitsForPx(4, w, plotPx) ?? 4;
     const axisLabels = [
         ...yTicks.map((t) => ({ x: padL - lblGap, y: t.y, text: t.label, ax: 'end', ay: 'middle' })),
@@ -116,7 +125,19 @@ export default function SpyChart({ chartHistory, recessions = [], current = null
 
     // Tap / hover readout: the point under the pointer replaces the return label.
     const hi = hover != null && hover < data.length ? hover : null;
-    const pick = (tf) => { setTimeframe(tf); saveChoice(STORE_KEY, tf); setHover(null); };
+    const pick = (tf) => { setTimeframe(tf); saveChoice(STORE_KEY, tf); setDateRange(null); setHover(null); };
+    const custom = dateRange != null && !tooFew;
+    const toggleRange = () => { setDateRange(dateRange ? null : { from: win[0].date, to: full[full.length - 1].date }); setHover(null); };
+    const setEnd = (k) => (e) => { if (ISO_DAY.test(e.target.value)) { setDateRange({ ...dateRange, [k]: e.target.value }); setHover(null); } };
+    const chip = (on, enabled = true) => ({
+        padding: '3px 7px', borderRadius: '6px', border: 'none', whiteSpace: 'nowrap', flexShrink: 0,
+        cursor: enabled ? 'pointer' : 'default', opacity: enabled ? 1 : 0.35,
+        fontSize: '0.65rem', fontWeight: 700, fontFamily: "'JetBrains Mono', monospace",
+        background: on ? 'rgba(56,189,248,0.2)' : 'rgba(255,255,255,0.05)',
+        color: on ? '#38bdf8' : 'var(--text-muted)',
+        transition: 'all 0.2s ease'
+    });
+    const dateBox = { background: 'rgba(255,255,255,0.05)', color: 'var(--text-primary)', border: 'none', borderRadius: '6px', padding: '2px 4px', font: 'inherit', colorScheme: 'dark' };
     const onPoint = (e) => {
         const i = indexFromPointer(e.clientX, svgRef.current?.getBoundingClientRect(), data.length, { w, padL, padR });
         if (i != null) setHover(i);
@@ -127,20 +148,16 @@ export default function SpyChart({ chartHistory, recessions = [], current = null
     return (
         <div>
             {/* Timeframe selector */}
-            <div style={{ display: 'flex', gap: '4px', marginBottom: '8px', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'flex', gap: '4px' }}>
+            {/* The chips stay one row (sideways scroll if ever too narrow); the return label drops below on a phone. */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 8px', marginBottom: '8px', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', flexWrap: 'nowrap', gap: '4px', overflowX: 'auto', maxWidth: '100%' }}>
                     {TF_KEYS.map(tf => (
                         <button key={tf} className="tf-btn tf-btn-spy" onClick={() => pick(tf)} disabled={!usable.includes(tf)}
                             title={usable.includes(tf) ? undefined : 'Not enough history from this source'}
-                            style={{
-                                padding: '3px 10px', borderRadius: '6px', border: 'none',
-                                cursor: usable.includes(tf) ? 'pointer' : 'default', opacity: usable.includes(tf) ? 1 : 0.35,
-                                fontSize: '0.65rem', fontWeight: 700, fontFamily: "'JetBrains Mono', monospace",
-                                background: tf === activeTf ? 'rgba(56,189,248,0.2)' : 'rgba(255,255,255,0.05)',
-                                color: tf === activeTf ? '#38bdf8' : 'var(--text-muted)',
-                                transition: 'all 0.2s ease'
-                            }}>{tf}</button>
+                            style={chip(!custom && tf === activeTf, usable.includes(tf))}>{tf}</button>
                     ))}
+                    <button className="tf-btn tf-btn-spy" onClick={toggleRange} title="Pick dates" aria-label="Pick dates"
+                        aria-pressed={dateRange != null} style={chip(dateRange != null)}>📅</button>
                 </div>
                 {hi != null ? (
                     <span className="chart-readout" style={{
@@ -152,12 +169,26 @@ export default function SpyChart({ chartHistory, recessions = [], current = null
                 ) : (
                     <span style={{
                         fontSize: '0.65rem', fontFamily: "'JetBrains Mono', monospace",
-                        color: returnPct >= 0 ? 'var(--green)' : 'var(--red)', fontWeight: 700
+                        color: returnPct >= 0 ? 'var(--green)' : 'var(--red)', fontWeight: 700, whiteSpace: 'nowrap'
                     }}>
                         {returnPct >= 0 ? '+' : ''}{returnPct.toFixed(1)}% return
                     </span>
                 )}
             </div>
+            {dateRange && (
+                <div className="spy-range" style={{
+                    display: 'flex', flexWrap: 'nowrap', gap: '8px', alignItems: 'center', marginBottom: '8px', overflowX: 'auto',
+                    fontSize: '0.65rem', fontFamily: "'JetBrains Mono', monospace", color: 'var(--text-muted)', whiteSpace: 'nowrap'
+                }}>
+                    <label>From <input type="date" aria-label="From" value={dateRange.from} min={full[0].date} max={dateRange.to} onChange={setEnd('from')} style={dateBox} /></label>
+                    <label>To <input type="date" aria-label="To" value={dateRange.to} min={dateRange.from} max={full[full.length - 1].date} onChange={setEnd('to')} style={dateBox} /></label>
+                </div>
+            )}
+            {tooFew && (
+                <div className="chart-note" style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginBottom: '6px', whiteSpace: 'nowrap' }}>
+                    Under 2 trading days in those dates · showing {activeTf}
+                </div>
+            )}
             {/* Cross signal */}
             {lastCross && (
                 <div style={{
