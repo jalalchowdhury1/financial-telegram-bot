@@ -1,5 +1,6 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import SpyChart, { joinBaked } from '../SpyChart';
+import { decodeLong } from '../../lib/longHistory';
 
 if (!window.PointerEvent) {
     window.PointerEvent = class PointerEvent extends MouseEvent {
@@ -88,4 +89,18 @@ test('axis labels are HTML spans over the chart, placed by % of the viewBox, nev
         expect(l.style.top).toMatch(/%$/);
     }
     expect(container.querySelector('.axis-layer').getAttribute('aria-hidden')).toBe('true');
+});
+
+// The committed bake (scripts/bake_spy_daily.py). /api/spy carries 302 bars (~437 days), so
+// a bake older than that leaves a hole before the live window; joinBaked then drops it and
+// 5Y/10Y/ALL go grey again. The quarterly rebake keeps it ≤ ~3 months old: red here at 300
+// days = three missed quarters, before the chart breaks.
+test('baked SPY file: daily since 1993, sane closes, fresh enough to meet the live window', () => {
+    const body = require('../../public/history/spy-daily.json');
+    const pts = decodeLong(body);
+    expect(pts.length).toBeGreaterThan(8000);
+    expect(pts[0].date).toBe('1993-01-29');
+    expect(pts.every((p, i) => i === 0 || p.date > pts[i - 1].date)).toBe(true);
+    expect(pts.every((p) => p.value > 20 && p.value < 5000)).toBe(true); // SPY dollars, not index points
+    expect((Date.now() - Date.parse(body.to)) / 864e5).toBeLessThan(300);
 });

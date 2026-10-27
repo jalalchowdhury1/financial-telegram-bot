@@ -377,3 +377,16 @@ def test_a_ci_that_never_starts_leaves_the_pr_open_and_pings_red(run_step):
     code, sent = run_step(dirty=1, dispatch_fails=9)
     assert code != 0
     assert sent.startswith("🔴") and "NOT merged" in sent and "CI would not start" in sent
+
+
+def test_spy_daily_is_rebaked_on_main_without_blocking_the_other_stats():
+    """The SPY chart's 5Y/10Y/ALL file (dashboard/public/history/spy-daily.json) is re-baked
+    every quarter; its own step, so a Yahoo failure keeps the old file and the rest still ship."""
+    steps = yaml.safe_load(open(WORKFLOW))["jobs"]["rebake"]["steps"]
+    install = next(s for s in steps if s.get("name") == "Install deps")
+    assert "yfinance" in install["run"]
+    spy = next(s for s in steps if "bake_spy_daily.py" in (s.get("run") or ""))
+    assert spy["if"] == "github.ref == 'refs/heads/main'"
+    assert spy["continue-on-error"] is True
+    assert spy["working-directory"] == "dashboard"
+    assert steps.index(spy) < next(i for i, s in enumerate(steps) if "gh pr create" in (s.get("run") or ""))

@@ -544,7 +544,8 @@ Rollback: tag `known-good-pre-history-2026-10-10` (= b9fd5d8; the tag message ha
   too, for hours**: `.DXY` `10Y`/`ALL` replayed a 503 from 23:42 until past 09:42 the next
   day and sank all four of PR #61's dry runs, so every bake try adds a unique `&_=` and
   reaches the backend. By hand: `cd dashboard && uv run scripts/bake_long_history.py
-  [--dry] [key …]`, or Actions → Rebake Long History → Run workflow. Tests:
+  [--dry] [key …]`, or Actions → Rebake Long History → Run workflow. The same run also
+  re-bakes the SPY chart's `spy-daily.json` (see Chart helpers). Tests:
   `longHistory.test.js` checks every index row decodes, matches its file and ends after
   2026-03-12; `tests/test_rebake_long_history_workflow.py` runs the notify step against stub
   git/gh/curl for every way a run can end; `tests/test_bake_long_history.py` covers the
@@ -1233,6 +1234,17 @@ measures what is SERVED, not whether a writer ran. The fleet monitor (github-not
 - Each chart remembers its timeframe per device (`ftb:tf:<gradientId>`, `ftb:tf:spy`).
 - A tab the history can't cover (<90% of its points) is disabled. The Lambda's Polygon SPY
   path carries ~14 months, so "5Y" there used to be 14 months under a 5Y label.
+- **SPY 5Y/10Y/ALL (2026-10-27):** `/api/spy` `chartHistory` is only the last 302 bars, so
+  SpyChart also fetches `public/history/spy-daily.json` (every daily raw close since
+  1993-01-29, ~100 KB, `scripts/bake_spy_daily.py` via yfinance `auto_adjust=False` like the
+  bot). `joinBaked` puts baked closes strictly BEFORE the live window's first date, recomputes
+  50/200d MAs over the whole run, and returns the live bars alone when the bake has no point
+  at/after that date (a hole) or differs >5% there (the Sheet path's index points). Drawn
+  thinned to ~1,200 points; golden/death cross is found on the daily bars. Re-baked by the
+  quarterly rebake (own step, `continue-on-error`, main only). Not in `longHistoryIndex.json`
+  (no popover uses it). Tests: `SpyChart.test.js` (join, tabs unlock, and the committed file
+  must be < 300 days old: a bake older than ~437 days = no overlap = tabs grey again);
+  `tests/test_rebake_long_history_workflow.py` checks the step is still there.
 - The Sheet SPY path charts FRED's S&P 500 INDEX (~10x SPY). SpyChart gets `current` and,
   when the chart is ~index scale, labels index points (no `$`) with a one-line note.
 
