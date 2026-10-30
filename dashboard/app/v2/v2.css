@@ -577,3 +577,43 @@ body:has(.v2) { background: #0b0c0e; }
   .v2-slot.is-calm .checklist-item:not(:has(.stat-negative)) { display: none; }
   .v2-slot.is-calm .checklist-grid:not(:has(.stat-negative))::after { content: 'All green'; font-size: 13px; color: var(--up); }
 }
+
+/* ---------- panels, not boxes: cells split by hairlines (signals, regime, the read on phone) ---------- */
+.v2-signals { gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.v2-signal { border: 0; border-radius: 0; background: var(--surface); }
+.v2-signal.is-alert { border: 0; box-shadow: none; background: linear-gradient(rgba(227, 168, 87, 0.05), rgba(227, 168, 87, 0.05)), var(--surface); }
+.v2-signal.is-alert .v2-signal-label::before {
+  content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 999px;
+  background: var(--warn); margin-right: 7px; vertical-align: 1px;
+}
+.v2 .jev-grid { gap: 1px; background: var(--line); }
+.v2 .jev-pill { background: var(--surface); border: 0; border-radius: 0; backdrop-filter: none; }
+.v2 .jev-pill:hover { background: var(--surface-2); border: 0; box-shadow: none; transform: none; }
+
+/* what moved: quiet chips; a big move gets an amber dot, not a lightning emoji */
+.v2 .moved-chip > span[aria-hidden="true"] { display: none; }
+.v2 .moved-chip, .v2 .moved-chip.is-big { border-color: var(--line-2); }
+.v2 .moved-chip.is-big::before {
+  content: ''; flex: none; width: 5px; height: 5px; border-radius: 999px; background: var(--warn);
+}
+
+@media (max-width: 640px) {
+  .v2-tabs-row { -webkit-mask-image: linear-gradient(90deg, #000 82%, transparent); mask-image: linear-gradient(90deg, #000 82%, transparent); }
+  /* the fresh-print chip gets the room; the time ago stays when it is a saved copy */
+  .v2-top-right:has(.mark-chip) .v2-updated:not(.is-saved) { display: none; }
+  .v2 .mark-chip { max-width: 230px; }
+
+  .v2-readout { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: var(--line); }
+  .v2-read { border: 0; background: var(--surface); padding: 12px 14px; }
+  .v2-read:last-child:nth-child(odd) { grid-column: span 2; }
+
+  .v2-signal { padding: 14px 16px; gap: 4px; }
+  .v2-signal-label { font-size: 11.5px; }
+  .v2-signal-value { font-size: 17px; }
+  .v2-signal-sub { font-size: 11.5px; }
+
+  .v2 .jev-pill { min-height: 0; padding: 12px 2px; }
+  .v2 .jev-pill .jev-pill-label { font-size: 11px; }
+  .v2 .jev-grid { margin: 0 -2px; }
+  .v2 .moved-chip { height: 28px; padding: 0 10px; font-size: 12px; }
+}
