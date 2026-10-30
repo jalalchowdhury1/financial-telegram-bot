@@ -28,7 +28,7 @@ import StatusLine from '../../components/StatusLine';
 import SinceLastVisit from '../../components/SinceLastVisit';
 import MarketClock from '../../components/MarketClock';
 import { UpdatedAgo, OfflineBanner, PullToRefresh } from '../../components/PhonePolish';
-import { staleNote, aaiiCaption } from '../../components/CustomIndicatorBar';
+import { staleNote } from '../../components/CustomIndicatorBar';
 import { isLiveAnswer } from '../../lib/snapshot';
 import { freshnessNote, formatAsOf } from '../../lib/freshness';
 import { fgHistoryCells } from '../../lib/fgHistory';
@@ -168,16 +168,16 @@ function Signals({ sheets, loading }) {
         {
             key: 'nsb', label: 'NotSoBoring', tip: 'Watches QQQ and TMF for 6–7% drops; then adds gold + USD.',
             alert: !loading && sheets?.NotSoBoring && sheets.NotSoBoring !== 'ON',
-            value: sheets?.NotSoBoring || na, sub: staleNote(sheets, ['NotSoBoring']) || <span className="v2-muted">ON = no drop trigger</span>,
+            value: sheets?.NotSoBoring || na, sub: staleNote(sheets, ['NotSoBoring']),
         },
         {
             key: 'fr', label: 'FrontRunner', tip: 'VIX hedges when RSI tops 79; buys deep tech dips. Tap for Catalyst Radar.',
             href: 'https://nuts-radar.vercel.app',
             alert: !loading && sheets?.FrontRunner && !sheets.FrontRunner.startsWith('BIL'),
-            value: sheets?.FrontRunner || na, sub: staleNote(sheets, ['FrontRunner']) || <span className="v2-muted">Catalyst Radar ↗</span>,
+            value: sheets?.FrontRunner || na, sub: staleNote(sheets, ['FrontRunner']) || <span className="v2-muted">Radar ↗</span>,
         },
         {
-            key: 'aaii', label: 'AAII bear − bull', tip: 'Bears minus bulls. Over 20% has meant a bullish next 6 months.',
+            key: 'aaii', label: 'AAII', tip: 'Bears minus bulls. Over 20% has meant a bullish next 6 months.',
             alert: Number.isFinite(aaii) && aaii > 20,
             value: Number.isFinite(aaii) ? (
                 <Delta mark={aaiiMark} chartKey="aaiiDiff" raw={aaii} format={(v) => `${v > 0 ? '+' : ''}${v.toFixed(2)}%`}>
@@ -189,10 +189,9 @@ function Signals({ sheets, loading }) {
                     {aaii > 20 ? 'Bullish' : 'Neutral'} to {until.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
                 </span>
             ) : null,
-            foot: aaiiCaption(sheets?.AAII, sheets?.AAIIDiff),
         },
         {
-            key: 'vix', label: 'VIX · 3-month', tip: 'VIX above 3-month VIX: panic. Often before a rebound.',
+            key: 'vix', label: 'VIX / 3M', tip: 'VIX above 3-month VIX: panic. Often before a rebound.',
             alert: Number.isFinite(vixCur) && vixCur > vix3m,
             value: Number.isFinite(vixCur) ? (
                 <span className="v2-pair">
@@ -235,7 +234,6 @@ function Readout({ fred, vol, rubberBand, saved, waiting }) {
                 <button key={c.key} type="button" className={`v2-read tone-${c.tone}`} onClick={() => jumpToCard(c.jump)}
                     title={`${c.why}${c.old ? ` · ${c.old.note}` : ''} · tap for the card`}>
                     <span className="v2-read-text">{c.old?.kind === 'stale' ? '🕐 ' : ''}{c.text.replace(/\s*✓$/, '')}</span>
-                    <span className="v2-read-why">{c.why}</span>
                 </button>
             ))}
         </div>
@@ -338,7 +336,7 @@ export default function DashboardV2() {
                                         <>
                                             <div className="v2-hero-label">
                                                 <span>S&P 500 · SPY</span>
-                                                <span className="v2-hero-aside">3 months</span>
+                                                <span className="v2-hero-aside">3M</span>
                                                 {spyStale && <span className="v2-flag" data-testid="spy-provenance">Stale · {/ close$/.test(spyStale) ? spyStale : `cached ${spyStale}`}</span>}
                                             </div>
                                             <div className="v2-hero-price-row">
@@ -429,7 +427,7 @@ export default function DashboardV2() {
 
                     <Section id="market" title="Market">
                         <div className="v2-grid">
-                            <Slot jump="SPY chart" title="SPY with 50 and 200-day averages" span={7} saved={saved('spy')}>
+                            <Slot jump="SPY chart" title="SPY" span={7} saved={saved('spy')}>
                                 <div className="card">
                                     <div className="card-header" />
                                     <ErrorBoundary resetKey={refreshTick}>
@@ -461,10 +459,10 @@ export default function DashboardV2() {
 
                     <Section id="economy" title="Economy">
                         <div className="v2-grid">
-                            <Slot jump="Bull checklist" title="Bull market checklist" span={7} saved={saved('fred')}>
+                            <Slot jump="Bull checklist" title="Bull checklist" span={7} saved={saved('fred')}>
                                 <ErrorBoundary resetKey={refreshTick}><BullChecklist fred={fred} loading={pending.fred && !fred} /></ErrorBoundary>
                             </Slot>
-                            <Slot jump="Economy" title="Economic indicators" span={5} saved={saved('fred')}>
+                            <Slot jump="Economy" title="Indicators" span={5} saved={saved('fred')}>
                                 <ErrorBoundary resetKey={refreshTick}><EconomicIndicatorGrid fred={fred} loading={pending.fred && !fred} statusColor={statusColor} /></ErrorBoundary>
                             </Slot>
                             <div className="v2-trio span-12" data-cached={saved('fred')}>
@@ -486,15 +484,15 @@ export default function DashboardV2() {
 
                     <Section id="world" title="World">
                         <div className="v2-grid">
-                            <Slot jump="Markets" title="Rates, currencies and commodities" span={12} saved={saved('extra')}>
+                            <Slot jump="Markets" title="Global markets" span={12} saved={saved('extra')}>
                                 <ErrorBoundary resetKey={refreshTick}><ExtraMarketsGrid data={extra} loading={pending.extra && !extra} /></ErrorBoundary>
                             </Slot>
                         </div>
                     </Section>
 
-                    <Section id="crowd" title="Crowd" note="Polymarket, no sports">
+                    <Section id="crowd" title="Crowd">
                         <div className="v2-grid">
-                            <Slot jump="Polymarket" title="What the crowd is betting on" span={12}>
+                            <Slot jump="Polymarket" title="Polymarket" span={12}>
                                 <ErrorBoundary resetKey={refreshTick}><PolymarketTable refreshKey={refreshTick} bust={f.bustKey} /></ErrorBoundary>
                             </Slot>
                         </div>

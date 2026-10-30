@@ -419,3 +419,85 @@ body:has(.v2) { background: #0b0c0e; }
   .v2 .card, .v2-glance { animation: none; }
   .v2-scale-mark { transition: none; }
 }
+
+/* ---------- one type family: v1 cards set numbers in JetBrains Mono; v2 sets them in Geist, tabular ---------- */
+.v2 .axis-lbl,
+.v2 .checklist-benchmark,
+.v2 .checklist-value,
+.v2 .factor-tf-btn,
+.v2 .factor-val,
+.v2 .fg-history-value,
+.v2 .fh-note,
+.v2 .gauge-inline-label,
+.v2 .hero-price,
+.v2 .indicator-pill .value,
+.v2 .jev-input-note,
+.v2 .jev-input-value,
+.v2 .mark-pop-delta,
+.v2 .mark-pop-eyebrow,
+.v2 .mark-pop-foot,
+.v2 .mark-pop-prev,
+.v2 .pm-break-odds,
+.v2 .pm-delta,
+.v2 .pm-out-odds,
+.v2 .pm-sheet-move,
+.v2 .pm-sheet-out-odds,
+.v2 .pm-tile-odds,
+.v2 .pm-vol,
+.v2 .series-tf,
+.v2 .stat-benchmark,
+.v2 .stat-mini-value,
+.v2 .stat-row .stat-value,
+.v2 .status-items,
+.v2 .vol-bar-tenor,
+.v2 .glance-mark {
+  font-family: var(--sans) !important;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+.v2 [style*="JetBrains"] { font-family: var(--sans) !important; font-variant-numeric: tabular-nums; }
+
+/* ---------- round 2 ---------- */
+/* filler badges that only restate the title go; status badges (Hardening, 1 of 4, 7/8) stay */
+.v2-slot .card-header :is(.badge-blue, .badge-purple, .badge-gray) { display: none; }
+.v2-slot-title { max-width: calc(100% - 200px); overflow: hidden; text-overflow: ellipsis; }
+
+/* never two lines: Polymarket questions, recession chips, the mark chip */
+.v2 :is(.pm-tile-title, .pm-title, .pm-tile-label, .pm-out-label) {
+  display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+}
+.v2 .horse-stats [style*="flex-wrap"] { flex-wrap: nowrap !important; overflow: hidden; white-space: nowrap; }
+.v2 .mark-chip { display: inline-block; }
+.v2 .moved-strip { -webkit-mask-image: linear-gradient(90deg, #000 88%, transparent); mask-image: linear-gradient(90deg, #000 88%, transparent); }
+
+/* colour means status, so it goes on values only, never on labels */
+.v2 .horse-stats .tooltip-trigger { color: var(--ink-3) !important; }
+
+/* hints: quiet until hovered (touch still opens on tap) */
+.v2 .tooltip-trigger, .v2 .chartable { text-decoration: none; }
+@media (hover: hover) {
+  .v2 .tooltip-trigger:hover { text-decoration: underline dotted var(--ink-3); text-decoration-thickness: 1px; text-underline-offset: 5px; }
+  .v2 .chartable:hover { text-decoration: underline dotted var(--accent); text-decoration-thickness: 1px; text-underline-offset: 6px; }
+}
+
+/* the bull banner repeats the 7/8 badge */
+.v2 .checklist-score { display: none; }
+
+/* rubber band steps not yet reached: dim, but readable */
+.v2 [class*="rb-step"] { color: var(--ink-2); }
+.v2 [class*="rb-step"] * { color: inherit; }
+
+/* panels in a row stretch to the same height, the chart takes the slack */
+.v2-slot { display: flex; flex-direction: column; }
+.v2-slot > .card { flex: 1; display: flex; flex-direction: column; }
+.v2-slot > .card > :last-child { flex: 1; }
+
+/* factors sit in a panel like everything else */
+.v2 .factor-row { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 20px 24px; }
+
+/* less words: prose under cards goes; the full text stays in each item's hover/tap tip */
+.v2 :is(.rb-note, .rb-foot, .rb-hint, .rb-rule, .rb-explain, .rb-cap, .jev-pill-why, .jev-footer,
+  .factor-caption, .pm-note, .pm-foot, .checklist-benchmark) { display: none; }
+.v2 :is(.stat-benchmark, .jev-pill-source) { white-space: nowrap; }
+.v2 :is(.checklist-text + span, .vol-note, .rb-counters) { display: none; }
+.v2 .horse-runup-legend, .v2 div[style*="0.6rem"][style*="nowrap"] { display: none; }
