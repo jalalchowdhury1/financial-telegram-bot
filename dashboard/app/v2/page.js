@@ -118,12 +118,36 @@ function Section({ id, title, note, children }) {
 /**
  * A reused v1 card in a v2 slot: v2 hides the card's own emoji title (CSS) and draws
  * its own, so every panel reads the same. `jump` keeps v1's data-jump label (chips jump here).
+ * `more`: the card opens short (CSS hides the detail under .is-calm); "More" opens it, remembered per card.
  */
-function Slot({ jump, title, tip, span = 12, saved, children }) {
+/** Open/closed for a "More" card, remembered per card on this device. */
+function useOpen(key) {
+    const [open, setOpen] = useState(false);
+    useEffect(() => { try { setOpen(localStorage.getItem(`v2-open:${key}`) === '1'); } catch { /* private mode */ } }, [key]);
+    const toggle = () => {
+        try { localStorage.setItem(`v2-open:${key}`, open ? '0' : '1'); } catch { /* private mode */ }
+        setOpen(!open);
+    };
+    return [open, toggle];
+}
+
+function MoreButton({ open, onClick, className = 'v2-more' }) {
     return (
-        <div className={`v2-slot span-${span}`} data-jump={jump} data-cached={saved}>
+        <button type="button" className={className} onClick={onClick} aria-expanded={open}>
+            {open ? 'Less' : 'More'}
+            <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
+        </button>
+    );
+}
+
+function Slot({ jump, title, tip, span = 12, saved, more, children }) {
+    const [open, toggle] = useOpen(jump);
+    const mode = more ? (open ? ' has-more is-open' : ' has-more is-calm') : '';
+    return (
+        <div className={`v2-slot span-${span}${mode}`} data-jump={jump} data-cached={saved}>
             <div className="v2-slot-title">{tip ? <span className="tooltip-trigger" data-tooltip={tip}>{title}</span> : title}</div>
             {children}
+            {more && <MoreButton open={open} onClick={toggle} />}
         </div>
     );
 }
@@ -274,6 +298,7 @@ export default function DashboardV2() {
     const { spy, spyDailyMove, fg, fred, extra, sheets, history, jev, vol } = f.data;
     const { pending, saved, refreshTick, refreshNow } = f;
     const [rubberBand, setRubberBand] = useState(undefined);
+    const [trioOpen, toggleTrio] = useOpen('fred-trio');
     const heroRef = useRef(null);
     const [heroGone, setHeroGone] = useState(false);
     useEffect(() => {
@@ -437,7 +462,7 @@ export default function DashboardV2() {
                                     </ErrorBoundary>
                                 </div>
                             </Slot>
-                            <Slot jump="Volatility" title="Volatility" span={5}>
+                            <Slot jump="Volatility" title="Volatility" span={5} more>
                                 <ErrorBoundary resetKey={refreshTick}><VolMetricsTable data={vol} saved={saved('vol')} waiting={pending.vol} /></ErrorBoundary>
                             </Slot>
                             <div className="v2-slot span-12 is-bare">
@@ -448,10 +473,10 @@ export default function DashboardV2() {
 
                     <Section id="risk" title="Risk">
                         <div className="v2-grid">
-                            <Slot jump="Rubber band" title="Rubber band" tip="Is dip-buying still paying? Nightly check of three tripwires." span={12}>
+                            <Slot jump="Rubber band" title="Rubber band" tip="Is dip-buying still paying? Nightly check of three tripwires." span={12} more>
                                 <ErrorBoundary resetKey={refreshTick}><RubberBandRadar onVerdict={setRubberBand} /></ErrorBoundary>
                             </Slot>
-                            <Slot jump="Recession watch" title="Recession watch" tip="Four recession tells: each one's 1-year move vs its usual move before past recessions." span={12} saved={saved('fred')}>
+                            <Slot jump="Recession watch" title="Recession watch" tip="Four recession tells: each one's 1-year move vs its usual move before past recessions." span={12} saved={saved('fred')} more>
                                 <ErrorBoundary resetKey={refreshTick}><FourHorsemen fred={fred} loading={pending.fred && !fred} /></ErrorBoundary>
                             </Slot>
                         </div>
@@ -459,13 +484,13 @@ export default function DashboardV2() {
 
                     <Section id="economy" title="Economy">
                         <div className="v2-grid">
-                            <Slot jump="Bull checklist" title="Bull checklist" span={7} saved={saved('fred')}>
+                            <Slot jump="Bull checklist" title="Bull checklist" span={7} saved={saved('fred')} more>
                                 <ErrorBoundary resetKey={refreshTick}><BullChecklist fred={fred} loading={pending.fred && !fred} /></ErrorBoundary>
                             </Slot>
-                            <Slot jump="Economy" title="Indicators" span={5} saved={saved('fred')}>
+                            <Slot jump="Economy" title="Indicators" span={5} saved={saved('fred')} more>
                                 <ErrorBoundary resetKey={refreshTick}><EconomicIndicatorGrid fred={fred} loading={pending.fred && !fred} statusColor={statusColor} /></ErrorBoundary>
                             </Slot>
-                            <div className="v2-trio span-12" data-cached={saved('fred')}>
+                            <div className={`v2-trio span-12 ${trioOpen ? 'is-open' : 'is-calm'}`} data-cached={saved('fred')}>
                                 <FredTile fred={fred} metric="yieldCurve" title="Yield curve" jump="Yield curve" markKey="yieldCurve" refreshTick={refreshTick}
                                     tip="10-year minus 2-year. Below 0 = classic recession warning."
                                     fmt={(v) => `${signed(v)}%`} tone={(v) => (v >= 0 ? 'good' : 'bad')}
@@ -478,13 +503,14 @@ export default function DashboardV2() {
                                     tip="S&P 500 earnings per share, last 12 months. History in today's dollars."
                                     fmt={(v) => `$${v.toFixed(2)}`} tone={() => 'flat'}
                                     chart={{ color: '#9fb4c7', gradientId: 'v2Eps', cadence: 'monthly' }} />
+                                <MoreButton open={trioOpen} onClick={toggleTrio} className="v2-trio-more" />
                             </div>
                         </div>
                     </Section>
 
                     <Section id="world" title="World">
                         <div className="v2-grid">
-                            <Slot jump="Markets" title="Global markets" span={12} saved={saved('extra')}>
+                            <Slot jump="Markets" title="Global markets" span={12} saved={saved('extra')} more>
                                 <ErrorBoundary resetKey={refreshTick}><ExtraMarketsGrid data={extra} loading={pending.extra && !extra} /></ErrorBoundary>
                             </Slot>
                         </div>
@@ -492,7 +518,7 @@ export default function DashboardV2() {
 
                     <Section id="crowd" title="Crowd">
                         <div className="v2-grid">
-                            <Slot jump="Polymarket" title="Polymarket" span={12}>
+                            <Slot jump="Polymarket" title="Polymarket" span={12} more>
                                 <ErrorBoundary resetKey={refreshTick}><PolymarketTable refreshKey={refreshTick} bust={f.bustKey} /></ErrorBoundary>
                             </Slot>
                         </div>
