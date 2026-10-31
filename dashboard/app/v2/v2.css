@@ -851,7 +851,10 @@ body:has(.v2) { background: #0b0c0e; }
 .v2-taka-chg { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .v2-taka-chg small { margin-left: 3px; font-size: 12px; font-weight: 500; color: var(--ink-3); }
 .v2-taka-ath { align-self: center; padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600; color: var(--up); background: rgb(76 195 138 / .12); box-shadow: 0 0 14px rgb(76 195 138 / .22); }
-.v2-taka-off { font-size: 12px; color: var(--ink-3); }
+.v2-taka-off { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 12px; color: var(--ink-3); }
+@media (max-width: 640px) { .v2-taka-chg small { display: none; } } /* the lit range chip already says it */
+.v2-taka-cagr { align-self: center; padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ink); background: var(--surface-2); border: 1px dashed var(--line-2); }
+.v2-taka-pace { fill: none; stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 3 4; vector-effect: non-scaling-stroke; }
 .v2-taka .card-header { margin-bottom: 4px; }
 .v2-taka-tfs { display: flex; gap: 2px; margin-right: -7px; overflow-x: auto; scrollbar-width: none; }
 .v2-taka-tfs button { all: unset; flex: none; cursor: pointer; padding: 2px 7px; border-radius: 6px; font: 500 11.5px var(--sans); font-variant-numeric: tabular-nums; color: var(--ink-3); }

@@ -166,7 +166,7 @@ function MoveTile({ m, feeds: { spy, extra, vol } }) {
         const lo = Math.min(...pts, m.prev - band), hi = Math.max(...pts, m.prev + band);
         const pad = (hi - lo) * 0.12 || 1;
         const y = (v) => 100 - ((v - lo + pad) / (hi - lo + 2 * pad)) * 100;
-        const x = (i) => (i / (pts.length - 1)) * 100;
+        const x = (i) => ((Date.parse(pts[i].date) - t0) / T) * 100; // by date: the IMF years are monthly, the Wise years daily
         const n = pts.length;
         return {
             past: pts.slice(0, -1).map((v, i) => `${i ? 'L' : 'M'}${x(i)} ${y(v)}`).join(''),
@@ -445,6 +445,9 @@ function Taka({ extra, loading }) {
     const start = view[0].value;
     const ath = all.reduce((m, p) => (p.value > m.value ? p : m), all[0]);
     const step = 5, next = Math.floor(cur / step) * step + step;
+    // 5Y and longer: the compound yearly rise, and the steady path at that rate (dashed) to race the real one
+    const t0 = Date.parse(view[0].date), T = Date.parse(last.date) - t0;
+    const cagr = days >= 1827 && T > 0 ? Math.pow(cur / start, 31557600000 / T) - 1 : null;
 
     // the chart: ≤ 600 points, milestone lines at round levels (≤ 4 in view)
     const stride = Math.ceil(view.length / 600);
@@ -452,8 +455,9 @@ function Taka({ extra, loading }) {
     let lo = Math.min(...pts.map((p) => p.value)), hi = Math.max(...pts.map((p) => p.value));
     const pad = (hi - lo) * 0.08 || 0.5; lo -= pad; hi += pad;
     const y = (v) => 100 - ((v - lo) / (hi - lo)) * 100;
-    const x = (i) => (i / (pts.length - 1)) * 100;
+    const x = (i) => ((Date.parse(pts[i].date) - t0) / T) * 100; // by date: the IMF years are monthly, the Wise years daily
     const line = pts.map((p, i) => `${i ? 'L' : 'M'}${x(i)} ${y(p.value)}`).join('');
+    const pace = cagr != null && pts.map((p, i) => `${i ? 'L' : 'M'}${x(i)} ${y(start * Math.pow(cur / start, (Date.parse(p.date) - t0) / T))}`).join('');
     const grid = [0.5, 1, 2, 5, 10, 20, 50].find((g) => (hi - lo) / g <= 4) || 50;
     const levels = [];
     for (let v = Math.ceil(lo / grid) * grid; v < hi; v += grid) levels.push(v);
@@ -461,7 +465,8 @@ function Taka({ extra, loading }) {
     const pick = (r) => { setRange(r); try { window.localStorage.setItem(TAKA_KEY, r); } catch { /* still works this visit */ } };
     const read = (e) => {
         const r = e.currentTarget.getBoundingClientRect();
-        const i = Math.round(Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)) * (pts.length - 1));
+        const t = t0 + Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)) * T;
+        const i = Math.max(0, pts.findIndex((p) => Date.parse(p.date) >= t));
         setAt({ i, p: pts[i] });
     };
     return (
@@ -474,6 +479,7 @@ function Taka({ extra, loading }) {
             <div className="v2-taka-top">
                 <span className="v2-taka-now">{cur.toFixed(2)}</span>
                 <span className={`v2-taka-chg tone-${up ? 'good' : 'bad'}`}>{up ? '▲' : '▼'} {cur / start >= 2 ? `${(cur / start).toFixed(1)}×` : `${signed((cur / start - 1) * 100, 1)}%`} <small>{id === 'All' ? `since ${view[0].date.slice(0, 4)}` : id}</small></span>
+                {cagr != null && <span className="v2-taka-cagr" title={`The steady yearly rise from ${start.toFixed(2)} to ${cur.toFixed(2)} over ${(T / 31557600000).toFixed(1)} years (dashed line)`}>{signed(cagr * 100, 1)}%/yr</span>}
                 {cur.toFixed(2) === ath.value.toFixed(2) || cur > ath.value
                     ? <span className="v2-taka-ath">All-time high</span>
                     : <span className="v2-taka-off">High {ath.value.toFixed(2)} · {longDate(ath.date)}</span>}
@@ -482,6 +488,7 @@ function Taka({ extra, loading }) {
                 style={{ '--end': `${y(cur)}%` }}>
                 <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
                     <path className="v2-taka-area" d={`${line}L100 100L0 100Z`} />
+                    {pace && <path className="v2-taka-pace" d={pace} />}
                     <path className="v2-taka-line" d={line} />
                 </svg>
                 {levels.map((v) => <span key={v} className="v2-taka-lvl" style={{ top: `${y(v)}%` }}><b>{Number.isInteger(v) ? v : v.toFixed(1)}</b></span>)}

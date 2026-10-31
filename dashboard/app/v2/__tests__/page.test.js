@@ -3,7 +3,7 @@
  * its own panel, one hung route never holds the header, refresh skips the edge cache,
  * and every chip that jumps to a card (What moved, the read, status line) finds it.
  */
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import DashboardV2 from '../page';
 
 const spyPayload = {
@@ -99,4 +99,18 @@ it('each economy chart says what stands out vs its whole history, and lights up 
     expect(tile('Profit margin').querySelector('.v2-fred-badge').textContent).toBe('Record high since 2000');
     expect(tile('S&P 500 EPS').querySelector('.v2-fred-badge').textContent).toBe('10% off high · −10% y/y');
     expect(tile('S&P 500 EPS').className).toMatch(/lit-bad is-lit/);
+});
+
+it('USD/BDT adds the compound yearly rise (and its dashed steady path) on 5Y and longer only', async () => {
+    const baked = { from: '2016-10-30', t: [0, 1820, 3400, 3653], v: [80, 100, 150, 160] };
+    mockRoutes({ '/v2/usdbdt.json': Promise.resolve({ ok: true, status: 200, json: async () => baked }) });
+    render(<DashboardV2 />);
+    await waitFor(() => expect(document.querySelector('.v2-taka-now')).not.toBeNull());
+    const card = within(document.querySelector('.v2-taka'));
+    expect(document.querySelector('.v2-taka-cagr')).toBeNull(); // 1Y
+    fireEvent.click(card.getByRole('button', { name: '5Y' }));
+    expect(document.querySelector('.v2-taka-cagr').textContent).toBe('+9.8%/yr'); // 100 → 160 in 1,833 days
+    fireEvent.click(card.getByRole('button', { name: 'All' }));
+    expect(document.querySelector('.v2-taka-cagr').textContent).toBe('+7.2%/yr'); // 80 → 160 in 10.0 years
+    expect(document.querySelector('.v2-taka-pace')).not.toBeNull();
 });
