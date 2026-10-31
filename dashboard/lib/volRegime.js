@@ -72,7 +72,7 @@ export function buildTermStructure(eod = {}, live = {}) {
     const vix = at('VIX');
     const v3 = at('VIX3M');
     const nine = at('VIX9D');
-    const ratio = vix && v3 ? round(vix.value / v3.value, 3) : null;
+    const ratio = vix && v3 ? round(vix.value / v3.value, 4) : null; // 4 places: shown as 2, so it never rounds twice (0.935 → 0.94)
     const dates = points.map((p) => p.asOf).sort();
     return {
         points,

@@ -448,7 +448,8 @@ function MarketRow({ r }) {
     const heat = r.z == null ? 0 : Math.min(r.z, MOVE_CAP) / MOVE_CAP;
     return (
         <div className={`v2-mk${r.z == null ? ' is-quiet' : ''}${r.z >= BIG_Z ? ' is-big' : ''}`} data-dir={r.win?.dir ?? 0} style={{ '--heat': heat }}
-            title={r.d.stale ? 'Live sources failed: last good value' : undefined}>
+            title={r.d.stale ? 'Live sources failed: last good value' : undefined}
+            onClick={(e) => { if (!e.target.closest('[role="button"]')) e.currentTarget.querySelector('[role="button"]')?.click(); }}>
             <span className="v2-mk-label">{r.label}</span>
             {r.z != null && <MarketSpark history={r.d.history} />}
             <Delta mark={mark} format={r.fmt} chartKey={r.chart} raw={r.d.current} className={`v2-mk-val${r.d.stale ? ' tone-caution' : ''}`}>

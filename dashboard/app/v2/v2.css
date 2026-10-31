@@ -731,6 +731,7 @@ body:has(.v2) { background: #0b0c0e; }
   display: grid; grid-template-columns: 104px 96px 112px 84px minmax(0, 1fr) 38px; grid-template-areas: "label spark val chg bar x";
   align-items: center; gap: 14px; padding: 9px 0; border-top: 1px solid var(--line); font-size: 13px; white-space: nowrap;
 }
+.v2-mk:has([role="button"]) { cursor: pointer; } /* the whole row opens its chart */
 .v2-mk:first-child { border-top: 0; }
 .v2-mk[data-dir="1"] { --rgb: 76 195 138; }
 .v2-mk[data-dir="-1"] { --rgb: 239 107 115; }

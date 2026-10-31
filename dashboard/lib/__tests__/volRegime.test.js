@@ -48,7 +48,7 @@ describe('buildTermStructure', () => {
         const c = buildTermStructure(eod, {});
         expect(c.points.map((p) => p.tenor)).toEqual(['9D', '1M', '3M', '6M']);
         expect(c.points.map((p) => p.value)).toEqual([12.76, 14.87, 17.93, 20.01]);
-        expect(c.ratio).toBe(0.829);
+        expect(c.ratio).toBe(0.8293);
         expect(c.state).toBe('calm');
         expect(c.frontInverted).toBe(false);
         expect(c.complete).toBe(true);
@@ -61,11 +61,11 @@ describe('buildTermStructure', () => {
         const q = (value) => ({ value, date: '2026-09-28', lastTime: '2026-09-28T11:00:00.000-0400' });
         const onlyVix = buildTermStructure(eod, { VIX: q(19) });
         expect(onlyVix.live).toBe(false);
-        expect(onlyVix.ratio).toBe(0.829); // never intraday VIX ÷ yesterday's VIX3M
+        expect(onlyVix.ratio).toBe(0.8293); // never intraday VIX ÷ yesterday's VIX3M
 
         const both = buildTermStructure(eod, { VIX: q(19), VIX3M: q(18), VIX9D: q(21) });
         expect(both.live).toBe(true);
-        expect(both.ratio).toBe(1.056);
+        expect(both.ratio).toBe(1.0556);
         expect(both.state).toBe('stress');
         expect(both.frontInverted).toBe(true);
         const nine = both.points.find((p) => p.index === 'VIX9D');
