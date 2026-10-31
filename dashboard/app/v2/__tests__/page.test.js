@@ -170,3 +170,55 @@ it('the VIX / 3M tile opens what SPY did after each day VIX closed over VIX 3M, 
     fireEvent.click(within(dialog).getByRole('button', { name: /Jan 2, 2020/ }));
     expect(within(dialog).getByText('VIX/3M 1.050')).toBeInTheDocument();
 });
+
+it('Risk: each card gives one answer closed, and More opens the proof (loop, fuses, each tell since 2000)', async () => {
+    const ok = (body) => Promise.resolve({ ok: true, status: 200, json: async () => body });
+    const monthly = (f) => Array.from({ length: 322 }, (_, i) => ({ date: `${2000 + Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, '0')}-01`, value: f(i) }));
+    const history = Array.from({ length: 40 }, (_, i) => ({ d: `2026-0${1 + Math.floor(i / 10)}-${10 + (i % 10)}`, slow: 0.5, fast: 0.4, rip: -0.1 }));
+    const rb = {
+        asOf: '2026-10-30', history,
+        verdict: { colour: 'green', text: 'Working' },
+        dials: {
+            slow: { colour: 'green', excess_pct: 0.66, hit: 0.633, red_days: 0, stop_after: 45, window: 60, n: 30, se_pct: 0.5 },
+            fast: { colour: 'green', excess_pct: 0.641, n: 20, se_pct: 0.7 },
+            age: { colour: 'green', years: 2.5, amber_years: 3.3, red_years: 4 },
+            rip: { colour: 'green', excess_pct: -0.06, hot_days: 0, red_after: 45, window: 60, n: 30, se_pct: 0.2, hit: 0.5 },
+            machines: { colour: 'green', reasons: [], legs: [{ name: 'C3', line_pct: -54, dd_pct: -1.48 }, { name: 'hedges', role: 'hedge', dd_pct: -15.9 }] },
+        },
+        defensive: { mode: 'INVESTED', streak: { machines: 0 }, green_streak: 39, rules: { fire_after: { slow: 1, rip: 1, machines: 5 }, reentry_closes: 10, reentry_edge_pct: 0.2 } },
+    };
+    const fred = {
+        horsemen: {
+            claims: { current: 200000, history: monthly(() => 200000) },
+            unemployment: { current: 4.2, history: monthly(() => 4.2) },
+            bankruptcies: { current: 23000, history: monthly((i) => (i === 321 ? 23000 : 20000)) },
+        },
+        yieldCurve: { current: 0.38, history: monthly(() => 0.38) },
+        indicators: { sahmRule: { value: 0 } },
+        recessions: [{ start: '2008-01-01', end: '2009-07-01' }, { start: '2020-03-01', end: '2020-05-01' }],
+    };
+    mockRoutes({ '/api/rubber-band': ok(rb), '/api/fred': ok(fred) });
+    const { container } = render(<DashboardV2 />);
+    const slot = (jump) => container.querySelector(`[data-jump="${jump}"]`);
+
+    await waitFor(() => expect(within(slot('Rubber band')).getByText('Stay invested')).toBeInTheDocument());
+    expect(slot('Rubber band')).toHaveTextContent('Do dips bounce back?+0.66%');
+    expect(slot('Rubber band')).toHaveTextContent('Do rallies cool off?−0.06%');
+    expect(slot('Rubber band')).toHaveTextContent('Machines healthy?2 of 2');
+    fireEvent.click(within(slot('Rubber band')).getByRole('button', { name: 'More' }));
+    expect(within(slot('Rubber band')).getByText('39 green days')).toBeInTheDocument();
+    expect(slot('Rubber band')).toHaveTextContent('0/45 bad days');
+    expect(slot('Rubber band')).toHaveTextContent('0/45 hot days');
+    expect(slot('Rubber band')).toHaveTextContent('0/5 red closes');
+    expect(within(slot('Rubber band')).getByText('trips at −54%')).toBeInTheDocument();
+    expect(within(slot('Rubber band')).getByText('no limit yet')).toBeInTheDocument();
+
+    await waitFor(() => expect(within(slot('Recession watch')).getByText('1 of 4 riding')).toBeInTheDocument());
+    expect(within(slot('Recession watch')).getByText('▲ 15.0% vs 1y')).toBeInTheDocument();
+    expect(within(slot('Recession watch')).getByText('Normal')).toBeInTheDocument();
+    fireEvent.click(within(slot('Recession watch')).getByRole('button', { name: 'More' }));
+    expect(within(slot('Recession watch')).getByText('200K now')).toBeInTheDocument();
+    expect(slot('Recession watch')).toHaveTextContent('4.20% now · Sahm 0.00');
+    expect(within(slot('Recession watch')).getByText('where past ones began')).toBeInTheDocument();
+    expect(slot('Recession watch').querySelectorAll('.rk-band').length).toBeGreaterThanOrEqual(8); // 2 recessions × 4 charts
+});

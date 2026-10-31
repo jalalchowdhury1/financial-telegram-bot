@@ -34,41 +34,41 @@ import AxisLabels from './AxisLabels';
 const COLOUR_VAR = { green: 'var(--green)', amber: 'var(--orange)', red: 'var(--red)', blue: 'var(--blue)', grey: 'var(--text-muted)' };
 const COLOUR_BG = { green: 'var(--green-bg)', amber: 'var(--orange-bg)', red: 'var(--red-bg)', blue: 'var(--blue-bg)', grey: 'rgba(148,163,184,0.12)' };
 const COLOUR_EDGE = { green: 'rgba(34,197,94,0.45)', amber: 'rgba(245,158,11,0.5)', red: 'rgba(239,68,68,0.55)', blue: 'rgba(59,130,246,0.5)', grey: 'rgba(148,163,184,0.3)' };
-const COLOUR_WORD = { green: 'All clear', amber: 'Watch', red: 'Stop', grey: 'No data' };
-const BADGE = { green: 'badge-green', amber: 'badge-yellow', red: 'badge-red', grey: 'badge-blue' };
+export const COLOUR_WORD = { green: 'All clear', amber: 'Watch', red: 'Stop', grey: 'No data' };
+export const BADGE = { green: 'badge-green', amber: 'badge-yellow', red: 'badge-red', grey: 'badge-blue' };
 const STATUS = { green: 'Safe', amber: 'Watch', red: 'Alarm', grey: 'No data' };
 
 // The three dials that can fire the trigger, then the two that are only ever shown.
 const TRIPWIRES = ['slow', 'rip', 'machines'];
 const LOOK_ONLY = ['fast', 'age'];
-const PLAIN = {
+export const PLAIN = {
     slow: { q: 'Do dips bounce back?', hint: 'Buy QQQ after a drop' },
     rip: { q: 'Do rallies cool off?', hint: 'QQQ after a hot run' },
     machines: { q: 'Machines healthy?', hint: 'Backtests vs limits' },
     fast: { q: 'Early warning', hint: 'Last 20 dips' },
     age: { q: 'Evidence age', hint: 'Span of last 30 dips' },
 };
-const statusWord = (k, colour) => {
+export const statusWord = (k, colour) => {
     if (k === 'age') return { green: 'Fresh', amber: 'Getting old', red: 'Old', grey: 'No data' }[colour];
     return STATUS[colour] || STATUS.grey;
 };
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const DAY_FMT = { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric' };
-const dayName = (iso) => {
+export const dayName = (iso) => {
     const d = new Date(`${iso}T12:00:00Z`);
     return Number.isNaN(d.getTime()) ? String(iso || '—') : d.toLocaleDateString('en-US', DAY_FMT);
 };
 /** The engine runs every weekday evening: the next run after `iso` skips Sat/Sun. */
-const nextRun = (iso) => {
+export const nextRun = (iso) => {
     const d = new Date(`${iso}T12:00:00Z`);
     if (Number.isNaN(d.getTime())) return null;
     do { d.setUTCDate(d.getUTCDate() + 1); } while (d.getUTCDay() === 0 || d.getUTCDay() === 6);
     return d.toLocaleDateString('en-US', DAY_FMT);
 };
 
-const signed = (v, d = 2) => (v == null || !Number.isFinite(v) ? '—' : `${v > 0 ? '+' : ''}${v.toFixed(d)}%`);
-const pct0 = (v) => (v == null || !Number.isFinite(v) ? '—' : `${Math.round(v * 100)}%`);
+export const signed = (v, d = 2) => (v == null || !Number.isFinite(v) ? '—' : `${v > 0 ? '+' : ''}${v.toFixed(d)}%`);
+export const pct0 = (v) => (v == null || !Number.isFinite(v) ? '—' : `${Math.round(v * 100)}%`);
 const num = (v, d = 0) => (v == null || !Number.isFinite(v) ? '—' : v.toFixed(d));
 const ceil75 = (n) => Math.ceil(0.75 * (n || 0));
 
@@ -80,7 +80,7 @@ const SPEC_DEFAULT = {
 };
 const RULES_DEFAULT = { fire_after: { slow: 1, rip: 1, machines: 5 }, reentry_closes: 10, reentry_edge_pct: 0.2 };
 
-function contextOf(data) {
+export function contextOf(data) {
     const spec = data?.spec || {};
     return {
         version: spec.version || '1.0',
@@ -92,7 +92,7 @@ function contextOf(data) {
 }
 
 // ELI5 per dial: what it measures, when it turns, today's numbers, the honest record.
-const EXPLAIN = {
+export const EXPLAIN = {
     slow: (d, c) => {
         const window = d.window ?? c.dip.stop_window, stopAfter = d.stop_after ?? c.dip.stop_of;
         return {
@@ -156,7 +156,7 @@ const pressable = (onToggle, onOpen) => ({
 });
 
 /** Big numbers get a real minus sign (a hyphen reads as a gap at display sizes). */
-const minus = (s) => String(s).replace(/^-/, '−');
+export const minus = (s) => String(s).replace(/^-/, '−');
 
 function Chip({ text }) {
     return <span className="rb-chip">{text}</span>;
@@ -205,7 +205,7 @@ function legLimit(l, spm) {
     return limits.length ? limits.reduce((a, b) => (b.v > a.v ? b : a)) : null;
 }
 
-function legColour(l, spm) {
+export function legColour(l, spm) {
     if (l.dd_pct == null) return 'grey';
     const rec = recordCounts(l, spm);
     if (l.line_pct != null && l.dd_pct <= l.line_pct) return 'red';
@@ -215,7 +215,7 @@ function legColour(l, spm) {
     return 'green';
 }
 
-const legUsed = (l, spm) => {
+export const legUsed = (l, spm) => {
     const lim = legLimit(l, spm);
     return lim && l.dd_pct != null ? { lim, frac: clamp(l.dd_pct / lim.v, 0, 1) } : null;
 };
@@ -290,7 +290,7 @@ function TripBody({ k, d, ctx, history }) {
     );
 }
 
-function tripFuse(k, d, ctx, def) {
+export function tripFuse(k, d, ctx, def) {
     if (k === 'slow') return { label: `Bad days in the last ${d.window ?? ctx.dip.stop_window}`, count: d.red_days ?? 0, of: d.stop_after ?? ctx.dip.stop_of };
     if (k === 'rip') return { label: `Hot days in the last ${d.window ?? ctx.rip.hot_window}`, count: d.hot_days ?? 0, of: d.red_after ?? ctx.rip.hot_of };
     return { label: 'Red days in a row', count: def ? (def.streak?.machines ?? 0) : null, of: ctx.rules.fire_after.machines };

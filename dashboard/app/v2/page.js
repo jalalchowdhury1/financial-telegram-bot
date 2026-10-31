@@ -14,10 +14,9 @@ import JevPillModal from '../../components/JevPillModal';
 import { pillWhy } from '../../lib/jevWhy';
 import { FR_OVER, FR_UNDER } from '../../lib/frTriggers';
 import { valuationRow } from '../../components/EconomicIndicatorGrid';
-import FourHorsemen from '../../components/FourHorsemen';
 import PolymarketTable from '../../components/PolymarketTable';
 import VolMetricsTable from '../../components/VolMetricsTable';
-import RubberBandRadar from '../../components/RubberBandRadar';
+import { RubberBandCard, RecessionCard } from '../../components/RiskCards';
 import FactorRow from '../../components/FactorRow';
 import Delta from '../../components/Delta';
 import SignalStudy from '../../components/SignalStudy';
@@ -713,7 +712,7 @@ function Slot({ jump, title, tip, span = 12, saved, more, children }) {
     return (
         <div className={`v2-slot span-${span}${mode}`} data-jump={jump} data-cached={saved}>
             <div className="v2-slot-title">{tip ? <span className="tooltip-trigger" data-tooltip={tip}>{title}</span> : title}</div>
-            {children}
+            {typeof children === 'function' ? children(open) : children}
             {more && <MoreButton open={open} onClick={toggle} />}
         </div>
     );
@@ -1290,10 +1289,10 @@ export default function DashboardV2() {
                     <Section id="risk" title="Risk">
                         <div className="v2-grid">
                             <Slot jump="Rubber band" title="Rubber band" tip="Is dip-buying still paying? Nightly check of three tripwires." span={12} more>
-                                <ErrorBoundary resetKey={refreshTick}><RubberBandRadar onVerdict={setRubberBand} /></ErrorBoundary>
+                                {(open) => <ErrorBoundary resetKey={refreshTick}><RubberBandCard open={open} onVerdict={setRubberBand} /></ErrorBoundary>}
                             </Slot>
                             <Slot jump="Recession watch" title="Recession watch" tip="Four recession tells: each one's 1-year move vs its usual move before past recessions." span={12} saved={saved('fred')} more>
-                                <ErrorBoundary resetKey={refreshTick}><FourHorsemen fred={fred} loading={pending.fred && !fred} /></ErrorBoundary>
+                                {(open) => <ErrorBoundary resetKey={refreshTick}><RecessionCard fred={fred} loading={pending.fred && !fred} open={open} /></ErrorBoundary>}
                             </Slot>
                         </div>
                     </Section>

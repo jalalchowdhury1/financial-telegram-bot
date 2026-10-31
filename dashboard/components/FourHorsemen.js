@@ -35,7 +35,7 @@ const SERIES_STYLE = {
 const LABEL_AT = { claims: 0.58, unemployment: 0.68, spread: 0.78, bankruptcies: 0.48 };
 const LABEL_AT_COMPACT = { claims: 0.42, unemployment: 0.55, spread: 0.6, bankruptcies: 0.32 };
 
-const kFmt = (v) => {
+export const kFmt = (v) => {
     if (v == null || !Number.isFinite(v)) return 'N/A';
     const a = Math.abs(v);
     if (a >= 1e6) return `${(v / 1e6).toFixed(2)}M`;
