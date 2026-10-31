@@ -1156,7 +1156,7 @@ export default function DashboardV2() {
                                 </div>
                             </Slot>
                             <div className="v2-slot span-12 is-bare">
-                                <ErrorBoundary resetKey={refreshTick}><FactorRow refreshKey={refreshTick} bust={f.bustKey} /></ErrorBoundary>
+                                <ErrorBoundary resetKey={refreshTick}><FactorRow refreshKey={refreshTick} bust={f.bustKey} race /></ErrorBoundary>
                             </div>
                         </div>
                     </Section>

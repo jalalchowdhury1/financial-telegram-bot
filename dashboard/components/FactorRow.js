@@ -2,6 +2,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { getJson } from '../lib/loadJson';
 import { readSnap, writeSnap, savedLabel } from '../lib/snapshot';
+import FactorRace from './FactorRace';
 
 const useIsoLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
 const hasFactors = (d) => !!(d && Array.isArray(d.factors) && d.factors.length);
@@ -27,6 +28,7 @@ const hasFactors = (d) => !!(d && Array.isArray(d.factors) && d.factors.length);
  * Renders nothing if the route has no factors at all.
  *
  * Keyboard: the timeline is a radio group — ←/→ (and Home/End) move the choice.
+ * `race` (v2): the chips + caption give way to one race chart + ranked board (FactorRace.js).
  */
 
 export const WINDOWS = ['1M', '3M', '6M', 'YTD', '1Y', '3Y', '5Y', '10Y', '20Y', '30Y', '40Y'];
@@ -109,7 +111,7 @@ export function Sparkline({ values, toneClass }) {
     );
 }
 
-export default function FactorRow({ initialData = null, refreshKey = null, bust = false }) {
+export default function FactorRow({ initialData = null, refreshKey = null, bust = false, race = false }) {
     const [data, setData] = useState(initialData);
     const [status, setStatus] = useState(initialData ? 'ready' : 'loading');
     // ⚡ Instant open: this device's saved copy, tagged 🕐 until the live answer lands.
@@ -291,7 +293,11 @@ export default function FactorRow({ initialData = null, refreshKey = null, bust 
                 </div>
             </div>
 
-            <div className="factor-grid">
+            {race && (
+                <FactorRace factors={factors} win={activeWin} isLong={isLong} stale={stale} loading={status === 'loading'}
+                    note={status !== 'ready' ? '' : isLong ? `research portfolios vs market, through ${fmtMonth(data?.long?.through)}` : asOfText && `price ratio, ${asOfText}`} />
+            )}
+            {!race && <div className="factor-grid">
                 {(factors.length ? factors : PLACEHOLDERS).map((f) => {
                     const w = f.windows?.[activeWin];
                     const t = tone(w?.rel);
@@ -324,9 +330,9 @@ export default function FactorRow({ initialData = null, refreshKey = null, bust 
                         </a>
                     );
                 })}
-            </div>
+            </div>}
 
-            <div className="factor-caption" aria-live="polite">
+            {!race && <div className="factor-caption" aria-live="polite">
                 {stale && <span className="factor-stale">🕐 stale · </span>}
                 <span className={short ? 'factor-cap-long' : undefined}>
                     {caption}
@@ -338,7 +344,7 @@ export default function FactorRow({ initialData = null, refreshKey = null, bust 
                     )}
                 </span>
                 {short && <span className="factor-cap-short">{short}</span>}
-            </div>
+            </div>}
         </section>
     );
 }

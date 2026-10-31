@@ -295,3 +295,17 @@ describe('instant open (saved copy)', () => {
         expect(readSnap('factors').data.updated_at).toBe(payload.updated_at);
     });
 });
+
+it('race (v2): one ranked board instead of chips; the leader is lit, hover spotlights, 3Y+ adds %/yr', async () => {
+    render(<FactorRow race />);
+    const board = () => [...document.querySelectorAll('.fr-row')].map((r) => `${r.querySelector('.fr-name').textContent} ${r.querySelector('.fr-val').textContent}`);
+    await waitFor(() => expect(board()).toEqual(['Momentum +6.2%', 'Quality +0.4%', 'Small caps −1.2%', 'Value −3.1%', 'Low vol −4.0%']));
+    expect(document.querySelector('.factor-chip')).toBeNull();
+    expect(document.querySelector('.fr-end').textContent).toBe('Momentum +6.2%');
+    expect(document.querySelector('.fr-py')).toBeNull();
+    fireEvent.focus(screen.getByRole('button', { name: /Low vol/ }));
+    expect(document.querySelector('.fr-end').textContent).toBe('Low vol −4.0%');
+    expect(document.querySelector('.fr-foot').textContent).toMatch(/Low vol USMV \+1\.0% vs SPY \+5\.0% · since Mar 25, 2026 · USMV ↗/);
+    fireEvent.click(screen.getByRole('radio', { name: '5Y' }));
+    expect(document.querySelector('.fr-row .fr-py').textContent).toBe(`${fmtPct(perYear(20, 5))}/yr`);
+});
