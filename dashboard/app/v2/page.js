@@ -20,6 +20,7 @@ import VolMetricsTable from '../../components/VolMetricsTable';
 import RubberBandRadar from '../../components/RubberBandRadar';
 import FactorRow from '../../components/FactorRow';
 import Delta from '../../components/Delta';
+import AaiiStudy from '../../components/AaiiStudy';
 import MarkChip from '../../components/MarkChip';
 import MarksSheet from '../../components/MarksSheet';
 import { MarkProvider, useMark, useChart, collectLiveValues } from '../../components/MarkProvider';
@@ -868,8 +869,9 @@ function TriggerLine({ points, line, tag, tone }) {
     );
 }
 
-function Signals({ sheets, loading }) {
+function Signals({ sheets, spy, loading }) {
     const na = loading ? '…' : 'N/A';
+    const [study, setStudy] = useState(false);
     const aaii = parseFloat(sheets?.AAIIDiff);
     const vixCur = parseFloat(sheets?.VIX?.current);
     const vix3m = parseFloat(sheets?.VIX?.threeMonth);
@@ -920,8 +922,8 @@ function Signals({ sheets, loading }) {
             viz: frRsi ? <RsiStrip rsi={frRsi} pick={fr} /> : null,
         },
         {
-            key: 'aaii', label: 'AAII', tip: `Bears minus bulls. ${AAII_LINE}%+ has meant a good next 6 months.`,
-            alert: !!bullUntil, good: true,
+            key: 'aaii', label: 'AAII', tip: `Bears minus bulls. ${AAII_LINE}%+ has meant a good next 6 months. Tap for the proof.`,
+            alert: !!bullUntil, good: true, open: () => setStudy(true),
             value: Number.isFinite(aaii) ? (
                 <Delta mark={aaiiMark} chartKey="aaiiDiff" raw={aaii} format={(v) => `${v > 0 ? '+' : ''}${v.toFixed(2)}%`}>
                     <span className={aaii >= AAII_LINE ? 'tone-good' : ''}>{sheets.AAIIDiff}</span>
@@ -960,10 +962,15 @@ function Signals({ sheets, loading }) {
                     </>
                 );
                 const cls = `v2-signal${t.alert ? ` is-alert${t.good ? ' is-good' : ''}` : ''}`;
-                return t.href
-                    ? <a key={t.key} className={`${cls} is-link`} href={t.href} target="_blank" rel="noopener noreferrer">{inner}</a>
-                    : <div key={t.key} className={cls}>{inner}</div>;
+                if (t.href) return <a key={t.key} className={`${cls} is-link`} href={t.href} target="_blank" rel="noopener noreferrer">{inner}</a>;
+                // a tap on the number still opens its own chart (Delta is a role=button inside)
+                return t.open ? (
+                    <div key={t.key} className={`${cls} is-link`} role="button" tabIndex={0} aria-haspopup="dialog"
+                        onClick={(e) => { if (e.target.closest('[role="button"]') === e.currentTarget) t.open(); }}
+                        onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); t.open(); } }}>{inner}</div>
+                ) : <div key={t.key} className={cls}>{inner}</div>;
             })}
+            {study && <AaiiStudy now={aaii} until={bullUntil} sheet={aaiiHist?.points} spyLive={spy} onClose={() => setStudy(false)} />}
         </div>
     );
 }
@@ -1233,7 +1240,7 @@ export default function DashboardV2() {
 
                     <Section id="signals" title="Signals">
                         <div data-jump="Indicators" data-cached={saved('sheets')}>
-                            <ErrorBoundary resetKey={refreshTick}><Signals sheets={sheets} loading={pending.sheets && !sheets} /></ErrorBoundary>
+                            <ErrorBoundary resetKey={refreshTick}><Signals sheets={sheets} spy={spyOk ? spy.chartHistory : null} loading={pending.sheets && !sheets} /></ErrorBoundary>
                         </div>
                         <div className="v2-grid">
                             <ErrorBoundary resetKey={refreshTick}>

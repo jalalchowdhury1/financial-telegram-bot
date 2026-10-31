@@ -125,6 +125,25 @@ it('Fear & Greed draws its Prev / 1W / 1M / 1Y readings as one trail, each with 
     expect(document.querySelector('.v2-fgt-pt.is-now').className).toMatch(/tone-caution/);
 });
 
+it('the AAII tile opens what SPY did after every 20+ reading', async () => {
+    const aaii = { from: '2020-01-02', t: [0, 7], v: [21, 5] };
+    const spy = { from: '2020-01-01', t: Array.from({ length: 500 }, (_, i) => i), v: Array.from({ length: 500 }, (_, i) => 100 + i) };
+    const ok = (body) => Promise.resolve({ ok: true, status: 200, json: async () => body });
+    mockRoutes({ '/api/sheets': ok({ AAIIDiff: '3.60%' }), '/history/aaiiDiff.json': ok(aaii), '/history/spy-daily.json': ok(spy) });
+    render(<DashboardV2 />);
+    await waitFor(() => expect(screen.getByText('AAII')).toBeInTheDocument());
+    const tile = screen.getByText('AAII').closest('[role="button"]');
+    fireEvent.click(tile);
+    const dialog = await screen.findByRole('dialog', { name: 'AAII fear at 20+' });
+    await waitFor(() => expect(within(dialog).getAllByText('+180.2%')).toHaveLength(2)); // avg + median: Jan 2 (101) → Jul 2 (283)
+    expect(within(dialog).getByText('100%')).toBeInTheDocument();
+    expect(within(dialog).getAllByRole('button', { name: /SPY \+180\.2%/ })).toHaveLength(1);
+    fireEvent.click(within(dialog).getByRole('button', { name: '12M' }));
+    expect(window.localStorage.getItem('v2-aaii-months')).toBe('12');
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog', { name: 'AAII fear at 20+' })).toBeNull();
+});
+
 it('What moved draws each move as its last month against a normal day (30 Oct: a stray USD/BDT line crashed the strip)', async () => {
     const day = (i) => new Date(Date.now() - (30 - i) * 86400000).toISOString().slice(0, 10);
     const chartHistory = Array.from({ length: 30 }, (_, i) => ({ date: day(i), price: i % 2 ? 101 : 100 }));
