@@ -1353,7 +1353,7 @@ export default function DashboardV2() {
                     <Section id="crowd" title="Crowd">
                         <div className="v2-grid">
                             <Slot jump="Polymarket" title="Polymarket" span={12} more>
-                                <ErrorBoundary resetKey={refreshTick}><PolymarketTable refreshKey={refreshTick} bust={f.bustKey} /></ErrorBoundary>
+                                <ErrorBoundary resetKey={refreshTick}><PolymarketTable refreshKey={refreshTick} bust={f.bustKey} short /></ErrorBoundary>
                             </Slot>
                         </div>
                     </Section>

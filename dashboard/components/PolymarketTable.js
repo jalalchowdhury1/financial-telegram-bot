@@ -99,7 +99,10 @@ const macroBet = (t) => ({
   label: t.label && t.label !== 'Yes' ? t.label : null,
 });
 
-export default function PolymarketTable({ refreshKey = null, bust = false }) {
+/** v2's tiles are narrow on a phone: "US recession by end of 2026?" → "US recession by 2026?", so the year shows. */
+const tileTitle = (s) => s.replace(/ by end of /, ' by ');
+
+export default function PolymarketTable({ refreshKey = null, bust = false, short = false }) {
   const [board, setBoard] = useState(null);
   const [status, setStatus] = useState('loading'); // loading | ready | empty | error
   const [selected, setSelected] = useState(null);
@@ -177,7 +180,7 @@ export default function PolymarketTable({ refreshKey = null, bust = false }) {
             <div className="pm-macro">
               {macro.map((t) => (
                 <button type="button" key={t.slug || t.title} className="pm-tile" onClick={() => setSelected(macroBet(t))}>
-                  <span className="pm-tile-title">{t.title}</span>
+                  <span className="pm-tile-title">{short ? tileTitle(t.title) : t.title}</span>
                   {t.label && t.label !== 'Yes' && <span className="pm-tile-label">{t.label}</span>}
                   <span className="pm-tile-row">
                     <span className="pm-tile-odds">{pct(t.odds)}</span>
