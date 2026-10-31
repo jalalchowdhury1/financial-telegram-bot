@@ -63,6 +63,61 @@ function Unavailable({ what, onRetry }) {
     return <button type="button" className="card-unavailable" onClick={onRetry}>{what} unavailable · tap ↻</button>;
 }
 
+const DAY = 86400000;
+
+/**
+ * F&G's year as one line on a zoom-in timeline: 1Y · 1M · 1W · 1D · Now sit evenly spaced (each
+ * stretch drawn in its own time), CNN's readings as dots, the history sheet's daily record between
+ * them, the zones behind. A stretch with no daily record is a dashed straight line, not a guess.
+ */
+function FgTrail({ fg }) {
+    const sheet = useChart('cnnFearGreed', fg._meta?.proxy ? null : fg.score);
+    const now = Date.parse(String(fg.asOf || new Date().toISOString()).slice(0, 10));
+    const cells = fgHistoryCells(fg); // Prev Close, 1 Week, 1 Month, 1 Year
+    const anchors = [[365, '1Y', 3], [30, '1M', 2], [7, '1W', 1], [1, '1D', 0]]
+        .map(([d, k, i]) => ({ k, t: now - d * DAY, ...cells[i], v: cells[i].val }))
+        .filter((a) => a.v != null)
+        .concat({ k: 'Now', t: now, v: Math.round(fg.score) });
+    const last = anchors.length - 1;
+    if (!last) return null;
+    const X = (t) => {
+        let j = 0;
+        while (j < last - 1 && t > anchors[j + 1].t) j++;
+        return ((j + Math.min(1, Math.max(0, (t - anchors[j].t) / (anchors[j + 1].t - anchors[j].t)))) / last) * 100;
+    };
+    const daily = (sheet?.points || []).map((p) => ({ t: Date.parse(p.date), v: p.value }))
+        .filter((p) => Number.isFinite(p.v) && p.t > anchors[0].t && p.t < now && anchors.every((a) => Math.abs(a.t - p.t) >= DAY / 2));
+    const pts = [...anchors, ...daily].sort((a, b) => a.t - b.t);
+    let solid = '', dashed = '';
+    for (let i = 1; i < pts.length; i++) {
+        const seg = `M${X(pts[i - 1].t)} ${100 - pts[i - 1].v}L${X(pts[i].t)} ${100 - pts[i].v}`;
+        if (pts[i].t - pts[i - 1].t > 10 * DAY) dashed += seg; else solid += seg;
+    }
+    const arrow = (d) => (d > 0 ? `▲${d}` : d < 0 ? `▼${-d}` : '');
+    return (
+        <div className="v2-fgt" role="img" aria-label={anchors.map((a) => `${a.k} ${a.v}`).join(', ')}>
+            <div className="v2-fgt-plot">
+                <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                    {FG_ZONES.map((z, i) => <rect key={z.to} className={`v2-fgt-band is-${z.tone}`} x="0" width="100" y={100 - z.to} height={z.to - (i ? FG_ZONES[i - 1].to : 0)} />)}
+                    <path className="v2-fgt-gap" d={dashed} />
+                    <path className="v2-fgt-line" d={solid} />
+                </svg>
+                {anchors.map((a) => (
+                    <span key={a.k} className={`v2-fgt-pt tone-${fgTone(a.v)}${a.k === 'Now' ? ' is-now' : ''}`} style={{ left: `${X(a.t)}%`, top: `${100 - a.v}%` }}
+                        title={a.k === 'Now' ? `Now ${a.v}` : `${a.label} ${a.v} · ${a.diff ? `${arrow(a.diff)} to now` : 'same as now'}`}>
+                        {a.k !== 'Now' && <b>{a.v}</b>}
+                    </span>
+                ))}
+            </div>
+            <div className="v2-fgt-axis">
+                {anchors.map((a) => (
+                    <span key={a.k} style={{ left: `${X(a.t)}%` }}>{a.k}{a.diff ? <small className={a.diff > 0 ? 'tone-good' : 'tone-bad'}>{arrow(a.diff)}</small> : null}</span>
+                ))}
+            </div>
+        </div>
+    );
+}
+
 /** 0–100 strip with tinted zones and one marker: F&G and RSI read the same way. */
 function Scale({ value, zones, ticks }) {
     let from = 0;
@@ -1135,15 +1190,7 @@ export default function DashboardV2() {
                                                     <HeroValue markKey="cnnFearGreed" raw={fg._meta?.proxy ? null : fg.score} className={`v2-num-xl tone-${fgTone(fg.score)}`}>{Math.round(fg.score)}</HeroValue>
                                                     <span className={`v2-gauge-word tone-${fgTone(fg.score)}`}>{fg.rating}</span>
                                                 </div>
-                                                <Scale value={fg.score} zones={FG_ZONES} ticks={[0, 25, 50, 75, 100]} />
-                                                <div className="v2-history">
-                                                    {fgHistoryCells(fg).map(({ label, val, diff }) => (
-                                                        <div key={label}>
-                                                            <span className="v2-history-label">{label}</span>
-                                                            <span className="v2-history-val">{val ?? '-'}{diff != null && diff !== 0 && <small className={diff > 0 ? 'tone-good' : 'tone-bad'}>{diff > 0 ? '▲' : '▼'}{Math.abs(diff)}</small>}</span>
-                                                        </div>
-                                                    ))}
-                                                </div>
+                                                <FgTrail fg={fg} />
                                             </>
                                         )}</Body>
                                     </ErrorBoundary>

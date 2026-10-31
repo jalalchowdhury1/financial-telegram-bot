@@ -251,11 +251,6 @@ body:has(.v2) { background: #0b0c0e; }
 .v2-scale-ticks span:first-child { transform: none; }
 .v2-scale-ticks span:last-child { transform: translateX(-100%); }
 
-.v2-history { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
-.v2-history > div { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.v2-history-label { font-size: 12px; color: var(--ink-3); white-space: nowrap; }
-.v2-history-val { font-size: 14px; font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.v2-history-val small { font-size: 11px; margin-left: 5px; }
 
 /* ---------- the read (pulse verdicts) ---------- */
 .v2-readout {
@@ -463,8 +458,6 @@ body:has(.v2) { background: #0b0c0e; }
   .v2-facts dd { font-size: 13px; }
   .v2-facts dd span { display: block; margin: 2px 0 0; font-size: 12px; }
   .v2-num-xl { font-size: 30px; }
-  .v2-history { gap: 8px; }
-  .v2-history-val { font-size: 14px; }
   .v2-readout { grid-template-columns: minmax(0, 1fr); }
   .v2-read { padding: 11px 16px; flex-direction: row; align-items: baseline; gap: 12px; }
   .v2-read-text { font-size: 13px; flex: none; }
@@ -1038,3 +1031,21 @@ body:has(.v2) { background: #0b0c0e; }
   .v2-trio.is-calm .v2-fred .v2-card-head { gap: 8px; }
   .v2-trio.is-calm :is(.v2-hr, .v2-fred-badge small), .v2-trio.is-calm .v2-fred:not(.is-lit) .v2-fred-badge { display: none; }
 }
+
+/* ---------- fear & greed r9: the year as one line (1Y · 1M · 1W · 1D · Now evenly spaced), zones behind ---------- */
+.v2-fgt { margin-top: 22px; }
+.v2-fgt-plot { position: relative; height: 88px; margin: 0 12px; }
+.v2-fgt-plot svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.v2-fgt-band { opacity: .08; }
+.v2-fgt-band.is-bad { fill: var(--down); } .v2-fgt-band.is-caution { fill: var(--warn); opacity: .06; } .v2-fgt-band.is-flat { fill: var(--ink-3); opacity: .04; }
+.v2-fgt-band.is-good { fill: var(--up); opacity: .04; } .v2-fgt-band.is-good2 { fill: var(--up); opacity: .07; }
+.v2-fgt-line, .v2-fgt-gap { fill: none; stroke: var(--ink-2); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.v2-fgt-gap { stroke: var(--ink-3); stroke-width: 1.2; stroke-dasharray: 3 4; }
+.v2-fgt-pt { position: absolute; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 999px; background: currentColor; box-shadow: 0 0 0 3px var(--surface); }
+.v2-fgt-pt b { position: absolute; bottom: 9px; left: 50%; transform: translateX(-50%); font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; text-shadow: 0 0 3px var(--surface), 0 0 3px var(--surface); }
+.v2-fgt-pt.is-now { width: 11px; height: 11px; margin: -5.5px 0 0 -5.5px; box-shadow: 0 0 0 3px var(--surface), 0 0 0 7px color-mix(in srgb, currentColor 22%, transparent); }
+.v2-fgt-axis { position: relative; height: 16px; margin: 10px 12px 0; font-size: 11px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.v2-fgt-axis span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+.v2-fgt-axis span:first-child { transform: translateX(-12px); }
+.v2-fgt-axis span:last-child { transform: translateX(calc(-100% + 12px)); color: var(--ink-2); }
+.v2-fgt-axis small { margin-left: 4px; font-size: 10.5px; }

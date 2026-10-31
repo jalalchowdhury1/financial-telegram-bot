@@ -114,3 +114,13 @@ it('USD/BDT adds the compound yearly rise (and its dashed steady path) on 5Y and
     expect(document.querySelector('.v2-taka-cagr').textContent).toBe('+7.2%/yr'); // 80 → 160 in 10.0 years
     expect(document.querySelector('.v2-taka-pace')).not.toBeNull();
 });
+
+it('Fear & Greed draws its Prev / 1W / 1M / 1Y readings as one trail, each with its move to now', async () => {
+    const fg = { score: 26.2, rating: 'FEAR', previousClose: 34.6, previousWeek: 16.7, previousMonth: 30.3, previousYear: 'N/A', asOf: '2026-10-30T23:59:48+00:00', _meta: { source: 'CNN' } };
+    mockRoutes({ '/api/fear-greed': Promise.resolve({ status: 200, json: async () => fg }) });
+    render(<DashboardV2 />);
+    await waitFor(() => expect(document.querySelector('.v2-fgt')).not.toBeNull());
+    expect([...document.querySelectorAll('.v2-fgt-axis span')].map((e) => e.textContent)).toEqual(['1M▼4', '1W▲9', '1D▼9', 'Now']); // no 1Y: the proxy tier's 'N/A'
+    expect([...document.querySelectorAll('.v2-fgt-pt b')].map((e) => e.textContent)).toEqual(['30', '17', '35']);
+    expect(document.querySelector('.v2-fgt-pt.is-now').className).toMatch(/tone-caution/);
+});
