@@ -8,7 +8,7 @@ const factors = {
         rows: [
             { label: 'SPY vs 200-day avg', value: '+6.3%', test: '> 0 → +1, else −1', hit: true, effect: '+1' },
             { label: 'Fear & Greed',       value: '65',    test: '≥ 50 → +1 · < 30 → −1 · else 0', hit: true, effect: '+1' },
-            { label: 'HYG/LQD 20d',        value: '+2.1%', test: '> 0 → +1 · < −1 → −1 · else 0', hit: true, effect: '+1' },
+            { label: 'Junk spread 20d',    value: '-8bp', test: '+1 if narrower · −1 if 25bp+ wider', hit: true, effect: '+1' },
         ],
     },
     recession: {
@@ -42,7 +42,7 @@ const factors = {
         rows: [
             { label: 'sentiment vs price', value: 'F&G 65 · SPY +6.3% vs 200d',     test: 'F&G < 35 with SPY > +3% · or F&G > 65 with SPY < −3%', hit: false, effect: '' },
             { label: '2s10s vs 3m10y',    value: '2s10s 0.36 · 3m10y -0.15',       test: 'Opposite signs between 2s10s and 3m10y',               hit: false, effect: '' },
-            { label: 'credit vs equities', value: 'SPY +6.3% vs 200d · HYG/LQD +2.1%', test: 'SPY > 0% vs 200d with HYG/LQD 20d < −1.5%',       hit: false, effect: '' },
+            { label: 'credit vs equities', value: 'SPY +6.3% vs 200d · junk spread -8bp', test: 'Splits if SPY is above 200d · and the junk spread is 25bp+ wider',       hit: false, effect: '' },
             { label: 'breadth vs index',   value: 'SPY +3.2% from 52w high · RSP/SPY +1.2%', test: 'SPY within 2% of high with RSP/SPY 20d < −1.5%', hit: false, effect: '' },
         ],
     },
@@ -54,7 +54,7 @@ const sampleData = {
     asOf: '2026-09-18 15:30 UTC',
     state: '1. SPY 761.69...',
     pills: {
-        regime:    { verdict: 'risk-on',  p: 0.87, by: 'jev',  reason: 'SPY above 200d MA, F&G above 50, HYG/LQD positive → score 2', jev: { verdict: 'risk-on', p: 0.87 } },
+        regime:    { verdict: 'risk-on',  p: 0.87, by: 'jev',  reason: 'SPY above 200d MA, F&G above 50, junk spread narrower → score 2', jev: { verdict: 'risk-on', p: 0.87 } },
         recession: { verdict: 'low',      p: 0.62, by: 'jev',  reason: 'Sahm rule 0.16, yield curve 0.36, claims 221K',                jev: { verdict: 'low', p: 0.62 } },
         breadth:   { verdict: 'broad',    p: 0.74, by: 'jev',  reason: 'RSP/SPY 20d positive, IWM/SPY 20d positive',                   jev: { verdict: 'broad', p: 0.74 } },
         hedging:   { verdict: 'fair',     p: 0.55, by: 'rule', reason: 'IV percentile 34, VRP 4.8',                                    jev: { verdict: 'fair', p: 0.55 } },
@@ -213,11 +213,11 @@ describe('JevPills', () => {
         // Factor rows show plain names
         expect(screen.getAllByText('S&P vs 200-day').length).toBeGreaterThanOrEqual(1);
         expect(screen.getAllByText('Fear & Greed').length).toBeGreaterThanOrEqual(1);
-        expect(screen.getAllByText('Junk vs safe bonds').length).toBeGreaterThanOrEqual(1);
+        expect(screen.getAllByText('Junk bond spread').length).toBeGreaterThanOrEqual(1);
         // Factor row values present
         expect(screen.getAllByText('+6.3%').length).toBeGreaterThanOrEqual(1);
         expect(screen.getAllByText('65').length).toBeGreaterThanOrEqual(1);
-        expect(screen.getAllByText('+2.1%').length).toBeGreaterThanOrEqual(1);
+        expect(screen.getAllByText('-8bp').length).toBeGreaterThanOrEqual(1);
     });
 
     test('Escape key closes the dialog', () => {
@@ -281,15 +281,15 @@ describe('JevPills', () => {
     });
 
     test('modal explains what the pill measures, each input, and data freshness', () => {
-        const withMeta = { ...sampleData, _meta: { ...(sampleData._meta || {}), jev: 'ok', dataAsOf: { breadth: '2026-09-18' } } };
+        const withMeta = { ...sampleData, _meta: { ...(sampleData._meta || {}), jev: 'ok', dataAsOf: { credit: '2026-09-18' } } };
         render(<JevPills data={withMeta} loading={false} />);
         fireEvent.click(screen.getByRole('button', { name: /Regime/ }));
         const dlg = screen.getByRole('dialog');
         expect(dlg).toHaveTextContent('Is the market in a go mood?');
         // today's verdict is the lit row of the key
         expect(dlg.querySelector('.jev-key-on')).toHaveTextContent('score 2+');
-        expect(dlg).toHaveTextContent('Junk vs safe bonds');
-        expect(dlg).toHaveTextContent('risk appetite');
+        expect(dlg).toHaveTextContent('Junk bond spread');
+        expect(dlg).toHaveTextContent('Junk yield over Treasuries');
         expect(dlg).not.toHaveTextContent('not fired');
         expect(dlg.querySelector('.jev-modal-sub')).toHaveTextContent('Sep 18');
     });
@@ -346,7 +346,7 @@ describe('JevPills', () => {
 describe('PILL_FEEDS lists every feed a pill reads', () => {
     const { PILL_FEEDS } = require('../jevExplain');
     test('regime and conflict include SPY and Fear & Greed', () => {
-        expect(PILL_FEEDS.regime).toEqual(expect.arrayContaining(['spy', 'fg', 'breadth']));
-        expect(PILL_FEEDS.conflict).toEqual(expect.arrayContaining(['spy', 'fg', 'fred', 'breadth']));
+        expect(PILL_FEEDS.regime).toEqual(expect.arrayContaining(['spy', 'fg', 'credit']));
+        expect(PILL_FEEDS.conflict).toEqual(expect.arrayContaining(['spy', 'fg', 'fred', 'breadth', 'credit']));
     });
 });

@@ -298,10 +298,10 @@ describe('assemblePills — rule verdicts', () => {
 // ---------------------------------------------------------------------------
 
 describe('assemblePills — Jev override', () => {
-    test('jevAnswers with p >= 0.6 override rule', () => {
+    test('Jev at p >= 0.6 nudges a default rule verdict one step; a fired rule stands', () => {
         const jevAnswers = {
-            regime: { verdict: 'risk-off', p: 0.82 },
-            recession: { verdict: 'rising', p: 0.71 },
+            regime: { verdict: 'risk-off', p: 0.82 }, // rule fired risk-on → rule stands
+            recession: { verdict: 'rising', p: 0.71 }, // rule at its default (low) → Jev nudges
         };
 
         const result = assemblePills({
@@ -311,12 +311,13 @@ describe('assemblePills — Jev override', () => {
             mode: 'on',
         });
 
-        expect(result.pills.regime.by).toBe('jev');
-        expect(result.pills.regime.verdict).toBe('risk-off');
-        expect(result.pills.regime.p).toBe(0.82);
+        expect(result.pills.regime.by).toBe('rule');
+        expect(result.pills.regime.verdict).toBe('risk-on');
+        expect(result.pills.regime.jev).toEqual({ verdict: 'risk-off', p: 0.82 });
 
         expect(result.pills.recession.by).toBe('jev');
         expect(result.pills.recession.verdict).toBe('rising');
+        expect(result.pills.recession.rule).toBe('low');
     });
 
     test('jevAnswers with p < 0.6 are ignored', () => {
@@ -597,15 +598,28 @@ describe('assemblePills — jev field on pills', () => {
         expect(result.pills.regime.by).toBe('rule');
     });
 });
-describe('breadth legs pass through toData into the regime row', () => {
-    test('HYG/LQD row carries both legs from the raw breadth payload', () => {
+describe('the junk spread (raw.hyOas20) feeds the regime credit vote', () => {
+    test('30 Oct 2026: HYG/LQD −1.24% no longer votes risk-off; HY spread +2 bp → 0, regime neutral', () => {
         const raw = JSON.parse(JSON.stringify(sampleRaw));
-        raw.breadth.pairs.hygLqd = { ...raw.breadth.pairs.hygLqd, chg20Pct: -0.0125, legs: { HYG: -1.29, LQD: -1.28 } };
+        raw.spy.ma200 = { pct: 3.7 };
+        raw.fg.score = 26;
+        raw.breadth.pairs.hygLqd = { ...raw.breadth.pairs.hygLqd, chg20Pct: -1.24 };
+        raw.hyOas20 = { value: 2, asOf: '2026-10-29' };
         const out = assemblePills({ raw, jevAnswers: null, yesterday: null, mode: 'rules' });
-        const row = out.factors.regime.rows.find((r) => r.label === 'HYG/LQD 20d');
-        expect(row.value).toBe('-0.01%');
-        expect(row.note).toBe('HYG -1.3% · LQD -1.3%');
-        expect(out.pills.regime.reason).toContain('legs 20d: HYG -1.3% · LQD -1.3%');
+        const row = out.factors.regime.rows.find((r) => r.label === 'Junk spread 20d');
+        expect(row).toMatchObject({ value: '+2bp', effect: '0', hit: false });
+        expect(out.pills.regime.verdict).toBe('neutral');
+        expect(out._meta.dataAsOf.credit).toBe('2026-10-29');
+    });
+
+    test('25 bp+ wider votes −1; narrower votes +1', () => {
+        const raw = JSON.parse(JSON.stringify(sampleRaw));
+        raw.hyOas20 = { value: 40, asOf: '2026-10-29' };
+        let row = assemblePills({ raw, jevAnswers: null, yesterday: null, mode: 'rules' }).factors.regime.rows[2];
+        expect(row).toMatchObject({ label: 'Junk spread 20d', value: '+40bp', effect: '−1' });
+        raw.hyOas20 = { value: -12, asOf: '2026-10-29' };
+        row = assemblePills({ raw, jevAnswers: null, yesterday: null, mode: 'rules' }).factors.regime.rows[2];
+        expect(row).toMatchObject({ value: '-12bp', effect: '+1' });
     });
 });
 
@@ -753,7 +767,7 @@ describe('repairPillInputs', () => {
 
     test('never throws — returns inputSources even with null raw', async () => {
         const result = await repairPillInputs(null, {});
-        expect(result).toEqual({ t10y3m: 'fred-route', nfci: 'fred-route', claims: 'fred-route', sahm: 'fred-route' });
+        expect(result).toEqual({ t10y3m: 'fred-route', nfci: 'fred-route', claims: 'fred-route', sahm: 'fred-route', hyOas20: 'fred-route' });
     });
 });
 
@@ -832,7 +846,7 @@ describe('repairPillInputs — v3.1 tiers', () => {
         const raw = { fred: null };
         const faults = new Set(['hm_horsemen', 'hm_sheet', 'hm_fredcsv', 'hm_treasury', 'hm_fred', 'jev_lastgood']);
         const src = await repairPillInputs(raw, { fredKey: 'k', faults, now: new Date('2026-01-07'), store });
-        expect(src).toEqual({ t10y3m: null, nfci: null, claims: null, sahm: null });
+        expect(src).toEqual({ t10y3m: null, nfci: null, claims: null, sahm: null, hyOas20: null });
         expect(store.load).not.toHaveBeenCalled();
     });
 
@@ -847,13 +861,26 @@ describe('repairPillInputs — v3.1 tiers', () => {
         };
         const diag = {};
         const src = await repairPillInputs(raw, { fredKey: 'k', now: new Date('2026-01-07'), store, diag });
-        expect(src).toEqual({ t10y3m: 'fred', nfci: 'fred-route', claims: 'fred-route', sahm: 'fred-route' });
+        // two points are too few for a 20-day change → hyOas20 has no live tier here
+        expect(src).toEqual({ t10y3m: 'fred', nfci: 'fred-route', claims: 'fred-route', sahm: 'fred-route', hyOas20: null });
         expect(store.save).toHaveBeenCalledWith('jev-claims', { value: 203.25, asOf: '2026-01-03', source: 'fred-route' });
         expect(store.save).toHaveBeenCalledWith('jev-sahm', { value: 0.03, asOf: '2025-12-01', source: 'fred-route' });
         expect(store.save).toHaveBeenCalledWith('jev-nfci', { value: -0.56, asOf: '2026-01-02', source: 'fred-route' });
         expect(store.save).toHaveBeenCalledWith('jev-t10y3m', { value: 0.9, asOf: '2026-01-06', source: 'fred' });
         expect(diag.seeded.sort()).toEqual(['claims', 'nfci', 'sahm']);
         expect(fetchSheetLkg).not.toHaveBeenCalled(); // no miss → no Sheet fetch
+    });
+
+    test('hyOas20: FRED BAMLH0A0HYM2 → 20-observation change in bp, dated by its last point', async () => {
+        const store = mkStore();
+        // FRED answers newest first: 3.26 today, 3.24 twenty observations back
+        const hy = Array.from({ length: 30 }, (_, i) => ({ date: `2026-01-${String(31 - i).padStart(2, '0')}`, value: i === 0 ? 3.26 : i === 20 ? 3.24 : 3.5 }));
+        fredObservations.mockImplementation(async (id) => (id === 'BAMLH0A0HYM2' ? hy : [{ date: '2026-01-31', value: 0.9 }, { date: '2026-01-30', value: 0.85 }]));
+        const raw = {};
+        const src = await repairPillInputs(raw, { fredKey: 'k', now: new Date('2026-02-01'), store });
+        expect(raw.hyOas20).toEqual({ value: 2, asOf: '2026-01-31' });
+        expect(src.hyOas20).toBe('fred');
+        expect(fredObservations).toHaveBeenCalledWith('BAMLH0A0HYM2', 'k', { limit: 40 });
     });
 
     test('seeding is skipped in fault mode', async () => {
@@ -872,7 +899,8 @@ describe('assemblePills — dataAsOf covers every feed a pill reads', () => {
         };
         const p = assemblePills({ raw, jevAnswers: null, yesterday: null, mode: 'rules' });
         expect(p._meta.dataAsOf.spy).toBe('2026-09-18');
-        expect(p._meta.dataAsOf.fg).toBe(p.asOf.slice(0, 10));
+        // New York's date: after 8 PM ET the UTC date is already tomorrow
+        expect(p._meta.dataAsOf.fg).toBe(new Date(p.asOf).toLocaleDateString('en-CA', { timeZone: 'America/New_York' }));
     });
 
     test('no chartHistory / no score → null, never a made-up date', () => {
@@ -897,12 +925,30 @@ describe('pillsDegraded — what keeps a pills answer out of the edge cache', ()
     });
 });
 
-import { logTodaysVerdicts } from '../../app/api/jev-pills/route';
+import { logTodaysVerdicts, sessionInView } from '../../app/api/jev-pills/route';
 
 describe('logTodaysVerdicts', () => {
     const payload = { pills: { regime: { verdict: 'risk-on' } }, state: 'abc' };
     const raw = { spy: { current: 500 } };
-    const now = new Date('2026-10-19T12:00:00Z');
+    const now = new Date('2026-10-19T21:00:00Z'); // Mon 5 PM ET, after the close
+
+    test('mid-session (and the first 30 min after the close) never writes the baseline', async () => {
+        const log = jest.fn().mockResolvedValue(true);
+        expect(await logTodaysVerdicts(payload, raw, new Set(), { now: new Date('2026-10-19T15:00:00Z'), log })).toBe(false);
+        expect(await logTodaysVerdicts(payload, raw, new Set(), { now: new Date('2026-10-19T20:15:00Z'), log })).toBe(false);
+        expect(log).not.toHaveBeenCalled();
+    });
+
+    test("Monday pre-market logs Friday's session: the numbers are Friday's close", async () => {
+        const log = jest.fn().mockResolvedValue(true);
+        await logTodaysVerdicts(payload, raw, new Set(), { now: new Date('2026-10-19T12:00:00Z'), log });
+        expect(log.mock.calls[0][0]).toBe('2026-10-16');
+    });
+
+    test('sessionInView: trading today → today; Saturday → Friday', () => {
+        expect(sessionInView(new Date('2026-10-19T15:00:00Z'))).toEqual({ date: '2026-10-19', trading: true });
+        expect(sessionInView(new Date('2026-10-31T15:00:00Z'))).toEqual({ date: '2026-10-30', trading: false });
+    });
 
     test('fault-injected request never writes the day log', async () => {
         const log = jest.fn().mockResolvedValue(true);

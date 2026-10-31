@@ -11,7 +11,8 @@ describe('JevPills — one plain "why" line per pill', () => {
     test('each verdict has its line, from the live payload', () => {
         render(<JevPills data={live} loading={false} />);
         const why = (label) => pill(label).querySelector('.jev-pill-why')?.textContent;
-        expect(why('Regime')).toBe('✓ uptrend, junk leading');
+        // the 4 Oct payload predates the 30 Oct credit vote (HYG/LQD row) → its summary
+        expect(why('Regime')).toBe('Score 2 → risk-on (risk-on needs ≥ 2, risk-off ≤ −1)');
         expect(why('Recession')).toBe('0 of 4 warnings tripped');
         expect(why('Breadth')).toBe('Avg stock −4.3% vs SPY · below its 50-day trend');
         expect(why('Hedges')).toBe('Options cheap: bottom 15% of the year');
@@ -29,7 +30,7 @@ describe('JevPills — one plain "why" line per pill', () => {
         render(<JevPills data={data} loading={false} />);
         expect(pill('Breadth').querySelector('.jev-pill-why')).toBeNull();
         expect(pill('Hedges').querySelector('.jev-pill-why')).toBeNull();
-        expect(within(pill('Regime')).getByText('✓ uptrend, junk leading')).toBeInTheDocument();
+        expect(within(pill('Recession')).getByText('0 of 4 warnings tripped')).toBeInTheDocument();
     });
 
     test('Jev overrides the rule with another verdict: the line is labelled as the rule', () => {

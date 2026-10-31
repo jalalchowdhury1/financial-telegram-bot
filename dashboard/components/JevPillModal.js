@@ -41,14 +41,14 @@ function friendly(v) {
  * Which sources does this pill read?
  */
 const PILL_SOURCE_KEYS = {
-    regime: ['spy', 'fg', 'breadth'],
+    regime: ['spy', 'fg'],
     recession: ['fred'],
     breadth: ['breadth'],
     hedging: ['vol'],
     conflict: ['spy', 'fg', 'fred', 'breadth'],
 };
 
-const PILL_BACKUP_KEYS = { recession: ['sahm', 'claims', 'nfci'], conflict: ['t10y3m'] };
+const PILL_BACKUP_KEYS = { regime: ['hyOas20'], recession: ['sahm', 'claims', 'nfci'], conflict: ['t10y3m', 'hyOas20'] };
 
 const PROVIDER_NAMES = {
     polygon: 'Polygon', cnbc: 'CNBC', 'cnbc-quote': 'CNBC', cboe: 'CBOE', fred: 'FRED', 'st. louis fed': 'FRED', yahoo: 'Yahoo',

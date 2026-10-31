@@ -15,11 +15,11 @@ import { judgeMany } from '../../../lib/jev';
 import { JEV_QUESTIONS, toData, buildState } from '../../../lib/jevBrief';
 import { assemblePills, pillsDegraded } from '../../../lib/jevPills';
 import { logVerdicts, yesterday as loadYesterday } from '../../../lib/jevLog';
-import { FRESH, claims4wkFromHistory, sahmFromHistory, parseTreasurySpreadCsv, resolvePillInput } from '../../../lib/jevInputs';
+import { FRESH, claims4wkFromHistory, sahmFromHistory, chg20bpFromHistory, parseTreasurySpreadCsv, resolvePillInput } from '../../../lib/jevInputs';
 import { makePillStore } from '../../../lib/jevStore';
 import { fetchSheetLkg } from '../../../lib/sheetLkg';
 import { parseFredGraphCsv } from '../../../lib/horsemen';
-import { etParts } from '../../../lib/marketClock';
+import { etParts, sessionOf, latestCompletedSessionDate } from '../../../lib/marketClock';
 
 export const fetchCache = 'default-cache';
 // Outage path: sibling wait (10 s) + backup tiers with their own timeouts. Valid on every Vercel plan.
@@ -70,6 +70,8 @@ async function fetchSibling(baseOrigin, path, faults) {
  *   nfci    sheet (dashboard_lkg snapshot)                        → fredcsv → last-good
  *   claims  horsemen (sibling's repaired ICSA history, 4-wk avg) → sheet → fredcsv → last-good
  *   sahm    horsemen (sibling's repaired UNRATE history, Sahm)    → sheet → fredcsv → last-good
+ *   hyOas20 fred API (BAMLH0A0HYM2, 20-day change in bp)          → fredcsv → last-good
+ *           (always resolved here, like t10y3m: the regime's credit vote since 30 Oct 2026)
  *
  * `fredcsv` is FRED's keyless CSV — a documented phantom on Vercel (AGENTS.md),
  * kept as a harmless 5 s last attempt. Last-good = /tmp + KV (lib/jevStore.js),
@@ -82,7 +84,7 @@ async function fetchSibling(baseOrigin, path, faults) {
  * `{ tried: { input: [...] }, seeded: [...] }` for `_meta.inputTried`.
  */
 export async function repairPillInputs(raw, { fredKey, faults = new Set(), now = new Date(), store = null, diag = null } = {}) {
-    const inputSources = { t10y3m: 'fred-route', nfci: 'fred-route', claims: 'fred-route', sahm: 'fred-route' };
+    const inputSources = { t10y3m: 'fred-route', nfci: 'fred-route', claims: 'fred-route', sahm: 'fred-route', hyOas20: 'fred-route' };
     if (!raw) return inputSources;
     const lg = store || makePillStore();
     const tried = {};
@@ -223,6 +225,24 @@ export async function repairPillInputs(raw, { fredKey, faults = new Set(), now =
         tried.sahm = r.tried;
     };
 
+    // -- 5. High-yield spread, 20-day change in bp. HYG/LQD (the old credit vote) mostly
+    // tracked Treasury yields: LQD is long-duration, so falling rates sank the ratio while
+    // junk spreads sat flat (30 Oct 2026: HYG/LQD −1.24% voted risk-off, HY OAS +2 bp).
+    const hyOas20 = async () => {
+        const sources = [];
+        if (fredKey) {
+            sources.push({
+                name: 'fred', freshnessDays: FRESH.HYOAS, derive: chg20bpFromHistory,
+                fetch: async () => (await fredObservations('BAMLH0A0HYM2', fredKey, { limit: 40 })).slice().reverse(),
+            });
+        }
+        sources.push(fredcsv('BAMLH0A0HYM2', FRESH.HYOAS, chg20bpFromHistory));
+        const r = await resolvePillInput({ sources, faults: pillFaults, now, lastGoodKey: 'jev-hyoas20', maxStaleMs: LG_MAX_MS, store: lg });
+        raw.hyOas20 = r.value == null ? null : { value: r.value, asOf: r.asOf };
+        inputSources.hyOas20 = r.source;
+        tried.hyOas20 = r.tried;
+    };
+
     // Seed the last-good tier from the sibling's own healthy value (never in fault mode).
     async function seed(key, cur) {
         if (faults.size > 0) return;
@@ -230,22 +250,34 @@ export async function repairPillInputs(raw, { fredKey, faults = new Set(), now =
     }
 
     // Independent inputs → run together so the worst outage path is the slowest chain, not their sum.
-    await Promise.all([t10y3m, nfci, claims, sahm].map((fn) => fn().catch(() => {})));
+    await Promise.all([t10y3m, nfci, claims, sahm, hyOas20].map((fn) => fn().catch(() => {})));
 
     if (diag && typeof diag === 'object') { diag.tried = tried; diag.seeded = seeded; }
     return inputSources;
 }
 
 /**
- * Log today's verdicts (best effort, never throws). The log is first-write-wins
- * per day and becomes tomorrow's "since yesterday" baseline, so a fault-injected
- * (?_fail=) or degraded request must never write it. Keyed by the New York date:
- * the UTC date flips at 8 PM ET and an evening build would claim tomorrow's slot.
+ * The session today's numbers describe: today's while it trades (and for 30 min after the
+ * close, while feeds settle), otherwise the last closed one. New York dates throughout.
+ */
+export function sessionInView(now = new Date()) {
+    const { date, min } = etParts(now.getTime());
+    const s = sessionOf(date);
+    const trading = !!(s && min >= s.open && min < s.close + 30);
+    return { date: trading ? date : latestCompletedSessionDate(now.getTime()), trading };
+}
+
+/**
+ * Log the verdicts of a CLOSED session (best effort, never throws). The log is first-write-wins
+ * per day and becomes the next session's "since" baseline, so a fault-injected (?_fail=) or
+ * degraded request must never write it, and neither may a mid-session one: the first build of
+ * the day used to win, so the baseline was whatever the page saw at 9 AM (30 Oct 2026 audit).
  */
 export async function logTodaysVerdicts(payload, raw, faults, { now = new Date(), log = logVerdicts } = {}) {
     if (faults && faults.size > 0) return false;
     if (payload._meta?.hasErrors) return false;
-    const todayStr = etParts(now.getTime()).date;
+    const { date: todayStr, trading } = sessionInView(now);
+    if (trading) return false;
     try {
         return await log(todayStr, {
             date: todayStr,
@@ -309,8 +341,8 @@ export async function GET(request) {
             jevAnswers = await judgeMany(state, JEV_QUESTIONS);
         }
 
-        // Load yesterday's verdicts from KV
-        const yesterdayData = await loadYesterday();
+        // Baseline: the newest logged session before the one these numbers describe
+        const yesterdayData = await loadYesterday(sessionInView().date);
 
         // Assemble the payload
         const payload = assemblePills({ raw, jevAnswers, yesterday: yesterdayData, mode, inputSources });

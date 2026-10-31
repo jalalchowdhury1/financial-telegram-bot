@@ -123,14 +123,14 @@ export async function readDay(dateStr) {
 }
 
 /**
- * Get the newest logged day's data before today.
+ * Get the newest logged day's data before `before` (default: today in New York).
  * @returns {object|null} payload with `.date` or null
  */
-export async function yesterday() {
+export async function yesterday(before) {
     try {
         const days = await kvLrange('ftb:jev:days');
         if (!days || !days.length) return null;
-        const todayStr = etParts(Date.now()).date; // the log is keyed by New York date
+        const todayStr = before || etParts(Date.now()).date; // the log is keyed by New York date
         const sorted = [...days].sort().reverse();
         for (const d of sorted) {
             if (d < todayStr) {

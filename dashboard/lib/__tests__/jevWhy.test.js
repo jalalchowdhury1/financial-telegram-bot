@@ -4,8 +4,8 @@ import live from './fixtures/jev-pills-2026-10-04.json';
 
 // Live /api/jev-pills saved 2026-10-04 (public market numbers only).
 describe('pillWhy — live payload', () => {
-    test('regime: the votes that fired', () => {
-        expect(pillWhy(live, 'regime')).toBe('✓ uptrend, junk leading');
+    test('regime: a payload from before the 30 Oct 2026 credit vote (HYG/LQD row) falls back to its summary', () => {
+        expect(pillWhy(live, 'regime')).toBe('Score 2 → risk-on (risk-on needs ≥ 2, risk-off ≤ −1)');
     });
     test('recession: how many warnings tripped', () => {
         expect(pillWhy(live, 'recession')).toBe('0 of 4 warnings tripped');
@@ -33,8 +33,8 @@ function data(over = {}) {
         breadth: {
             rspSpy: { chg20Pct: 1.5, vs50dPct: 0.5, ...over.rsp },
             iwmSpy: { chg20Pct: 2, ...over.iwm },
-            hygLqd: { chg20Pct: 0.2, ...over.hyg },
         },
+        credit: { oasChg20: -5, ...over.credit },
     };
 }
 const why = (d, pill) => pillWhy({ factors: pillFactors(d), pills: {} }, pill);
@@ -50,10 +50,10 @@ describe('pillWhy — every row label pillFactors emits has a template', () => {
 
 describe('pillWhy — each verdict reads from the rows that fired', () => {
     test('regime with a vote against', () => {
-        expect(why(data({ fg: { score: 22 } }), 'regime')).toBe('✓ uptrend, junk leading · ✗ fear');
-        expect(why(data({ spy: { ma200Pct: -4 }, fg: { score: 22 }, hyg: { chg20Pct: -2 } }), 'regime'))
-            .toBe('✗ downtrend, fear, junk lagging');
-        expect(why(data({ fg: { score: 70 } }), 'regime')).toBe('✓ uptrend, greed, junk leading');
+        expect(why(data({ fg: { score: 22 } }), 'regime')).toBe('✓ uptrend, credit easing · ✗ fear');
+        expect(why(data({ spy: { ma200Pct: -4 }, fg: { score: 22 }, credit: { oasChg20: 40 } }), 'regime'))
+            .toBe('✗ downtrend, fear, credit worry');
+        expect(why(data({ fg: { score: 70 } }), 'regime')).toBe('✓ uptrend, greed, credit easing');
     });
     test('recession warnings name their numbers', () => {
         expect(why(data({ fred: { sahmRule: 0.52 } }), 'recession')).toBe('1 of 4 warnings tripped: Sahm 0.52');
@@ -76,12 +76,12 @@ describe('pillWhy — each verdict reads from the rows that fired', () => {
     test('conflict: each diverging pair, or all agree', () => {
         expect(why(data(), 'conflict')).toBe('All 4 pairs agree');
         expect(why(data({ fg: { score: 72 }, spy: { ma200Pct: -4 } }), 'conflict')).toBe('Greed in a downtrend');
-        expect(why(data({ hyg: { chg20Pct: -2 } }), 'conflict')).toBe('Junk lagging in an uptrend');
+        expect(why(data({ credit: { oasChg20: 40 } }), 'conflict')).toBe('Credit worry in an uptrend');
         expect(why(data({ ten: -0.2 }), 'conflict')).toBe('Two yield curves disagree');
     });
     test('conflict: "in an uptrend" is said once, so two pairs fit the desktop pill', () => {
-        const line = why(data({ fg: { score: 22 }, hyg: { chg20Pct: -2 } }), 'conflict');
-        expect(line).toBe('Fear in an uptrend · junk lagging');
+        const line = why(data({ fg: { score: 22 }, credit: { oasChg20: 40 } }), 'conflict');
+        expect(line).toBe('Fear in an uptrend · credit worry');
         expect(line.length).toBeLessThanOrEqual(33);
     });
 });
@@ -120,8 +120,8 @@ describe('pillWhy — a Jev override never sits over a line that argues the othe
         expect(pillWhy(live, 'hedging')).toBe('Options cheap: bottom 15% of the year');
     });
     test('Jev disagrees: the line says it is the rule talking', () => {
-        expect(pillWhy(withPill('regime', { verdict: 'risk-off', by: 'jev', p: 0.72 }), 'regime'))
-            .toBe('Rule says risk-on · ✓ uptrend, junk leading');
+        expect(pillWhy({ factors: pillFactors(data()), pills: { regime: { verdict: 'neutral', by: 'jev', p: 0.72 } } }, 'regime'))
+            .toBe('Rule says risk-on · ✓ uptrend, greed, credit easing');
         expect(pillWhy(withPill('recession', { verdict: 'high', by: 'jev', p: 0.8 }), 'recession'))
             .toBe('Rule says low · 0 of 4 warnings tripped');
         expect(pillWhy(withPill('breadth', { verdict: 'narrow', by: 'jev', p: 0.7 }), 'breadth'))
@@ -157,8 +157,8 @@ describe('pillWhy — missing inputs are never counted as calm', () => {
         expect(why(data({ fred: { sahmRule: null, claims: null } }), 'recession')).toBe('0 of 2 warnings tripped (Sahm, claims n/a)');
     });
     test('one regime input missing', () => {
-        expect(why(data({ fg: { score: null } }), 'regime')).toBe('✓ uptrend, junk leading (F&G n/a)');
-        expect(why(data({ spy: { ma200Pct: null }, fg: { score: 22 } }), 'regime')).toBe('✓ junk leading · ✗ fear (SPY trend n/a)');
+        expect(why(data({ fg: { score: null } }), 'regime')).toBe('✓ uptrend, credit easing (F&G n/a)');
+        expect(why(data({ spy: { ma200Pct: null }, fg: { score: 22 } }), 'regime')).toBe('✓ credit easing · ✗ fear (SPY trend n/a)');
     });
     test('conflict: "all agree" counts only the pairs that could be checked', () => {
         expect(why(data({ ten: null }), 'conflict')).toBe('All 3 pairs agree (1 pair n/a)');
@@ -166,7 +166,7 @@ describe('pillWhy — missing inputs are never counted as calm', () => {
     });
     test('the payload with every input present is unchanged', () => {
         expect(why(data(), 'recession')).toBe('0 of 4 warnings tripped');
-        expect(why(data(), 'regime')).toBe('✓ uptrend, greed, junk leading');
+        expect(why(data(), 'regime')).toBe('✓ uptrend, greed, credit easing');
         expect(why(data(), 'conflict')).toBe('All 4 pairs agree');
     });
 });

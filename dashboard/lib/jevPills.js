@@ -8,6 +8,7 @@
  */
 
 import { JEV_P_FLOOR } from './jev';
+import { etParts } from './marketClock';
 import {
     toData,
     buildState,
@@ -60,11 +61,13 @@ export function assemblePills({ raw, jevAnswers, yesterday, mode, inputSources =
     const spyHist = Array.isArray(raw?.spy?.chartHistory) ? raw.spy.chartHistory : [];
     const dataAsOf = {
         spy: spyHist.length ? (spyHist[spyHist.length - 1]?.date ?? null) : null,
-        // CNN's gauge is read live at call time, so its data is "through" today
-        fg: Number.isFinite(raw?.fg?.score) ? asOf.slice(0, 10) : null,
+        // CNN's gauge is read live at call time, so its data is "through" today — New York's
+        // today: the UTC date runs a day ahead every evening after 8 PM ET
+        fg: Number.isFinite(raw?.fg?.score) ? etParts(Date.parse(asOf)).date : null,
         breadth: raw?.breadth?.updated_at ?? null,
         vol: raw?.vol?.updated_at ?? null,
         fred: raw?.fred?.yieldCurve?.asOf ?? raw?.fred?.yieldCurve?.date ?? null,
+        credit: raw?.hyOas20?.asOf ?? null,
     };
 
     const jevStatus = mode === 'rules'

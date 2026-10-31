@@ -1,11 +1,12 @@
 /**
  * /api/breadth — ETF breadth ratios (RSP/SPY, IWM/SPY, XLK/XLU, HYG/LQD).
  *
- * Dashboard-only (no Lambda hop). Never-throw via serve(). Per-ticker cascade:
- *   Polygon daily aggs (POLYGON_KEY; free tier is a day behind, acceptable
- *     for breadth ratios that measure multi-day trends)
- *   → CNBC harmony daily bars (keyless, '1Y' range — verified datacenter-
+ * Dashboard-only (no Lambda hop). Never-throw via serve(). Per ticker, both sources at once:
+ *   Polygon daily aggs (POLYGON_KEY; the free tier is a day behind)
+ *   + CNBC harmony daily bars (keyless, '1Y' range — verified datacenter-
  *     reachable, like the vol table and copper/gold).
+ *   The history with the NEWER last day wins (a tie keeps Polygon), so breadth is dated like
+ *   SPY. Polygon-first left the pills mixing yesterday's breadth with today's SPY (30 Oct audit).
  *
  * A pair whose ticker histories have no overlapping dates (or one leg is
  * completely unavailable) is omitted from the payload — the rest still ship.
@@ -20,37 +21,22 @@ import { PAIRS, ratioSeries, pairStats, legStats } from '../../../lib/breadth';
 export const fetchCache = 'default-cache';
 
 /**
- * Fetch one ticker's daily history via the cascade:
- *   1. Polygon daily aggs (requires POLYGON_KEY)
- *   2. CNBC harmony daily bars (keyless)
+ * Fetch one ticker's daily history from Polygon (requires POLYGON_KEY) and CNBC
+ * harmony (keyless) in parallel; keep the one whose last day is newer (tie → Polygon).
  * Returns { history: [{date, price}], source: 'polygon'|'cnbc' } or
- * { history: null, source: 'none' } if all tiers fail.
+ * { history: null, source: 'none' } if both fail.
  */
 async function fetchTickerHistory(ticker, polygonKey, faults) {
-    // Tier 1: Polygon
-    if (polygonKey) {
-        try {
-            const result = await gate('breadth_polygon', faults, () =>
-                polygonDaily(ticker, polygonKey, { years: 1 }),
-            );
-            const hist = result.history;
-            if (Array.isArray(hist) && hist.length > 0) return { history: hist, source: 'polygon' };
-        } catch {
-            // fall through
-        }
-    }
-
-    // Tier 2: CNBC harmony
-    try {
-        const hist = await gate('breadth_cnbc', faults, () =>
-            cnbcHistory(ticker, { range: '1Y' }),
-        );
-        if (Array.isArray(hist) && hist.length > 0) return { history: hist, source: 'cnbc' };
-    } catch {
-        // fall through
-    }
-
-    return { history: null, source: 'none' };
+    const tier = (source, fn) => gate(`breadth_${source}`, faults, fn)
+        .then((hist) => (Array.isArray(hist) && hist.length > 0 ? { history: hist, source } : null))
+        .catch(() => null);
+    const [poly, cnbc] = await Promise.all([
+        polygonKey ? tier('polygon', async () => (await polygonDaily(ticker, polygonKey, { years: 1 })).history) : null,
+        tier('cnbc', () => cnbcHistory(ticker, { range: '1Y' })),
+    ]);
+    const last = (r) => r.history[r.history.length - 1].date;
+    if (poly && cnbc) return last(cnbc) > last(poly) ? cnbc : poly;
+    return poly || cnbc || { history: null, source: 'none' };
 }
 
 export async function GET(request) {

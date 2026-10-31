@@ -17,7 +17,7 @@ export const PILL_EXPLAIN = {
 // Row names on screen (the label is the data key; tap a row to see it).
 export const INPUT_NAMES = {
     'SPY vs 200-day avg': 'S&P vs 200-day',
-    'HYG/LQD 20d': 'Junk vs safe bonds',
+    'Junk spread 20d': 'Junk bond spread',
     'Yield curve (2s10s)': 'Yield curve',
     'NFCI': 'Money tightness',
     'RSP/SPY 20d': 'Avg stock vs S&P',
@@ -35,7 +35,7 @@ export const INPUT_NAMES = {
 export const INPUT_EXPLAIN = {
     'SPY vs 200-day avg': 'Above = uptrend.',
     'Fear & Greed': 'CNN crowd mood, 0–100.',
-    'HYG/LQD 20d': 'Junk ahead = risk appetite.',
+    'Junk spread 20d': 'Junk yield over Treasuries, 20-day change.',
     'Sahm rule': 'Jobless rate vs its 1-year low.',
     'Yield curve (2s10s)': '10y minus 2y. Below 0 = inverted.',
     'Jobless claims': 'New weekly claims.',
@@ -47,15 +47,15 @@ export const INPUT_EXPLAIN = {
     'VRP': 'Expected minus actual moves.',
     'sentiment vs price': 'Mood fighting the trend.',
     '2s10s vs 3m10y': 'One inverted, one not.',
-    'credit vs equities': 'S&P up, junk lagging safe bonds.',
+    'credit vs equities': 'S&P up, junk spreads widening.',
     'breadth vs index': 'Index near high, avg stock lagging.',
 };
 
 // Every feed a pill's rule actually reads (keep in sync with ruleVerdicts / conflictPairs).
 export const PILL_FEEDS = {
-    regime: ['spy', 'fg', 'breadth'],
+    regime: ['spy', 'fg', 'credit'],
     recession: ['fred'],
     breadth: ['breadth'],
     hedging: ['vol'],
-    conflict: ['spy', 'fg', 'fred', 'breadth'],
+    conflict: ['spy', 'fg', 'fred', 'breadth', 'credit'],
 };

@@ -86,15 +86,8 @@ const fmtPct = (n, digits = 1) => {
     return `${r > 0 ? '+' : ''}${r.toFixed(digits)}%`;
 };
 
-/** "HYG −1.3% · LQD −1.3%" from a pair's legs block; '' when unavailable. */
-const fmtLegs = (legs) => {
-    if (!legs || typeof legs !== 'object') return '';
-    const parts = Object.entries(legs)
-        .filter(([, v]) => Number.isFinite(v))
-        .map(([t, v]) => `${t} ${fmtPct(v)}`);
-    return parts.join(' · ');
-};
 const fmtNum = (n) => (Number.isFinite(n) ? n.toFixed(2) : 'n/a');
+const fmtBp = (n) => (Number.isFinite(n) ? `${n > 0 ? '+' : ''}${Math.round(n)}bp` : 'n/a');
 const fmtInt = (n) => (Number.isFinite(n) ? String(Math.round(n)) : 'n/a');
 
 /**
@@ -161,7 +154,7 @@ export function buildState(data) {
         `8. XLK/XLU ${fmtNum(xlk.ratio)}, 20d ${fmtPct(xlk.chg20Pct)}`
     );
     lines.push(
-        `9. HYG/LQD ${fmtNum(hyg.ratio)}, 20d ${fmtPct(hyg.chg20Pct)}`
+        `9. HYG/LQD ${fmtNum(hyg.ratio)}, 20d ${fmtPct(hyg.chg20Pct)}; high-yield credit spread 20d ${fmtBp(data.credit?.oasChg20)}`
     );
 
     // 10. AAII
@@ -169,6 +162,16 @@ export function buildState(data) {
 
     return lines.join('\n');
 }
+
+// ---------------------------------------------------------------------------
+// Credit vote: the high-yield spread's 20-trading-day change (FRED BAMLH0A0HYM2), in bp.
+// Narrowing = +1 (risk appetite); 25 bp+ wider = −1 (stress). Replaced HYG/LQD 20d on
+// 30 Oct 2026: that ratio moved with Treasury yields (LQD is long-duration), r 0.73 with
+// 10y changes, and voted +1 at the Oct 2022 low. 25 bp in 20 days ≈ the widest 13% of
+// days in 2023–26.
+// ---------------------------------------------------------------------------
+export const OAS_WIDE_BP = 25;
+const creditVote = (bp) => (bp == null ? 0 : bp < 0 ? 1 : bp >= OAS_WIDE_BP ? -1 : 0);
 
 // ---------------------------------------------------------------------------
 // conflictPairs — detect divergences
@@ -183,7 +186,7 @@ export function conflictPairs(data) {
     const fred = data.fred || {};
     const breadth = data.breadth || {};
     const rsp = breadth.rspSpy || {};
-    const hyg = breadth.hygLqd || {};
+    const oasChg20 = data.credit?.oasChg20;
 
     const ma200Pct = s.ma200Pct;
     const fgScore = fg.score;
@@ -213,11 +216,11 @@ export function conflictPairs(data) {
     }
 
     // credit vs equities
-    if (ma200Pct != null && hyg.chg20Pct != null) {
-        if (ma200Pct > 0 && hyg.chg20Pct < -1.5) {
+    if (ma200Pct != null && oasChg20 != null) {
+        if (ma200Pct > 0 && oasChg20 >= OAS_WIDE_BP) {
             pairs.push({
                 pair: 'credit vs equities',
-                detail: `SPY ${ma200Pct.toFixed(1)}% above 200d MA yet HYG/LQD -${Math.abs(hyg.chg20Pct).toFixed(1)}% over 20d`,
+                detail: `SPY ${ma200Pct.toFixed(1)}% above 200d MA yet the junk spread widened ${fmtBp(oasChg20)} over 20d`,
             });
         }
     }
@@ -280,12 +283,11 @@ export function ruleVerdicts(data) {
     const brd = data.breadth || {};
     const rsp = brd.rspSpy || {};
     const iwm = brd.iwmSpy || {};
-    const hyg = brd.hygLqd || {};
     const volSpy = (data.vol || {}).spy || {};
 
     const ma200Pct = safeNum(s.ma200Pct);
     const fgScore = safeNum(fg.score);
-    const hygChg20 = safeNum(hyg.chg20Pct);
+    const oasChg20 = safeNum(data.credit?.oasChg20);
     const yieldCurve = safeNum(fred.yieldCurve);
     const sahmRule = safeNum(fred.sahmRule);
     const claims = safeNum(fred.claims);
@@ -324,32 +326,24 @@ export function ruleVerdicts(data) {
         regimeParts.push('fg=mv (0)');
     }
 
-    // HYG/LQD contribution
-    if (hygChg20 != null) {
-        if (hygChg20 > 0) {
-            regimeScore += 1;
-            regimeParts.push(`hygLqd=${fmtPct(hygChg20, 2)} (>0, +1)`);
-        } else if (hygChg20 < -1) {
-            regimeScore -= 1;
-            regimeParts.push(`hygLqd=${fmtPct(hygChg20, 2)} (<-1, -1)`);
-        } else {
-            regimeParts.push(`hygLqd=${fmtPct(hygChg20, 2)} (-1 to 0, 0)`);
-        }
+    // High-yield spread contribution
+    if (oasChg20 != null) {
+        const v = creditVote(oasChg20);
+        regimeScore += v;
+        regimeParts.push(`hySpread20d=${fmtBp(oasChg20)} (${v > 0 ? '<0, +1' : v < 0 ? `>=${OAS_WIDE_BP}bp, -1` : `0 to ${OAS_WIDE_BP}bp, 0`})`);
     } else {
-        regimeParts.push('hygLqd=mv (0)');
+        regimeParts.push('hySpread20d=mv (0)');
     }
-    const hygLegs = fmtLegs(hyg.legs);
-    if (hygLegs) regimeParts.push(`legs 20d: ${hygLegs}`);
 
     let regimeVerdict;
     if (regimeScore >= 2) regimeVerdict = 'risk-on';
     else if (regimeScore <= -1) regimeVerdict = 'risk-off';
     else regimeVerdict = 'neutral';
 
-    const regimeIn = [ma200Pct, fgScore, hygChg20];
+    const regimeIn = [ma200Pct, fgScore, oasChg20];
     // A one-vote "regime" is not a regime: thin coverage → unknown, whatever the score.
     const regime = isThin(countPresent(regimeIn), regimeIn.length)
-        ? unknownPill(['SPY vs 200d', 'Fear & Greed', 'HYG/LQD 20d'], regimeIn)
+        ? unknownPill(['SPY vs 200d', 'Fear & Greed', 'Junk spread 20d'], regimeIn)
         : {
             verdict: regimeVerdict,
             reason: `Score ${regimeScore}: ${regimeParts.join(', ')}`,
@@ -462,7 +456,7 @@ export function ruleVerdicts(data) {
     const pairIn = [
         fgScore != null && ma200Pct != null ? 1 : null,
         yieldCurve != null && t10y3m != null ? 1 : null,
-        ma200Pct != null && hygChg20 != null ? 1 : null,
+        ma200Pct != null && oasChg20 != null ? 1 : null,
         high52Pct != null && rspChg20 != null ? 1 : null,
     ];
     const conflict = cps.length === 0 && isThin(countPresent(pairIn), pairIn.length)
@@ -481,6 +475,15 @@ export function ruleVerdicts(data) {
 // mergeVerdicts
 // ---------------------------------------------------------------------------
 
+// The verdict each rule falls back to when none of its thresholds fired.
+const RULE_DEFAULT = { regime: 'neutral', recession: 'low', breadth: 'narrow', hedging: 'fair', conflict: 'aligned' };
+
+/**
+ * Rule first, Jev second (30 Oct 2026 audit). Jev may move a pill ONE step, and only when
+ * the rule landed on its default (no threshold fired). Before, Jev at p ≥ floor replaced
+ * any verdict: Breadth read "narrow" (Jev 0.73) while RSP/SPY +4.5% and IWM/SPY +1.1%
+ * met the rule's own "broad" test. Every pill carries `rule` (the rule's verdict).
+ */
 export function mergeVerdicts(rule, jev, floor = 0.6) {
     const merged = {};
     if (!rule) return merged;
@@ -501,11 +504,15 @@ export function mergeVerdicts(rule, jev, floor = 0.6) {
         const jv = jev ? jev[pill] : null;
         const allowedVerdicts = VERDICT_ORDER[pill] || [];
 
-        if (jv && allowedVerdicts.includes(jv.verdict) && jv.p != null && jv.p >= floor) {
+        const nudge = jv && allowedVerdicts.includes(jv.verdict) && jv.p != null && jv.p >= floor
+            && rv.verdict === RULE_DEFAULT[pill]
+            && Math.abs(allowedVerdicts.indexOf(jv.verdict) - allowedVerdicts.indexOf(rv.verdict)) === 1;
+        if (nudge) {
             merged[pill] = {
                 verdict: jv.verdict,
                 p: jv.p,
                 by: 'jev',
+                rule: rv.verdict,
                 reason: rv.reason || '',
             };
         } else {
@@ -513,6 +520,7 @@ export function mergeVerdicts(rule, jev, floor = 0.6) {
                 verdict: rv.verdict,
                 p: null,
                 by: 'rule',
+                rule: rv.verdict,
                 reason: rv.reason || '',
             };
         }
@@ -531,6 +539,14 @@ const severityOf = (pill, verdict) => {
     return order.indexOf(verdict);
 };
 
+// The rule's verdict for a pill. Logs from before 30 Oct 2026 have no `rule` field: their
+// verdict is the rule's only when the rule set it; a Jev-set one is unknown (skipped).
+const ruleOf = (p) => (!p ? undefined : p.rule ?? (p.by === 'jev' ? undefined : p.verdict));
+
+/**
+ * Compares RULE verdicts, so a Jev nudge that comes and goes is never "Hardening".
+ * (30 Oct 2026: regime neutral → risk-off was Jev wobble on top of a rule change.)
+ */
 export function diffSinceYesterday(today, yesterday) {
     if (!yesterday) {
         return { direction: 'none', changed: [], noBaseline: true };
@@ -538,8 +554,8 @@ export function diffSinceYesterday(today, yesterday) {
 
     const changed = [];
     for (const pill of PILLS) {
-        const tV = today && today[pill] ? today[pill].verdict : undefined;
-        const yV = yesterday[pill] ? yesterday[pill].verdict : undefined;
+        const tV = ruleOf(today?.[pill]);
+        const yV = ruleOf(yesterday[pill]);
         // unknown / n/a sit outside the severity order: going high → unknown is lost
         // data, not "softening", so it never counts as a change in either direction.
         if (severityOf(pill, tV) < 0 || severityOf(pill, yV) < 0) continue;
@@ -634,15 +650,6 @@ export function toData(raw) {
             chg60Pct: num(pair.chg60Pct ?? null),
             vs50dPct: num(pair.vs50dPct ?? null),
         };
-        // Per-ticker 20d change (route ≥ 19 Sep); older payloads have none
-        if (pair.legs && typeof pair.legs === 'object') {
-            const legs = {};
-            for (const [t, v] of Object.entries(pair.legs)) {
-                const n = num(v ?? null);
-                if (n != null) legs[t] = n;
-            }
-            if (Object.keys(legs).length) breadth[key].legs = legs;
-        }
     }
 
     // /api/sheets — AAII bull-bear spread (may be "24.50%" or "N/A")
@@ -652,7 +659,10 @@ export function toData(raw) {
     // T10Y3M from raw
     const t10y3m = num(raw.t10y3m ?? null);
 
-    return { spy, fg, vol, fred, t10y3m, breadth, aaiiDiff };
+    // High-yield spread 20d change in bp (route's repairPillInputs)
+    const credit = { oasChg20: num(raw.hyOas20?.value ?? raw.hyOas20 ?? null) };
+
+    return { spy, fg, vol, fred, t10y3m, breadth, aaiiDiff, credit };
 }
 
 // ---------------------------------------------------------------------------
@@ -674,12 +684,11 @@ export function pillFactors(data) {
     const brd = data.breadth || {};
     const rsp = brd.rspSpy || {};
     const iwm = brd.iwmSpy || {};
-    const hyg = brd.hygLqd || {};
     const volSpy = (data.vol || {}).spy || {};
 
     const ma200Pct = safeNum(s.ma200Pct);
     const fgScore = safeNum(fg.score);
-    const hygChg20 = safeNum(hyg.chg20Pct);
+    const oasChg20 = safeNum(data.credit?.oasChg20);
     const yieldCurve = safeNum(fred.yieldCurve);
     const sahmRule = safeNum(fred.sahmRule);
     const claims = safeNum(fred.claims);
@@ -730,22 +739,15 @@ export function pillFactors(data) {
             effect: fgEffect,
         });
 
-        // HYG/LQD 20d
-        let hygEffect = '0';
-        let hygHit = false;
-        if (hygChg20 != null) {
-            if (hygChg20 > 0) { hygEffect = '+1'; hygHit = true; score += 1; }
-            else if (hygChg20 < -1) { hygEffect = '−1'; hygHit = true; score -= 1; }
-            // else between -1 and 0: no hit, score unchanged
-        }
-        const hygLegsTxt = fmtLegs(hyg.legs);
+        // High-yield spread, 20d change
+        const cv = creditVote(oasChg20);
+        score += cv;
         rows.push({
-            label: 'HYG/LQD 20d',
-            value: fmtPct(hygChg20, 2),
-            ...(hygLegsTxt ? { note: hygLegsTxt } : {}),
-            test: '+1 if above 0 · −1 if under −1%',
-            hit: hygHit,
-            effect: hygEffect,
+            label: 'Junk spread 20d',
+            value: fmtBp(oasChg20),
+            test: `+1 if narrower · −1 if ${OAS_WIDE_BP}bp+ wider`,
+            hit: cv !== 0,
+            effect: cv > 0 ? '+1' : cv < 0 ? '−1' : '0',
         });
 
         let regimeVerdict;
@@ -938,8 +940,8 @@ export function pillFactors(data) {
             },
             {
                 label: 'credit vs equities',
-                value: `SPY ${fmtPct(ma200Pct)} vs 200d · HYG/LQD ${fmtPct(hygChg20, 2)}`,
-                test: 'Splits if SPY is above 200d · and HYG/LQD is under −1.5%',
+                value: `SPY ${fmtPct(ma200Pct)} vs 200d · junk spread ${fmtBp(oasChg20)}`,
+                test: `Splits if SPY is above 200d · and the junk spread is ${OAS_WIDE_BP}bp+ wider`,
             },
             {
                 label: 'breadth vs index',

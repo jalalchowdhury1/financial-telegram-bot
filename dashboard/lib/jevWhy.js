@@ -37,8 +37,7 @@ const PHRASES = {
     regime: {
         'SPY vs 200-day avg': (r) => ({ 1: 'uptrend', [-1]: 'downtrend' })[vote(r.effect)] || null,
         'Fear & Greed': (r) => ({ 1: 'greed', [-1]: 'fear' })[vote(r.effect)] || null,
-        // A ratio: HYG can fall and still "beat" LQD, so never say junk bonds rose or fell.
-        'HYG/LQD 20d': (r) => ({ 1: 'junk leading', [-1]: 'junk lagging' })[vote(r.effect)] || null,
+        'Junk spread 20d': (r) => ({ 1: 'credit easing', [-1]: 'credit worry' })[vote(r.effect)] || null,
     },
     recession: {
         'Sahm rule': (r) => (num(r.value) == null ? null : `Sahm ${r.value}`),
@@ -69,14 +68,14 @@ const PHRASES = {
             return fg < 50 ? 'fear in an uptrend' : 'greed in a downtrend';
         },
         '2s10s vs 3m10y': () => 'two yield curves disagree',
-        'credit vs equities': () => 'junk lagging in an uptrend',
+        'credit vs equities': () => 'credit worry in an uptrend',
         'breadth vs index': () => 'near the high, average stock slipping',
     },
 };
 
 // Short names for an n/a input inside the line ("(F&G n/a)"). Unlisted -> the row label.
 const SHORT = {
-    'SPY vs 200-day avg': 'SPY trend', 'Fear & Greed': 'F&G', 'HYG/LQD 20d': 'HYG/LQD',
+    'SPY vs 200-day avg': 'SPY trend', 'Fear & Greed': 'F&G', 'Junk spread 20d': 'junk spread',
     'Sahm rule': 'Sahm', 'Yield curve (2s10s)': 'curve', 'Jobless claims': 'claims',
 };
 
@@ -150,7 +149,7 @@ const COMPOSE = {
     },
     conflict(rows, say) {
         const fired = rows.filter((r) => r.hit);
-        // Say "in an uptrend" once: "fear in an uptrend · junk lagging", not twice (desktop pill cut it mid-word).
+        // Say "in an uptrend" once: "fear in an uptrend · credit worry", not twice (desktop pill cut it mid-word).
         if (fired.length) return fired.map(say).join(' · ').replace(/(in an uptrend.*) in an uptrend/, '$1');
         const known = rows.filter(measured).length;
         const gone = rows.length - known;

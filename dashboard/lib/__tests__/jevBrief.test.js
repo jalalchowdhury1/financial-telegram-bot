@@ -36,6 +36,7 @@ function data({ overrides = {}, defaults = {} } = {}) {
             hygLqd: { ratio: 0.98, chg20Pct: 0.2, chg60Pct: 0.5, vs50dPct: 0.1 },
         },
         aaiiDiff: 5.5,
+        credit: { oasChg20: -5 },
         ...defaults,
     };
     // Merge overrides top-level
@@ -52,6 +53,7 @@ function data({ overrides = {}, defaults = {} } = {}) {
             else d.breadth[k] = overrides.breadth[k];
         }
     }
+    if (overrides.credit) Object.assign(d.credit, overrides.credit);
     if ('t10y3m' in overrides) d.t10y3m = overrides.t10y3m;
     if ('aaiiDiff' in overrides) d.aaiiDiff = overrides.aaiiDiff;
     return d;
@@ -89,27 +91,27 @@ describe('PILLS and VERDICT_ORDER', () => {
 
 describe('ruleVerdicts — regime', () => {
     test('score >= 2 ⇒ risk-on', () => {
-        // ma200Pct>0 (+1), fg>=50 (+1), hygLqd>0 (+1) = 3
+        // ma200Pct>0 (+1), fg>=50 (+1), spread narrower (+1) = 3
         const d = data();
         expect(ruleVerdicts(d).regime.verdict).toBe('risk-on');
     });
 
     test('score <= -1 ⇒ risk-off', () => {
-        // ma200Pct<0 (+1→no, -1), fg<30 (-1), hygLqd<-1 (-1) = -3
-        const d = data({ overrides: { spy: { ma200Pct: -3 }, fg: { score: 25 }, breadth: { hygLqd: { chg20Pct: -2 } } } });
+        // ma200Pct<0 (+1→no, -1), fg<30 (-1), spread 25bp+ wider (-1) = -3
+        const d = data({ overrides: { spy: { ma200Pct: -3 }, fg: { score: 25 }, credit: { oasChg20: 40 } } });
         expect(ruleVerdicts(d).regime.verdict).toBe('risk-off');
     });
 
     test('score 0 ⇒ neutral', () => {
-        // ma200Pct>0 (+1), fg 30-49 (0), hygLqd -1 to 0 (0) = 1 → neutral (<2 and >-1)
-        const d = data({ overrides: { fg: { score: 40 }, breadth: { hygLqd: { chg20Pct: -0.5 } } } });
+        // ma200Pct>0 (+1), fg 30-49 (0), spread 0 to +25bp (0) = 1 → neutral (<2 and >-1)
+        const d = data({ overrides: { fg: { score: 40 }, credit: { oasChg20: 10 } } });
         expect(ruleVerdicts(d).regime.verdict).toBe('neutral');
     });
 
     test('score 1 ⇒ neutral (border: below 2, above -1)', () => {
-        // ma200Pct>0 (+1), fg 30-49 (0), hygLqd>0 (+1) = 2 → risk-on
-        // For score 1: ma200Pct>0 (+1), fg 30-49 (0), hygLqd -1 to 0 (0) = 1
-        const d = data({ overrides: { fg: { score: 40 }, breadth: { hygLqd: { chg20Pct: 0 } } } });
+        // ma200Pct>0 (+1), fg 30-49 (0), spread narrower (+1) = 2 → risk-on
+        // For score 1: ma200Pct>0 (+1), fg 30-49 (0), spread 0 to +25bp (0) = 1
+        const d = data({ overrides: { fg: { score: 40 }, credit: { oasChg20: 0 } } });
         expect(ruleVerdicts(d).regime.verdict).toBe('neutral');
     });
 
@@ -117,7 +119,7 @@ describe('ruleVerdicts — regime', () => {
         const d = data({ overrides: {
             spy: { ma200Pct: null },
             fg: { score: null },
-            breadth: { hygLqd: { chg20Pct: null } },
+            credit: { oasChg20: null },
         } });
         const r = ruleVerdicts(d).regime;
         expect(r.verdict).toBe('unknown');
@@ -125,13 +127,13 @@ describe('ruleVerdicts — regime', () => {
     });
 
     test('one regime vote of three ⇒ unknown (a one-vote regime is not a regime)', () => {
-        const d = data({ overrides: { spy: { ma200Pct: -3 }, fg: { score: null }, breadth: { hygLqd: { chg20Pct: null } } } });
+        const d = data({ overrides: { spy: { ma200Pct: -3 }, fg: { score: null }, credit: { oasChg20: null } } });
         expect(ruleVerdicts(d).regime.verdict).toBe('unknown');
     });
 
     test('missing input still counts as 0 when most inputs are present', () => {
-        // ma200 +1, fg missing (0), hyg -0.5 (0) → score 1, 2 of 3 measured → neutral
-        const d = data({ overrides: { fg: { score: null }, breadth: { hygLqd: { chg20Pct: -0.5 } } } });
+        // ma200 +1, fg missing (0), spread +10bp (0) → score 1, 2 of 3 measured → neutral
+        const d = data({ overrides: { fg: { score: null }, credit: { oasChg20: 10 } } });
         expect(ruleVerdicts(d).regime.verdict).toBe('neutral');
     });
 
@@ -298,7 +300,7 @@ describe('ruleVerdicts — conflict', () => {
         expect(conflictPairs(d).length).toBeGreaterThanOrEqual(1);
         // Ensure no other pairs fire
         // yieldCurve > 0, t10y3m > 0 → same sign, no conflict
-        // ma200Pct>0 but hygLqd.chg20Pct=0.2 > -1.5 → no credit vs equities
+        // ma200Pct>0 but the junk spread narrowed → no credit vs equities
         // high52Pct=-1 (>-2) but rspSpy.chg20Pct=1.5 > -1.5 → no breadth vs index
         expect(ruleVerdicts(d).conflict.verdict).toBe('mild-divergence');
     });
@@ -306,11 +308,11 @@ describe('ruleVerdicts — conflict', () => {
     test('2+ pairs ⇒ major-divergence', () => {
         // Force sentiment vs price + credit vs equities
         // sentiment vs price: fg<35 and ma200Pct>3
-        // credit vs equities: ma200Pct>0 and hygLqd.chg20Pct<-1.5
+        // credit vs equities: ma200Pct>0 and the junk spread 25bp+ wider
         const d = data({ overrides: {
             fg: { score: 30 },
             spy: { ma200Pct: 5 },
-            breadth: { hygLqd: { chg20Pct: -2 } },
+            credit: { oasChg20: 40 },
         } });
         const cps = conflictPairs(d);
         expect(cps.length).toBeGreaterThanOrEqual(2);
@@ -349,7 +351,7 @@ describe('conflictPairs — individual pairs', () => {
     });
 
     test('credit vs equities: SPY above MA but credit rolling over', () => {
-        const d = data({ overrides: { spy: { ma200Pct: 5 }, breadth: { hygLqd: { chg20Pct: -2 } } } });
+        const d = data({ overrides: { spy: { ma200Pct: 5 }, credit: { oasChg20: 40 } } });
         const pairs = conflictPairs(d);
         expect(pairs.some((p) => p.pair === 'credit vs equities')).toBe(true);
     });
@@ -382,12 +384,27 @@ describe('mergeVerdicts', () => {
         }
     });
 
-    test('jev with p >= 0.6 overrides rule', () => {
-        const jev = { regime: { verdict: 'risk-off', p: 0.8 } };
-        const merged = mergeVerdicts(sampleRule, jev);
+    test('jev with p >= 0.6 nudges a default verdict one step', () => {
+        const rule = ruleVerdicts(data({ overrides: { fg: { score: 40 }, credit: { oasChg20: 10 } } })); // score 1 → neutral
+        expect(rule.regime.verdict).toBe('neutral');
+        const merged = mergeVerdicts(rule, { regime: { verdict: 'risk-off', p: 0.8 } });
         expect(merged.regime.by).toBe('jev');
         expect(merged.regime.verdict).toBe('risk-off');
         expect(merged.regime.p).toBe(0.8);
+        expect(merged.regime.rule).toBe('neutral');
+    });
+
+    test('jev never overrides a rule that fired (30 Oct 2026: breadth broad, Jev narrow 0.73)', () => {
+        expect(sampleRule.breadth.verdict).toBe('broad');
+        const merged = mergeVerdicts(sampleRule, { breadth: { verdict: 'narrow', p: 0.73 }, regime: { verdict: 'neutral', p: 0.9 } });
+        expect(merged.breadth).toMatchObject({ verdict: 'broad', by: 'rule', rule: 'broad' });
+        expect(merged.regime).toMatchObject({ verdict: 'risk-on', by: 'rule' });
+    });
+
+    test('jev cannot jump two steps from a default verdict', () => {
+        const merged = mergeVerdicts(sampleRule, { recession: { verdict: 'high', p: 0.95 } });
+        expect(sampleRule.recession.verdict).toBe('low');
+        expect(merged.recession).toMatchObject({ verdict: 'low', by: 'rule' });
     });
 
     test('jev with p < 0.6 does not override', () => {
@@ -410,9 +427,9 @@ describe('mergeVerdicts', () => {
     });
 
     test('jev with p=0.6 exactly meets floor', () => {
-        const jev = { regime: { verdict: 'risk-off', p: 0.6 } };
+        const jev = { recession: { verdict: 'rising', p: 0.6 } };
         const merged = mergeVerdicts(sampleRule, jev, 0.6);
-        expect(merged.regime.by).toBe('jev');
+        expect(merged.recession.by).toBe('jev');
     });
 });
 
@@ -434,6 +451,19 @@ describe('diffSinceYesterday', () => {
         const diff = diffSinceYesterday(today, yesterday);
         expect(diff.direction).toBe('none');
         expect(diff.changed).toEqual([]);
+    });
+
+    test('compares the RULE verdicts: a Jev nudge that comes and goes is no change', () => {
+        const today = { regime: { verdict: 'risk-off', by: 'jev', rule: 'neutral' } };
+        const yesterday = { regime: { verdict: 'neutral', by: 'rule', rule: 'neutral' } };
+        expect(diffSinceYesterday(today, yesterday).direction).toBe('none');
+    });
+
+    test('an old log (no rule field) with a Jev-set verdict is skipped, a rule-set one is used', () => {
+        const today = { regime: { verdict: 'risk-off', rule: 'risk-off' }, hedging: { verdict: 'expensive', rule: 'expensive' } };
+        const yesterday = { regime: { verdict: 'neutral', by: 'jev' }, hedging: { verdict: 'fair', by: 'rule' } };
+        const diff = diffSinceYesterday(today, yesterday);
+        expect(diff.changed).toEqual([{ pill: 'hedging', from: 'fair', to: 'expensive' }]);
     });
 
     test('both moves toward severe ⇒ hardening', () => {
@@ -700,13 +730,13 @@ describe('pillFactors', () => {
         }
     });
 
-    test('regime rows in order: SPY vs 200d, F&G, HYG/LQD', () => {
+    test('regime rows in order: SPY vs 200d, F&G, junk spread', () => {
         const pf = pillFactors(data());
         const rows = pf.regime.rows;
         expect(rows.length).toBe(3);
         expect(rows[0].label).toContain('SPY vs 200-day');
         expect(rows[1].label).toContain('Fear & Greed');
-        expect(rows[2].label).toContain('HYG/LQD');
+        expect(rows[2].label).toBe('Junk spread 20d');
     });
 
     test('regime summary quotes score', () => {
@@ -715,7 +745,7 @@ describe('pillFactors', () => {
     });
 
     test('regime hit flags on risk-on data', () => {
-        // Default data: ma200=+5%>0, fg=50≥50, hyg=0.2>0 → all three hit → score 3 → risk-on
+        // Default data: ma200=+5%>0, fg=50≥50, spread −5bp → all three hit → score 3 → risk-on
         const pf = pillFactors(data());
         const rows = pf.regime.rows;
         expect(rows[0].hit).toBe(true);
@@ -725,8 +755,8 @@ describe('pillFactors', () => {
     });
 
     test('regime hit flags on risk-off data', () => {
-        // ma200=-3%<0, fg=25<30, hyg=-2<-1 → all hit → score -3 → risk-off
-        const d = data({ overrides: { spy: { ma200Pct: -3 }, fg: { score: 25 }, breadth: { hygLqd: { chg20Pct: -2 } } } });
+        // ma200=-3%<0, fg=25<30, spread +40bp → all hit → score -3 → risk-off
+        const d = data({ overrides: { spy: { ma200Pct: -3 }, fg: { score: 25 }, credit: { oasChg20: 40 } } });
         const pf = pillFactors(d);
         const rows = pf.regime.rows;
         expect(rows[0].hit).toBe(true);
@@ -745,8 +775,8 @@ describe('pillFactors', () => {
         expect(pf.regime.rows[1].effect).toBe('0');
     });
 
-    test('regime: hygChg20 between -1 and 0 does not hit', () => {
-        const d = data({ overrides: { breadth: { hygLqd: { chg20Pct: -0.5 } } } });
+    test('regime: junk spread 0 to +25bp does not hit', () => {
+        const d = data({ overrides: { credit: { oasChg20: 10 } } });
         const pf = pillFactors(d);
         expect(pf.regime.rows[2].hit).toBe(false);
         expect(pf.regime.rows[2].effect).toBe('0');
@@ -1016,7 +1046,7 @@ describe('pillFactors — consistency with ruleVerdicts', () => {
     // Battery of data objects
     const fixtures = [
         { name: 'default data', data: data() },
-        { name: 'regime risk-off', data: data({ overrides: { spy: { ma200Pct: -3 }, fg: { score: 25 }, breadth: { hygLqd: { chg20Pct: -2 } } } }) },
+        { name: 'regime risk-off', data: data({ overrides: { spy: { ma200Pct: -3 }, fg: { score: 25 }, credit: { oasChg20: 40 } } }) },
         { name: 'recession high via sahm', data: data({ overrides: { fred: { sahmRule: 0.5 } } }) },
         { name: 'recession high via yc+claims', data: data({ overrides: { fred: { yieldCurve: -0.2, claims: 260 } } }) },
         { name: 'recession rising via sahm', data: data({ overrides: { fred: { sahmRule: 0.2 } } }) },
@@ -1030,13 +1060,13 @@ describe('pillFactors — consistency with ruleVerdicts', () => {
         { name: 'expensive hedging via vrp', data: data({ overrides: { vol: { spy: { ivPctile1y: 30, vrp: 12 } } } }) },
         { name: 'fair hedging thresholds', data: data({ overrides: { vol: { spy: { ivPctile1y: 70, vrp: 10 } } } }) },
         { name: 'conflict 1 pair', data: data({ overrides: { fg: { score: 30 }, spy: { ma200Pct: 5 } } }) },
-        { name: 'conflict 2+ pairs', data: data({ overrides: { fg: { score: 30 }, spy: { ma200Pct: 5 }, breadth: { hygLqd: { chg20Pct: -2 } } } }) },
+        { name: 'conflict 2+ pairs', data: data({ overrides: { fg: { score: 30 }, spy: { ma200Pct: 5 }, credit: { oasChg20: 40 } } }) },
         { name: 'all null', data: data({ overrides: {
             spy: { ma200Pct: null, high52Pct: null },
             fg: { score: null },
             fred: { sahmRule: null, yieldCurve: null, claims: null, nfci: null },
             vol: { spy: { ivPctile1y: null, vrp: null } },
-            breadth: { rspSpy: { chg20Pct: null, vs50dPct: null }, iwmSpy: { chg20Pct: null }, hygLqd: { chg20Pct: null } },
+            breadth: { rspSpy: { chg20Pct: null, vs50dPct: null }, iwmSpy: { chg20Pct: null } }, credit: { oasChg20: null },
         } }) },
     ];
 
@@ -1061,7 +1091,7 @@ describe('pillFactors — consistency with ruleVerdicts', () => {
         const d = data({ overrides: {
             spy: { ma200Pct: null },
             fg: { score: null },
-            breadth: { hygLqd: { chg20Pct: null } },
+            credit: { oasChg20: null },
         } });
         const rule = ruleVerdicts(d);
         const pf = pillFactors(d);
@@ -1071,31 +1101,15 @@ describe('pillFactors — consistency with ruleVerdicts', () => {
     });
 });
 
-describe('percent formatting never prints negative zero', () => {
-    test('HYG/LQD 20d of -0.004% shows as 0.00% in factors and in the regime reason', () => {
-        const d = data({ overrides: { breadth: { hygLqd: { chg20Pct: -0.004 } } } });
-        expect(pillFactors(d).regime.rows[2].value).toBe('0.00%');
-        expect(ruleVerdicts(d).regime.reason).toContain('hygLqd=0.00%');
-        expect(ruleVerdicts(d).regime.reason).not.toContain('-0.00%');
+describe('junk spread display', () => {
+    test('rounds to whole bp and never prints negative zero', () => {
+        const d = data({ overrides: { credit: { oasChg20: -0.4 } } });
+        expect(pillFactors(d).regime.rows[2].value).toBe('0bp');
+        expect(ruleVerdicts(d).regime.reason).toContain('hySpread20d=0bp');
+        expect(ruleVerdicts(d).regime.reason).not.toContain('-0bp');
     });
-});
-
-describe('HYG/LQD display', () => {
-    test('two decimals and the legs line when legs are present', () => {
-        const d = data({ overrides: { breadth: { hygLqd: { ratio: 0.75, chg20Pct: -0.0125, chg60Pct: 2.77, vs50dPct: 0.26, legs: { HYG: -1.29, LQD: -1.28 } } } } });
-        const row = pillFactors(d).regime.rows.find((r) => r.label === 'HYG/LQD 20d');
-        expect(row.value).toBe('-0.01%');
-        expect(row.note).toBe('HYG -1.3% · LQD -1.3%');
-        expect(row.hit).toBe(false);
-        expect(ruleVerdicts(d).regime.reason).toContain('hygLqd=-0.01% (-1 to 0, 0)');
-        expect(ruleVerdicts(d).regime.reason).toContain('legs 20d: HYG -1.3% · LQD -1.3%');
-    });
-    test('no legs → plain two-decimal value, no legs line', () => {
-        const d = data({ overrides: { breadth: { hygLqd: { ratio: 0.75, chg20Pct: 0.2 } } } });
-        const row = pillFactors(d).regime.rows.find((r) => r.label === 'HYG/LQD 20d');
-        expect(row.value).toBe('+0.20%');
-        expect(row.note).toBeUndefined();
-        expect(ruleVerdicts(d).regime.reason).not.toContain('legs 20d');
+    test('the state text Jev reads carries the spread too', () => {
+        expect(buildState(data({ overrides: { credit: { oasChg20: 2 } } }))).toContain('high-yield credit spread 20d +2bp');
     });
 });
 

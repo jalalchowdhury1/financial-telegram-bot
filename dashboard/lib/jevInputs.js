@@ -8,6 +8,7 @@
  *   FRESH                    — freshness deadlines per input (days)
  *   claims4wkFromHistory     — 4-week average of weekly ICSA in thousands
  *   sahmFromHistory          — Sahm rule from monthly UNRATE history
+ *   chg20bpFromHistory       — 20-observation change in basis points (HY OAS)
  *   parseTreasurySpreadCsv   — Treasury daily-yield CSV → [{date, value: long − short}]
  *   resolvePillInput         — generic cascade over sources → { value, asOf, source, tried }
  */
@@ -20,7 +21,7 @@ import { splitCsvLine } from './horsemen';
 // UNRATE for August is dated 08-01 and published ~Sep 4, and the next print lands ~Oct 3 —
 // so the newest point is legitimately up to ~65 days old. 45 rejected every Sahm tier for
 // the last three weeks of each month (prod, 2026-09-19: `sheet:stale(2026-08-01)`).
-export const FRESH = { T10Y3M: 7, NFCI: 14, ICSA: 14, UNRATE: 75 };
+export const FRESH = { T10Y3M: 7, NFCI: 14, ICSA: 14, UNRATE: 75, HYOAS: 7 };
 
 const finite = (n) => typeof n === 'number' && Number.isFinite(n);
 
@@ -47,6 +48,17 @@ export function sahmFromHistory(history) {
     const v = history.slice(-15).map((p) => p.value);
     const ma = v.slice(2).map((x, i) => (v[i] + v[i + 1] + x) / 3); // 13 averages, newest last
     return Math.round((ma[12] - Math.min(...ma.slice(0, 12))) * 100) / 100 + 0;
+}
+
+/**
+ * Change over the last 20 observations (≈ 20 trading days) in basis points, from an
+ * ascending history of a spread in percent (FRED BAMLH0A0HYM2: 3.26 = 326 bp).
+ * null if < 21 points.
+ */
+export function chg20bpFromHistory(history) {
+    if (!Array.isArray(history) || history.length < 21) return null;
+    const v = history.slice(-21).map((p) => p.value);
+    return Math.round((v[20] - v[0]) * 100) + 0;
 }
 
 /** MM/DD/YYYY → YYYY-MM-DD, or null. */
