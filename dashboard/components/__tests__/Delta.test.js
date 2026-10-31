@@ -236,7 +236,7 @@ describe('📈 tap for the 90-day chart', () => {
         wrap(<Delta mark={null} chartKey="claims" raw={204}>204</Delta>);
         await act(async () => { fireEvent.click(document.querySelector('.chartable')); });
         expect(global.fetch).toHaveBeenCalledWith('/history/claims.json');
-        expect([...document.querySelectorAll('.series-tf')].map((b) => b.textContent)).toEqual(['1M', '3M', '6M', '1Y', '5Y', 'MAX']);
+        expect([...document.querySelectorAll('.series-tf')].map((b) => b.textContent)).toEqual(['1M', '3M', '6M', '1Y', '5Y', '10Y', '15Y', '20Y', '30Y', 'MAX']);
         const pop = () => document.querySelector('.mark-pop').textContent;
         expect(pop()).toMatch(/· 90 days/);                       // 3M: the sheet alone
         expect(document.querySelector('.mark-pop-foot').textContent).toBe('daily snapshots · history sheet');

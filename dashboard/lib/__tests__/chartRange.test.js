@@ -49,7 +49,8 @@ test('1Y and 5Y: a full window reads "1 year" / "5 years", even when old history
 
 test('chips: only the windows shorter than the history, then MAX; a missing pick falls back to MAX', () => {
     const ids = (span) => rangesFor(span).map((r) => r.id);
-    expect(ids(13000)).toEqual(['1M', '3M', '6M', '1Y', '5Y', 'MAX']);
+    expect(ids(13000)).toEqual(['1M', '3M', '6M', '1Y', '5Y', '10Y', '15Y', '20Y', '30Y', 'MAX']);
+    expect(ids(6000)).toEqual(['1M', '3M', '6M', '1Y', '5Y', '10Y', '15Y', 'MAX']);
     expect(ids(1100)).toEqual(['1M', '3M', '6M', '1Y', 'MAX']);
     expect(ids(212)).toEqual(['1M', '3M', '6M', 'MAX']);
     expect(ids(20)).toEqual(['MAX']);

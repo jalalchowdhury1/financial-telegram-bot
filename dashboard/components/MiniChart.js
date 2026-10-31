@@ -19,20 +19,20 @@ export default function MiniChart({ history, color = '#818cf8', gradientId = 'ch
     // vs daily (~252 points/yr) from the point count, as before.
     let tfMap, tfKeys, defaultTf;
     if (cadence === 'monthly') {
-        tfMap = { '1Y': 12, '3Y': 36, '5Y': 60, '10Y': 120, '20Y': 240, '30Y': 360, 'ALL': history.length };
-        tfKeys = ['1Y', '3Y', '5Y', '10Y', '20Y', '30Y', 'ALL'];
+        tfMap = { '1Y': 12, '3Y': 36, '5Y': 60, '10Y': 120, '15Y': 180, '20Y': 240, '30Y': 360, 'ALL': history.length };
+        tfKeys = ['1Y', '3Y', '5Y', '10Y', '15Y', '20Y', '30Y', 'ALL'];
         defaultTf = 'ALL';
     } else if (cadence === 'weekly') {
-        tfMap = { '1Y': 52, '3Y': 156, '5Y': 260, '10Y': 520, '20Y': 1040, 'ALL': history.length };
-        tfKeys = ['1Y', '3Y', '5Y', '10Y', '20Y', 'ALL'];
+        tfMap = { '1Y': 52, '3Y': 156, '5Y': 260, '10Y': 520, '15Y': 780, '20Y': 1040, '30Y': 1560, 'ALL': history.length };
+        tfKeys = ['1Y', '3Y', '5Y', '10Y', '15Y', '20Y', '30Y', 'ALL'];
         defaultTf = 'ALL';
     } else if (history.length < 500) {
-        tfMap = { '10Y': 40, '20Y': 80, '30Y': 120, 'ALL': history.length };
-        tfKeys = ['10Y', '20Y', '30Y', 'ALL'];
+        tfMap = { '10Y': 40, '15Y': 60, '20Y': 80, '30Y': 120, 'ALL': history.length };
+        tfKeys = ['10Y', '15Y', '20Y', '30Y', 'ALL'];
         defaultTf = 'ALL';
     } else {
-        tfMap = { '1Y': 252, '5Y': 1260, '10Y': 2520, 'ALL': history.length };
-        tfKeys = ['1Y', '5Y', '10Y', 'ALL'];
+        tfMap = { '1Y': 252, '5Y': 1260, '10Y': 2520, '15Y': 3780, '20Y': 5040, '30Y': 7560, 'ALL': history.length };
+        tfKeys = ['1Y', '5Y', '10Y', '15Y', '20Y', '30Y', 'ALL'];
         defaultTf = '5Y';
     }
 

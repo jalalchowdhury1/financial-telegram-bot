@@ -18,20 +18,20 @@ test('cadence="monthly" shows the full 1Y-30Y tab row', () => {
     }
 });
 
-test('auto cadence still detects quarterly data (<500 points → 10Y/20Y/30Y/ALL)', () => {
+test('auto cadence still detects quarterly data (<500 points → 10Y/15Y/20Y/30Y/ALL)', () => {
     render(<MiniChart history={monthly(10)} />); // 120 points → quarterly mode
-    for (const tf of ['10Y', '20Y', '30Y', 'ALL']) {
+    for (const tf of ['10Y', '15Y', '20Y', '30Y', 'ALL']) {
         expect(screen.getByRole('button', { name: tf })).toBeInTheDocument();
     }
     expect(screen.queryByRole('button', { name: '1Y' })).not.toBeInTheDocument();
 });
 
-test('auto cadence still detects daily data (≥500 points → 1Y/5Y/10Y/ALL)', () => {
+test('auto cadence still detects daily data (≥500 points → 1Y/5Y/10Y/15Y/20Y/30Y/ALL)', () => {
     render(<MiniChart history={monthly(50)} />); // 600 points → daily mode
-    for (const tf of ['1Y', '5Y', '10Y', 'ALL']) {
+    for (const tf of ['1Y', '5Y', '10Y', '15Y', '20Y', '30Y', 'ALL']) {
         expect(screen.getByRole('button', { name: tf })).toBeInTheDocument();
     }
-    expect(screen.queryByRole('button', { name: '30Y' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '3Y' })).not.toBeInTheDocument(); // the monthly row's tab
 });
 
 // The SVG line must stay drawable on EVERY tab — a NaN coordinate renders as a

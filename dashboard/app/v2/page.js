@@ -34,7 +34,8 @@ import { staleOf } from '../../lib/glance';
 import { collectMoves, fmtLevel, movedWhen, sigmaOf, BIG_Z } from '../../lib/whatMoved';
 import { marketWindow } from '../../lib/marketWindow';
 import { ivRank, ivPercentile } from '../../lib/vol';
-import { pulseVerdicts } from '../../lib/pulseVerdicts';
+import { pulseVerdicts, horsemenRiding } from '../../lib/pulseVerdicts';
+import { decodeLong, joinLong } from '../../lib/longHistory';
 import useFeeds from './useFeeds';
 
 const SECTIONS = [
@@ -135,17 +136,62 @@ function Moves({ spy, fg, extra, vol, history, saved, waiting }) {
                 <span>× a normal day</span>
             </div>
             <div className="v2-moves-grid">
-                {moves.map((m) => (
-                    <button key={m.key} type="button" className={`v2-mv${m.big ? ' is-big' : ''}`} onClick={() => jumpToCard(m.jump)}
-                        title={`${m.label} ${fmtLevel(m.prev)} → ${fmtLevel(m.value)}${m.day ? ` on ${m.day}` : ''} · tap for the card`}>
-                        <span className="v2-mv-label">{m.label}{m.day && <small>{m.day}</small>}</span>
-                        <span className="v2-mv-val">{m.text}</span>
-                        <span className="v2-mv-bar"><i style={{ [m.delta < 0 ? 'right' : 'left']: '50%', width: `${(Math.min(m.z, MOVE_CAP) / MOVE_CAP) * 50}%` }} /></span>
-                        <span className="v2-mv-x">{m.z.toFixed(1)}×</span>
-                    </button>
-                ))}
+                {moves.map((m) => <MoveTile key={m.key} m={m} feeds={{ spy, extra, vol }} />)}
             </div>
         </div>
+    );
+}
+
+const MOVE_DAYS = 22; // about a month of sessions in each tile's line
+// green = good for stocks: up, except VIX (fear rising); the 10Y, oil and gold just read up = green
+const prices = (h) => (Array.isArray(h) ? h.map((p) => p?.price) : []);
+
+/** One move: its last month, with the shaded band = a normal day around yesterday's level. A big move leaps out of it. */
+function MoveTile({ m, feeds: { spy, extra, vol } }) {
+    const fgLine = useChart('cnnFearGreed', m.key === 'fg' ? m.value : null);
+    const geo = useMemo(() => {
+        const raw = m.key === 'spy' ? prices(spy?.chartHistory) : m.key === 'tnx' ? prices(extra?.rates?.tnx?.history)
+            : ['cl', 'gc', 'btc'].includes(m.key) ? prices(extra?.commodities?.[m.key]?.history)
+            : m.key === 'vix' ? vol?.vixYear || [] : (fgLine?.points || []).map((p) => p.value);
+        const s = raw.map(Number).filter(Number.isFinite);
+        while (s.length && Math.abs(s[s.length - 1] - m.value) < 1e-9) s.pop(); // today's own close, if the series has it
+        const pts = [...s.slice(-(MOVE_DAYS - 2)), m.prev, m.value];
+        if (Math.abs(pts[pts.length - 3] - m.prev) < 1e-9) pts.splice(-2, 1); // yesterday's close already in the series
+        if (pts.length < 6 || !(m.z > 0)) return null;
+        const hw = Math.abs(m.delta) / m.z; // a normal day, in the move's own unit
+        const band = m.unit === 'pct' ? (m.prev * hw) / 100 : m.unit === 'bp' ? hw / 100 : hw;
+        const lo = Math.min(...pts, m.prev - band), hi = Math.max(...pts, m.prev + band);
+        const pad = (hi - lo) * 0.12 || 1;
+        const y = (v) => 100 - ((v - lo + pad) / (hi - lo + 2 * pad)) * 100;
+        const x = (i) => (i / (pts.length - 1)) * 100;
+        const n = pts.length;
+        return {
+            past: pts.slice(0, -1).map((v, i) => `${i ? 'L' : 'M'}${x(i)} ${y(v)}`).join(''),
+            today: `M${x(n - 2)} ${y(pts[n - 2])}L100 ${y(m.value)}`,
+            band: [y(m.prev + band), y(m.prev - band)],
+            end: y(m.value),
+        };
+    }, [m, spy, extra, vol, fgLine]);
+    return (
+        <button type="button" className={`v2-mv${m.big ? ' is-big' : ''} is-${(m.delta > 0) === (m.key !== 'vix') ? 'good' : 'bad'}`} onClick={() => jumpToCard(m.jump)}
+            style={{ '--heat': Math.min(m.z, MOVE_CAP) / MOVE_CAP }}
+            title={`${m.label} ${fmtLevel(m.prev)} → ${fmtLevel(m.value)}${m.day ? ` on ${m.day}` : ''} · ${m.z.toFixed(1)}× a normal day · tap for the card`}>
+            <span className="v2-mv-label">{m.label}{m.day && <small>{m.day}</small>}</span>
+            <span className="v2-mv-val">{m.text}</span>
+            {geo ? (
+                <span className="v2-mv-spark" style={{ '--end': `${geo.end}%` }}>
+                    <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                        <rect className="v2-mv-band" x="0" width="100" y={geo.band[0]} height={geo.band[1] - geo.band[0]} />
+                        <path className="v2-mv-past" d={geo.past} />
+                        <path className="v2-mv-today" d={geo.today} />
+                    </svg>
+                    <i />
+                </span>
+            ) : (
+                <span className="v2-mv-bar"><i style={{ [m.delta < 0 ? 'right' : 'left']: '50%', width: `${(Math.min(m.z, MOVE_CAP) / MOVE_CAP) * 50}%` }} /></span>
+            )}
+            <span className="v2-mv-x">{m.z.toFixed(1)}×</span>
+        </button>
     );
 }
 
@@ -273,7 +319,7 @@ function Gauge({ g, open, onToggle }) {
     return (
         <div className={`v2-g${x != null && g.s >= 0 && g.s < NEAR ? ' is-near' : ''}${open ? ' is-open' : ''}`} data-tone={note.tone === 'stale' ? 'caution' : Number.isFinite(v) ? g.tone : 'flat'}
             onClick={(e) => { if (!e.target.closest('.chartable, .mark-pop')) onToggle(); }}>
-            <span className="v2-g-label"><button type="button" aria-expanded={open}>{g.label}</button></span>
+            <span className="v2-g-label"><button type="button" aria-expanded={open}><span className="tooltip-trigger" data-tooltip={`${g.tip}${note.suffix}`}>{g.label}</span></button></span>
             <span className="v2-g-track" style={{ '--zones': zones(g) }}>
                 {g.ticks.map(([at, name]) => <em key={name} style={{ left: `${trackX(g, at)}%` }}><span>{tfmt(at)}</span></em>)}
                 {x != null && <><i style={{ [x < 0 ? 'right' : 'left']: '50%', width: `${Math.abs(x)}%` }} /><b style={{ left: `${50 + x}%` }} /></>}
@@ -352,6 +398,102 @@ function MarketRow({ r }) {
             {r.win && <span className="v2-mk-chg">{r.win.text}{r.home && r.win.tag && <small>{r.win.tag}</small>}</span>}
             {r.z != null && <span className="v2-mv-bar"><i style={{ [r.win.dir < 0 ? 'right' : 'left']: '50%', width: `${heat * 50}%` }} /></span>}
             {r.z != null && <span className="v2-mk-x">{r.z.toFixed(1)}×</span>}
+        </div>
+    );
+}
+
+const TAKA_RANGES = [['1M', 31], ['1Y', 366], ['5Y', 1827], ['10Y', 3653], ['15Y', 5479], ['20Y', 7305], ['30Y', 10958], ['All', Infinity]];
+const TAKA_KEY = 'v2-taka-range';
+const isoMinus = (iso, days) => new Date(Date.parse(`${iso}T00:00:00Z`) - days * 86400000).toISOString().slice(0, 10);
+const taka = (v) => `৳${Math.round(v).toLocaleString('en-US')}`;
+const longDate = (iso) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+
+/**
+ * USD/BDT, all of it: the baked history (public/v2/usdbdt.json: IMF official month-ends from 1972, Wise daily from Oct 2021), then the
+ * history sheet's daily record (lib/longHistory join), then today's live rate. Up = each dollar buys more taka.
+ */
+function Taka({ extra, loading }) {
+    const live = extra?.fx?.usdbdt?.current;
+    const sheet = useChart('usdbdt', live);
+    const [baked, setBaked] = useState(null);
+    const [range, setRange] = useState('1Y');
+    const [at, setAt] = useState(null);
+    useEffect(() => {
+        try { const r = window.localStorage.getItem(TAKA_KEY); if (TAKA_RANGES.some(([id]) => id === r)) setRange(r); } catch { /* private mode */ }
+        fetch('/v2/usdbdt.json').then((r) => (r.ok ? r.json() : null)).then((b) => setBaked(decodeLong(b))).catch(() => {});
+    }, []);
+    const all = useMemo(() => {
+        const pts = sheet?.points?.length ? [...joinLong(sheet.points, baked, null)] : [...(baked || [])];
+        if (Number.isFinite(live) && pts.length) {
+            const today = new Date().toLocaleDateString('en-CA'); // the local calendar day, as the sheet dates it
+            const last = pts[pts.length - 1];
+            if (last.date >= today) pts[pts.length - 1] = { ...last, value: live }; else pts.push({ date: today, value: live });
+        }
+        return pts;
+    }, [sheet, baked, live]);
+    if (all.length < 2) return loading || !baked ? <Skeleton count={3} /> : <div className="v2-fred-na">Unavailable · source busy, try again shortly</div>;
+
+    const last = all[all.length - 1], cur = last.value;
+    const span = (Date.parse(last.date) - Date.parse(all[0].date)) / 86400000;
+    const chips = TAKA_RANGES.filter(([, d]) => d === Infinity || d < span);
+    const [id, days] = chips.find(([r]) => r === range) || chips[chips.length - 1];
+    const from = days === Infinity ? all[0].date : isoMinus(last.date, days - 1);
+    const view = all.filter((p) => p.date >= from);
+    const start = view[0].value;
+    const ath = all.reduce((m, p) => (p.value > m.value ? p : m), all[0]);
+    const step = 5, next = Math.floor(cur / step) * step + step;
+
+    // the chart: ≤ 600 points, milestone lines at round levels (≤ 4 in view)
+    const stride = Math.ceil(view.length / 600);
+    const pts = view.filter((p, i) => i % stride === 0 || i === view.length - 1);
+    let lo = Math.min(...pts.map((p) => p.value)), hi = Math.max(...pts.map((p) => p.value));
+    const pad = (hi - lo) * 0.08 || 0.5; lo -= pad; hi += pad;
+    const y = (v) => 100 - ((v - lo) / (hi - lo)) * 100;
+    const x = (i) => (i / (pts.length - 1)) * 100;
+    const line = pts.map((p, i) => `${i ? 'L' : 'M'}${x(i)} ${y(p.value)}`).join('');
+    const grid = [0.5, 1, 2, 5, 10, 20, 50].find((g) => (hi - lo) / g <= 4) || 50;
+    const levels = [];
+    for (let v = Math.ceil(lo / grid) * grid; v < hi; v += grid) levels.push(v);
+    const up = cur >= start;
+    const pick = (r) => { setRange(r); try { window.localStorage.setItem(TAKA_KEY, r); } catch { /* still works this visit */ } };
+    const read = (e) => {
+        const r = e.currentTarget.getBoundingClientRect();
+        const i = Math.round(Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)) * (pts.length - 1));
+        setAt({ i, p: pts[i] });
+    };
+    return (
+        <div className={`card v2-taka is-${up ? 'up' : 'down'}`}>
+            <div className="card-header">
+                <div className="v2-taka-tfs" role="group" aria-label="Chart range">
+                    {chips.map(([r]) => <button key={r} type="button" className={r === id ? 'is-on' : ''} aria-pressed={r === id} onClick={() => pick(r)}>{r}</button>)}
+                </div>
+            </div>
+            <div className="v2-taka-top">
+                <span className="v2-taka-now">{cur.toFixed(2)}</span>
+                <span className={`v2-taka-chg tone-${up ? 'good' : 'bad'}`}>{up ? '▲' : '▼'} {cur / start >= 2 ? `${(cur / start).toFixed(1)}×` : `${signed((cur / start - 1) * 100, 1)}%`} <small>{id === 'All' ? `since ${view[0].date.slice(0, 4)}` : id}</small></span>
+                {cur.toFixed(2) === ath.value.toFixed(2) || cur > ath.value
+                    ? <span className="v2-taka-ath">All-time high</span>
+                    : <span className="v2-taka-off">High {ath.value.toFixed(2)} · {longDate(ath.date)}</span>}
+            </div>
+            <div className="v2-taka-plot" onPointerMove={read} onPointerDown={read} onPointerLeave={() => setAt(null)}
+                style={{ '--end': `${y(cur)}%` }}>
+                <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                    <path className="v2-taka-area" d={`${line}L100 100L0 100Z`} />
+                    <path className="v2-taka-line" d={line} />
+                </svg>
+                {levels.map((v) => <span key={v} className="v2-taka-lvl" style={{ top: `${y(v)}%` }}><b>{Number.isInteger(v) ? v : v.toFixed(1)}</b></span>)}
+                <i className="v2-taka-dot" />
+                {at && (
+                    <>
+                        <i className="v2-taka-at" style={{ left: `${x(at.i)}%`, top: `${y(at.p.value)}%` }} />
+                        <span className="v2-taka-read" style={{ '--x': `${x(at.i)}%` }}>{longDate(at.p.date)} · {at.p.value.toFixed(2)} · $1k = {taka(at.p.value * 1000)}</span>
+                    </>
+                )}
+            </div>
+            <div className="v2-taka-foot">
+                <span>$1k = <b>{taka(cur * 1000)}</b> <em className={`tone-${up ? 'good' : 'bad'}`}>{up ? '+' : '−'}{taka(Math.abs(cur - start) * 1000)} {id === 'All' ? `since ${view[0].date.slice(0, 4)}` : `vs ${id} ago`}</em></span>
+                <span className="v2-taka-next">Next {next} <i style={{ '--p': `${((cur - (next - step)) / step) * 100}%` }} /> {((next / cur - 1) * 100).toFixed(1)}% to go</span>
+            </div>
         </div>
     );
 }
@@ -617,10 +759,49 @@ function Readout({ fred, vol, rubberBand, saved, waiting }) {
                 <button key={c.key} type="button" className={`v2-read tone-${c.tone}`} onClick={() => jumpToCard(c.jump)}
                     title={`${c.why}${c.old ? ` · ${c.old.note}` : ''} · tap for the card`}>
                     <span className="v2-read-text">{c.old?.kind === 'stale' ? '🕐 ' : ''}{c.text.replace(/\s*✓$/, '')}</span>
+                    <ReadGlyph k={c.key} fred={fred} vol={vol} rubberBand={rubberBand} />
                 </button>
             ))}
         </div>
     );
+}
+
+const RB_TONE = { green: 'good', amber: 'caution', red: 'bad' };
+/** A w×h line through `vals`; `also` widens the scale (e.g. 0, so a zero line always fits). */
+const spark = (vals, w, h, also = []) => {
+    const all = [...vals, ...also];
+    const lo = Math.min(...all), span = Math.max(...all) - lo || 1;
+    const y = (v) => +(h - 2 - ((v - lo) / span) * (h - 4)).toFixed(1);
+    const x = (i) => +((i / (vals.length - 1)) * w).toFixed(1);
+    return { x, y, d: vals.map((v, i) => `${i ? 'L' : 'M'}${x(i)} ${y(v)}`).join('') };
+};
+
+/** Each verdict's own little picture: the VIX curve, the 4 horsemen, the 10Y−2Y line, the 8 bull tests, the 5 tripwires. */
+function ReadGlyph({ k, fred, vol, rubberBand }) {
+    const yc = useChart('yieldCurve', k === 'curve' ? fred?.yieldCurve?.current : null);
+    if (k === 'vol') {
+        const v = (vol?.regime?.curve?.points || []).map((p) => p.value).filter(Number.isFinite);
+        if (v.length < 2) return null;
+        const s = spark(v, 40, 14);
+        return <svg className="v2-glyph" width="40" height="14" viewBox="0 0 40 14" aria-hidden="true"><path d={s.d} />{v.map((x, i) => <circle key={i} cx={s.x(i)} cy={s.y(x)} r="1.6" />)}</svg>;
+    }
+    if (k === 'curve') {
+        const v = (yc?.points || []).slice(-90).map((p) => p.value).filter(Number.isFinite);
+        if (v.length < 2) return null;
+        const s = spark(v, 44, 14, [0]);
+        return <svg className="v2-glyph" width="44" height="14" viewBox="0 0 44 14" aria-hidden="true"><line className="is-zero" x1="0" x2="44" y1={s.y(0)} y2={s.y(0)} /><path d={s.d} /><circle cx="44" cy={s.y(v[v.length - 1])} r="2" /></svg>;
+    }
+    let pips = null;
+    if (k === 'horsemen') {
+        const r = horsemenRiding(fred);
+        if (r) pips = [0, 1, 2, 3].map((i) => (i < r.riding ? 'bad' : i < r.known ? 'off' : 'na'));
+    } else if (k === 'bull') {
+        pips = Object.values(fred?.checklist || {}).filter((i) => i && typeof i === 'object').map((i) => (i.bullish ? 'good' : 'off'));
+    } else if (k === 'dips') {
+        pips = Object.values(rubberBand?.dials || {}).map((d) => RB_TONE[d?.colour] || 'na');
+    }
+    if (!pips?.length) return null;
+    return <span className={`v2-pips is-${k}`} aria-hidden="true">{pips.map((p, i) => <i key={i} className={`is-${p}`} />)}</span>;
 }
 
 /** Sticky section tabs; the one in view is lit (IntersectionObserver, no scroll listener). */
@@ -879,6 +1060,10 @@ export default function DashboardV2() {
 
                     <Section id="world" title="World">
                         <div className="v2-grid">
+                            <Slot jump="USD/BDT" title="USD/BDT" span={12} saved={saved('extra')}
+                                tip="Taka per dollar. Up = each dollar buys more taka. IMF official month-ends from 1972, Wise daily from Oct 2021, then the history sheet + today's live rate.">
+                                <ErrorBoundary resetKey={refreshTick}><Taka extra={extra} loading={pending.extra && !extra} /></ErrorBoundary>
+                            </Slot>
                             <Slot jump="Markets" title="Global markets" span={12} saved={saved('extra')} more>
                                 <ErrorBoundary resetKey={refreshTick}><Markets extra={extra} loading={pending.extra && !extra} /></ErrorBoundary>
                             </Slot>

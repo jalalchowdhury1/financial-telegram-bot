@@ -1207,7 +1207,7 @@ body::before {
 .mark-pop {
   position: fixed;
   z-index: 2147483000;
-  width: 246px;
+  width: 300px; /* room for 1M … 30Y · MAX on one line */
   padding: 13px 14px;
   text-align: left;
   background: #0d1420;
@@ -1261,7 +1261,7 @@ body::before {
   text-transform: uppercase; color: var(--text-muted);
   margin-top: 7px;
 }
-@media (max-width: 560px) { .mark-pop { width: 210px; } }
+@media (max-width: 560px) { .mark-pop { width: 272px; } }
 
 /* the header chip — rendered only when something is actually lit */
 .mark-chip {
@@ -2301,10 +2301,11 @@ html { overscroll-behavior-y: contain; } /* Android's own pull = full reload; ou
 .mark-pop-sep { height: 1px; margin: 10px 0 8px; background: rgba(255, 255, 255, 0.08); }
 /* 📈 range chips — the cards' timeframe pills, in the popover's cyan */
 .series-head .mark-pop-eyebrow { margin-bottom: 8px; }
-.series-tfs { display: flex; gap: 3px; }
+.series-tfs { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; padding: 10px 2px; margin: -10px -2px; } /* one line, always: scrolls before it wraps (padding = room for the finger-sized ::before) */
 .series-tf {
   position: relative;
-  padding: 2px 6px;
+  flex: none;
+  padding: 2px 5px;
   border: none;
   border-radius: 5px;
   background: rgba(255, 255, 255, 0.05);
@@ -2319,6 +2320,7 @@ html { overscroll-behavior-y: contain; } /* Android's own pull = full reload; ou
 .series-tf:hover { color: var(--text-secondary); }
 .series-tf.is-on { background: rgba(34, 211, 238, 0.2); color: var(--mark); }
 .series-tf:focus-visible { outline: 2px solid var(--mark); outline-offset: 1px; }
+@media (max-width: 560px) { .series-tf { padding: 2px 3px; } } /* the 10 chips fit the phone popover */
 .series-chart svg { display: block; width: 100%; height: 64px; margin: 6px 0 4px; }
 .series-range, .series-dates {
   display: flex; justify-content: space-between; gap: 8px;
@@ -3131,3 +3133,6 @@ html:not(:has(.jump-fab)) .back-pill {
   .pm-macro { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .pm-title { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 }
+
+/* SPY chart: 1M … 30Y · ALL · 📅 fit a phone's card on one line (the chips' padding is inline, hence !important) */
+@media (max-width: 560px) { .tf-btn-spy { padding-left: 4px !important; padding-right: 4px !important; } }

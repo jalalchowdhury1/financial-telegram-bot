@@ -147,7 +147,7 @@ function useLong(key) {
 }
 
 /**
- * The popover's chart section: 1M · 3M · 6M · 1Y · 5Y · MAX chips (styled like the cards'
+ * The popover's chart section: 1M · 3M · 6M · 1Y · 5Y · 10Y · 15Y · 20Y · 30Y · MAX chips (styled like the cards'
  * timeframe pills; only the ones this stat's history can fill), the eyebrow, the line. Mounts
  * only while the popover is open, so it reads the remembered pick fresh each time — a chip
  * picked on one number carries to the next.

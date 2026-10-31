@@ -265,22 +265,33 @@ body:has(.v2) { background: #0b0c0e; }
 }
 .v2-readout.is-waiting { display: block; padding: 18px 24px; }
 .v2-read {
-  display: flex; flex-direction: column; gap: 5px; text-align: left; min-width: 0;
-  padding: 13px 18px; background: none; border: 0; border-left: 1px solid var(--line);
-  color: var(--ink); cursor: pointer; transition: background .2s;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; text-align: left; min-width: 0;
+  padding: 13px 18px; border: 0; border-left: 1px solid var(--line);
+  background: linear-gradient(0deg, color-mix(in srgb, var(--tc, var(--ink-3)) 9%, transparent), transparent 75%);
+  color: var(--ink); cursor: pointer; transition: background-color .2s;
   font-family: var(--sans);
 }
 .v2-read:first-child { border-left: 0; }
-.v2-read:hover { background: var(--surface-2); }
+.v2-read:hover { background-color: var(--surface-2); }
 .v2-read-text { font-size: 13px; font-weight: 600; white-space: nowrap; }
-.v2-read-text::before {
-  content: ''; display: inline-block; width: 7px; height: 7px; border-radius: 999px;
-  margin-right: 8px; vertical-align: 1px; background: currentColor;
-}
 .v2-read-why { font-size: 12px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.v2-read.tone-good .v2-read-text { color: var(--up); }
-.v2-read.tone-bad .v2-read-text { color: var(--down); }
-.v2-read.tone-caution .v2-read-text, .v2-read.tone-watch .v2-read-text { color: var(--warn); }
+.v2-read.tone-good { --tc: var(--up); }
+.v2-read.tone-bad { --tc: var(--down); }
+.v2-read.tone-caution, .v2-read.tone-watch { --tc: var(--warn); }
+.v2-read .v2-read-text { color: var(--tc, var(--ink)); }
+/* each verdict's own little picture, in its tone: a line (VIX curve, 10Y−2Y) or pips (horsemen, bull tests, tripwires) */
+.v2-glyph { flex: none; overflow: visible; color: var(--tc, var(--ink-2)); }
+.v2-glyph path { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+.v2-glyph circle { fill: currentColor; }
+.v2-glyph .is-zero { stroke: var(--line-2); stroke-width: 1; stroke-dasharray: 2 2; }
+.v2-pips { flex: none; display: flex; align-items: center; gap: 3px; }
+.v2-pips i { width: 7px; height: 7px; border-radius: 999px; background: rgb(255 255 255 / .12); }
+.v2-pips.is-bull { gap: 2px; }
+.v2-pips.is-bull i { width: 5px; height: 10px; border-radius: 1.5px; }
+.v2-pips i.is-good { background: var(--up); }
+.v2-pips i.is-bad { background: var(--down); box-shadow: 0 0 6px rgb(239 107 115 / .5); }
+.v2-pips i.is-caution { background: var(--warn); }
+.v2-pips i.is-na { background: none; box-shadow: inset 0 0 0 1px var(--line-2); }
 
 /* what moved + since last visit, under the read */
 .v2-strips { margin-top: 14px; display: grid; gap: 10px; }
@@ -298,11 +309,24 @@ body:has(.v2) { background: #0b0c0e; }
 }
 .v2-mv {
   display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "label val" "bar x";
-  align-items: center; gap: 10px; min-width: 0; padding: 13px 16px;
+  align-items: center; gap: 7px 10px; min-width: 0; padding: 12px 16px;
   background: var(--surface); border: 0; color: var(--ink); font: 500 13px var(--sans);
   text-align: left; white-space: nowrap; cursor: pointer; transition: background .2s;
 }
-.v2-mv:hover { background: var(--surface-2); }
+.v2-mv:hover { background-color: var(--surface-2); }
+/* a big move warms its tile, more the bigger it is */
+.v2-mv.is-big { background-image: linear-gradient(180deg, rgb(227 168 87 / calc(var(--heat, 0) * .14)), transparent 85%); }
+.v2-mv.is-good { --mc: var(--up); }
+.v2-mv.is-bad { --mc: var(--down); }
+.v2-mv .v2-mv-val { color: var(--mc, var(--ink)); }
+/* its last month; the shaded band = a normal day either side of yesterday's level, so a big move leaps out of it */
+.v2-mv-spark { grid-area: bar; position: relative; height: 22px; min-width: 0; color: var(--mc, var(--ink-2)); }
+.v2-mv-spark svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.v2-mv-band { fill: rgb(255 255 255 / .06); }
+.v2-mv.is-big .v2-mv-band { fill: rgb(227 168 87 / .13); }
+.v2-mv-past { fill: none; stroke: var(--ink-3); stroke-width: 1.25; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.v2-mv-today { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.v2-mv-spark i { position: absolute; right: -3px; top: var(--end); width: 6px; height: 6px; margin-top: -3px; border-radius: 999px; background: currentColor; box-shadow: 0 0 8px currentColor; }
 .v2-mv-label { grid-area: label; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; }
 .v2-mv-label small { margin-left: 6px; font-size: 11px; color: var(--ink-3); }
 .v2-mv-val { grid-area: val; font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
@@ -314,7 +338,7 @@ body:has(.v2) { background: #0b0c0e; }
 .v2-mv-bar i { position: absolute; top: 0; bottom: 0; border-radius: 999px; background: var(--ink-2); }
 .v2-mv.is-big .v2-mv-bar i { background: var(--warn); }
 .v2-mv-x { grid-area: x; font-size: 11.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; text-align: right; }
-.v2-mv.is-big .v2-mv-x { color: var(--warn); }
+.v2-mv.is-big .v2-mv-x { color: var(--warn); background: rgb(227 168 87 / .12); padding: 1px 6px; border-radius: 999px; }
 
 /* ---------- signals ---------- */
 .v2-signals { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
@@ -656,6 +680,7 @@ body:has(.v2) { background: #0b0c0e; }
   .v2-more { top: 14px; right: 8px; }
   .v2-moves-grid { grid-auto-flow: row; }
   .v2-mv { grid-template-columns: 64px minmax(0, 1fr) 60px 34px; grid-template-areas: "label bar val x"; padding: 11px 14px; }
+  .v2-mv-spark { height: 16px; }
 }
 
 /* ---------- economy: each signal's distance from its green line, worst first ---------- */
@@ -688,7 +713,11 @@ body:has(.v2) { background: #0b0c0e; }
 .v2-slot.is-open .v2-g { grid-template-columns: 150px minmax(0, 1fr) 70px 168px; grid-template-areas: "label track val rule"; }
 .v2-slot.is-open .v2-g-rule { display: block; }
 /* a row is a button: hover shows its zones and cut-off levels on the track, a click opens it */
-.v2-g { cursor: pointer; transition: background-color .15s; }
+.v2-g { position: relative; cursor: pointer; transition: background-color .15s; }
+/* the title's definition on hover (tap on phone): anchored to the row, so the label's ellipsis clip can't cut it; an open row already shows it */
+.v2-g .tooltip-trigger { position: static; }
+.v2-g .tooltip-trigger::after { max-width: min(640px, calc(100vw - 40px)); } /* room for the definition on one line */
+.v2-g.is-open .tooltip-trigger::after, .v2-g.is-open .tooltip-trigger::before { display: none; }
 .v2-g-label button { all: unset; display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
 .v2-g-label button:focus-visible { outline: 1px solid var(--accent); outline-offset: 3px; border-radius: 3px; }
 .v2-g-track { transition: background .15s; }
@@ -814,3 +843,39 @@ body:has(.v2) { background: #0b0c0e; }
 .v2-ivcard-full .card-header { display: none; }
 .v2-ivcard-full .card[data-cached]::before { display: none; }
 .v2-slot.is-calm .v2-ivcard-full { display: none; }
+
+/* ---------- USD/BDT: all of it since 1972, today's dot breathing; up = each dollar buys more taka ---------- */
+.v2-taka { display: grid; gap: 10px; padding: 14px 18px 12px; }
+.v2-taka-top { display: flex; align-items: baseline; gap: 12px; min-width: 0; white-space: nowrap; }
+.v2-taka-now { font: 600 18px var(--sans); font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.v2-taka-chg { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.v2-taka-chg small { margin-left: 3px; font-size: 12px; font-weight: 500; color: var(--ink-3); }
+.v2-taka-ath { align-self: center; padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600; color: var(--up); background: rgb(76 195 138 / .12); box-shadow: 0 0 14px rgb(76 195 138 / .22); }
+.v2-taka-off { font-size: 12px; color: var(--ink-3); }
+.v2-taka .card-header { margin-bottom: 4px; }
+.v2-taka-tfs { display: flex; gap: 2px; margin-right: -7px; overflow-x: auto; scrollbar-width: none; }
+.v2-taka-tfs button { all: unset; flex: none; cursor: pointer; padding: 2px 7px; border-radius: 6px; font: 500 11.5px var(--sans); font-variant-numeric: tabular-nums; color: var(--ink-3); }
+.v2-taka-tfs button:hover { color: var(--ink-2); }
+.v2-taka-tfs button.is-on { color: var(--ink); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line-2); }
+.v2-taka-plot { position: relative; height: 140px; margin-left: 30px; color: var(--up); cursor: crosshair; touch-action: pan-y; }
+.v2-taka.is-down .v2-taka-plot { color: var(--down); }
+.v2-taka-plot svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.v2-taka-area { fill: currentColor; opacity: .09; }
+.v2-taka-line { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.v2-taka-lvl { position: absolute; left: 0; right: 0; border-top: 1px dashed rgb(255 255 255 / .07); pointer-events: none; }
+.v2-taka-lvl b { position: absolute; right: 100%; top: -7px; padding-right: 7px; font: 500 10.5px var(--sans); color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.v2-taka-dot { position: absolute; right: -4px; top: var(--end); width: 8px; height: 8px; margin-top: -4px; border-radius: 999px; background: currentColor; box-shadow: 0 0 12px currentColor; animation: v2-taka-breathe 2.6s ease-in-out infinite; }
+@keyframes v2-taka-breathe { 50% { box-shadow: 0 0 0 6px rgb(76 195 138 / 0), 0 0 18px currentColor; transform: scale(1.15); } }
+.v2-taka-at { position: absolute; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 999px; background: var(--ink); pointer-events: none; }
+.v2-taka-read { position: absolute; top: -4px; left: var(--x); transform: translateX(calc(var(--x) * -1)); padding: 3px 8px; border-radius: 6px; border: 1px solid var(--line-2); background: var(--surface-2); font-size: 12px; color: var(--ink-2); white-space: nowrap; font-variant-numeric: tabular-nums; pointer-events: none; }
+.v2-taka-foot { display: flex; justify-content: space-between; gap: 16px; font-size: 12.5px; color: var(--ink-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.v2-taka-foot b { color: var(--ink); font-weight: 600; }
+.v2-taka-foot em { margin-left: 6px; font-style: normal; font-weight: 600; }
+.v2-taka-next i { display: inline-block; width: 60px; height: 4px; margin: 0 7px; vertical-align: 2px; border-radius: 999px; background: linear-gradient(90deg, var(--up) var(--p), rgb(255 255 255 / .09) var(--p)); }
+@media (prefers-reduced-motion: reduce) { .v2-taka-dot { animation: none; } }
+@media (max-width: 640px) {
+  .v2-taka { padding: 12px 14px 10px; }
+  .v2-taka-tfs button { padding: 2px 5px; }
+  .v2-taka-plot { height: 120px; }
+  .v2-taka-foot { flex-direction: column; gap: 6px; }
+}

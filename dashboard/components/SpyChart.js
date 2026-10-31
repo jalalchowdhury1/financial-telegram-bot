@@ -5,7 +5,7 @@ import useElementWidth from './useElementWidth';
 import AxisLabels from './AxisLabels';
 import { decodeLong } from '../lib/longHistory';
 
-const TF_KEYS = ['1M', '3M', '6M', '1Y', '5Y', '10Y', 'ALL'];
+const TF_KEYS = ['1M', '3M', '6M', '1Y', '5Y', '10Y', '15Y', '20Y', '30Y', 'ALL'];
 const STORE_KEY = 'ftb:tf:spy';
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -35,14 +35,14 @@ export default function SpyChart({ chartHistory, recessions = [], current = null
     const [baked, setBaked] = useState(null);
     const [dateRange, setDateRange] = useState(null); // 📅 {from, to} ISO dates, or null = a preset tab
     useEffect(() => { const v = readChoice(STORE_KEY); if (v) setTimeframe(v); }, []);
-    // /api/spy carries ~14 months; the baked daily file (scripts/bake_spy_daily.py) fills 5Y/10Y/ALL.
+    // /api/spy carries ~14 months; the baked daily file (scripts/bake_spy_daily.py) fills 5Y…30Y/ALL.
     useEffect(() => {
         fetch('/history/spy-daily.json').then((r) => (r.ok ? r.json() : null)).then(decodeLong).then(setBaked).catch(() => {});
     }, []);
     if (!chartHistory || chartHistory.length < 2) return null;
 
     const full = joinBaked(baked, chartHistory);
-    const tfDays = { '1M': 21, '3M': 63, '6M': 126, '1Y': 252, '5Y': 1260, '10Y': 2520, 'ALL': full.length };
+    const tfDays = { '1M': 21, '3M': 63, '6M': 126, '1Y': 252, '5Y': 1260, '10Y': 2520, '15Y': 3780, '20Y': 5040, '30Y': 7560, 'ALL': full.length };
     // Only offer tabs the history covers (until the baked file lands, or on the index
     // backup path, that is ~14 months). Fall back to 5Y, then ALL.
     const usable = TF_KEYS.filter((tf) => tfAvailable(tf === 'ALL' ? null : tfDays[tf], full.length));

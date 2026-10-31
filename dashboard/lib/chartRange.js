@@ -1,5 +1,5 @@
 /**
- * 📈 Chart range chips for the tap-a-number popover: 1M · 3M · 6M · 1Y · 5Y · MAX.
+ * 📈 Chart range chips for the tap-a-number popover: 1M · 3M · 6M · 1Y · 5Y · 10Y · 15Y · 20Y · 30Y · MAX.
  *
  * /api/history `series` carries every day the sheet has (capped at 2 years), and a stat with
  * baked long history (lib/longHistory.js) reaches back decades; the popover slices the
@@ -17,6 +17,10 @@ export const RANGES = [
     { id: '6M', days: 180, label: '180 days' },
     { id: '1Y', days: 365, label: '1 year' },
     { id: '5Y', days: 1826, label: '5 years' },
+    { id: '10Y', days: 3653, label: '10 years' },
+    { id: '15Y', days: 5479, label: '15 years' },
+    { id: '20Y', days: 7305, label: '20 years' },
+    { id: '30Y', days: 10958, label: '30 years' },
     { id: 'MAX', days: Infinity },
 ];
 export const DEFAULT_RANGE = '3M';
