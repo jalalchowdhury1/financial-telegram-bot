@@ -25,7 +25,7 @@ const lineOf = (l) => (l.days ? `${sign(l.line)}${Math.abs(l.line)}${l.pct ? '%'
 const shortDate = (iso) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 const pct0 = (r) => `${sign(r)}${Math.abs(r * 100).toFixed(0)}%`;
 
-export default function LeadCombos({ spy }) {
+export default function LeadCombos({ spy, onState }) {
     const series = useSeries();
     const [files, setFiles] = useState(null); // {key: points} | false when a file failed
     const [open, setOpen] = useState(null);
@@ -51,6 +51,17 @@ export default function LeadCombos({ spy }) {
             return { c, pts, now, until: until >= today ? until : null, stats, base };
         });
     }, [files, series]);
+
+    // For the page's top line: each pair's state, and its leg furthest from its line.
+    useEffect(() => {
+        if (!onState) return;
+        if (files === false) onState([]);
+        if (rows) onState(rows.filter((r) => r.now).map(({ c, now, until }) => {
+            const k = now.legs.reduce((m, v, i) => (v / c.legs[i].line < now.legs[m] / c.legs[m].line ? i : m), 0);
+            return { jump: 'Lead combos', fire: until && `${c.name} bullish to ${shortDate(until)}`, share: now.value,
+                gap: `${c.name} · ${c.legs[k].label} ${fmt(now.legs[k], c.legs[k])} → ${lineOf(c.legs[k])}` };
+        }));
+    }, [files, rows, onState]);
 
     const sel = rows?.find((r) => r.c.id === open);
     return (

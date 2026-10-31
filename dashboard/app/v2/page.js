@@ -38,7 +38,6 @@ import { fgHistoryCells } from '../../lib/fgHistory';
 import { staleOf } from '../../lib/glance';
 import { collectMoves, fmtLevel, movedWhen, sigmaOf, BIG_Z } from '../../lib/whatMoved';
 import { marketWindow } from '../../lib/marketWindow';
-import { ivRank, ivPercentile } from '../../lib/vol';
 import { pulseVerdicts, horsemenRiding } from '../../lib/pulseVerdicts';
 import { decodeLong, joinLong } from '../../lib/longHistory';
 import useFeeds from './useFeeds';
@@ -282,7 +281,7 @@ const BULL = [
 const INDICATORS = [
     { key: 'sahmRule', ticks: [[0.5, 'Fires']], label: 'Sahm rule', line: 0.5, band: 0.5, low: true, fmt: fixed(2), rule: 'Safe < 0.50', tip: 'Fires when the 3-month jobless rate is 0.5 over its 12-month low.' },
     { key: 'sentiment', ticks: [[80, 'Strong'], [60, 'Weak']], label: 'Consumer sentiment', line: 80, band: 20, fmt: fixed(1), rule: 'Strong > 80 · Weak < 60', tip: 'UMich consumer confidence survey.' },
-    { key: 'claims', ticks: [[250, 'Healthy'], [350, 'Weak']], label: 'Jobless claims', line: 250, band: 100, low: true, fmt: kfmt, rule: 'Healthy < 250K', tip: 'New jobless claims, 4-week average.' },
+    { key: 'claims', ticks: [[250, 'Healthy'], [350, 'Weak']], label: 'Claims 4-wk avg', line: 250, band: 100, low: true, fmt: kfmt, rule: 'Healthy < 250K', tip: 'New jobless claims, 4-week average.' },
     { key: 'creditSpread', ticks: [[1.5, 'Calm'], [2.5, 'Stressed']], label: 'Credit spread', line: 1.5, band: 1, low: true, fmt: pct2, rule: 'Calm < 1.50%', tip: 'BBB yield over Treasuries. Wider = stress.' },
     { key: 'realYields', ticks: [[0, 'Easy'], [2, 'Tight']], label: 'Real yields', line: 0, band: 2, low: true, fmt: pct2, rule: 'Easy ≤ 0% · Tight > 2%', tip: '10-year TIPS yield: borrowing cost after inflation.' },
     { key: 'copperGold', ticks: [[0, 'Flat']], tfmt: (v) => `${v}%`, label: 'Copper/gold', line: 0, band: 5, fmt: fixed(2), pos: (m) => m.changePct ?? m.changePct3mo, tip: 'Copper vs gold. Rising = growth mood.' },
@@ -641,69 +640,56 @@ function MoreButton({ open, onClick, className = 'v2-more' }) {
 }
 
 /**
- * SPY's 1-year IV rank and percentile as one picture: the 252 VIX closes they use, sorted calmest → wildest.
- * Today's dot sits at their coordinates: across = %ile (share of days at or below it), up = Rank (year low → high).
- * The hollow dot is the last close; pointing anywhere on the curve reads that level.
+ * SPY implied vol's year as a path: the 252 VIX closes behind the hero's Rank and %ile, plus today's when live.
+ * The band is the year's middle half (25th–75th %ile), so a line above it is a jumpy day for this year.
  */
-function ivYearGeo(year, t) {
+function vixYearGeo(year, t) {
     const vals = (year || []).filter(Number.isFinite);
-    const days = vals.slice(-252);
-    const sorted = [...days].sort((a, b) => a - b);
-    const n = sorted.length;
-    if (n < 20 || !(sorted[n - 1] > sorted[0]) || !Number.isFinite(t.iv)) return null;
-    const y = (v) => 100 - ivRank(days, v);
-    const steps = (to) => sorted.slice(0, to).map((v, i) => `L${(i / n) * 100} ${y(v)}H${((i + 1) / n) * 100}`).join('');
-    const k = sorted.filter((v) => v <= t.iv).length;
-    // The last close against the 252 days up to it (live: today's window; after the close: one day back).
-    const prev = t.live ? vals[vals.length - 1] : vals[vals.length - 2];
-    const prevDays = t.live ? days : vals.slice(-253, -1);
-    const was = Number.isFinite(prev) && prevDays.length === n
-        ? { rank: ivRank(prevDays, prev), pct: ivPercentile(prevDays, prev), x: ivPercentile(days, prev), y: ivRank(days, prev) } : null;
-    return { days, sorted, n, area: `M0 100${steps(n)}V100Z`, lit: `M0 100${steps(k)}V100Z`, edge: `M0 ${y(sorted[0])}${steps(n)}`, litEdge: `M0 ${y(sorted[0])}${steps(k)}`, was };
+    const pts = t.live ? [...vals.slice(-252), t.iv] : vals.slice(-252);
+    const n = pts.length, lo = Math.min(...pts), hi = Math.max(...pts);
+    if (n < 20 || !(hi > lo)) return null;
+    const sorted = [...pts].sort((a, b) => a - b);
+    const y = (v) => 4 + (1 - (v - lo) / (hi - lo)) * 92; // % from the top, with a little air at both ends
+    const line = pts.map((v, i) => `${i ? 'L' : 'M'}${((i / (n - 1)) * 100).toFixed(2)} ${y(v).toFixed(2)}`).join('');
+    return { pts, n, lo, hi, y, line, area: `${line}V100H0Z`, band: [y(sorted[Math.round(0.75 * (n - 1))]), y(sorted[Math.round(0.25 * (n - 1))])] };
 }
 
-function IvYear({ vol, waiting }) {
-    const t = vol?.tickers?.find((x) => x.ticker === 'SPY' && Number.isFinite(x.ivRank1y) && Number.isFinite(x.ivPctile1y));
-    const geo = useMemo(() => (t ? ivYearGeo(vol.vixYear, t) : null), [vol, t]);
+/** Trading days back from the last point, said the short way. */
+const sessionsAgo = (d) => (!d ? 'now' : d < 5 ? `${d}d ago` : d < 63 ? `${Math.round(d / 5)} wk ago` : `${Math.round(d / 21)} mo ago`);
+
+function VixYear({ vol, waiting }) {
+    const t = vol?.tickers?.find((x) => x.ticker === 'SPY' && Number.isFinite(x.iv) && Number.isFinite(x.ivPctile1y));
+    const geo = useMemo(() => (t ? vixYearGeo(vol.vixYear, t) : null), [vol, t]);
     const [at, setAt] = useState(null);
-    if (!t) return waiting ? <Skeleton count={3} /> : <div className="v2-fred-na">Unavailable · source busy, try again shortly</div>;
-    const delta = (now, was) => {
-        const d = Math.round(now) - Math.round(was);
-        return d ? <small>{d > 0 ? '▲' : '▼'}{Math.abs(d)}</small> : null;
-    };
-    const pill = (cls, name, v, was) => (
-        <span className={`v2-ivy-pill ${cls}`}>{name} <b className={`tone-${ivTone(v)}`}>{Math.round(v)}</b>{was != null && delta(v, was)}</span>
-    );
-    const rank = pill('is-rank', 'Rank', t.ivRank1y, geo?.was?.rank);
-    const pct = pill('is-pct', '%ile', t.ivPctile1y, geo?.was?.pct);
-    if (!geo) return <div className="v2-ivy-plain">{rank}{pct}</div>;
+    if (!geo) return waiting ? <Skeleton count={3} /> : <div className="v2-fred-na">Unavailable · source busy, try again shortly</div>;
     const read = (e) => {
         const r = e.currentTarget.getBoundingClientRect();
-        const v = geo.sorted[Math.min(geo.n - 1, Math.floor(Math.max(0, (e.clientX - r.left) / r.width) * geo.n))];
-        setAt({ v, x: ivPercentile(geo.days, v), y: ivRank(geo.days, v) });
+        setAt(Math.round(Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)) * (geo.n - 1)));
     };
+    const now = geo.pts[geo.n - 1];
+    const x = (i) => `${(i / (geo.n - 1)) * 100}%`;
     return (
-        <div className="v2-ivy" style={{ '--x': `${t.ivPctile1y}%`, '--y': `${t.ivRank1y}%` }}>
+        <div className="v2-ivy">
             <div className={`v2-ivy-plot tone-${ivTone(t.ivPctile1y)}`} onPointerMove={read} onPointerDown={read} onPointerLeave={() => setAt(null)}>
                 <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-                    <path className="v2-ivy-all" d={geo.area} />
-                    <path className="v2-ivy-lit" d={geo.lit} />
-                    <path className="v2-ivy-edge" d={geo.edge} />
-                    <path className="v2-ivy-edge is-lit" d={geo.litEdge} />
+                    <rect className="v2-ivy-band" x="0" width="100" y={geo.band[0]} height={geo.band[1] - geo.band[0]} />
+                    <path className="v2-ivy-area" d={geo.area} />
+                    <path className="v2-ivy-line" d={geo.line} />
                 </svg>
-                <i className="v2-ivy-h" />
-                <i className="v2-ivy-v" />
-                {geo.was && <i className="v2-ivy-was" style={{ left: `${geo.was.x}%`, bottom: `${geo.was.y}%` }} />}
-                <i className="v2-ivy-dot" />
-                {at && (
+                {[geo.hi, geo.lo].map((v) => Math.abs(geo.y(v) - geo.y(now)) > 12 && (
+                    <span key={v} className="v2-ivy-tick" style={{ top: `${geo.y(v)}%` }}>{v.toFixed(0)}</span>
+                ))}
+                <i className="v2-ivy-dot" style={{ top: `${geo.y(now)}%` }} />
+                <b className="v2-ivy-tick is-now" style={{ top: `${geo.y(now)}%` }}>{now.toFixed(1)}</b>
+                {at != null && (
                     <>
-                        <i className="v2-ivy-at" style={{ left: `${at.x}%`, bottom: `${at.y}%` }} />
-                        <span className="v2-ivy-read" style={{ '--x': `${at.x}%` }}>VIX {at.v.toFixed(1)} · Rank {Math.round(at.y)} · %ile {Math.round(at.x)}</span>
+                        <i className="v2-ivy-v" style={{ left: x(at) }} />
+                        <i className="v2-ivy-at" style={{ left: x(at), top: `${geo.y(geo.pts[at])}%` }} />
+                        <span className="v2-ivy-read" style={{ '--x': x(at) }}>VIX {geo.pts[at].toFixed(1)} · {sessionsAgo(geo.n - 1 - at)}</span>
                     </>
                 )}
-                {rank}
             </div>
-            <div className="v2-ivy-axis">{pct}</div>
+            <div className="v2-ivy-axis" aria-hidden="true"><span>1Y ago</span><span>6M</span><span>Now</span></div>
         </div>
     );
 }
@@ -869,7 +855,7 @@ function TriggerLine({ points, line, tag, tone }) {
     );
 }
 
-function Signals({ sheets, spy, loading }) {
+function Signals({ sheets, spy, loading, onState }) {
     const na = loading ? '…' : 'N/A';
     const [study, setStudy] = useState(false);
     const aaii = parseFloat(sheets?.AAIIDiff);
@@ -897,6 +883,14 @@ function Signals({ sheets, spy, loading }) {
     }, [aaiiHist]);
     const today = new Date().toLocaleDateString('en-CA'); // the local calendar day (a UTC date turns over at ~8 pm ET)
     const bullUntil = Number.isFinite(aaii) && aaii >= AAII_LINE ? plusMonths(today, AAII_MONTHS) : fired && fired.until >= today ? fired.until : null;
+    // The top line reads these two straight from here, so it always says what the tiles say.
+    useEffect(() => {
+        if (loading) return;
+        onState([
+            ...(Number.isFinite(aaii) ? [{ jump: 'Indicators', fire: bullUntil && `AAII bullish to ${shortDate(bullUntil)}`, share: aaii / AAII_LINE, gap: `AAII ${aaii.toFixed(1)} → ${AAII_LINE}` }] : []),
+            ...(Number.isFinite(vixCur) && vix3m > 0 ? [{ jump: 'Indicators', fire: vixCur > vix3m && 'VIX over 3M', share: vixCur / vix3m, gap: `VIX/3M ${(vixCur / vix3m).toFixed(2)} → 1` }] : []),
+        ]);
+    }, [loading, aaii, bullUntil, vixCur, vix3m, onState]);
 
     const ratioPts = useMemo(() => {
         const v3 = new Map((v3Hist?.points || []).map((p) => [p.date, p.value]));
@@ -1023,9 +1017,28 @@ function RegimeRow({ data }) {
     );
 }
 
-/** The five verdicts v1 shows as Market Pulse chips, as a readable row: verdict + why. */
+/** Today in one line: what's firing, else the signal nearest its line. Tap a part for its card. */
+function TodayLine({ items }) {
+    if (!items) return <div className="v2-today" aria-hidden="true" />;
+    if (!items.length) return null;
+    const firing = items.filter((s) => s.fire);
+    const near = items.reduce((a, b) => (b.share > a.share ? b : a));
+    return (
+        <div className={`v2-today${firing.length ? ' is-on' : ''}`}>
+            <i className="v2-today-dot" aria-hidden="true" />
+            {firing.length ? firing.map((s) => <button key={s.fire} type="button" onClick={() => jumpToCard(s.jump)}>{s.fire}</button>) : (
+                <>
+                    <span>Nothing firing</span>
+                    <button type="button" onClick={() => jumpToCard(near.jump)}><i>closest</i> {near.gap}</button>
+                </>
+            )}
+        </div>
+    );
+}
+
+/** v1's Market Pulse verdicts as a readable row: verdict + why. Not the curve: Recession watch and Economy show it. */
 function Readout({ fred, vol, rubberBand, saved, waiting }) {
-    const chips = useMemo(() => pulseVerdicts({ fred, vol, rubberBand, saved }), [fred, vol, rubberBand, saved?.fred, saved?.vol]); // eslint-disable-line react-hooks/exhaustive-deps
+    const chips = useMemo(() => pulseVerdicts({ fred, vol, rubberBand, saved }).filter((c) => c.key !== 'curve'), [fred, vol, rubberBand, saved?.fred, saved?.vol]); // eslint-disable-line react-hooks/exhaustive-deps
     if (!chips.length) return waiting ? <div className="v2-readout is-waiting"><Skeleton count={1} /></div> : null;
     return (
         <div className="v2-readout" aria-label="The read: verdicts from the cards below">
@@ -1041,29 +1054,21 @@ function Readout({ fred, vol, rubberBand, saved, waiting }) {
 }
 
 const RB_TONE = { green: 'good', amber: 'caution', red: 'bad' };
-/** A w×h line through `vals`; `also` widens the scale (e.g. 0, so a zero line always fits). */
-const spark = (vals, w, h, also = []) => {
-    const all = [...vals, ...also];
-    const lo = Math.min(...all), span = Math.max(...all) - lo || 1;
+/** A w×h line through `vals`. */
+const spark = (vals, w, h) => {
+    const lo = Math.min(...vals), span = Math.max(...vals) - lo || 1;
     const y = (v) => +(h - 2 - ((v - lo) / span) * (h - 4)).toFixed(1);
     const x = (i) => +((i / (vals.length - 1)) * w).toFixed(1);
     return { x, y, d: vals.map((v, i) => `${i ? 'L' : 'M'}${x(i)} ${y(v)}`).join('') };
 };
 
-/** Each verdict's own little picture: the VIX curve, the 4 horsemen, the 10Y−2Y line, the 8 bull tests, the 5 tripwires. */
+/** Each verdict's own little picture: the VIX curve, the 4 horsemen, the 8 bull tests, the 5 tripwires. */
 function ReadGlyph({ k, fred, vol, rubberBand }) {
-    const yc = useChart('yieldCurve', k === 'curve' ? fred?.yieldCurve?.current : null);
     if (k === 'vol') {
         const v = (vol?.regime?.curve?.points || []).map((p) => p.value).filter(Number.isFinite);
         if (v.length < 2) return null;
         const s = spark(v, 40, 14);
         return <svg className="v2-glyph" width="40" height="14" viewBox="0 0 40 14" aria-hidden="true"><path d={s.d} />{v.map((x, i) => <circle key={i} cx={s.x(i)} cy={s.y(x)} r="1.6" />)}</svg>;
-    }
-    if (k === 'curve') {
-        const v = (yc?.points || []).slice(-90).map((p) => p.value).filter(Number.isFinite);
-        if (v.length < 2) return null;
-        const s = spark(v, 44, 14, [0]);
-        return <svg className="v2-glyph" width="44" height="14" viewBox="0 0 44 14" aria-hidden="true"><line className="is-zero" x1="0" x2="44" y1={s.y(0)} y2={s.y(0)} /><path d={s.d} /><circle cx="44" cy={s.y(v[v.length - 1])} r="2" /></svg>;
     }
     let pips = null;
     if (k === 'horsemen') {
@@ -1112,6 +1117,8 @@ export default function DashboardV2() {
     const { spy, spyDailyMove, fg, fred, extra, sheets, history, jev, vol } = f.data;
     const { pending, saved, refreshTick, refreshNow } = f;
     const [rubberBand, setRubberBand] = useState(undefined);
+    const [sigState, setSigState] = useState(null);
+    const [comboState, setComboState] = useState(null);
     const [trioOpen, toggleTrio] = useOpen('fred-trio');
     const heroRef = useRef(null);
     const [heroGone, setHeroGone] = useState(false);
@@ -1169,6 +1176,7 @@ export default function DashboardV2() {
                     {/* NOW — the price, the mood, the read */}
                     <section id="now" className="v2-now" aria-label="The market now">
                         <div className="v2-phone-clock"><ErrorBoundary><MarketClock /></ErrorBoundary></div>
+                        <ErrorBoundary resetKey={refreshTick}><TodayLine items={sigState && comboState && [...sigState, ...comboState]} /></ErrorBoundary>
                         <div className="v2-hero" ref={heroRef}>
                             <div className="v2-hero-spy" data-jump="SPY overview" data-cached={saved('spy', 'spyDailyMove')}>
                                 <ErrorBoundary resetKey={refreshTick}>
@@ -1251,12 +1259,12 @@ export default function DashboardV2() {
 
                     <Section id="signals" title="Signals">
                         <div data-jump="Indicators" data-cached={saved('sheets')}>
-                            <ErrorBoundary resetKey={refreshTick}><Signals sheets={sheets} spy={spyOk ? spy.chartHistory : null} loading={pending.sheets && !sheets} /></ErrorBoundary>
+                            <ErrorBoundary resetKey={refreshTick}><Signals sheets={sheets} spy={spyOk ? spy.chartHistory : null} loading={pending.sheets && !sheets} onState={setSigState} /></ErrorBoundary>
                         </div>
                         <div className="v2-grid">
                             <ErrorBoundary resetKey={refreshTick}>
                                 <Slot jump="Lead combos" title="Lead combos" tip="Two stats past their lines at once: since 1993, a good next 6 months. Found by testing every stat here. Tap a row for the proof." span={12}>
-                                    <LeadCombos spy={spyOk ? spy.chartHistory : null} />
+                                    <LeadCombos spy={spyOk ? spy.chartHistory : null} onState={setComboState} />
                                 </Slot>
                             </ErrorBoundary>
                             <ErrorBoundary resetKey={refreshTick}>
@@ -1277,10 +1285,10 @@ export default function DashboardV2() {
                                     </ErrorBoundary>
                                 </div>
                             </Slot>
-                            <Slot jump="Volatility" title="Volatility" tip="SPY implied vol (VIX): the last 252 days, calmest → wildest. Dot = today: across = %ile, up = Rank." span={5} more>
+                            <Slot jump="Volatility" title="Volatility" tip="VIX over the past year. Band = its usual middle half. More = the full table." span={5} more>
                                 <div className="card v2-ivcard" data-cached={saved('vol')}>
                                     <div className="card-header" />
-                                    <ErrorBoundary resetKey={refreshTick}><IvYear vol={vol} waiting={pending.vol} /></ErrorBoundary>
+                                    <ErrorBoundary resetKey={refreshTick}><VixYear vol={vol} waiting={pending.vol} /></ErrorBoundary>
                                     <div className="v2-ivcard-full">
                                         <ErrorBoundary resetKey={refreshTick}><VolMetricsTable data={vol} saved={saved('vol')} waiting={pending.vol} /></ErrorBoundary>
                                     </div>

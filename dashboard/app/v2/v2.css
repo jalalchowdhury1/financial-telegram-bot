@@ -165,6 +165,18 @@ body:has(.v2) { background: #0b0c0e; }
   gap: 16px;
   padding-top: 32px;
 }
+/* today in one line: what's firing, else the closest signal; each part taps to its card */
+.v2-today {
+  display: flex; align-items: center; gap: 8px; min-height: 18px; padding-top: 22px; margin-bottom: -14px;
+  white-space: nowrap; overflow: hidden; font: 500 13px var(--sans); color: var(--ink-2);
+}
+.v2-today button { min-width: 0; overflow: hidden; text-overflow: ellipsis; padding: 0; border: 0; background: none; font: inherit; color: inherit; cursor: pointer; }
+.v2-today button:hover { color: var(--ink); }
+.v2-today > :is(span, button) + button::before { content: '·'; margin-right: 8px; color: var(--ink-3); }
+.v2-today button i { font-style: normal; color: var(--ink-3); }
+.v2-today-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--ink-3); }
+.v2-today.is-on { color: var(--up); }
+.v2-today.is-on .v2-today-dot { background: var(--up); box-shadow: 0 0 10px var(--up); }
 .v2-hero-spy, .v2-gauge-block {
   background: var(--surface);
   border: 1px solid var(--line);
@@ -278,7 +290,6 @@ body:has(.v2) { background: #0b0c0e; }
 .v2-glyph { flex: none; overflow: visible; color: var(--tc, var(--ink-2)); }
 .v2-glyph path { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
 .v2-glyph circle { fill: currentColor; }
-.v2-glyph .is-zero { stroke: var(--line-2); stroke-width: 1; stroke-dasharray: 2 2; }
 .v2-pips { flex: none; display: flex; align-items: center; gap: 3px; }
 .v2-pips i { width: 7px; height: 7px; border-radius: 999px; background: rgb(255 255 255 / .12); }
 .v2-pips.is-bull { gap: 2px; }
@@ -450,6 +461,7 @@ body:has(.v2) { background: #0b0c0e; }
   .v2-phone-clock .econ-line { font-size: 12px; color: var(--ink-3); margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .v2-main { padding: 0 16px 32px; }
   .v2-hero { padding-top: 16px; gap: 12px; }
+  .v2-today { padding-top: 14px; margin-bottom: -4px; font-size: 12.5px; }
   .v2-hero-spy, .v2-gauge-block { padding: 20px; }
   .v2-gauge-block.is-rsi { padding: 16px 20px; }
   .v2-hero-price-row { gap: 12px; }
@@ -758,40 +770,30 @@ body:has(.v2) { background: #0b0c0e; }
   .v2-mk :is(.v2-mk-spark, .v2-mv-bar) { display: none; }
 }
 
-/* ---------- volatility: SPY's year of VIX, sorted calmest → wildest; today's dot = (%ile, Rank) ---------- */
+/* ---------- volatility: SPY's year of VIX as a path; band = the year's middle half; right gutter = low, high, today ---------- */
 .v2-ivcard { display: flex; flex-direction: column; }
 .v2-ivy { flex: 1; display: flex; flex-direction: column; min-height: 0; }
-.v2-ivy-plot { position: relative; flex: 1; min-height: 150px; margin-left: 2px; touch-action: pan-y; cursor: crosshair; }
+.v2-ivy-plot { position: relative; flex: 1; min-height: 150px; margin-right: 38px; touch-action: pan-y; cursor: crosshair; }
 .v2-slot.is-open .v2-ivy-plot { flex: none; height: 170px; }
 .v2-ivy-plot svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
-.v2-ivy-all { fill: var(--ink-3); opacity: .08; }
-.v2-ivy-lit { fill: currentColor; opacity: .16; }
-.v2-ivy-edge { fill: none; stroke: var(--ink-3); stroke-width: 1.25; vector-effect: non-scaling-stroke; opacity: .6; }
-.v2-ivy-edge.is-lit { stroke: currentColor; stroke-width: 1.75; opacity: 1; }
-.v2-ivy-h, .v2-ivy-v { position: absolute; border: 0 dashed var(--ink-3); pointer-events: none; }
-.v2-ivy-h { left: 0; width: var(--x); bottom: var(--y); border-top-width: 1px; }
-.v2-ivy-v { left: var(--x); bottom: -10px; height: calc(var(--y) + 10px); border-left-width: 1px; }
-.v2-ivy-dot, .v2-ivy-was, .v2-ivy-at {
-  position: absolute; width: 10px; height: 10px; border-radius: 50%; transform: translate(-50%, 50%); pointer-events: none;
+.v2-ivy-band { fill: var(--ink-3); opacity: .08; }
+.v2-ivy-area { fill: currentColor; opacity: .07; }
+.v2-ivy-line { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.v2-ivy-tick {
+  position: absolute; left: calc(100% + 10px); transform: translateY(-50%); pointer-events: none; white-space: nowrap;
+  font: 500 11px var(--sans); color: var(--ink-3); font-variant-numeric: tabular-nums;
 }
-.v2-ivy-dot { left: var(--x); bottom: var(--y); background: currentColor; box-shadow: 0 0 0 3px var(--surface), 0 0 18px currentColor; }
-.v2-ivy-was { width: 7px; height: 7px; border: 1.5px solid var(--ink-3); background: var(--surface); }
-.v2-ivy-at { width: 7px; height: 7px; background: var(--ink); }
+.v2-ivy-tick.is-now { font-weight: 600; font-size: 12px; color: currentColor; }
+.v2-ivy-dot, .v2-ivy-at { position: absolute; width: 8px; height: 8px; border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; }
+.v2-ivy-dot { left: 100%; background: currentColor; box-shadow: 0 0 0 3px var(--surface), 0 0 14px currentColor; }
+.v2-ivy-at { width: 6px; height: 6px; background: var(--ink); }
+.v2-ivy-v { position: absolute; top: 0; bottom: 0; border-left: 1px dashed var(--ink-3); pointer-events: none; }
 .v2-ivy-read {
   position: absolute; top: -4px; left: var(--x); transform: translateX(calc(var(--x) * -1)); z-index: 1; pointer-events: none;
   padding: 3px 8px; border-radius: 6px; background: var(--surface-2); border: 1px solid var(--line-2);
   font: 500 11.5px var(--sans); color: var(--ink-2); white-space: nowrap; font-variant-numeric: tabular-nums;
 }
-.v2-ivy-pill {
-  display: inline-flex; align-items: baseline; gap: 6px; padding: 3px 10px; border-radius: 999px; white-space: nowrap;
-  background: var(--surface); border: 1px solid var(--line-2); font: 500 12px var(--sans); color: var(--ink-3);
-}
-.v2-ivy-pill b { font: 600 15px var(--sans); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
-.v2-ivy-pill small { font-size: 11px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
-.v2-ivy-pill.is-rank { position: absolute; left: 0; bottom: clamp(0px, calc(var(--y) - 13px), calc(100% - 26px)); }
-.v2-ivy-axis { position: relative; height: 26px; margin-top: 10px; }
-.v2-ivy-axis .v2-ivy-pill { position: absolute; left: var(--x); transform: translateX(calc(var(--x) * -1)); }
-.v2-ivy-plain { display: flex; gap: 10px; }
+.v2-ivy-axis { display: flex; justify-content: space-between; margin: 8px 38px 0 0; font: 500 11px var(--sans); color: var(--ink-3); white-space: nowrap; }
 .v2-ivcard-full { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line); }
 .v2-ivcard-full .card { border: 0; padding: 0; background: none; border-radius: 0; animation: none; }
 .v2-ivcard-full .card-header { display: none; }
