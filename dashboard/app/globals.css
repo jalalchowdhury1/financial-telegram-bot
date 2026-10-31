@@ -1570,6 +1570,9 @@ body::before {
   color: var(--text-secondary);
   margin-top: 6px;
   font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .jev-modal-close {

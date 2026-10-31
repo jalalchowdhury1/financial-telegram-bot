@@ -4,12 +4,15 @@
  * top-down by importance: the market now (SPY, Fear & Greed, the read), his trade
  * signals, then Market → Risk → Economy → World → Crowd. v1 at / is untouched.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import ErrorBoundary from '../../components/ErrorBoundary';
 import Skeleton from '../../components/Skeleton';
 import SpyChart from '../../components/SpyChart';
 import MiniChart from '../../components/MiniChart';
-import JevPills from '../../components/JevPills';
+import { SEVERITY, FRIENDLY, PILL_ENTRIES } from '../../components/JevPills';
+import JevPillModal from '../../components/JevPillModal';
+import { pillWhy } from '../../lib/jevWhy';
+import { FR_OVER, FR_UNDER } from '../../lib/frTriggers';
 import { valuationRow } from '../../components/EconomicIndicatorGrid';
 import FourHorsemen from '../../components/FourHorsemen';
 import PolymarketTable from '../../components/PolymarketTable';
@@ -681,39 +684,137 @@ function FredTile({ fred, metric, title, jump, tip, markKey, fmt, tone, chart, r
     );
 }
 
+// ---------- signals: each card also draws how close it is to firing ----------
+const NSB_LINE = 8.5;     // NotSoBoring trips past an 8.5% TMF drop from its 10-day high (lib/signals.js)
+const AAII_LINE = 20;     // bears beat bulls by 20+ pts ...
+const AAII_MONTHS = 6;    // ... and the 6 months after have tended to be good ones
+const shortDate = (iso) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+const plusMonths = (iso, n) => { const d = new Date(`${iso}T12:00:00Z`); d.setUTCMonth(d.getUTCMonth() + n); return d.toISOString().slice(0, 10); };
+const FR_MODE = (v) => (/^BIL/.test(v) ? 'Cash' : /VIX/.test(v) ? 'VIX hedge' : v === 'LABD' ? 'Biotech short' : 'Dip buy');
+
+/** NotSoBoring: TMF's drop from its 10-day high, filling toward the 8.5% line. */
+function DropMeter({ pct }) {
+    const max = Math.max(10, pct + 1);
+    const tone = pct > NSB_LINE ? 'bad' : pct >= NSB_LINE * 0.9 ? 'caution' : 'quiet';
+    return (
+        <span className={`v2-meter tone-${tone}`} style={{ '--f': `${(pct / max) * 100}%`, '--l': `${(NSB_LINE / max) * 100}%` }}
+            title={`TMF ${pct.toFixed(2)}% under its 10-day high · trips past ${NSB_LINE}%`}>
+            <span className="v2-meter-tag">{pct.toFixed(1)} / {NSB_LINE}%</span>
+            <span className="v2-meter-bar"><i /></span>
+        </span>
+    );
+}
+
+/** FrontRunner: the 15 RSIs it watches. Top row hedges past its amber zone, bottom row buys dips under its green one. */
+function RsiStrip({ rsi, pick }) {
+    const row = (map, side) => Object.entries(map).filter(([t]) => Number.isFinite(rsi?.[t])).map(([t, n]) => {
+        const v = rsi[t];
+        const hit = side === 'over' ? v > n : v < n;
+        return <i key={t} className={`${hit ? 'is-hit' : ''}${t === pick ? ' is-pick' : ''}`} style={{ left: `${v}%` }}
+            title={`${t} RSI ${v.toFixed(1)} · ${side === 'over' ? 'hedges over' : 'buys under'} ${n}`} />;
+    });
+    const over = row(FR_OVER, 'over'), under = row(FR_UNDER, 'under');
+    if (over.length + under.length < 8) return null;
+    return (
+        <span className="v2-rsi">
+            <span className="v2-rsi-row is-over"><b style={{ left: `${Math.min(...Object.values(FR_OVER))}%` }} />{over}</span>
+            <span className="v2-rsi-row is-under"><b style={{ width: `${Math.max(...Object.values(FR_UNDER))}%` }} />{under}</span>
+        </span>
+    );
+}
+
+/** A signal's path since spring against its trigger line; the stretch past the line is lit. */
+function TriggerLine({ points, line, tag, tone }) {
+    const id = useId();
+    const geo = useMemo(() => {
+        const vals = (points || []).map((p) => p.value).filter(Number.isFinite);
+        if (vals.length < 6) return null;
+        let lo = Math.min(...vals, line), hi = Math.max(...vals, line);
+        const pad = (hi - lo) * 0.14 || 1;
+        lo -= pad; hi += pad;
+        const y = (v) => 36 - ((v - lo) / (hi - lo)) * 36;
+        const d = vals.map((v, i) => `${i ? 'L' : 'M'}${((i / (vals.length - 1)) * 120).toFixed(1)},${y(v).toFixed(1)}`).join('');
+        return { d, ly: y(line), ey: y(vals[vals.length - 1]) };
+    }, [points, line]);
+    if (!geo) return null;
+    return (
+        <span className={`v2-trig tone-${tone}`} style={{ '--ly': `${(geo.ly / 36) * 100}%`, '--ey': `${(geo.ey / 36) * 100}%` }}>
+            <svg viewBox="0 0 120 36" preserveAspectRatio="none" aria-hidden="true">
+                <clipPath id={id}><rect x="0" y="-4" width="120" height={geo.ly + 4} /></clipPath>
+                <rect className="v2-trig-zone" x="0" y="0" width="120" height={geo.ly} />
+                <line className="v2-trig-line" x1="0" x2="120" y1={geo.ly} y2={geo.ly} />
+                <path className="v2-trig-path" d={geo.d} />
+                <path className="v2-trig-path is-lit" d={geo.d} clipPath={`url(#${id})`} />
+            </svg>
+            <span className="v2-trig-tag">{tag}</span>
+            <i className="v2-trig-dot" />
+        </span>
+    );
+}
+
 function Signals({ sheets, loading }) {
-    const aaiiMark = useMark('aaiiDiff', parseFloat(sheets?.AAIIDiff));
     const na = loading ? '…' : 'N/A';
     const aaii = parseFloat(sheets?.AAIIDiff);
     const vixCur = parseFloat(sheets?.VIX?.current);
     const vix3m = parseFloat(sheets?.VIX?.threeMonth);
-    const until = new Date();
-    until.setMonth(until.getMonth() + 6);
+    const aaiiMark = useMark('aaiiDiff', aaii);
+    const aaiiHist = useChart('aaiiDiff', aaii);
+    const vixHist = useChart('vixCurrent', vixCur);
+    const v3Hist = useChart('vix3m', vix3m);
+    const nsb = sheets?._meta?.fields?.NotSoBoring?.detail;
+    const frRsi = sheets?._meta?.fields?.FrontRunner?.detail;
+    const fr = String(sheets?.FrontRunner || '');
+
+    const aaiiPts = useMemo(() => (Number.isFinite(aaii) ? [...(aaiiHist?.points || []), { value: aaii }] : []), [aaiiHist, aaii]);
+    // The latest 20+ reading (daily rows repeat each weekly survey): it fired on the run's first day, and speaks for 6 months after its last survey.
+    const fired = useMemo(() => {
+        const p = aaiiHist?.points || [];
+        let j = p.length - 1;
+        while (j >= 0 && !(p[j].value >= AAII_LINE)) j--;
+        if (j < 0) return null;
+        let i = j;
+        while (i > 0 && p[i - 1].value >= AAII_LINE) i--;
+        while (j > i && p[j - 1].value === p[j].value) j--;
+        return { on: p[i].date, until: plusMonths(p[j].date, AAII_MONTHS) };
+    }, [aaiiHist]);
+    const today = new Date().toISOString().slice(0, 10);
+    const bullUntil = Number.isFinite(aaii) && aaii >= AAII_LINE ? plusMonths(today, AAII_MONTHS) : fired && fired.until >= today ? fired.until : null;
+
+    const ratioPts = useMemo(() => {
+        const v3 = new Map((v3Hist?.points || []).map((p) => [p.date, p.value]));
+        const pts = (vixHist?.points || []).filter((p) => v3.get(p.date) > 0).map((p) => ({ value: p.value / v3.get(p.date) }));
+        return Number.isFinite(vixCur) && vix3m > 0 ? [...pts, { value: vixCur / vix3m }] : pts;
+    }, [vixHist, v3Hist, vixCur, vix3m]);
+
     const tiles = [
         {
-            key: 'nsb', label: 'NotSoBoring', tip: 'Watches QQQ and TMF for 6–7% drops; then adds gold + USD.',
+            key: 'nsb', label: 'NotSoBoring', tip: `Goes defensive when TMF drops ${NSB_LINE}%+ from its 10-day high.`,
             alert: !loading && sheets?.NotSoBoring && sheets.NotSoBoring !== 'ON',
-            value: sheets?.NotSoBoring || na, sub: staleNote(sheets, ['NotSoBoring']),
+            value: sheets?.NotSoBoring || na,
+            sub: staleNote(sheets, ['NotSoBoring'])
+                || (Number.isFinite(nsb?.watchOutAt) ? <span className="v2-muted">Watch out at ${nsb.watchOutAt.toFixed(2)}</span> : null),
+            viz: Number.isFinite(nsb?.drawdownPct) ? <DropMeter pct={nsb.drawdownPct} /> : null,
         },
         {
-            key: 'fr', label: 'FrontRunner', tip: 'VIX hedges when RSI tops 79; buys deep tech dips. Tap for Catalyst Radar.',
+            key: 'fr', label: 'FrontRunner', tip: 'Hedges with VIX when RSIs run hot; buys deep tech dips. Tap for Catalyst Radar.',
             href: 'https://nuts-radar.vercel.app',
-            alert: !loading && sheets?.FrontRunner && !sheets.FrontRunner.startsWith('BIL'),
-            value: sheets?.FrontRunner || na, sub: staleNote(sheets, ['FrontRunner']) || <span className="v2-muted">Radar ↗</span>,
+            alert: !loading && fr && !fr.startsWith('BIL'),
+            value: fr || na,
+            sub: staleNote(sheets, ['FrontRunner']) || <span className="v2-muted">{fr ? `${FR_MODE(fr)} · ` : ''}Radar ↗</span>,
+            viz: frRsi ? <RsiStrip rsi={frRsi} pick={fr} /> : null,
         },
         {
-            key: 'aaii', label: 'AAII', tip: 'Bears minus bulls. Over 20% has meant a bullish next 6 months.',
-            alert: Number.isFinite(aaii) && aaii > 20,
+            key: 'aaii', label: 'AAII', tip: `Bears minus bulls. ${AAII_LINE}%+ has meant a good next 6 months.`,
+            alert: !!bullUntil, good: true,
             value: Number.isFinite(aaii) ? (
                 <Delta mark={aaiiMark} chartKey="aaiiDiff" raw={aaii} format={(v) => `${v > 0 ? '+' : ''}${v.toFixed(2)}%`}>
-                    <span className={aaii > 20 ? 'tone-good' : ''}>{sheets.AAIIDiff}</span>
+                    <span className={aaii >= AAII_LINE ? 'tone-good' : ''}>{sheets.AAIIDiff}</span>
                 </Delta>
             ) : na,
-            sub: Number.isFinite(aaii) ? (
-                <span className={aaii > 20 ? 'tone-good' : 'v2-muted'}>
-                    {aaii > 20 ? 'Bullish' : 'Neutral'} to {until.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
-                </span>
-            ) : null,
+            sub: !Number.isFinite(aaii) ? null : bullUntil
+                ? <span className="tone-good" title={fired ? `Fired ${shortDate(fired.on)}` : undefined}>Bullish to {shortDate(bullUntil)}</span>
+                : <span className="v2-muted">{(AAII_LINE - aaii).toFixed(1)} pts to {AAII_LINE}%</span>,
+            viz: aaiiPts.length > 6 && <TriggerLine points={aaiiPts} line={AAII_LINE} tag={`${AAII_LINE}%`} tone="good" />,
         },
         {
             key: 'vix', label: 'VIX / 3M', tip: 'VIX above 3-month VIX: panic. Often before a rebound.',
@@ -726,7 +827,9 @@ function Signals({ sheets, loading }) {
                 </span>
             ) : na,
             sub: staleNote(sheets, ['vixCurrent', 'vixThreeMonth', 'vixFearGreed'])
-                || (sheets?.VIX?.fearGreed ? <span className="v2-muted">{sheets.VIX.fearGreed}</span> : null),
+                || (Number.isFinite(vixCur) && vix3m > 0
+                    ? <span className="v2-muted">{(vixCur / vix3m).toFixed(2)}{sheets?.VIX?.fearGreed ? ` · ${sheets.VIX.fearGreed}` : ''}</span> : null),
+            viz: ratioPts.length > 6 && <TriggerLine points={ratioPts} line={1} tag="1.0" tone="bad" />,
         },
     ];
     return (
@@ -737,14 +840,51 @@ function Signals({ sheets, loading }) {
                         <span className="v2-signal-label"><span className="tooltip-trigger" data-tooltip={t.tip}>{t.label}</span></span>
                         <span className="v2-signal-value">{t.value}</span>
                         <span className="v2-signal-sub">{t.sub}</span>
-                        {t.foot && <span className="v2-signal-foot">{t.foot}</span>}
+                        {t.viz && <span className="v2-signal-viz">{t.viz}</span>}
                     </>
                 );
-                const cls = `v2-signal${t.alert ? ' is-alert' : ''}`;
+                const cls = `v2-signal${t.alert ? ` is-alert${t.good ? ' is-good' : ''}` : ''}`;
                 return t.href
                     ? <a key={t.key} className={`${cls} is-link`} href={t.href} target="_blank" rel="noopener noreferrer">{inner}</a>
                     : <div key={t.key} className={cls}>{inner}</div>;
             })}
+        </div>
+    );
+}
+
+const RG_TONE = ['good', 'caution', 'bad'];
+const RG_TREND = { hardening: ['Hardening ↑', 'bad'], softening: ['Softening ↓', 'good'], mixed: ['Mixed', 'caution'] };
+
+/** The five Jev regime calls in one row. Each has a best → worst scale: today's step lit, yesterday's outlined when it moved. Tap → the full read. */
+function RegimeRow({ data }) {
+    const [open, setOpen] = useState(null);
+    const since = data?.since;
+    const was = Object.fromEntries((since?.changed || []).map((c) => [c.pill, SEVERITY[c.from]?.order]));
+    const trend = since?.changed?.length && !since.noBaseline ? RG_TREND[since.direction] || RG_TREND.mixed : null;
+    const label = Object.fromEntries(PILL_ENTRIES.map((e) => [e.key, e.label]));
+    return (
+        <div className="card v2-rg-row">
+            {PILL_ENTRIES.map(({ key }) => {
+                const p = data?.pills?.[key];
+                if (!p) return null;
+                const at = SEVERITY[p.verdict]?.order ?? -1;
+                return (
+                    <button key={key} type="button" className={`v2-rg tone-${RG_TONE[at] || 'quiet'}`} onClick={() => setOpen(key)} title={pillWhy(data, key) || p.reason || undefined}>
+                        <span className="v2-rg-k">{label[key]}</span>
+                        <span className="v2-rg-v">{FRIENDLY[p.verdict] || p.verdict}</span>
+                        <span className="v2-rg-scale" aria-hidden="true">
+                            {RG_TONE.map((_, i) => <i key={i} className={i === at ? 'is-on' : i === was[key] ? 'is-was' : undefined} />)}
+                        </span>
+                    </button>
+                );
+            })}
+            {trend && (
+                <span className={`v2-rg-trend tone-${trend[1]}`}
+                    title={since.changed.map((c) => `${label[c.pill]}: ${FRIENDLY[c.from] || c.from} → ${FRIENDLY[c.to] || c.to}`).join(' · ')}>
+                    {trend[0]}
+                </span>
+            )}
+            {open && <JevPillModal pillKey={open} data={data} onClose={() => setOpen(null)} />}
         </div>
     );
 }
@@ -989,7 +1129,7 @@ export default function DashboardV2() {
                         </div>
                         <div className="v2-grid">
                             <ErrorBoundary resetKey={refreshTick}>
-                                {jev && <Slot title="Regime" span={12} saved={saved('jev')}><JevPills data={jev} /></Slot>}
+                                {jev && <Slot title="Regime" span={12} saved={saved('jev')}><RegimeRow data={jev} /></Slot>}
                             </ErrorBoundary>
                         </div>
                     </Section>

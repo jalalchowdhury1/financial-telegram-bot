@@ -277,7 +277,7 @@ describe('JevPills', () => {
         fireEvent.click(screen.getByText('Regime'));
         expect(screen.getByRole('dialog')).toBeInTheDocument();
         // The header says the rule decided and names Jev's differing answer
-        expect(screen.getByText(/^Rule · Jev said Narrow \(32%\)/)).toBeInTheDocument();
+        expect(screen.getByText(/^Rule · Jev: Narrow 32%/)).toBeInTheDocument();
     });
 
     test('modal explains what the pill measures, each input, and data freshness', () => {

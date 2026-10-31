@@ -102,7 +102,7 @@ export default function JevPillModal({ pillKey, data, onClose }) {
     if (pill.verdict === 'unknown') decidedLine = 'Too few numbers';
     else if (pill.by === 'jev') decidedLine = `Jev, ${pct(pill.p)} sure`;
     else if (data._meta?.jev === 'off') decidedLine = 'Rule · Jev off';
-    else if (jevBlock?.verdict && jevBlock.verdict !== pill.verdict) decidedLine = `Rule · Jev said ${friendly(jevBlock.verdict)} (${pct(jevBlock.p)})`;
+    else if (jevBlock?.verdict && jevBlock.verdict !== pill.verdict) decidedLine = `Rule · Jev: ${friendly(jevBlock.verdict)} ${pct(jevBlock.p)}`;
     else decidedLine = 'Rule';
 
     const dataAsOf = data._meta?.dataAsOf || {};

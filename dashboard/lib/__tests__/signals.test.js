@@ -3,6 +3,7 @@
  * logic), the live "today" bar, and the source cascade.
  */
 import { frontRunnerDecision, computeFrontRunner, computeNotSoBoring, withSpot, resolveSignals, FR_INPUTS } from '../signals';
+import { FR_OVER, FR_UNDER } from '../frTriggers';
 
 // Real TMF bars (Nasdaq, [date, open, close]) 2026-06-15 → 2026-10-09.
 const TMF = [
@@ -186,5 +187,21 @@ describe('resolveSignals', () => {
         expect(r.FrontRunner.source).toBe('Computed from CNBC prices (2026-10-09 close)');
         r = await resolveSignals({ faults: new Set(['signals_nasdaq', 'signals_cnbc', 'signals_spot']), now: NOW, nasdaq, cnbcBars: bars, yahoo, cnbc: jest.fn() });
         expect(r.FrontRunner.source).toBe('Computed from Yahoo prices (2026-10-09 close)');
+    });
+});
+
+describe('frTriggers (the v2 card) match the decision tree', () => {
+    const tickers = FR_INPUTS.map(([t, n]) => (n === 9 ? t : null));
+    const at = (t, v) => tickers.map((x) => (x === t ? v : 50));
+    test.each(Object.entries(FR_OVER))('%s hedges only above %d', (t, n) => {
+        expect(frontRunnerDecision(at(t, n))).toBe('BIL (T-Bill ETF)1');
+        expect(frontRunnerDecision(at(t, n + 0.01))).not.toBe('BIL (T-Bill ETF)1');
+    });
+    test.each(Object.entries(FR_UNDER))('%s buys only below %d', (t, n) => {
+        expect(frontRunnerDecision(at(t, n))).toBe('BIL (T-Bill ETF)1');
+        expect(frontRunnerDecision(at(t, n - 0.01))).not.toBe('BIL (T-Bill ETF)1');
+    });
+    test('every RSI input but VIXY_50 has a trigger', () => {
+        expect(Object.keys({ ...FR_OVER, ...FR_UNDER }).sort()).toEqual(tickers.filter(Boolean).sort());
     });
 });

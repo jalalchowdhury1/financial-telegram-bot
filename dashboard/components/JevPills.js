@@ -5,7 +5,7 @@ import Skeleton from './Skeleton';
 import JevPillModal from './JevPillModal';
 import { pillWhy } from '../lib/jevWhy';
 
-const SEVERITY = {
+export const SEVERITY = {
     'risk-on':      { badge: 'badge-green',  order: 0 },
     'neutral':      { badge: 'badge-yellow', order: 1 },
     'risk-off':     { badge: 'badge-red',    order: 2 },
@@ -25,7 +25,7 @@ const SEVERITY = {
     'unknown':      { badge: 'badge-gray',   order: -1 },
 };
 
-const FRIENDLY = {
+export const FRIENDLY = {
     'risk-on': 'Risk-on',
     'neutral': 'Neutral',
     'risk-off': 'Risk-off',
@@ -64,7 +64,7 @@ function formatAsOf(asOf) {
     }
 }
 
-const PILL_ENTRIES = [
+export const PILL_ENTRIES = [
     { key: 'regime',    label: 'Regime' },
     { key: 'recession', label: 'Recession' },
     { key: 'breadth',   label: 'Breadth' },
