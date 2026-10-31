@@ -1,4 +1,4 @@
-import { signalEpisodes, signalStudy, plusMonthsIso, comboSeries } from '../signalStudy';
+import { signalEpisodes, signalStudy, plusMonthsIso, comboSeries, signalStates, SIGNALS } from '../signalStudy';
 
 // SPY: 100 on Jan 1 2020, +1 every day (a trading day every day keeps the math readable)
 const spy = Array.from({ length: 500 }, (_, i) => ({ date: new Date(Date.UTC(2020, 0, 1 + i)).toISOString().slice(0, 10), price: 100 + i }));
@@ -81,5 +81,16 @@ describe('comboSeries', () => {
     it('drops days where a leg has not printed for 45+ days', () => {
         expect(on('2021-02-25')).toBeTruthy();
         expect(out.some((p) => p.date > '2021-02-25' && p.date < '2021-04-01')).toBe(false);
+    });
+});
+
+describe('signalStates', () => {
+    it('gives every signal its last fire, newest reading vs its line, and record; a missing file is no fire', () => {
+        const aaiiDiff = [{ date: '2020-01-02', value: 25 }, { date: '2020-03-05', value: 4 }, { date: '2020-08-06', value: 21 }, { date: '2020-08-13', value: 10 }];
+        const st = signalStates({ aaiiDiff }, spy);
+        expect(st.map((g) => g.id)).toEqual(SIGNALS.map((g) => g.id));
+        expect(st[0]).toMatchObject({ id: 'aaii', fired: '2020-08-06', asOf: '2020-08-13', share: 0.5, n: 2, win: 1 });
+        expect(st[1]).toMatchObject({ id: 'vix', fired: null, asOf: null, share: null, n: 0 });
+        expect(st.find((g) => g.id === 'cu')).toMatchObject({ fired: null, share: null });
     });
 });

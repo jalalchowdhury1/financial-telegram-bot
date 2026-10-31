@@ -103,6 +103,29 @@ export function comboSeries(combo, ...series) {
 }
 
 /**
+ * Every /v2 signal with a fire date: AAII, VIX over VIX 3M and the Lead combos. `months` = the horizon its
+ * proof opens on. scripts/signal-states.mjs prints their states for the Mac's daily ping (~/.local/bin/signal-ping).
+ */
+export const SIGNALS = [
+    { id: 'aaii', name: 'AAII fear 20+', key: 'aaiiDiff', line: 20, months: 6 },
+    { id: 'vix', name: 'VIX over VIX 3M', key: 'vix-ratio-daily', line: 1, months: 1 },
+    ...COMBOS.map((c) => ({ id: c.id, name: c.name, combo: c, line: 1, months: 6 })),
+];
+
+/**
+ * Each signal's last fire (first reading past its line after 3 quiet months), its newest reading as a share
+ * of its line, and SPY's record `months` after. `files` = {key: points}, `spy` = [{date, price}].
+ */
+export function signalStates(files, spy) {
+    return SIGNALS.map((g) => {
+        const pts = g.combo ? comboSeries(g.combo, ...g.combo.legs.map((l) => files[l.key])) : files[g.key] || [];
+        const st = signalStudy(pts, spy, g.months, g.line)?.stats, now = pts[pts.length - 1];
+        return { id: g.id, name: g.name, months: g.months, fired: signalEpisodes(pts, g.line).pop()?.date || null,
+            asOf: now?.date || null, share: now ? now.value / g.line : null, n: st?.n || 0, avg: st?.avg ?? null, win: st?.win ?? null };
+    });
+}
+
+/**
  * `{ episodes, stats, base, avgPath }` for one horizon. Each episode: `{date, value, ret, low, live,
  * path:[{x 0..1, r}]}`; `ret`/`low` are SPY's change at the end of the window (so far, when live)
  * and its worst point inside it. Live episodes stay out of `stats` and `avgPath`.

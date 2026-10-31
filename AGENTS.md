@@ -2071,3 +2071,14 @@ Card anatomy (24 Oct 2026, ~/concierge/docs/ALERT-STYLE.md): bold `🛑 Defensiv
 ## Silent digest hand-off (11 Sep 2026)
 
 The overnight send calls `digest_post("report", text, parse_mode)` first (health-hub `api/digest.js`, env `DIGEST_URL` + `DIGEST_KEY` — Lambda environment, merged by hand with aws update-function-configuration on 11 Sep 2026; the push deploys via deploy-lambda.yml). Stored → no direct message; the 07:00 ⚪ Silent digest card carries a button that replays it in full (36 h). Collector down or env missing → the old silent direct send. Never make the direct send loud again.
+
+## Signal ping (31 Oct 2026)
+
+The day a /v2 signal fires (AAII fear 20+, VIX over VIX 3M, the 4 Lead combos — `SIGNALS` in
+`dashboard/lib/signalStudy.js`), Jalal gets one Telegram line + a Now-page item. The Mac runs it:
+launchd `com.jalal.signal-ping` (daily 08:30) → `~/.local/bin/signal-ping` → `node
+dashboard/scripts/signal-states.mjs` (the dashboard's own code over the LIVE site's baked files + sheet
+series, prints JSON) → `now_ring.rang(signal:<id>)`, direct Telegram if the doorbell is off. A fire rings
+once (`~/.local/state/signal-ping/seen.json`) and only while ≤ 7 days old. `--dry` sends nothing;
+`--fake <id>` is a FAKE end-to-end test. Log: `~/Library/Logs/signal-ping.log`. Rename a signal id
+and the next fire of it rings again — harmless.
