@@ -131,8 +131,8 @@ it('the AAII tile opens what SPY did after every 20+ reading', async () => {
     const ok = (body) => Promise.resolve({ ok: true, status: 200, json: async () => body });
     mockRoutes({ '/api/sheets': ok({ AAIIDiff: '3.60%' }), '/history/aaiiDiff.json': ok(aaii), '/history/spy-daily.json': ok(spy) });
     render(<DashboardV2 />);
-    await waitFor(() => expect(screen.getByText('AAII')).toBeInTheDocument());
-    const tile = screen.getByText('AAII').closest('[role="button"]');
+    await waitFor(() => expect(screen.getByText('AAII', { selector: '.v2-signal-label span' })).toBeInTheDocument());
+    const tile = screen.getByText('AAII', { selector: '.v2-signal-label span' }).closest('[role="button"]');
     fireEvent.click(tile);
     const dialog = await screen.findByRole('dialog', { name: 'AAII fear at 20+' });
     await waitFor(() => expect(within(dialog).getAllByText('+180.2%')).toHaveLength(2)); // avg + median: Jan 2 (101) → Jul 2 (283)

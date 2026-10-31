@@ -241,6 +241,8 @@ export function historyFor(series, today) {
     const diffs = [];
     for (let i = 1; i < prior.length; i++) {
         if (isUnitJump(prior[i - 1].value, prior[i].value)) continue;
+        // a repeated day (weekend, no new print) is no move: its 0 would shrink σ, as whatMoved.sigmaOf knows
+        if (Math.abs(prior[i].value - prior[i - 1].value) <= EPS) continue;
         diffs.push(prior[i].value - prior[i - 1].value);
     }
     if (diffs.length >= MIN_MOVES) {

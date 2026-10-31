@@ -45,9 +45,18 @@ export function claims4wkFromHistory(history) {
  */
 export function sahmFromHistory(history) {
     if (!Array.isArray(history) || history.length < 15) return null;
-    const v = history.slice(-15).map((p) => p.value);
-    const ma = v.slice(2).map((x, i) => (v[i] + v[i + 1] + x) / 3); // 13 averages, newest last
-    return Math.round((ma[12] - Math.min(...ma.slice(0, 12))) * 100) / 100 + 0;
+    // by calendar month: a month FRED skipped (Oct 2025) is a gap, not the month before; an average needs 2 of its 3 months
+    const mon = (iso) => +iso.slice(0, 4) * 12 + +iso.slice(5, 7) - 1;
+    const by = new Map(history.map((p) => [mon(p.date), p.value]));
+    const end = mon(history[history.length - 1].date);
+    const ma = [];
+    for (let k = end - 12; k <= end; k++) {
+        const v = [by.get(k - 2), by.get(k - 1), by.get(k)].filter(Number.isFinite);
+        ma.push(v.length >= 2 ? v.reduce((a, b) => a + b, 0) / v.length : null); // 13 averages, newest last
+    }
+    const prior = ma.slice(0, 12).filter((x) => x != null);
+    if (ma[12] == null || prior.length < 11) return null;
+    return Math.round((ma[12] - Math.min(...prior)) * 100) / 100 + 0;
 }
 
 /**

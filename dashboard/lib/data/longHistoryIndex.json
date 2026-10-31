@@ -146,9 +146,9 @@
    "source": "FRED RSXFS (3-month change)"
   },
   "sahmRule": {
-   "from": "1949-01-05",
+   "from": "1949-02-05",
    "to": "2026-10-06",
-   "n": 933,
+   "n": 932,
    "source": "FRED UNRATE (Sahm rule)"
   },
   "savings": {
@@ -207,5 +207,5 @@
    "source": "FRED T10Y2Y"
   }
  },
- "bakedAt": "2026-10-15"
+ "bakedAt": "2026-10-31"
 }

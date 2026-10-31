@@ -30,6 +30,9 @@ export function MarkProvider({ history, series = null, children }) {
     );
 }
 
+/** The raw 90-day sheet series (`{from, v: {key: [...]}}`), or null. */
+export const useSeries = () => useContext(SeriesContext);
+
 /** The 90-day chart for `key`, or null (no history, or not the number on screen). */
 export function useChart(key, live) {
     const series = useContext(SeriesContext);

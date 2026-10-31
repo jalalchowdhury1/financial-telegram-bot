@@ -12,7 +12,10 @@ const ms = (iso) => Date.parse(`${iso}T00:00:00Z`);
 const QUIET = 91 * DAY;
 const GRID = 60; // average-path resolution
 
-export const plusMonthsIso = (iso, n) => { const d = new Date(`${iso}T12:00:00Z`); d.setUTCMonth(d.getUTCMonth() + n); return d.toISOString().slice(0, 10); };
+export const plusMonthsIso = (iso, n) => {
+    const [y, m, d] = iso.split('-').map(Number), last = new Date(Date.UTC(y, m - 1 + n + 1, 0)).getUTCDate(); // stops at month end: Aug 31 + 6 = Feb 28
+    return new Date(Date.UTC(y, m - 1 + n, Math.min(d, last))).toISOString().slice(0, 10);
+};
 
 /** First index with date ≥ iso (pts.length when none). */
 function from(pts, iso) {
@@ -38,10 +41,65 @@ export function signalEpisodes(points, line) {
     let last = -Infinity;
     for (const p of points) {
         if (!(p.value >= line)) continue;
-        if (ms(p.date) - last > QUIET) eps.push({ date: p.date, value: p.value });
+        if (ms(p.date) - last > QUIET) eps.push({ ...p });
         last = ms(p.date);
     }
     return eps;
+}
+
+/**
+ * Lead combos: two dashboard stats that, past their lines together, led to a good next 6 months. A
+ * 2026-10-31 search of every baked stat (level, 3-month and 1-year change by date; ~160k pairs, lines from
+ * pre-2010 data, then a 2010+ re-test, a time-shift placebo and the lines around each; notes in the commit)
+ * kept these. `key` = the sheet metric and /history file; `days` = a change over that many days (`pct` = in %,
+ * else in points), none = the level.
+ */
+export const COMBOS = [
+    { id: 'fo', name: 'Fear + oil crash', tip: 'AAII 20+ while oil is down 15%+ on the year.',
+        legs: [{ key: 'aaiiDiff', label: 'AAII', line: 20 }, { key: 'cl', label: 'Oil 1y', days: 365, pct: true, line: -15 }] },
+    { id: 'cu', name: 'Jobs fine + CAD slump', tip: 'Jobless claims down 6%+ while USD/CAD is up 3%+, both in 3 months.',
+        legs: [{ key: 'claims', label: 'Claims 3m', days: 91, pct: true, line: -6 }, { key: 'usdcad', label: 'USD/CAD 3m', days: 91, pct: true, line: 3 }] },
+    { id: 'hv', name: 'Panic + housing boom', tip: 'VIX 25+ while housing starts are up 8%+ in 3 months.',
+        legs: [{ key: 'vixCurrent', label: 'VIX', line: 25 }, { key: 'housing', label: 'Housing 3m', days: 91, pct: true, line: 8 }] },
+    { id: 'pt', name: 'Selloff + falling rates', tip: 'P/E down 6.5%+ and the 10Y down 0.4+ pts, both in 3 months.',
+        legs: [{ key: 'peRatio', label: 'P/E 3m', days: 91, pct: true, line: -6.5 }, { key: 'tnx', label: '10Y 3m', days: 91, line: -0.4 }] },
+];
+const STALE = 45 * DAY; // a reading still counts this long (monthly stats print about monthly)
+
+/** A leg on its own dates: the reading, or its change vs the reading `days` earlier (by date, never by row). */
+function legSeries(pts, { days, pct }) {
+    if (!days) return pts.filter((p) => Number.isFinite(p.value));
+    const out = [];
+    let k = 0;
+    for (const p of pts) {
+        const ago = ms(p.date) - days * DAY;
+        while (k < pts.length - 1 && ms(pts[k + 1].date) <= ago) k++;
+        const b = pts[k];
+        if (!(ms(b.date) <= ago && ago - ms(b.date) <= STALE && Number.isFinite(p.value) && Number.isFinite(b.value))) continue;
+        out.push({ date: p.date, value: pct ? (p.value / b.value - 1) * 100 : p.value - b.value });
+    }
+    return out;
+}
+
+/**
+ * One combo as one series for the study: on every date any leg has, `value` = the LESSER of each leg ÷ its
+ * line (1+ = both past their lines; clamped −1..2 for the charts) and `legs` = each leg's reading.
+ * `series` = each leg's points, in the combo's order.
+ */
+export function comboSeries(combo, ...series) {
+    const L = combo.legs.map((l, i) => legSeries(series[i] || [], l));
+    const dates = [...new Set(L.flatMap((s) => s.map((p) => p.date)))].sort();
+    const at = L.map(() => 0), out = [];
+    for (const d of dates) {
+        const legs = L.map((s, i) => {
+            while (at[i] < s.length - 1 && s[at[i] + 1].date <= d) at[i]++;
+            const p = s[at[i]];
+            return p && p.date <= d && ms(d) - ms(p.date) <= STALE ? p.value : null;
+        });
+        if (legs.includes(null)) continue;
+        out.push({ date: d, value: Math.max(-1, Math.min(2, ...legs.map((v, i) => v / combo.legs[i].line))), legs });
+    }
+    return out;
 }
 
 /**

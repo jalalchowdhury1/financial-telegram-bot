@@ -28,12 +28,12 @@ function rAt(path, x) {
 }
 
 /**
- * `id` keys the remembered horizon; `src` = the signal's baked daily/weekly file, `sheet` = its newer
- * history-sheet points and `now` today's reading (both appended after the file); `line` = where it
- * fires; `label(v)` names a reading; `sub` = the header's one line; `foot` = what counts as a signal;
+ * `id` keys the remembered horizon; `src` = the signal's baked daily/weekly file (or several, made one
+ * series by `join`), `sheet` = its newer history-sheet points and `now` today's reading (both appended
+ * after the file); `line` = where it fires; `label(v, point)` names a reading; `sub` = the header's one line; `foot` = what counts as a signal;
  * `horizons` = the month chips, `start` = the one it opens on.
  */
-export default function SignalStudy({ id, src, line, title, sub, label, foot, horizons, start, now, sheet, spyLive, onClose }) {
+export default function SignalStudy({ id, src, join, line, title, sub, label, foot, horizons, start, now, sheet, spyLive, onClose }) {
     const KEY = `v2-${id}-months`;
     const backRef = useRef(null), sheetRef = useRef(null);
     const [raw, setRaw] = useState(null); // {a, s} | false when a file failed
@@ -46,8 +46,11 @@ export default function SignalStudy({ id, src, line, title, sub, label, foot, ho
     useEffect(() => {
         try { const m = Number(window.localStorage.getItem(KEY)); if (horizons.includes(m)) setMonths(m); } catch { /* private mode */ }
         let live = true;
-        Promise.all([load(src), load('/history/spy-daily.json')])
-            .then(([a, s]) => { if (live) setRaw(a && s ? { a, s } : false); })
+        Promise.all([...[].concat(src).map(load), load('/history/spy-daily.json')])
+            .then((got) => {
+                const s = got.pop(), a = got.every(Boolean) ? (join ? join(...got) : got[0]) : null;
+                if (live) setRaw(a?.length && s ? { a, s } : false);
+            })
             .catch(() => { if (live) setRaw(false); });
         return () => { live = false; };
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -134,7 +137,7 @@ export default function SignalStudy({ id, src, line, title, sub, label, foot, ho
                     {sel ? (
                         <>
                             <b>{day(sel.date)}</b>
-                            <span>{label(sel.value)}</span>
+                            <span>{label(sel.value, sel)}</span>
                             <span className={`tone-${sel.live ? 'flat' : sel.ret >= 0 ? 'good' : 'bad'}`}>SPY {pct(sel.ret)}{sel.live ? ' so far' : ''}</span>
                             <span className="v2-aa-low">low {pct(sel.low)}</span>
                         </>

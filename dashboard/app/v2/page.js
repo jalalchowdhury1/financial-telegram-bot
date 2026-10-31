@@ -20,6 +20,8 @@ import { RubberBandCard, RecessionCard } from '../../components/RiskCards';
 import FactorRow from '../../components/FactorRow';
 import Delta from '../../components/Delta';
 import SignalStudy from '../../components/SignalStudy';
+import LeadCombos from '../../components/LeadCombos';
+import { plusMonthsIso as plusMonths } from '../../lib/signalStudy';
 import MarkChip from '../../components/MarkChip';
 import MarksSheet from '../../components/MarksSheet';
 import { MarkProvider, useMark, useChart, collectLiveValues } from '../../components/MarkProvider';
@@ -805,7 +807,6 @@ const NSB_LINE = 8.5;     // NotSoBoring trips past an 8.5% TMF drop from its 10
 const AAII_LINE = 20;     // bears beat bulls by 20+ pts ...
 const AAII_MONTHS = 6;    // ... and the 6 months after have tended to be good ones
 const shortDate = (iso) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
-const plusMonths = (iso, n) => { const d = new Date(`${iso}T12:00:00Z`); d.setUTCMonth(d.getUTCMonth() + n); return d.toISOString().slice(0, 10); };
 const FR_MODE = (v) => (/^BIL/.test(v) ? 'Cash' : /VIX/.test(v) ? 'VIX hedge' : v === 'LABD' ? 'Biotech short' : 'Dip buy');
 
 /** NotSoBoring: TMF's drop from its 10-day high, filling toward the 8.5% line. */
@@ -894,7 +895,7 @@ function Signals({ sheets, spy, loading }) {
         while (j > i && p[j - 1].value === p[j].value) j--;
         return { on: p[i].date, until: plusMonths(p[j].date, AAII_MONTHS) };
     }, [aaiiHist]);
-    const today = new Date().toISOString().slice(0, 10);
+    const today = new Date().toLocaleDateString('en-CA'); // the local calendar day (a UTC date turns over at ~8 pm ET)
     const bullUntil = Number.isFinite(aaii) && aaii >= AAII_LINE ? plusMonths(today, AAII_MONTHS) : fired && fired.until >= today ? fired.until : null;
 
     const ratioPts = useMemo(() => {
@@ -1253,6 +1254,11 @@ export default function DashboardV2() {
                             <ErrorBoundary resetKey={refreshTick}><Signals sheets={sheets} spy={spyOk ? spy.chartHistory : null} loading={pending.sheets && !sheets} /></ErrorBoundary>
                         </div>
                         <div className="v2-grid">
+                            <ErrorBoundary resetKey={refreshTick}>
+                                <Slot jump="Lead combos" title="Lead combos" tip="Two stats past their lines at once: since 1993, a good next 6 months. Found by testing every stat here. Tap a row for the proof." span={12}>
+                                    <LeadCombos spy={spyOk ? spy.chartHistory : null} />
+                                </Slot>
+                            </ErrorBoundary>
                             <ErrorBoundary resetKey={refreshTick}>
                                 {jev && <Slot title="Regime" span={12} saved={saved('jev')}><RegimeRow data={jev} /></Slot>}
                             </ErrorBoundary>

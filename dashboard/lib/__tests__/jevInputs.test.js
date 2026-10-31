@@ -87,6 +87,14 @@ describe('sahmFromHistory', () => {
         expect(sahmFromHistory(monthly(values))).toBe(0.33);       // 4.0 − (4+3+4)/3
     });
 
+    test('goes by calendar month: a month FRED skipped is a gap, not the month before', () => {
+        // Oct 2025 style: month 14 missing. By month the latest average is (4.0 + 5.0) / 2; by row it would be (4 + 4 + 5) / 3.
+        const values = monthly([...Array(16).fill(4.0)]).map((p, i) => (i === 15 ? { ...p, value: 5.0 } : p)).filter((_, i) => i !== 14);
+        expect(sahmFromHistory(values)).toBe(0.5);
+        const twoGone = monthly(Array(18).fill(4.0)).filter((_, i) => i !== 15 && i !== 16);
+        expect(sahmFromHistory(twoGone)).toBeNull(); // the latest average has 1 of its 3 months
+    });
+
     test('known number: Sahm = 0.0 when unemployment is stable', () => {
         expect(sahmFromHistory(monthly(Array(15).fill(4.0)))).toBeCloseTo(0, 5);
     });

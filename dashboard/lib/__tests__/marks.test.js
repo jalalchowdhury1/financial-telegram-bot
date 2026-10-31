@@ -173,6 +173,12 @@ describe('historyFor', () => {
         expect(historyFor(many, '2026-08-25').sigma).toBeGreaterThan(0);
     });
 
+    it('leaves repeated days (no new print) out of sigma', () => {
+        const moves = flat(41, 1, '2026-08-24').map((p, i) => ({ ...p, value: 1 + (i % 2) * 0.01 }));
+        const doubled = flat(82, 1, '2026-08-24').map((p, i) => ({ ...p, value: 1 + (Math.floor(i / 2) % 2) * 0.01 }));
+        expect(historyFor(doubled, '2026-08-25').sigma).toBeCloseTo(historyFor(moves, '2026-08-25').sigma, 9);
+    });
+
     it('returns null with no prior day at all', () => {
         expect(historyFor(S([['2026-08-25', 5]]), '2026-08-25')).toBeNull();
         expect(historyFor([], '2026-08-25')).toBeNull();

@@ -200,11 +200,21 @@ def month_offset_pct(obs, n):
 
 
 def sahm(unrate):
-    """3-month average minus the 12-month low (the low includes the current month)."""
+    """FRED SAHMCURRENT, as lib/jevInputs.js sahmFromHistory: the 3-month average minus the lowest
+    3-month average of the prior 12 months. By calendar month, so a month FRED skipped (Oct 2025)
+    is a gap, not the month before; an average needs 2 of its 3 months."""
+    by = {d.year * 12 + d.month - 1: v for d, v in unrate}
+    avg = {}
+    for k in by:
+        vals = [by[j] for j in (k - 2, k - 1, k) if j in by]
+        if len(vals) >= 2:
+            avg[k] = sum(vals) / len(vals)
     out = []
-    for i in range(11, len(unrate)):
-        vals = [v for _, v in unrate[i - 11:i + 1]]
-        out.append((unrate[i][0], sum(vals[-3:]) / 3 - min(vals)))
+    for d, _ in unrate:
+        k = d.year * 12 + d.month - 1
+        prior = [avg[j] for j in range(k - 12, k) if j in avg]
+        if k in avg and len(prior) >= 11:
+            out.append((d, avg[k] - min(prior)))
     return out
 
 
