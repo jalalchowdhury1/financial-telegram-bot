@@ -82,3 +82,21 @@ it('keeps every jump target v1 has, so chips land on the right panel', async () 
         expect([label, jumps.has(label)]).toEqual([label, true]);
     }
 });
+
+it('each economy chart says what stands out vs its whole history, and lights up when it matters', async () => {
+    const months = (n, f) => Array.from({ length: n }, (_, i) => ({ date: `${2000 + Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, '0')}-01`, value: f(i) }));
+    const fred = {
+        yieldCurve: { current: -0.2, asOf: '2004-12-01', history: months(60, (i) => (i < 54 ? 1 : -0.2)) },
+        profitMargin: { current: 12, asOf: '2004-12-01', history: months(60, (i) => (i === 59 ? 12 : 5 + (i % 7))) },
+        spEps: { current: 90, asOf: '2004-12-01', history: months(60, (i) => (i === 59 ? 90 : 100)) },
+        recessions: [],
+    };
+    mockRoutes({ '/api/fred': Promise.resolve({ status: 200, json: async () => fred }) });
+    render(<DashboardV2 />);
+    const tile = (jump) => document.querySelector(`.v2-fred[data-jump="${jump}"]`);
+    await waitFor(() => expect(tile('Yield curve').querySelector('.v2-fred-badge').textContent).toBe('Inverted since Jul 2004'));
+    expect(tile('Yield curve').className).toMatch(/lit-bad is-lit/);
+    expect(tile('Profit margin').querySelector('.v2-fred-badge').textContent).toBe('Record high since 2000');
+    expect(tile('S&P 500 EPS').querySelector('.v2-fred-badge').textContent).toBe('10% off high · −10% y/y');
+    expect(tile('S&P 500 EPS').className).toMatch(/lit-bad is-lit/);
+});

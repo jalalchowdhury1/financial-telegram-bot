@@ -656,13 +656,66 @@ function Slot({ jump, title, tip, span = 12, saved, more, children }) {
     );
 }
 
-/** Yield curve / profit margin / EPS: one number, one long chart. */
+const monYear = (iso) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+
+/**
+ * What stands out about today against the WHOLE history (not the chart's range): a badge, lit
+ * when it matters, and a ruler from the low to the high since the first year (tick = the
+ * long-run average, or 0 for the yield curve; dot = today).
+ */
+function fredStory(metric, hist) {
+    if (!Array.isArray(hist) || hist.length < 24) return null;
+    const v = hist.map((p) => p.value);
+    const cur = v[v.length - 1], last = hist[hist.length - 1].date, from = hist[0].date.slice(0, 4);
+    const lo = Math.min(...v), hi = Math.max(...v), avg = v.reduce((a, b) => a + b, 0) / v.length;
+    const share = v.filter((x) => x < cur).length / v.length;
+    const short = metric === 'spEps' ? (x) => `$${Math.round(x)}` : (x) => `${x < 0 ? '−' : ''}${Math.abs(x).toFixed(1)}`;
+    const mark = metric === 'yieldCurve' ? 0 : avg;
+    const ruler = { lo, hi, cur, mark, short, tip: `Since ${from}: low ${short(lo)}, high ${short(hi)}, ${metric === 'yieldCurve' ? 'tick at 0' : `avg ${short(avg)} (tick)`}` };
+    let text, sub, tone = 'quiet';
+    if (metric === 'yieldCurve') {
+        let i = v.length - 1;
+        while (i > 0 && (v[i - 1] < 0) === (cur < 0)) i--;
+        const months = (Date.parse(last) - Date.parse(hist[i].date)) / 2.63e9;
+        text = cur < 0 ? 'Inverted' : 'Positive';
+        sub = ` since ${monYear(hist[i].date)}`;
+        tone = cur < 0 ? 'bad' : months < 12 ? 'caution' : 'good'; // a fresh un-inversion is the classic late-cycle tell
+    } else if (metric === 'spEps') {
+        const ago = hist.findLast((p) => p.date <= plusMonths(last, -12));
+        const yoy = ago ? (cur / ago.value - 1) * 100 : null;
+        sub = yoy == null ? '' : ` · ${yoy >= 0 ? '+' : '−'}${Math.abs(yoy).toFixed(0)}% y/y`;
+        text = cur >= hi ? 'Record high' : `${((1 - cur / hi) * 100).toFixed(0)}% off high`;
+        tone = cur >= hi ? 'good' : yoy < 0 ? 'bad' : 'quiet';
+    } else {
+        sub = ` since ${from}`;
+        if (cur >= hi) { text = 'Record high'; tone = 'good'; }
+        else if (share >= 0.9) { text = `Top ${Math.max(1, Math.round((1 - share) * 100))}%`; tone = 'good'; }
+        else if (share <= 0.1) { text = `Bottom ${Math.max(1, Math.round(share * 100))}%`; tone = 'bad'; }
+        else text = `%ile ${Math.round(share * 100)}`;
+    }
+    return { text, sub, tone, lit: tone !== 'quiet' && !(metric === 'yieldCurve' && tone === 'good'), ruler };
+}
+
+function HistRuler({ lo, hi, cur, mark, short, tip }) {
+    const at = (x) => `${((x - lo) / (hi - lo || 1)) * 100}%`;
+    return (
+        <span className="v2-hr" title={tip}>
+            <em>{short(lo)}</em>
+            <span className="v2-hr-rail" style={{ '--at': at(cur) }}><b style={{ left: at(mark) }} /><i /></span>
+            <em>{short(hi)}</em>
+        </span>
+    );
+}
+
+/** Yield curve / profit margin / EPS: one number, one long chart, and what stands out about today. */
 function FredTile({ fred, metric, title, jump, tip, markKey, fmt, tone, chart, refreshTick }) {
     const m = fred?.[metric];
+    const story = useMemo(() => fredStory(metric, m?.history), [metric, m?.history]);
     return (
-        <div className="card v2-fred" data-jump={jump}>
+        <div className={`card v2-fred${story ? ` lit-${story.tone}` : ''}${story?.lit ? ' is-lit' : ''}`} data-jump={jump}>
             <div className="v2-card-head">
                 <span className="tooltip-trigger" data-tooltip={`${tip}${freshnessNote({ value: m?.current, asOf: m?.asOf, stale: m?.stale }).suffix}`}>{title}</span>
+                {story && <span className="v2-fred-badge"><i />{story.text}<small>{story.sub}</small></span>}
             </div>
             <ErrorBoundary resetKey={refreshTick}>
                 <Body>{() => !fred ? <Skeleton count={2} /> : (fred.error || m?.current == null) ? (
@@ -675,6 +728,7 @@ function FredTile({ fred, metric, title, jump, tip, markKey, fmt, tone, chart, r
                                 {m.stale ? '🕐 ' : ''}{fmt(m.current)}
                             </HeroValue>
                             {m.stale && <span className="v2-muted">Last data {formatAsOf(m.asOf)}</span>}
+                            {story && <HistRuler {...story.ruler} />}
                         </div>
                         <MiniChart history={m.history} recessions={fred.recessions || []} {...chart} />
                     </>

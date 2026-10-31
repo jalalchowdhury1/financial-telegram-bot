@@ -1010,3 +1010,28 @@ body:has(.v2) { background: #0b0c0e; }
   .fr-py { min-width: 50px; }
   .fr-note, .fr-tk { display: none; }
 }
+
+/* ---------- economy r9: each chart's attention line (badge vs the whole history, lit when it matters) ---------- */
+.v2-fred .v2-card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.lit-good { --tc: var(--up); } .lit-bad { --tc: var(--down); } .lit-caution { --tc: var(--warn); } .lit-quiet { --tc: var(--ink-2); }
+.v2-fred-badge {
+  display: inline-flex; align-items: center; gap: 6px; min-width: 0; padding: 3px 9px; border-radius: 999px;
+  font-size: 11.5px; font-weight: 500; color: var(--tc); background: color-mix(in srgb, var(--tc) 11%, transparent);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.v2-fred-badge small { font-size: inherit; font-weight: 400; color: var(--ink-3); }
+.v2-fred-badge i { flex: none; width: 6px; height: 6px; border-radius: 999px; background: var(--tc); }
+.v2-fred.is-lit .v2-fred-badge i { animation: v2-ping 1.8s ease-out 3; }
+@keyframes v2-ping { from { box-shadow: 0 0 0 0 color-mix(in srgb, var(--tc) 70%, transparent); } to { box-shadow: 0 0 0 7px transparent; } }
+.v2 .v2-fred.is-lit { border-color: color-mix(in srgb, var(--tc) 28%, var(--line)); background: linear-gradient(180deg, color-mix(in srgb, var(--tc) 6%, var(--surface)), var(--surface) 150px); }
+.v2-hr { margin-left: auto; align-self: center; display: inline-flex; align-items: center; gap: 11px; width: min(48%, 220px); font-size: 10.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.v2-hr em { font-style: normal; }
+.v2-hr-rail { position: relative; flex: 1; height: 4px; border-radius: 2px; background: var(--line-2); }
+.v2-hr-rail::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: var(--at); border-radius: 2px; background: color-mix(in srgb, var(--tc) 40%, transparent); }
+.v2-hr-rail b { position: absolute; top: -3px; bottom: -3px; width: 1px; background: var(--ink-3); }
+.v2-hr-rail i { position: absolute; left: var(--at); top: 50%; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; border-radius: 999px; background: var(--tc); box-shadow: 0 0 0 3px var(--surface); }
+@media (prefers-reduced-motion: reduce) { .v2-fred.is-lit .v2-fred-badge i { animation: none; } }
+@media (max-width: 640px) {
+  .v2-trio.is-calm .v2-fred .v2-card-head { gap: 8px; }
+  .v2-trio.is-calm :is(.v2-hr, .v2-fred-badge small), .v2-trio.is-calm .v2-fred:not(.is-lit) .v2-fred-badge { display: none; }
+}
