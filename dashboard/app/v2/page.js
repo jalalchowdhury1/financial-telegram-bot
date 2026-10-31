@@ -1255,7 +1255,7 @@ export default function DashboardV2() {
                         </div>
                         <div className="v2-grid">
                             <ErrorBoundary resetKey={refreshTick}>
-                                <Slot jump="Lead combos" title="Lead combos" tip="Two stats past their lines at once: since 1993, a good next 6 months. Found by testing every stat here. Tap a row for the proof." span={12}>
+                                <Slot jump="Lead combos" title="Lead combos" tip="Two stats past their lines at once: since 1993, a good next 6 months. Shows up only when a pair gets close. Tap a row for the proof." span={12}>
                                     <LeadCombos spy={spyOk ? spy.chartHistory : null} />
                                 </Slot>
                             </ErrorBoundary>
