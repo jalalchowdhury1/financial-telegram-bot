@@ -1239,7 +1239,6 @@ body:has(.v2) { background: #0b0c0e; }
 
 /* lead combos: one row per pair of stats; each leg a meter filling toward its line, lit when past it */
 .v2 .v2-combos { padding: 18px 22px 6px; }
-.v2-slot[data-jump="Lead combos"]:not(:has(.v2-cb-row)) { display: none; } /* discreet: no pair near its lines */
 .v2-cb-head, .v2-cb-row {
   display: grid; grid-template-columns: minmax(150px, .8fr) minmax(0, 2.6fr) 92px 120px; column-gap: 24px; align-items: center;
   margin: 0 -22px; padding: 0 22px; white-space: nowrap;

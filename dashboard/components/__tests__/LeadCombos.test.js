@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import LeadCombos from '../LeadCombos';
 
 jest.mock('../MarkProvider', () => ({ useSeries: () => null }));
@@ -12,8 +12,8 @@ const file = (base, steps = []) => ({
 });
 const FILES = {
     aaiiDiff: file(5), cl: file(100), // fear + oil: neither leg lit
-    claims: file(100, [[420, 88], [360, 100], [20, 90], [5, 100]]), usdcad: file(1.3, [[420, 1.4], [360, 1.3], [20, 1.4]]), // fired 420 and 20 days ago, claims back since
-    vixCurrent: file(30), housing: file(1500, [[60, 1600]]), // VIX lit, housing +6.7% = ¾ of the way to +8%
+    claims: file(100, [[420, 88], [360, 100], [30, 90]]), usdcad: file(1.3, [[420, 1.4], [360, 1.3], [30, 1.4]]), // fired 420 and 30 days ago
+    vixCurrent: file(30), housing: file(1500), // VIX lit, housing flat
     peRatio: file(25), tnx: file(4),
     'spy-daily': { from, t: Array.from({ length: 501 }, (_, i) => i), v: Array.from({ length: 501 }, (_, i) => 100 + i / 10) },
 };
@@ -27,16 +27,16 @@ beforeEach(() => {
 
 const row = (name) => screen.getByText(name).closest('button');
 
-it('shows only the pairs near their lines or fired this month, each with its record and today', async () => {
+it('shows each pair: both legs against their lines, its record, and today', async () => {
     render(<LeadCombos spy={null} />);
     await waitFor(() => expect(row('Jobs fine + CAD slump').textContent).toMatch(/Bullish to/));
     const cu = row('Jobs fine + CAD slump');
     expect(cu.className).toMatch(/is-on/);
-    expect(cu.querySelectorAll('.v2-cb-leg.is-lit')).toHaveLength(1); // claims slipped back: still shown, it fired 20 days ago
-    expect(cu.querySelector('.v2-cb-rec').textContent).toMatch(/^\+\d+% 1×$/); // the 20-day-old one is still live, out of the record
+    expect(cu.querySelectorAll('.v2-cb-leg.is-lit')).toHaveLength(2);
+    expect(cu.querySelector('.v2-cb-rec').textContent).toMatch(/^\+\d+% 1×$/); // the 30-day-old one is still live, out of the record
+    expect(row('Fear + oil crash').querySelector('.v2-cb-now').textContent).toBe('0 of 2');
     expect(row('Panic + housing boom').querySelector('.v2-cb-now').textContent).toBe('1 of 2');
-    expect(screen.queryByText('Fear + oil crash')).toBeNull();
-    expect(screen.queryByText('Selloff + falling rates')).toBeNull();
+    expect(row('Selloff + falling rates').querySelector('.v2-cb-now').textContent).toBe('0 of 2');
 });
 
 it('a tap opens the proof for that pair', async () => {
@@ -46,15 +46,8 @@ it('a tap opens the proof for that pair', async () => {
     expect(await screen.findByRole('dialog', { name: 'Jobs fine + CAD slump' })).toBeInTheDocument();
 });
 
-it('renders nothing when no pair is near, or a file is missing', async () => {
-    for (const k of ['claims', 'usdcad', 'housing']) FILES[k] = file(FILES[k].v[0]);
-    const quiet = render(<LeadCombos spy={null} />);
-    await act(() => new Promise((r) => setTimeout(r, 20)));
-    expect(quiet.container).toBeEmptyDOMElement();
-    quiet.unmount();
-    FILES.vixCurrent = file(30); FILES.housing = file(1500, [[60, 1700]]); // hv lit…
-    delete FILES.tnx; // …but a file is missing
-    const { container } = render(<LeadCombos spy={null} />);
-    await act(() => new Promise((r) => setTimeout(r, 20)));
-    expect(container).toBeEmptyDOMElement();
+it('says N/A when a file is missing, and never crashes', async () => {
+    delete FILES.tnx;
+    render(<LeadCombos spy={null} />);
+    await waitFor(() => expect(screen.getAllByText('N/A')).toHaveLength(4));
 });
