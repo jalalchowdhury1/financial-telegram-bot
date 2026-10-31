@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import LeadCombos from '../LeadCombos';
 
 jest.mock('../MarkProvider', () => ({ useSeries: () => null }));
@@ -18,12 +18,15 @@ const FILES = {
     'spy-daily': { from, t: Array.from({ length: 501 }, (_, i) => i), v: Array.from({ length: 501 }, (_, i) => 100 + i / 10) },
 };
 
-beforeEach(() => {
+const serve = (files) => {
     global.fetch = jest.fn((url) => {
         const key = String(url).match(/\/history\/(.+)\.json/)?.[1];
-        return Promise.resolve(key in FILES ? { ok: true, json: async () => FILES[key] } : { ok: false });
+        return Promise.resolve(key in files ? { ok: true, json: async () => files[key] } : { ok: false });
     });
-});
+};
+beforeEach(() => serve(FILES));
+// The same files, ending 8 days ago: the sheet that should carry them to today has stopped (or not landed yet).
+const OLD = Object.fromEntries(Object.entries(FILES).map(([k, f]) => [k, { ...f, from: new Date(Date.parse(f.from) - 8 * DAY).toISOString().slice(0, 10) }]));
 
 const row = (name) => screen.getByText(name).closest('button');
 
@@ -44,6 +47,34 @@ it('a tap opens the proof for that pair', async () => {
     await waitFor(() => expect(row('Jobs fine + CAD slump')).not.toBeDisabled());
     fireEvent.click(row('Jobs fine + CAD slump'));
     expect(await screen.findByRole('dialog', { name: 'Jobs fine + CAD slump' })).toBeInTheDocument();
+});
+
+it('a pair whose newest reading is over 5 days old says N/A and is unread for the top line; a fire stays true', async () => {
+    serve(OLD);
+    const onState = jest.fn();
+    render(<LeadCombos spy={null} onState={onState} />);
+    await waitFor(() => expect(screen.getAllByText('N/A')).toHaveLength(3));
+    expect(row('Jobs fine + CAD slump').querySelector('.v2-cb-now').textContent).toMatch(/^Bullish to /); // fired 38 days ago
+    const [fo, cu, hv, pt] = onState.mock.calls.at(-1)[0];
+    expect([fo, hv, pt]).toEqual([null, null, null]);
+    expect(cu).toEqual({ jump: 'Lead combos', fire: expect.stringMatching(/^Jobs fine \+ CAD slump bullish to /) });
+});
+
+it('waits (…) while the sheet is on its way, instead of N/A on old files', async () => {
+    serve(OLD);
+    const { rerender } = render(<LeadCombos spy={null} waiting />);
+    await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
+    expect(screen.getAllByText('…')).toHaveLength(3);
+    rerender(<LeadCombos spy={null} />);
+    expect(screen.getAllByText('N/A')).toHaveLength(3);
+});
+
+it('unmounting (a crash, a refresh) leaves the top line unread, never the last state', async () => {
+    const onState = jest.fn();
+    const { unmount } = render(<LeadCombos spy={null} onState={onState} />);
+    await waitFor(() => expect(onState.mock.calls.at(-1)?.[0]?.[1]?.fire).toMatch(/^Jobs fine \+ CAD slump bullish to /));
+    unmount();
+    expect(onState).toHaveBeenLastCalledWith(null);
 });
 
 it('says N/A when a file is missing, and never crashes', async () => {

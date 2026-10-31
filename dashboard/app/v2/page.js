@@ -24,7 +24,8 @@ import LeadCombos from '../../components/LeadCombos';
 import { plusMonthsIso as plusMonths } from '../../lib/signalStudy';
 import MarkChip from '../../components/MarkChip';
 import MarksSheet from '../../components/MarksSheet';
-import { MarkProvider, useMark, useChart, collectLiveValues } from '../../components/MarkProvider';
+import { MarkProvider, useMark, useChart, useSeries, collectLiveValues } from '../../components/MarkProvider';
+import { seriesPoints } from '../../lib/marks';
 import BackPill from '../../components/BackPill';
 import { jumpToCard } from '../../components/WhatMoved';
 import StatusLine from '../../components/StatusLine';
@@ -856,7 +857,7 @@ function TriggerLine({ points, line, tag, tone }) {
     );
 }
 
-function Signals({ sheets, spy, loading, onState }) {
+function Signals({ sheets, spy, loading, old, onState }) {
     const na = loading ? '…' : 'N/A';
     const [study, setStudy] = useState(false);
     const aaii = parseFloat(sheets?.AAIIDiff);
@@ -864,6 +865,8 @@ function Signals({ sheets, spy, loading, onState }) {
     const vix3m = parseFloat(sheets?.VIX?.threeMonth);
     const aaiiMark = useMark('aaiiDiff', aaii);
     const aaiiHist = useChart('aaiiDiff', aaii);
+    const series = useSeries();
+    const aaiiDays = useMemo(() => seriesPoints(series, 'aaiiDiff'), [series]);
     const vixHist = useChart('vixCurrent', vixCur);
     const v3Hist = useChart('vix3m', vix3m);
     const nsb = sheets?._meta?.fields?.NotSoBoring?.detail;
@@ -872,8 +875,9 @@ function Signals({ sheets, spy, loading, onState }) {
 
     const aaiiPts = useMemo(() => (Number.isFinite(aaii) ? [...(aaiiHist?.points || []), { value: aaii }] : []), [aaiiHist, aaii]);
     // The latest 20+ reading (daily rows repeat each weekly survey): it fired on the run's first day, and speaks for 6 months after its last survey.
+    // From the sheet's own days, not the chart: the chart is off when this week's survey is far from the sheet's last.
     const fired = useMemo(() => {
-        const p = aaiiHist?.points || [];
+        const p = aaiiDays;
         let j = p.length - 1;
         while (j >= 0 && !(p[j].value >= AAII_LINE)) j--;
         if (j < 0) return null;
@@ -881,17 +885,24 @@ function Signals({ sheets, spy, loading, onState }) {
         while (i > 0 && p[i - 1].value >= AAII_LINE) i--;
         while (j > i && p[j - 1].value === p[j].value) j--;
         return { on: p[i].date, until: plusMonths(p[j].date, AAII_MONTHS) };
-    }, [aaiiHist]);
+    }, [aaiiDays]);
     const today = new Date().toLocaleDateString('en-CA'); // the local calendar day (a UTC date turns over at ~8 pm ET)
     const bullUntil = Number.isFinite(aaii) && aaii >= AAII_LINE ? plusMonths(today, AAII_MONTHS) : fired && fired.until >= today ? fired.until : null;
+    // A quiet reading counts only when it is today's: the sheet's AAII days reach the last 5 (a missed fire hides in an
+    // older one), and VIX is neither last visit's saved copy nor a value the server marked stale.
+    const recent = new Date(Date.now() - 5 * 864e5).toLocaleDateString('en-CA');
+    const aaiiRead = Number.isFinite(aaii) && aaiiDays.at(-1)?.date >= recent;
+    const vixRead = Number.isFinite(vixCur) && vix3m > 0 && !old && !staleNote(sheets, ['vixCurrent', 'vixThreeMonth']);
     // The top line reads these two straight from here, so it always says what the tiles say (null = unread).
     useEffect(() => {
         if (loading) return;
         onState([
-            Number.isFinite(aaii) ? { jump: 'Indicators', fire: bullUntil && `AAII bullish to ${shortDate(bullUntil)}`, share: aaii / AAII_LINE, gap: `AAII ${aaii.toFixed(1)} → ${AAII_LINE}` } : null,
-            Number.isFinite(vixCur) && vix3m > 0 ? { jump: 'Indicators', fire: vixCur > vix3m && 'VIX over 3M', share: vixCur / vix3m, gap: `VIX/3M ${(vixCur / vix3m).toFixed(2)} → 1` } : null,
+            bullUntil ? { jump: 'Indicators', fire: `AAII bullish to ${shortDate(bullUntil)}` }
+                : aaiiRead ? { jump: 'Indicators', fire: null, share: aaii / AAII_LINE, gap: `AAII ${aaii.toFixed(1)} → ${AAII_LINE}` } : null,
+            vixRead ? { jump: 'Indicators', fire: vixCur >= vix3m && 'VIX over 3M', share: vixCur / vix3m, gap: `VIX/3M ${(vixCur / vix3m).toFixed(2)} → 1` } : null,
         ]);
-    }, [loading, aaii, bullUntil, vixCur, vix3m, onState]);
+    }, [loading, aaii, aaiiRead, bullUntil, vixCur, vix3m, vixRead, onState]);
+    useEffect(() => () => onState(null), [onState]); // a crashed or gone card leaves the top line unread, not stuck
 
     const ratioPts = useMemo(() => {
         const v3 = new Map((v3Hist?.points || []).map((p) => [p.date, p.value]));
@@ -924,14 +935,14 @@ function Signals({ sheets, spy, loading, onState }) {
                     <span className={aaii >= AAII_LINE ? 'tone-good' : ''}>{sheets.AAIIDiff}</span>
                 </Delta>
             ) : na,
-            sub: !Number.isFinite(aaii) ? null : bullUntil
+            sub: bullUntil
                 ? <span className="tone-good" title={fired ? `Fired ${shortDate(fired.on)}` : undefined}>Bullish to {shortDate(bullUntil)}</span>
-                : <span className="v2-muted">{(AAII_LINE - aaii).toFixed(1)} pts to {AAII_LINE}%</span>,
+                : Number.isFinite(aaii) ? <span className="v2-muted">{(AAII_LINE - aaii).toFixed(1)} pts to {AAII_LINE}%</span> : null,
             viz: aaiiPts.length > 6 && <TriggerLine points={aaiiPts} line={AAII_LINE} tag={`${AAII_LINE}%`} tone="good" />,
         },
         {
             key: 'vix', label: 'VIX / 3M', tip: 'VIX above 3-month VIX: panic. Often before a rebound. Tap for the proof.',
-            alert: Number.isFinite(vixCur) && vixCur > vix3m, open: Number.isFinite(vixCur) && vix3m > 0 ? () => setStudy('vix') : null,
+            alert: Number.isFinite(vixCur) && vixCur >= vix3m, open: Number.isFinite(vixCur) && vix3m > 0 ? () => setStudy('vix') : null,
             value: Number.isFinite(vixCur) ? (
                 <span className="v2-pair">
                     <Delta chartKey="vixCurrent" raw={vixCur}>{sheets.VIX.current}</Delta>
@@ -1043,7 +1054,7 @@ function TodayLine({ items }) {
 
 /** v1's Market Pulse verdicts as a readable row: verdict + why. Not the curve: Recession watch and Economy show it. */
 function Readout({ fred, vol, rubberBand, saved, waiting }) {
-    const chips = useMemo(() => pulseVerdicts({ fred, vol, rubberBand, saved }).filter((c) => c.key !== 'curve'), [fred, vol, rubberBand, saved?.fred, saved?.vol]); // eslint-disable-line react-hooks/exhaustive-deps
+    const chips = useMemo(() => pulseVerdicts({ fred, vol, rubberBand, saved, asCards: true }).filter((c) => c.key !== 'curve'), [fred, vol, rubberBand, saved?.fred, saved?.vol]); // eslint-disable-line react-hooks/exhaustive-deps
     if (!chips.length) return waiting ? <div className="v2-readout is-waiting"><Skeleton count={1} /></div> : null;
     return (
         <div className="v2-readout" aria-label="The read: verdicts from the cards below">
@@ -1080,7 +1091,7 @@ function ReadGlyph({ k, fred, vol, rubberBand }) {
         const r = horsemenRiding(fred);
         if (r) pips = [0, 1, 2, 3].map((i) => (i < r.riding ? 'bad' : i < r.known ? 'off' : 'na'));
     } else if (k === 'bull') {
-        pips = Object.values(fred?.checklist || {}).filter((i) => i && typeof i === 'object').map((i) => (i.bullish ? 'good' : 'off'));
+        pips = Object.values(fred?.checklist || {}).filter((i) => i && typeof i === 'object').map((i) => (!Number.isFinite(i.value) ? 'na' : i.bullish ? 'good' : 'off'));
     } else if (k === 'dips') {
         pips = Object.values(rubberBand?.dials || {}).map((d) => RB_TONE[d?.colour] || 'na');
     }
@@ -1264,12 +1275,12 @@ export default function DashboardV2() {
 
                     <Section id="signals" title="Signals">
                         <div data-jump="Indicators" data-cached={saved('sheets')}>
-                            <ErrorBoundary resetKey={refreshTick}><Signals sheets={sheets} spy={spyOk ? spy.chartHistory : null} loading={pending.sheets && !sheets} onState={setSigState} /></ErrorBoundary>
+                            <ErrorBoundary resetKey={refreshTick}><Signals sheets={sheets} spy={spyOk ? spy.chartHistory : null} loading={pending.sheets && !sheets} old={!!saved('sheets')} onState={setSigState} /></ErrorBoundary>
                         </div>
                         <div className="v2-grid">
                             <ErrorBoundary resetKey={refreshTick}>
                                 <Slot jump="Lead combos" title="Lead combos" tip="Two stats past their lines at once: since 1993, a good next 6 months. Found by testing every stat here. Tap a row for the proof." span={12}>
-                                    <LeadCombos spy={spyOk ? spy.chartHistory : null} onState={setComboState} />
+                                    <LeadCombos spy={spyOk ? spy.chartHistory : null} waiting={pending.history && !history} onState={setComboState} />
                                 </Slot>
                             </ErrorBoundary>
                             <ErrorBoundary resetKey={refreshTick}>

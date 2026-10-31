@@ -281,6 +281,32 @@ The repo is **public** — keys NEVER go in code; they live in **Vercel env vars
   event page, `https://polymarket.com/event/<event slug>` (the slug polymarket.com's own links
   use; `bet.slug`), and to the bare homepage only when a row has no slug (an old saved copy).
 
+### ✦ `/v2`: the calm second page (`app/v2/`) — Oct 2026
+
+Same routes as `/`. v1 (`app/page.js`) stays as Jalal knows it: when v2 needs a shared component to
+behave differently, it gets a v2-only prop (`race` on FactorRow, `asCards` on `pulseVerdicts`), never a v1 change.
+- **Order** (most important first): top line → hero (SPY, F&G) → Readout chips → Signals (NotSoBoring,
+  FrontRunner, AAII, VIX/3M tiles + Lead combos + Regime) → Market (SPY chart, Volatility) → Risk (Rubber band,
+  Recession watch) → Economy (Bull checklist, Indicators) → World (USD/BDT, Global markets) → Crowd (Polymarket).
+- **House rules**: nothing wraps (`white-space: nowrap`; check 1440 and 390 px wide), fewest words, detail
+  opens on tap (More, drill-in dialogs), and nothing new rings him unless the event is rare and real.
+- **Top line** (`TodayLine`): the signals firing, else `Nothing firing · closest …`. It reads the Signals
+  tiles' and `LeadCombos`' own states (`onState`), so it never disagrees with them. An item is `null` when it
+  was not read from today's data, and then the line never says "Nothing firing" (fires still show):
+  - AAII: its fire comes from the sheet's own days (`seriesPoints`), not `useChart`, which is off the day this
+    week's survey is far from the sheet's last. A quiet AAII counts only when those days reach the last 5.
+  - VIX: not last visit's saved copy (`saved('sheets')`) and not a field the server marked stale.
+  - Lead combos: a pair whose newest reading is more than 5 days old says N/A (`…` while `/api/history` is on
+    its way). A fire stays true: it speaks for 6 months.
+  - A card that crashes or unmounts sends `onState(null)`, never leaves its last state behind.
+  - Fire rules = the study's and the ping's: AAII ≥ 20, VIX ÷ VIX 3M ≥ 1, a pair's lesser leg ÷ its line ≥ 1.
+- **Readout chips** = `pulseVerdicts({…, asCards: true})`: Bull counts the items it could read (the Bull
+  board's `good/live`); Dips follows the defensive mode, as the Rubber band headline and badge do (never
+  "Dips pay ✓" over "Defensive"). Horsemen = the card's `N of 4 riding`, a grey pip for one with no data.
+- **Not built on purpose**: signal dots on the SPY chart, tap-a-number "ping me at X".
+- Tests: `app/v2/__tests__/page.test.js` (`the top line`), `components/__tests__/LeadCombos.test.js`,
+  `components/__tests__/RiskCards.test.js`, `lib/__tests__/pulseVerdicts.test.js` (`asCards`).
+
 ### ⚡ Loading speed + robustness (`lib/cdn.js`, `lib/loadJson.js`, `app/page.js`) — 2026-09-26
 Before: every route ran cold on every visit (all `no-store`), and the page waited on ONE
 `Promise.all` of 8 feeds, so nothing showed until the slowest (`market-extra`, ~5 s cold)
@@ -1855,6 +1881,7 @@ Now: fewer than 756 bars → the Sheet's own 3Y return (`_sheet_return_3y`) → 
   Thu 09:05" catch-up line (`fd:seen:v1`). The 90-day tap charts are `buildChartSeries` /
   `chartFor` in `lib/marks.js` (`/api/history` `series`).
 - `dashboard/app/page.js` — dashboard page; the `.system-status-bar` footer is `components/StatusLine.js`.
+- `dashboard/app/v2/page.js` + `useFeeds.js` — `/v2`, the calm second page (same routes; see "✦ `/v2`" in §3).
 - `dashboard/components/*.js` — UI (MarketModal, PolymarketTable, SpyChart, Gauge,
   EconomicIndicatorGrid, BullChecklist, ExtraMarketsGrid, MarketPulse, MiniChart,
   FourHorsemen, CustomIndicatorBar, Skeleton, ErrorBoundary (with `resetKey`), FactorRow,
@@ -2054,20 +2081,6 @@ A typed "done" in the chat still works (the webhook stores it as a text tap), an
 
 Card anatomy (24 Oct 2026, ~/concierge/docs/ALERT-STYLE.md): bold `🛑 Defensive · <state>` (no ACT/INFO labels), an italic sub-line, a ≤3-line body (numbered Composer steps), buttons whose labels name the outcome, and the meta line LAST inside `<blockquote><i>…</i></blockquote>`. INFO cards go out with disable_notification.
 
-## Defensive trigger: buttons instead of "Reply DONE" (11 Sep 2026)
-
-`scripts/defensive_trigger.py` alerts and hourly reminders carry inline buttons
-[✅ Done — cash parked / cash back in] [⏰ Defer 1h]. Taps are received by health-hub
-`api/defensive.js` — the Telegram WEBHOOK of this bot — so never call getUpdates on this
-token again (it would 409 against the webhook). The nag reads the tap back once an hour
-through `DEFENSIVE_TAP_URL` + `DEFENSIVE_TAP_KEY` in `.env` (pulled by name; launchd never
-sources the file). Done → ack; Defer → no reminder for 1 h, the stale-radar warning still
-fires. A typed "done" in the chat still works (the webhook stores it as a text tap), and so
-does `defensive_trigger.py ack` from the concierge. `--dry` never reads taps. Reminder shape:
-`🛑 <b>Defensive · go defensive still open</b>` + italic `50% to cash · reminder #3` (ALERT-STYLE, 24 Oct 2026).
-
-Card anatomy (24 Oct 2026, ~/concierge/docs/ALERT-STYLE.md): bold `🛑 Defensive · <state>` (no ACT/INFO labels), an italic sub-line, a ≤3-line body (numbered Composer steps), buttons whose labels name the outcome, and the meta line LAST inside `<blockquote><i>…</i></blockquote>`. INFO cards go out with disable_notification.
-
 ## Silent digest hand-off (11 Sep 2026)
 
 The overnight send calls `digest_post("report", text, parse_mode)` first (health-hub `api/digest.js`, env `DIGEST_URL` + `DIGEST_KEY` — Lambda environment, merged by hand with aws update-function-configuration on 11 Sep 2026; the push deploys via deploy-lambda.yml). Stored → no direct message; the 07:00 ⚪ Silent digest card carries a button that replays it in full (36 h). Collector down or env missing → the old silent direct send. Never make the direct send loud again.
@@ -2079,6 +2092,15 @@ The day a /v2 signal fires (AAII fear 20+, VIX over VIX 3M, the 4 Lead combos �
 launchd `com.jalal.signal-ping` (daily 08:30) → `~/.local/bin/signal-ping` → `node
 dashboard/scripts/signal-states.mjs` (the dashboard's own code over the LIVE site's baked files + sheet
 series, prints JSON) → `now_ring.rang(signal:<id>)`, direct Telegram if the doorbell is off. A fire rings
-once (`~/.local/state/signal-ping/seen.json`) and only while ≤ 7 days old. `--dry` sends nothing;
-`--fake <id>` is a FAKE end-to-end test. Log: `~/Library/Logs/signal-ping.log`. Rename a signal id
-and the next fire of it rings again — harmless.
+once (`~/.local/state/signal-ping/seen.json`, written tmp + rename) and only while ≤ 7 days old; a failed
+send isn't saved, so it retries the next day. `--dry` sends nothing; `--fake <id>` is a FAKE end-to-end
+test. Log: `~/Library/Logs/signal-ping.log`. Rename a signal id and the next fire of it rings again — harmless.
+
+A quiet run is not proof of calm markets (31 Oct 2026 robustness pass):
+- A run that worked ends on `ok <date> · <N> signals`. That line is what the fleet row
+  `signal-ping (dashboard signal fires -> one ping)` reads (github-notion-sync `fleet_health.py`, red after 26 h).
+- A failed fetch exits 1 before anything rings (the script prints nothing).
+- A signal whose newest reading is more than 5 days old can never fire: a sheet column that stopped, or a baked
+  file that came back empty (`asOf: null`). The run still rings the fresh ones, then ends on `stale: <id> …`.
+- Tests: `~/.local/bin/tests/test_signal_ping.py` (offline, stubs) and `dashboard/scripts/__tests__/signal-states.test.js`
+  (the real script against a FAKE site on 127.0.0.1).

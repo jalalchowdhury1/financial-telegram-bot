@@ -25,7 +25,7 @@ const lineOf = (l) => (l.days ? `${sign(l.line)}${Math.abs(l.line)}${l.pct ? '%'
 const shortDate = (iso) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 const pct0 = (r) => `${sign(r)}${Math.abs(r * 100).toFixed(0)}%`;
 
-export default function LeadCombos({ spy, onState }) {
+export default function LeadCombos({ spy, waiting, onState }) {
     const series = useSeries();
     const [files, setFiles] = useState(null); // {key: points} | false when a file failed
     const [open, setOpen] = useState(null);
@@ -41,10 +41,12 @@ export default function LeadCombos({ spy, onState }) {
     const rows = useMemo(() => {
         if (!files) return null;
         const today = new Date().toLocaleDateString('en-CA');
+        const recent = new Date(Date.now() - 5 * DAY).toLocaleDateString('en-CA');
         const s = files['spy-daily'].map((p) => ({ date: p.date, price: p.value }));
         return COMBOS.map((c) => {
             const pts = comboSeries(c, ...c.legs.map((l) => tail(files[l.key], sheetPts(series, l.key))));
-            const now = pts[pts.length - 1];
+            const end = pts[pts.length - 1];
+            const now = end?.date >= recent ? end : null; // older = the sheet stopped (or hasn't landed): no state, N/A
             const last = signalEpisodes(pts, 1).pop();
             const until = last && plusMonthsIso(last.date, 6);
             const { stats, base } = signalStudy(pts, s, 6, 1) || {};
@@ -57,12 +59,13 @@ export default function LeadCombos({ spy, onState }) {
         if (!onState) return;
         if (files === false) onState(COMBOS.map(() => null));
         if (rows) onState(rows.map(({ c, now, until }) => {
-            if (!now) return null;
+            if (!now) return until ? { jump: 'Lead combos', fire: `${c.name} bullish to ${shortDate(until)}` } : null; // a fire stays true
             const k = now.legs.reduce((m, v, i) => (v / c.legs[i].line < now.legs[m] / c.legs[m].line ? i : m), 0);
             return { jump: 'Lead combos', fire: until && `${c.name} bullish to ${shortDate(until)}`, share: now.value,
                 gap: `${c.name} · ${c.legs[k].label} ${fmt(now.legs[k], c.legs[k])} → ${lineOf(c.legs[k])}` };
         }));
     }, [files, rows, onState]);
+    useEffect(() => () => onState?.(null), [onState]); // a crashed or gone card leaves the top line unread, not stuck
 
     const sel = rows?.find((r) => r.c.id === open);
     return (
@@ -70,7 +73,7 @@ export default function LeadCombos({ spy, onState }) {
             <div className="v2-cb-head" aria-hidden="true"><span /><span>Leg → line</span><span>SPY 6M after</span><span>Now</span></div>
             {COMBOS.map((c, i) => {
                 const r = rows?.[i], lit = r?.now ? r.now.legs.filter((v, k) => v / c.legs[k].line >= 1).length : 0;
-                const state = !r?.now ? (files === null ? '…' : 'N/A') : r.until ? `Bullish to ${shortDate(r.until)}` : `${lit} of 2`;
+                const state = r?.until ? `Bullish to ${shortDate(r.until)}` : !r?.now ? (files === null || waiting ? '…' : 'N/A') : `${lit} of 2`;
                 return (
                     <button key={c.id} type="button" className={`v2-cb-row${r?.until ? ' is-on' : ''}`} disabled={!r?.now}
                         aria-haspopup="dialog" onClick={() => setOpen(c.id)}>

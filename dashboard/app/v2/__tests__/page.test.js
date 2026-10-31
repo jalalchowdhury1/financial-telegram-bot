@@ -5,6 +5,7 @@
  */
 import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import DashboardV2 from '../page';
+import { writeSnap } from '../../../lib/snapshot';
 
 const spyPayload = {
     current: 612.34,
@@ -226,15 +227,52 @@ it('Risk: each card gives one answer closed, and More opens the proof (loop, fus
 describe('the top line', () => {
     const ok = (body) => Promise.resolve({ ok: true, status: 200, json: async () => body });
     const calm = { AAIIDiff: '3.60%', VIX: { current: '19.42', threeMonth: '20.78' } };
-    const flat = { from: '2025-01-01', t: Array.from({ length: 100 }, (_, i) => i * 7), v: Array(100).fill(5) };
-    const files = Object.fromEntries(['aaiiDiff', 'cl', 'claims', 'usdcad', 'vixCurrent', 'housing', 'peRatio', 'tnx', 'spy-daily'].map((k) => [`/history/${k}.json`, ok(flat)]));
+    const daysAgo = (n) => new Date(Date.now() - n * 864e5).toLocaleDateString('en-CA');
+    const KEYS = ['aaiiDiff', 'cl', 'claims', 'usdcad', 'vixCurrent', 'housing', 'peRatio', 'tnx', 'spy-daily'];
+    // Baked files: weekly for 90 weeks, ending 70 days ago (as live: rebuilt now and then). The sheet carries the last 60 days.
+    const flat = { from: daysAgo(700), t: Array.from({ length: 91 }, (_, i) => i * 7), v: Array(91).fill(5) };
+    const files = Object.fromEntries(KEYS.map((k) => [`/history/${k}.json`, ok(flat)]));
+    const sheet = (v = {}, last = 0) => ok({ metrics: {}, series: { from: daysAgo(59 + last), v: Object.fromEntries(KEYS.map((k) => [k, v[k] || Array(60).fill(5)])) } });
     const combosSettled = () => waitFor(() => expect([...document.querySelectorAll('.v2-cb-now')].every((e) => e.textContent !== '…')).toBe(true));
 
     it('says Nothing firing, and the closest signal, only when every signal was read', async () => {
-        mockRoutes({ '/api/sheets': ok(calm), ...files });
+        mockRoutes({ '/api/sheets': ok(calm), '/api/history': sheet(), ...files });
         render(<DashboardV2 />);
         await waitFor(() => expect(screen.getByText('Nothing firing')).toBeInTheDocument());
         expect(document.querySelector('.v2-today button').textContent).toBe('closest VIX/3M 0.93 → 1');
+    });
+
+    // Each of these once said "Nothing firing" on numbers that were not today's.
+    it.each([
+        ['the sheet history failed (AAII could have fired in the last 6 months)', {}, false],
+        ['the sheet stopped 8 days ago', { '/api/history': sheet({}, 8) }, false],
+        ['the sheets feed is a saved copy from the last visit', { '/api/history': sheet(), '/api/sheets': new Promise(() => {}) }, true],
+        ['the server marks VIX stale', { '/api/history': sheet(), '/api/sheets': ok({ ...calm, _meta: { staleFields: ['vixCurrent'] } }) }, false],
+    ])('no Nothing firing when %s', async (_, routes, savedCopy) => {
+        if (savedCopy) writeSnap('sheets', calm, Date.now() - 3600e3); // an hour-old copy paints first
+        mockRoutes({ '/api/sheets': ok(calm), ...files, ...routes });
+        render(<DashboardV2 />);
+        await waitFor(() => expect(screen.getByText('19.42')).toBeInTheDocument());
+        await combosSettled();
+        await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
+        expect(document.querySelector('.v2-today')).not.toBeNull();
+        expect(screen.queryByText('Nothing firing')).toBeNull();
+    });
+
+    it('an AAII fire from the sheet still shows when this week\'s reading is far from the sheet\'s last (no chart that day)', async () => {
+        // 25 for a week 40 days ago, then 10 to yesterday; today's survey says 3.6 (64% off the sheet's last → its chart is off)
+        const aaii = Array.from({ length: 60 }, (_, i) => (i >= 19 && i < 26 ? 25 : 10));
+        mockRoutes({ '/api/sheets': ok(calm), '/api/history': sheet({ aaiiDiff: aaii }), ...files });
+        render(<DashboardV2 />);
+        await waitFor(() => expect(document.querySelector('.v2-today button')?.textContent).toMatch(/^AAII bullish to [A-Z][a-z]{2} \d+$/));
+        expect(screen.queryByText('Nothing firing')).toBeNull();
+        expect(document.querySelector('[data-jump="Indicators"] .tone-good')?.textContent).toMatch(/^Bullish to /); // the tile agrees
+    });
+
+    it('VIX level with VIX 3M fires, as in the study and the ping (ratio ≥ 1)', async () => {
+        mockRoutes({ '/api/sheets': ok({ ...calm, VIX: { current: '20.00', threeMonth: '20.00' } }), '/api/history': sheet(), ...files });
+        render(<DashboardV2 />);
+        await waitFor(() => expect(document.querySelector('.v2-today button')?.textContent).toBe('VIX over 3M'));
     });
 
     it('a feed that failed is not a calm one: no Nothing firing while the combos are unread', async () => {

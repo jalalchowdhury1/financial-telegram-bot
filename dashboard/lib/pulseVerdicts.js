@@ -18,6 +18,12 @@ const RB = {
     amber: { text: 'Dips: watch', tone: 'watch', word: 'WATCH' },
     red: { text: 'Dips: stop', tone: 'bad', word: 'STOP' },
 };
+// v2 (asCards): a defensive plan outranks the colour, as the card's headline does (RiskCards.js verdictOf).
+const MODE = {
+    PENDING_DEFENSIVE: { text: 'Dips: go defensive', tone: 'bad', word: 'GO DEFENSIVE' },
+    DEFENSIVE: { text: 'Dips: defensive', tone: 'watch', word: 'DEFENSIVE' },
+    PENDING_REENTRY: { text: 'Dips: go back in', tone: 'good', word: 'GO BACK IN' },
+};
 const VOL = {
     calm: { text: 'Vol calm', tone: 'good' },
     watch: { text: 'Vol watch', tone: 'watch' },
@@ -54,9 +60,9 @@ export function horsemenRiding(fred) {
     return { riding: tells.filter((t) => t === true).length, known };
 }
 
-function dipsChip(rb) {
+function dipsChip(rb, asCards) {
     if (!usable(rb)) return null;
-    const v = RB[rb.verdict?.colour];
+    const v = (asCards && MODE[rb.defensive?.mode]) || RB[rb.verdict?.colour];
     if (!v) return null; // grey = NO DATA on the card
     const meta = rb._meta || {};
     const days = num(meta.ageDays);
@@ -105,9 +111,10 @@ function curveChip(fred, savedLabel) {
     };
 }
 
-function bullChip(fred, savedLabel) {
+function bullChip(fred, savedLabel, asCards) {
     if (!usable(fred) || !isObj(fred.checklist)) return null;
-    const items = Object.values(fred.checklist).filter(isObj);
+    // v2's Bull board counts the items it could read; v1's checklist counts all 8
+    const items = Object.values(fred.checklist).filter((i) => isObj(i) && (!asCards || num(i.value) != null));
     if (!items.length) return null;
     const bullish = items.filter((i) => i.bullish).length;
     const pct = (bullish / items.length) * 100;
@@ -120,11 +127,12 @@ function bullChip(fred, savedLabel) {
 }
 
 /**
- * @param {{fred?:any, vol?:any, rubberBand?:any, saved?:{fred?:string, vol?:string}}} src
+ * @param {{fred?:any, vol?:any, rubberBand?:any, saved?:{fred?:string, vol?:string}, asCards?:boolean}} src
  *   `saved` = the page's "🕐 19:43" label for a feed currently shown from a saved copy.
+ *   `asCards` (v2) = Bull counts readable items and Dips follows the defensive mode, as v2's cards do.
  * @returns {Array<{key, jump, text, tone:'good'|'caution'|'watch'|'bad', why, old:null|{kind:'saved'|'stale', note}}>}
  */
-export function pulseVerdicts({ fred, vol, rubberBand, saved = {} } = {}) {
+export function pulseVerdicts({ fred, vol, rubberBand, saved = {}, asCards = false } = {}) {
     const s = isObj(saved) ? saved : {};
     // Dips goes LAST: its card fetches it after mount, so it lands after fred + vol (which
     // paint from saved copies at once). Appended, it never slides a chip under a thumb.
@@ -132,8 +140,8 @@ export function pulseVerdicts({ fred, vol, rubberBand, saved = {} } = {}) {
         () => volChip(vol, s.vol),
         () => horsemenChip(fred, s.fred),
         () => curveChip(fred, s.fred),
-        () => bullChip(fred, s.fred),
-        () => dipsChip(rubberBand),
+        () => bullChip(fred, s.fred, asCards),
+        () => dipsChip(rubberBand, asCards),
     ];
     const chips = [];
     for (const m of make) {

@@ -381,6 +381,15 @@ export function buildChartSeries(rows, now = new Date()) {
     return { from, days, v };
 }
 
+/** One metric's dated readings from the sheet series (`{from, v: {key: [...]}}`), blanks skipped; [] when there are none. */
+export function seriesPoints(series, key) {
+    const vals = key ? series?.v?.[key] : null;
+    if (!Array.isArray(vals) || typeof series.from !== 'string') return [];
+    const points = [];
+    vals.forEach((x, i) => { if (typeof x === 'number' && Number.isFinite(x)) points.push({ date: plusDays(series.from, i), value: x }); });
+    return points;
+}
+
 /**
  * One metric's chart, or null. Null when there is no live number (N/A), and when the sheet's
  * latest value is not the number on screen (a ×1000 unit jump, or more than 50% apart for |live| ≥ 1): a chart must be
@@ -388,10 +397,7 @@ export function buildChartSeries(rows, now = new Date()) {
  * @returns {{key, label, points: Array<{date, value}>}|null}
  */
 export function chartFor(series, key, live) {
-    const vals = key ? series?.v?.[key] : null;
-    if (!Array.isArray(vals) || typeof series.from !== 'string') return null;
-    const points = [];
-    vals.forEach((x, i) => { if (typeof x === 'number' && Number.isFinite(x)) points.push({ date: plusDays(series.from, i), value: x }); });
+    const points = seriesPoints(series, key);
     if (points.length < CHART_MIN_POINTS) return null;
     const last = points[points.length - 1].value;
     if (!Number.isFinite(live)) return null; // no number on screen → nothing to chart

@@ -172,3 +172,30 @@ describe('Horsemen chip = the Recession watch card\'s own "N of 4 riding" badge'
         });
     }
 });
+
+describe('asCards (v2): each chip says what its v2 card says', () => {
+    const mode = (m, colour = 'green') => ({ ...clone(RB), verdict: { colour, text: 'x' }, defensive: { ...RB.defensive, mode: m } });
+    const dips = (m, opts) => pulseVerdicts({ rubberBand: mode(m), ...opts })[0];
+
+    test('Dips follows the defensive mode, as the card\'s headline does (no "Dips pay ✓" over "Defensive")', () => {
+        expect(dips('PENDING_DEFENSIVE', { asCards: true })).toMatchObject({ text: 'Dips: go defensive', tone: 'bad' });
+        expect(dips('DEFENSIVE', { asCards: true })).toMatchObject({ text: 'Dips: defensive', tone: 'watch' });
+        expect(dips('PENDING_REENTRY', { asCards: true })).toMatchObject({ text: 'Dips: go back in', tone: 'good' });
+        expect(dips('INVESTED', { asCards: true })).toMatchObject({ text: 'Dips pay ✓', tone: 'good' });
+        expect(dips('DEFENSIVE')).toMatchObject({ text: 'Dips pay ✓' }); // v1 as he knows it
+    });
+
+    test('Bull counts the items it could read, as the Bull board does (6/7, not 6/8)', () => {
+        const f = clone(FRED);
+        const [first, second] = Object.keys(f.checklist);
+        f.checklist[first].value = null;            // unreadable today
+        f.checklist[first].bullish = false;
+        f.checklist[second].bullish = false;
+        const bull = (opts) => pulseVerdicts({ fred: f, ...opts }).find((c) => c.key === 'bull');
+        const n = Object.values(FRED.checklist).filter((i) => i.bullish).length;
+        expect(bull({ asCards: true }).text).toBe(`Bull ${n - 2}/7`);
+        expect(bull().text).toBe(`Bull ${n - 2}/8`); // v1 counts all 8, as its own checklist does
+        Object.values(f.checklist).forEach((i) => { i.value = null; });
+        expect(bull({ asCards: true })).toBeUndefined(); // nothing read = no chip, never "0/0"
+    });
+});

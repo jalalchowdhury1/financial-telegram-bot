@@ -112,6 +112,8 @@ function Plot({ pts, ghost, line, bad, bands, clip, fmt, safe = 'var(--up)', tag
 const rb = (v) => minus(signed(v));
 const series = (history, k, ghost) => (history || []).filter((h) => h?.d && Number.isFinite(h[k])).map((h) => ({ d: h.d, v: h[k], g: ghost ? h[ghost] : undefined }));
 
+const MODE_BADGE = { PENDING_DEFENSIVE: 'badge-red', DEFENSIVE: 'badge-yellow', PENDING_REENTRY: 'badge-blue' };
+
 /** The call, as the v1 hero makes it, in one line. */
 function verdictOf(data) {
     const mode = data.defensive?.mode, v = data.verdict.colour;
@@ -281,11 +283,12 @@ export function RubberBandCard({ open, onVerdict = null }) {
     }, []);
 
     const v = data?.verdict?.colour || 'grey';
+    const plan = data && data.defensive?.mode in MODE_BADGE ? verdictOf(data) : null; // a defensive plan outranks the colour, as the headline
     return (
         <div className="card rk">
             <div className="card-header">
                 {data?._meta?.stale && <span className="badge badge-red">Stale</span>}
-                <span className={`badge ${BADGE[v]}`}>{loading ? '…' : COLOUR_WORD[v]}</span>
+                <span className={`badge ${plan ? MODE_BADGE[data.defensive.mode] : BADGE[v]}`}>{loading ? '…' : plan ? plan.t : COLOUR_WORD[v]}</span>
             </div>
             {loading ? <Skeleton count={3} /> : error || !data
                 ? <div className="rk-na">Snapshot unavailable{error ? ` (${error})` : ''}. The Mac mini publishes it after each close.</div>
