@@ -556,8 +556,7 @@ body:has(.v2) { background: #0b0c0e; }
 .v2-slot.is-calm .rb-trips { margin-top: 12px; }
 /* recession watch: the four numbers */
 .v2-slot.is-calm .fh-row, .v2-slot.is-calm .fh-row + * { display: none; }
-/* volatility: the table and the VIX curve */
-.v2-slot.is-calm :is(.vol-fact, .vol-note, .vol-asof) { display: none; }
+/* volatility: the table and the VIX curve (open only; calm shows SPY's year, below) */
 .v2-slot[data-jump="Volatility"] div[style*="0.65rem"] { display: none; }
 /* polymarket: the macro odds only */
 .v2-slot.is-calm :is(.pm-cols, .pm-head) { display: none; }
@@ -619,13 +618,6 @@ body:has(.v2) { background: #0b0c0e; }
 .v2 .jev-grid { gap: 1px; background: var(--line); }
 .v2 .jev-pill { background: var(--surface); border: 0; border-radius: 0; backdrop-filter: none; }
 .v2 .jev-pill:hover { background: var(--surface-2); border: 0; box-shadow: none; transform: none; }
-
-/* volatility, calm: SPY's rank and percentile sit under RSI now, so the table waits for More */
-.v2-slot.is-calm[data-jump="Volatility"] [style*="grid-template-columns"] { display: none !important; }
-.v2-slot.is-calm[data-jump="Volatility"] .vol-regime { margin-top: 0; padding-top: 0; border-top: 0; }
-/* and the curve spreads over the card height, so it is not one short block over empty space */
-.v2-slot.is-calm[data-jump="Volatility"] :is(.vol-curve, .vol-bars) { flex: 1; display: flex; flex-direction: column; }
-.v2-slot.is-calm[data-jump="Volatility"] .vol-bars { justify-content: space-evenly; }
 
 /* regime, desktop: one slim row (title, five calls, trend badge) */
 @media (min-width: 641px) {
@@ -737,3 +729,43 @@ body:has(.v2) { background: #0b0c0e; }
   .v2-mk { grid-template-columns: 84px minmax(0, 1fr) 76px 34px; grid-template-areas: "label val chg x"; gap: 10px; }
   .v2-mk :is(.v2-mk-spark, .v2-mv-bar) { display: none; }
 }
+
+/* ---------- volatility: SPY's year of VIX, sorted calmest → wildest; today's dot = (%ile, Rank) ---------- */
+.v2-ivcard { display: flex; flex-direction: column; }
+.v2-ivy { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.v2-ivy-plot { position: relative; flex: 1; min-height: 150px; margin-left: 2px; touch-action: pan-y; cursor: crosshair; }
+.v2-slot.is-open .v2-ivy-plot { flex: none; height: 170px; }
+.v2-ivy-plot svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.v2-ivy-all { fill: var(--ink-3); opacity: .08; }
+.v2-ivy-lit { fill: currentColor; opacity: .16; }
+.v2-ivy-edge { fill: none; stroke: var(--ink-3); stroke-width: 1.25; vector-effect: non-scaling-stroke; opacity: .6; }
+.v2-ivy-edge.is-lit { stroke: currentColor; stroke-width: 1.75; opacity: 1; }
+.v2-ivy-h, .v2-ivy-v { position: absolute; border: 0 dashed var(--ink-3); pointer-events: none; }
+.v2-ivy-h { left: 0; width: var(--x); bottom: var(--y); border-top-width: 1px; }
+.v2-ivy-v { left: var(--x); bottom: -10px; height: calc(var(--y) + 10px); border-left-width: 1px; }
+.v2-ivy-dot, .v2-ivy-was, .v2-ivy-at {
+  position: absolute; width: 10px; height: 10px; border-radius: 50%; transform: translate(-50%, 50%); pointer-events: none;
+}
+.v2-ivy-dot { left: var(--x); bottom: var(--y); background: currentColor; box-shadow: 0 0 0 3px var(--surface), 0 0 18px currentColor; }
+.v2-ivy-was { width: 7px; height: 7px; border: 1.5px solid var(--ink-3); background: var(--surface); }
+.v2-ivy-at { width: 7px; height: 7px; background: var(--ink); }
+.v2-ivy-read {
+  position: absolute; top: -4px; left: var(--x); transform: translateX(calc(var(--x) * -1)); z-index: 1; pointer-events: none;
+  padding: 3px 8px; border-radius: 6px; background: var(--surface-2); border: 1px solid var(--line-2);
+  font: 500 11.5px var(--sans); color: var(--ink-2); white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+.v2-ivy-pill {
+  display: inline-flex; align-items: baseline; gap: 6px; padding: 3px 10px; border-radius: 999px; white-space: nowrap;
+  background: var(--surface); border: 1px solid var(--line-2); font: 500 12px var(--sans); color: var(--ink-3);
+}
+.v2-ivy-pill b { font: 600 15px var(--sans); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.v2-ivy-pill small { font-size: 11px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.v2-ivy-pill.is-rank { position: absolute; left: 0; bottom: clamp(0px, calc(var(--y) - 13px), calc(100% - 26px)); }
+.v2-ivy-axis { position: relative; height: 26px; margin-top: 10px; }
+.v2-ivy-axis .v2-ivy-pill { position: absolute; left: var(--x); transform: translateX(calc(var(--x) * -1)); }
+.v2-ivy-plain { display: flex; gap: 10px; }
+.v2-ivcard-full { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line); }
+.v2-ivcard-full .card { border: 0; padding: 0; background: none; border-radius: 0; animation: none; }
+.v2-ivcard-full .card-header { display: none; }
+.v2-ivcard-full .card[data-cached]::before { display: none; }
+.v2-slot.is-calm .v2-ivcard-full { display: none; }

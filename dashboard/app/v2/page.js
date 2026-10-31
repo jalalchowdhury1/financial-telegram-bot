@@ -33,6 +33,7 @@ import { fgHistoryCells } from '../../lib/fgHistory';
 import { staleOf } from '../../lib/glance';
 import { collectMoves, fmtLevel, movedWhen, sigmaOf, BIG_Z } from '../../lib/whatMoved';
 import { marketWindow } from '../../lib/marketWindow';
+import { ivRank, ivPercentile } from '../../lib/vol';
 import { pulseVerdicts } from '../../lib/pulseVerdicts';
 import useFeeds from './useFeeds';
 
@@ -368,6 +369,74 @@ function MoreButton({ open, onClick, className = 'v2-more' }) {
     );
 }
 
+/**
+ * SPY's 1-year IV rank and percentile as one picture: the 252 VIX closes they use, sorted calmest → wildest.
+ * Today's dot sits at their coordinates: across = %ile (share of days at or below it), up = Rank (year low → high).
+ * The hollow dot is the last close; pointing anywhere on the curve reads that level.
+ */
+function ivYearGeo(year, t) {
+    const vals = (year || []).filter(Number.isFinite);
+    const days = vals.slice(-252);
+    const sorted = [...days].sort((a, b) => a - b);
+    const n = sorted.length;
+    if (n < 20 || !(sorted[n - 1] > sorted[0]) || !Number.isFinite(t.iv)) return null;
+    const y = (v) => 100 - ivRank(days, v);
+    const steps = (to) => sorted.slice(0, to).map((v, i) => `L${(i / n) * 100} ${y(v)}H${((i + 1) / n) * 100}`).join('');
+    const k = sorted.filter((v) => v <= t.iv).length;
+    // The last close against the 252 days up to it (live: today's window; after the close: one day back).
+    const prev = t.live ? vals[vals.length - 1] : vals[vals.length - 2];
+    const prevDays = t.live ? days : vals.slice(-253, -1);
+    const was = Number.isFinite(prev) && prevDays.length === n
+        ? { rank: ivRank(prevDays, prev), pct: ivPercentile(prevDays, prev), x: ivPercentile(days, prev), y: ivRank(days, prev) } : null;
+    return { days, sorted, n, area: `M0 100${steps(n)}V100Z`, lit: `M0 100${steps(k)}V100Z`, edge: `M0 ${y(sorted[0])}${steps(n)}`, litEdge: `M0 ${y(sorted[0])}${steps(k)}`, was };
+}
+
+function IvYear({ vol, waiting }) {
+    const t = vol?.tickers?.find((x) => x.ticker === 'SPY' && Number.isFinite(x.ivRank1y) && Number.isFinite(x.ivPctile1y));
+    const geo = useMemo(() => (t ? ivYearGeo(vol.vixYear, t) : null), [vol, t]);
+    const [at, setAt] = useState(null);
+    if (!t) return waiting ? <Skeleton count={3} /> : <div className="v2-fred-na">Unavailable · source busy, try again shortly</div>;
+    const delta = (now, was) => {
+        const d = Math.round(now) - Math.round(was);
+        return d ? <small>{d > 0 ? '▲' : '▼'}{Math.abs(d)}</small> : null;
+    };
+    const pill = (cls, name, v, was) => (
+        <span className={`v2-ivy-pill ${cls}`}>{name} <b className={`tone-${ivTone(v)}`}>{Math.round(v)}</b>{was != null && delta(v, was)}</span>
+    );
+    const rank = pill('is-rank', 'Rank', t.ivRank1y, geo?.was?.rank);
+    const pct = pill('is-pct', '%ile', t.ivPctile1y, geo?.was?.pct);
+    if (!geo) return <div className="v2-ivy-plain">{rank}{pct}</div>;
+    const read = (e) => {
+        const r = e.currentTarget.getBoundingClientRect();
+        const v = geo.sorted[Math.min(geo.n - 1, Math.floor(Math.max(0, (e.clientX - r.left) / r.width) * geo.n))];
+        setAt({ v, x: ivPercentile(geo.days, v), y: ivRank(geo.days, v) });
+    };
+    return (
+        <div className="v2-ivy" style={{ '--x': `${t.ivPctile1y}%`, '--y': `${t.ivRank1y}%` }}>
+            <div className={`v2-ivy-plot tone-${ivTone(t.ivPctile1y)}`} onPointerMove={read} onPointerDown={read} onPointerLeave={() => setAt(null)}>
+                <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+                    <path className="v2-ivy-all" d={geo.area} />
+                    <path className="v2-ivy-lit" d={geo.lit} />
+                    <path className="v2-ivy-edge" d={geo.edge} />
+                    <path className="v2-ivy-edge is-lit" d={geo.litEdge} />
+                </svg>
+                <i className="v2-ivy-h" />
+                <i className="v2-ivy-v" />
+                {geo.was && <i className="v2-ivy-was" style={{ left: `${geo.was.x}%`, bottom: `${geo.was.y}%` }} />}
+                <i className="v2-ivy-dot" />
+                {at && (
+                    <>
+                        <i className="v2-ivy-at" style={{ left: `${at.x}%`, bottom: `${at.y}%` }} />
+                        <span className="v2-ivy-read" style={{ '--x': `${at.x}%` }}>VIX {at.v.toFixed(1)} · Rank {Math.round(at.y)} · %ile {Math.round(at.x)}</span>
+                    </>
+                )}
+                {rank}
+            </div>
+            <div className="v2-ivy-axis">{pct}</div>
+        </div>
+    );
+}
+
 function Slot({ jump, title, tip, span = 12, saved, more, children }) {
     const [open, toggle] = useOpen(jump);
     const mode = more ? (open ? ' has-more is-open' : ' has-more is-calm') : '';
@@ -694,8 +763,14 @@ export default function DashboardV2() {
                                     </ErrorBoundary>
                                 </div>
                             </Slot>
-                            <Slot jump="Volatility" title="Volatility" span={5} more>
-                                <ErrorBoundary resetKey={refreshTick}><VolMetricsTable data={vol} saved={saved('vol')} waiting={pending.vol} /></ErrorBoundary>
+                            <Slot jump="Volatility" title="Volatility" tip="SPY implied vol (VIX): the last 252 days, calmest → wildest. Dot = today: across = %ile, up = Rank." span={5} more>
+                                <div className="card v2-ivcard" data-cached={saved('vol')}>
+                                    <div className="card-header" />
+                                    <ErrorBoundary resetKey={refreshTick}><IvYear vol={vol} waiting={pending.vol} /></ErrorBoundary>
+                                    <div className="v2-ivcard-full">
+                                        <ErrorBoundary resetKey={refreshTick}><VolMetricsTable data={vol} saved={saved('vol')} waiting={pending.vol} /></ErrorBoundary>
+                                    </div>
+                                </div>
                             </Slot>
                             <div className="v2-slot span-12 is-bare">
                                 <ErrorBoundary resetKey={refreshTick}><FactorRow refreshKey={refreshTick} bust={f.bustKey} /></ErrorBoundary>

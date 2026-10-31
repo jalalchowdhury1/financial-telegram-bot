@@ -218,6 +218,8 @@ export async function GET(request) {
             regime: buildRegime(payload.tickers, curve),
             // "What moved" strip: VIX vs its last close (lib/volRegime.js vixDay).
             vixDay: vixDay(indexSeries.VIX, liveQuotes?.VIX),
+            // v2's Volatility picture: the 252 VIX closes SPY's rank/percentile use, plus the one before (yesterday's).
+            vixYear: (indexSeries.VIX || []).slice(-253).map((p) => p.value),
             _meta: {
                 source: indexSources.concat(etfSources).join(' · ') || 'none',
                 curveSource: curve.backup
