@@ -177,6 +177,8 @@ body:has(.v2) { background: #0b0c0e; }
 .v2-today-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--ink-3); }
 .v2-today.is-on { color: var(--up); }
 .v2-today.is-on .v2-today-dot { background: var(--up); box-shadow: 0 0 10px var(--up); }
+.v2-today button.is-warn { color: var(--warn); }
+.v2-today.is-warn .v2-today-dot { background: var(--warn); box-shadow: 0 0 10px var(--warn); }
 .v2-hero-spy, .v2-gauge-block {
   background: var(--surface);
   border: 1px solid var(--line);

@@ -226,7 +226,7 @@ it('Risk: each card gives one answer closed, and More opens the proof (loop, fus
 
 describe('the top line', () => {
     const ok = (body) => Promise.resolve({ ok: true, status: 200, json: async () => body });
-    const calm = { AAIIDiff: '3.60%', VIX: { current: '19.42', threeMonth: '20.78' } };
+    const calm = { NotSoBoring: 'ON', FrontRunner: 'BIL (T-Bill ETF)', AAIIDiff: '3.60%', VIX: { current: '19.42', threeMonth: '20.78' } };
     const daysAgo = (n) => new Date(Date.now() - n * 864e5).toLocaleDateString('en-CA');
     const KEYS = ['aaiiDiff', 'cl', 'claims', 'usdcad', 'vixCurrent', 'housing', 'peRatio', 'tnx', 'spy-daily'];
     // Baked files: weekly for 90 weeks, ending 70 days ago (as live: rebuilt now and then). The sheet carries the last 60 days.
@@ -248,6 +248,8 @@ describe('the top line', () => {
         ['the sheet stopped 8 days ago', { '/api/history': sheet({}, 8) }, false],
         ['the sheets feed is a saved copy from the last visit', { '/api/history': sheet(), '/api/sheets': new Promise(() => {}) }, true],
         ['the server marks VIX stale', { '/api/history': sheet(), '/api/sheets': ok({ ...calm, _meta: { staleFields: ['vixCurrent'] } }) }, false],
+        ['the server marks NotSoBoring stale', { '/api/history': sheet(), '/api/sheets': ok({ ...calm, _meta: { staleFields: ['NotSoBoring'] } }) }, false],
+        ['FrontRunner could not be read', { '/api/history': sheet(), '/api/sheets': ok({ ...calm, FrontRunner: 'N/A' }) }, false],
     ])('no Nothing firing when %s', async (_, routes, savedCopy) => {
         if (savedCopy) writeSnap('sheets', calm, Date.now() - 3600e3); // an hour-old copy paints first
         mockRoutes({ '/api/sheets': ok(calm), ...files, ...routes });
@@ -259,6 +261,22 @@ describe('the top line', () => {
         expect(screen.queryByText('Nothing firing')).toBeNull();
     });
 
+    it.each([
+        ['Nothing firing', calm],
+        ['NotSoBoring OFF', { ...calm, NotSoBoring: 'OFF', VIX: { current: 'N/A', threeMonth: 'N/A' } }],
+    ])('a refresh that fails (the page falls back to its copy) drops "%s"', async (text, first) => {
+        const rest = { '/api/history': sheet(), '/api/market-extra': ok({}), ...files };
+        mockRoutes({ '/api/sheets': ok(first), ...rest });
+        render(<DashboardV2 />);
+        await waitFor(() => expect(screen.getByText(text)).toBeInTheDocument());
+        mockRoutes({ '/api/sheets': Promise.resolve({ status: 500, json: async () => ({ message: 'FAKE outage' }) }), ...rest });
+        await waitFor(() => expect(screen.getByLabelText('Refresh all data')).not.toBeDisabled());
+        fireEvent.click(screen.getByLabelText('Refresh all data'));
+        await waitFor(() => expect(document.querySelector('[data-jump="Indicators"]').getAttribute('data-cached')).toBeTruthy(), { timeout: 4000 }); // after getJson's one retry
+        expect(screen.getAllByText(first.NotSoBoring).length).toBeGreaterThan(0); // the copy still shows on its tile, tagged as a copy
+        await waitFor(() => expect(document.querySelector('.v2-today').textContent).not.toContain(text));
+    }, 10000);
+
     it('an AAII fire from the sheet still shows when this week\'s reading is far from the sheet\'s last (no chart that day)', async () => {
         // 25 for a week 40 days ago, then 10 to yesterday; today's survey says 3.6 (64% off the sheet's last → its chart is off)
         const aaii = Array.from({ length: 60 }, (_, i) => (i >= 19 && i < 26 ? 25 : 10));
@@ -267,6 +285,38 @@ describe('the top line', () => {
         await waitFor(() => expect(document.querySelector('.v2-today button')?.textContent).toMatch(/^AAII bullish to [A-Z][a-z]{2} \d+$/));
         expect(screen.queryByText('Nothing firing')).toBeNull();
         expect(document.querySelector('[data-jump="Indicators"] .tone-good')?.textContent).toMatch(/^Bullish to /); // the tile agrees
+    });
+
+    it('NotSoBoring OFF and a FrontRunner trade show first, in the tiles\' amber', async () => {
+        mockRoutes({ '/api/sheets': ok({ ...calm, NotSoBoring: 'OFF', FrontRunner: 'Select bottom 2 RSI assets from (SOXL, TECL, TQQQ, FNGU)' }), '/api/history': sheet(), ...files });
+        render(<DashboardV2 />);
+        await waitFor(() => expect([...document.querySelectorAll('.v2-today button')].map((b) => b.textContent)).toEqual(['NotSoBoring OFF', 'FrontRunner dip buy']));
+        expect([...document.querySelectorAll('.v2-today button')].every((b) => b.classList.contains('is-warn'))).toBe(true);
+        expect(document.querySelector('.v2-today').className).toMatch(/\bis-warn\b/); // the dot goes amber, not green
+    });
+
+    it.each([['VIX (VIX hedge)', 'FrontRunner VIX hedge'], ['LABD', 'FrontRunner biotech short']])('FrontRunner %s reads "%s"', async (fr, text) => {
+        mockRoutes({ '/api/sheets': ok({ ...calm, FrontRunner: fr }), '/api/history': sheet(), ...files });
+        render(<DashboardV2 />);
+        await waitFor(() => expect(document.querySelector('.v2-today button')?.textContent).toBe(text));
+    });
+
+    it.each([
+        ['NotSoBoring 8.1% under its high', { NotSoBoring: { detail: { drawdownPct: 8.1 } } }, 'closest NotSoBoring 8.1 → 8.5%'],
+        ['FrontRunner QQQ RSI 77.5', { FrontRunner: { detail: { QQQ: 77.5, SOXL: 40 } } }, 'closest FrontRunner QQQ RSI 77.5 → 79'],
+    ])('a quiet %s can be the closest signal', async (_, fields, text) => {
+        mockRoutes({ '/api/sheets': ok({ ...calm, _meta: { fields } }), '/api/history': sheet(), ...files });
+        render(<DashboardV2 />);
+        await waitFor(() => expect(screen.getByText('Nothing firing')).toBeInTheDocument());
+        expect(document.querySelector('.v2-today button').textContent).toBe(text);
+    });
+
+    it('an unread NotSoBoring or FrontRunner (N/A) is no alert on its tile, and no "Dip buy"', async () => {
+        mockRoutes({ '/api/sheets': ok({ ...calm, NotSoBoring: 'N/A', FrontRunner: 'N/A' }), '/api/history': sheet(), ...files });
+        render(<DashboardV2 />);
+        await waitFor(() => expect(screen.getByText('19.42')).toBeInTheDocument());
+        expect(document.querySelectorAll('[data-jump="Indicators"] .v2-signal.is-alert')).toHaveLength(0);
+        expect(document.querySelector('[data-jump="Indicators"]').textContent).not.toMatch(/Dip buy/);
     });
 
     it('VIX level with VIX 3M fires, as in the study and the ping (ratio ≥ 1)', async () => {

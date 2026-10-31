@@ -872,6 +872,7 @@ function Signals({ sheets, spy, loading, old, onState }) {
     const nsb = sheets?._meta?.fields?.NotSoBoring?.detail;
     const frRsi = sheets?._meta?.fields?.FrontRunner?.detail;
     const fr = String(sheets?.FrontRunner || '');
+    const nsbRead = sheets?.NotSoBoring === 'ON' || sheets?.NotSoBoring === 'OFF', frRead = !!fr && fr !== 'N/A'; // the route says N/A when unread
 
     const aaiiPts = useMemo(() => (Number.isFinite(aaii) ? [...(aaiiHist?.points || []), { value: aaii }] : []), [aaiiHist, aaii]);
     // The latest 20+ reading (daily rows repeat each weekly survey): it fired on the run's first day, and speaks for 6 months after its last survey.
@@ -892,16 +893,27 @@ function Signals({ sheets, spy, loading, old, onState }) {
     // older one), and VIX is neither last visit's saved copy nor a value the server marked stale.
     const recent = new Date(Date.now() - 5 * 864e5).toLocaleDateString('en-CA');
     const aaiiRead = Number.isFinite(aaii) && aaiiDays.at(-1)?.date >= recent;
-    const vixRead = Number.isFinite(vixCur) && vix3m > 0 && !old && !staleNote(sheets, ['vixCurrent', 'vixThreeMonth']);
-    // The top line reads these two straight from here, so it always says what the tiles say (null = unread).
+    const fresh = (fields) => !old && !staleNote(sheets, fields);
+    const vixRead = Number.isFinite(vixCur) && vix3m > 0 && fresh(['vixCurrent', 'vixThreeMonth']);
+    const dd = nsb?.drawdownPct;
+    // FrontRunner's nearest RSI trigger as a share of its line (1 = trips): over ones hedge, under ones buy the dip.
+    const [frT, frN, frShare] = [
+        ...Object.entries(FR_OVER).map(([t, n]) => [t, n, frRsi?.[t] / n]),
+        ...Object.entries(FR_UNDER).map(([t, n]) => [t, n, frRsi?.[t] > 0 ? n / frRsi[t] : NaN]),
+    ].reduce((a, b) => (b[2] > a[2] ? b : a), [null, null, -Infinity]);
+    // The top line reads these straight from here, so it always says what the tiles say (null = unread).
     useEffect(() => {
         if (loading) return;
         onState([
+            nsbRead && fresh(['NotSoBoring']) ? { jump: 'Indicators', warn: true, fire: sheets.NotSoBoring === 'OFF' && 'NotSoBoring OFF',
+                share: Number.isFinite(dd) ? dd / NSB_LINE : -Infinity, gap: Number.isFinite(dd) && `NotSoBoring ${dd.toFixed(1)} → ${NSB_LINE}%` } : null,
+            frRead && fresh(['FrontRunner']) ? { jump: 'Indicators', warn: true, fire: !fr.startsWith('BIL') && `FrontRunner ${FR_MODE(fr).replace(/^[A-Z][a-z]/, (c) => c.toLowerCase())}`,
+                share: frShare, gap: frT && `FrontRunner ${frT} RSI ${frRsi[frT].toFixed(1)} → ${frN}` } : null,
             bullUntil ? { jump: 'Indicators', fire: `AAII bullish to ${shortDate(bullUntil)}` }
                 : aaiiRead ? { jump: 'Indicators', fire: null, share: aaii / AAII_LINE, gap: `AAII ${aaii.toFixed(1)} → ${AAII_LINE}` } : null,
             vixRead ? { jump: 'Indicators', fire: vixCur >= vix3m && 'VIX over 3M', share: vixCur / vix3m, gap: `VIX/3M ${(vixCur / vix3m).toFixed(2)} → 1` } : null,
         ]);
-    }, [loading, aaii, aaiiRead, bullUntil, vixCur, vix3m, vixRead, onState]);
+    }, [loading, old, sheets, aaii, aaiiRead, bullUntil, vixCur, vix3m, vixRead, onState]); // eslint-disable-line react-hooks/exhaustive-deps
     useEffect(() => () => onState(null), [onState]); // a crashed or gone card leaves the top line unread, not stuck
 
     const ratioPts = useMemo(() => {
@@ -913,7 +925,7 @@ function Signals({ sheets, spy, loading, old, onState }) {
     const tiles = [
         {
             key: 'nsb', label: 'NotSoBoring', tip: `Goes defensive when TMF drops ${NSB_LINE}%+ from its 10-day high.`,
-            alert: !loading && sheets?.NotSoBoring && sheets.NotSoBoring !== 'ON',
+            alert: !loading && sheets?.NotSoBoring === 'OFF',
             value: sheets?.NotSoBoring || na,
             sub: staleNote(sheets, ['NotSoBoring'])
                 || (Number.isFinite(nsb?.watchOutAt) ? <span className="v2-muted">Watch out at ${nsb.watchOutAt.toFixed(2)}</span> : null),
@@ -922,9 +934,9 @@ function Signals({ sheets, spy, loading, old, onState }) {
         {
             key: 'fr', label: 'FrontRunner', tip: 'Hedges with VIX when RSIs run hot; buys deep tech dips. Tap for the NUTS radar (a different algo).',
             href: 'https://nuts-radar.vercel.app',
-            alert: !loading && fr && !fr.startsWith('BIL'),
+            alert: !loading && frRead && !fr.startsWith('BIL'),
             value: fr || na,
-            sub: staleNote(sheets, ['FrontRunner']) || <span className="v2-muted">{fr ? `${FR_MODE(fr)} · ` : ''}NUTS radar ↗</span>,
+            sub: staleNote(sheets, ['FrontRunner']) || <span className="v2-muted">{frRead ? `${FR_MODE(fr)} · ` : ''}NUTS radar ↗</span>,
             viz: frRsi ? <RsiStrip rsi={frRsi} pick={fr} /> : null,
         },
         {
@@ -1040,9 +1052,9 @@ function TodayLine({ items }) {
     if (!items.length) return null;
     const near = known.reduce((a, b) => (b.share > a.share ? b : a));
     return (
-        <div className={`v2-today${firing.length ? ' is-on' : ''}`}>
+        <div className={`v2-today${firing.length ? ' is-on' : ''}${firing.length && firing.every((s) => s.warn) ? ' is-warn' : ''}`}>
             <i className="v2-today-dot" aria-hidden="true" />
-            {firing.length ? firing.map((s) => <button key={s.fire} type="button" onClick={() => jumpToCard(s.jump)}>{s.fire}</button>) : (
+            {firing.length ? firing.map((s) => <button key={s.fire} type="button" className={s.warn ? 'is-warn' : undefined} onClick={() => jumpToCard(s.jump)}>{s.fire}</button>) : (
                 <>
                     <span>Nothing firing</span>
                     <button type="button" onClick={() => jumpToCard(near.jump)}><i>closest</i> {near.gap}</button>

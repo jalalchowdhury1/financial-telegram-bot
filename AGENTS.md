@@ -293,9 +293,14 @@ behave differently, it gets a v2-only prop (`race` on FactorRow, `asCards` on `p
 - **Top line** (`TodayLine`): the signals firing, else `Nothing firing · closest …`. It reads the Signals
   tiles' and `LeadCombos`' own states (`onState`), so it never disagrees with them. An item is `null` when it
   was not read from today's data, and then the line never says "Nothing firing" (fires still show):
+  - NotSoBoring + FrontRunner go first and in amber (`warn`), like their tiles' alert (31 Oct 2026). Fire =
+    NotSoBoring OFF, FrontRunner on anything but BIL (`FrontRunner dip buy`, `… VIX hedge`). Unread = `N/A`, a
+    saved copy, or a field in `_meta.staleFields`. Quiet "closest": NotSoBoring drawdown ÷ 8.5 %, FrontRunner's
+    nearest RSI trigger (`FR_OVER` RSI ÷ line, `FR_UNDER` line ÷ RSI). An `N/A` value never lights a tile.
   - AAII: its fire comes from the sheet's own days (`seriesPoints`), not `useChart`, which is off the day this
     week's survey is far from the sheet's last. A quiet AAII counts only when those days reach the last 5.
-  - VIX: not last visit's saved copy (`saved('sheets')`) and not a field the server marked stale.
+  - VIX: not last visit's saved copy (`saved('sheets')`) and not a field the server marked stale. A refresh
+    that fails after the feed landed flips `saved` too, and the items drop on that re-render.
   - Lead combos: a pair whose newest reading is more than 5 days old says N/A (`…` while `/api/history` is on
     its way). A fire stays true: it speaks for 6 months.
   - A card that crashes or unmounts sends `onState(null)`, never leaves its last state behind.
