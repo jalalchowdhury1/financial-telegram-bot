@@ -19,7 +19,7 @@ import FactorRow from '../../components/FactorRow';
 import Delta from '../../components/Delta';
 import MarkChip from '../../components/MarkChip';
 import MarksSheet from '../../components/MarksSheet';
-import { MarkProvider, useMark, collectLiveValues } from '../../components/MarkProvider';
+import { MarkProvider, useMark, useChart, collectLiveValues } from '../../components/MarkProvider';
 import BackPill from '../../components/BackPill';
 import { jumpToCard } from '../../components/WhatMoved';
 import StatusLine from '../../components/StatusLine';
@@ -169,16 +169,17 @@ const BULL = [
     { key: 'jolts', label: 'Job openings', line: 6000, band: 1000, fmt: kfmt, tip: 'JOLTS job openings.' },
     { key: 'durable', label: 'Durable goods', line: 0, band: 2, fmt: pctS, tip: 'Big-ticket orders, 3-month trend.' },
     { key: 'savings', label: 'Savings rate', line: 3.5, band: 1.5, fmt: (v) => `${v.toFixed(1)}%`, tip: 'Share of income saved.' },
-].map((d) => ({ ...d, rule: `OK ${d.low ? '<' : '>'} ${d.fmt(d.line)} · Strong ${d.low ? '<' : '>'} ${d.fmt(d.line + (d.low ? -d.band : d.band))}` }));
+].map((d) => ({ ...d, ticks: [[d.line, 'OK'], [d.line + (d.low ? -d.band : d.band), 'Strong']],
+    rule: `OK ${d.low ? '<' : '>'} ${d.fmt(d.line)} · Strong ${d.low ? '<' : '>'} ${d.fmt(d.line + (d.low ? -d.band : d.band))}` }));
 
 // Copper/gold has no tiers: green while its 1-month change is up, so that change is its distance (one band = a 5% month).
 const INDICATORS = [
-    { key: 'sahmRule', label: 'Sahm rule', line: 0.5, band: 0.5, low: true, fmt: fixed(2), rule: 'Safe < 0.50', tip: 'Fires when the 3-month jobless rate is 0.5 over its 12-month low.' },
-    { key: 'sentiment', label: 'Consumer sentiment', line: 80, band: 20, fmt: fixed(1), rule: 'Strong > 80 · Weak < 60', tip: 'UMich consumer confidence survey.' },
-    { key: 'claims', label: 'Jobless claims', line: 250, band: 100, low: true, fmt: kfmt, rule: 'Healthy < 250K', tip: 'New jobless claims, 4-week average.' },
-    { key: 'creditSpread', label: 'Credit spread', line: 1.5, band: 1, low: true, fmt: pct2, rule: 'Calm < 1.50%', tip: 'BBB yield over Treasuries. Wider = stress.' },
-    { key: 'realYields', label: 'Real yields', line: 0, band: 2, low: true, fmt: pct2, rule: 'Easy ≤ 0% · Tight > 2%', tip: '10-year TIPS yield: borrowing cost after inflation.' },
-    { key: 'copperGold', label: 'Copper/gold', line: 0, band: 5, fmt: fixed(2), pos: (m) => m.changePct ?? m.changePct3mo, tip: 'Copper vs gold. Rising = growth mood.' },
+    { key: 'sahmRule', ticks: [[0.5, 'Fires']], label: 'Sahm rule', line: 0.5, band: 0.5, low: true, fmt: fixed(2), rule: 'Safe < 0.50', tip: 'Fires when the 3-month jobless rate is 0.5 over its 12-month low.' },
+    { key: 'sentiment', ticks: [[80, 'Strong'], [60, 'Weak']], label: 'Consumer sentiment', line: 80, band: 20, fmt: fixed(1), rule: 'Strong > 80 · Weak < 60', tip: 'UMich consumer confidence survey.' },
+    { key: 'claims', ticks: [[250, 'Healthy'], [350, 'Weak']], label: 'Jobless claims', line: 250, band: 100, low: true, fmt: kfmt, rule: 'Healthy < 250K', tip: 'New jobless claims, 4-week average.' },
+    { key: 'creditSpread', ticks: [[1.5, 'Calm'], [2.5, 'Stressed']], label: 'Credit spread', line: 1.5, band: 1, low: true, fmt: pct2, rule: 'Calm < 1.50%', tip: 'BBB yield over Treasuries. Wider = stress.' },
+    { key: 'realYields', ticks: [[0, 'Easy'], [2, 'Tight']], label: 'Real yields', line: 0, band: 2, low: true, fmt: pct2, rule: 'Easy ≤ 0% · Tight > 2%', tip: '10-year TIPS yield: borrowing cost after inflation.' },
+    { key: 'copperGold', ticks: [[0, 'Flat']], tfmt: (v) => `${v}%`, label: 'Copper/gold', line: 0, band: 5, fmt: fixed(2), pos: (m) => m.changePct ?? m.changePct3mo, tip: 'Copper vs gold. Rising = growth mood.' },
 ];
 
 function gauge(def, m, tone) {
@@ -201,32 +202,93 @@ function indicatorRows(fred) {
     return [
         ...INDICATORS.map((d) => gauge(d, ind[d.key], statusTone(ind[d.key]?.status))),
         gauge({ key: 'peRatio', markKey: pe.markKey, label: cape ? 'CAPE' : 'P/E', line: cape ? 17 : 20, band: cape ? 13 : 5, low: true, fmt: fixed(1),
+            ticks: cape ? [[17, 'Avg'], [30, 'Rich']] : [[20, 'Fair'], [25, 'Rich']],
             rule: cape ? 'Avg ~17 · Tight > 30' : 'Fair ~20 · Tight > 25', tip: pe.tooltip }, pe.metric, statusTone(pe.status)),
     ];
 }
 
 const NEAR = 0.25; // a green dot this close to its line is about to flip: drawn as a ring
 
-function Gauge({ g }) {
+// Where a level sits on the track: the line in the middle, one band a quarter of the width, two bands the end.
+const trackX = (g, at) => 50 + Math.max(-2, Math.min(2, ((at - g.line) / g.band) * (g.low ? -1 : 1))) * 25;
+
+/** The track's zones on hover/open: red below the line, grey for a middle tier a band down, green past it, brighter past Strong. */
+function zones(g) {
+    const xs = g.ticks.map(([at]) => Math.round(trackX(g, at)));
+    const weak = xs.includes(25) ? 25 : 50;
+    const strong = xs.includes(75) ? 75 : 100;
+    return `linear-gradient(90deg, rgb(239 107 115 / .3) 0 ${weak}%, rgb(163 163 173 / .16) ${weak}% 50%, rgb(76 195 138 / .24) 50% ${strong}%, rgb(76 195 138 / .5) ${strong}%)`;
+}
+
+/** A row opened: its months since the history sheet began, split at the line, then how far it is from flipping. */
+function GaugePanel({ g, note }) {
+    const v = g.m?.value;
+    const chart = useChart(g.markKey, v);
+    // The sheet once logged housing starts in units, not thousands: days 500× off the median are dropped, not drawn.
+    const raw = (chart?.points || []).filter((p) => Number.isFinite(p.value));
+    const mid = raw.map((p) => p.value).sort((a, b) => a - b)[raw.length >> 1];
+    const pts = raw.filter((p) => !(Math.abs(mid) > 0 && Math.abs(p.value / mid) >= 500));
+    const vals = pts.map((p) => p.value);
+    const name = g.ticks.find(([at]) => at === g.line)?.[1];
+    const tfmt = g.tfmt || g.fmt;
+    const amt = Number.isFinite(g.s) && !g.pos ? tfmt(Math.abs(v - g.line)).replace(/^[+−-]/, '') : null;
+    let plot = null;
+    if (vals.length > 1) {
+        const line = g.pos ? null : g.line;
+        const lo = Math.min(...vals, line ?? Infinity);
+        const hi = Math.max(...vals, line ?? -Infinity);
+        const pad = (hi - lo) * 0.18 || 1;
+        const y = (val) => 100 - ((val - lo + pad) / (hi - lo + 2 * pad)) * 100;
+        plot = { d: vals.map((val, i) => `${i ? 'L' : 'M'}${(i / (vals.length - 1)) * 100} ${y(val)}`).join(''), ty: line == null ? null : y(line), end: y(vals[vals.length - 1]) };
+    }
+    const since = pts[0] && formatAsOf(pts[0].date)?.replace(/, \d{4}$/, '');
+    return (
+        <div className="v2-gp">
+            {plot && (
+                <div className="v2-gp-chart" style={{ '--ty': `${plot.ty ?? 0}%`, '--end': `${plot.end}%` }}>
+                    {[g.low ? 'is-bad' : 'is-good', g.low ? 'is-good' : 'is-bad'].map((cls, i) => (
+                        <svg key={cls} className={`${plot.ty == null ? 'is-flat' : cls} ${i ? 'is-below' : 'is-above'}`} viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path d={plot.d} /></svg>
+                    ))}
+                    {plot.ty != null && <span className="v2-gp-line"><em>{name} {tfmt(g.line)}</em></span>}
+                    <i className="v2-gp-end" />
+                    {since && <span className="v2-gp-since">{since}</span>}
+                </div>
+            )}
+            <div className="v2-gp-info">
+                <b>{amt && (g.s < 0 ? `${amt} to ${name}` : `${amt} cushion`)}</b>
+                <span className="v2-gp-rule">{g.rule}</span>
+                <span className="v2-gp-asof">{note.tone === 'stale' ? '🕐 ' : ''}{formatAsOf(g.m?.asOf)}</span>
+            </div>
+            <div className="v2-gp-tip">{g.tip}</div>
+        </div>
+    );
+}
+
+function Gauge({ g, open, onToggle }) {
     const note = freshnessNote(g.m);
     const v = g.m?.value;
     const mark = useMark(g.markKey, v);
     const x = Number.isFinite(g.s) ? Math.max(-2, Math.min(2, g.s)) * 25 : null; // two bands a side fill the half track
+    const tfmt = g.tfmt || g.fmt;
     return (
-        <div className={`v2-g${x != null && g.s >= 0 && g.s < NEAR ? ' is-near' : ''}`} data-tone={note.tone === 'stale' ? 'caution' : Number.isFinite(v) ? g.tone : 'flat'}>
-            <span className="v2-g-label"><span className="tooltip-trigger" data-tooltip={`${g.tip}${note.suffix}`}>{g.label}</span></span>
-            <span className="v2-g-track">
+        <div className={`v2-g${x != null && g.s >= 0 && g.s < NEAR ? ' is-near' : ''}${open ? ' is-open' : ''}`} data-tone={note.tone === 'stale' ? 'caution' : Number.isFinite(v) ? g.tone : 'flat'}
+            onClick={(e) => { if (!e.target.closest('.chartable, .mark-pop')) onToggle(); }}>
+            <span className="v2-g-label"><button type="button" aria-expanded={open}>{g.label}</button></span>
+            <span className="v2-g-track" style={{ '--zones': zones(g) }}>
+                {g.ticks.map(([at, name]) => <em key={name} style={{ left: `${trackX(g, at)}%` }}><span>{tfmt(at)}</span></em>)}
                 {x != null && <><i style={{ [x < 0 ? 'right' : 'left']: '50%', width: `${Math.abs(x)}%` }} /><b style={{ left: `${50 + x}%` }} /></>}
             </span>
             <Delta mark={note.tone === 'fresh' ? mark : null} format={g.fmt} chartKey={g.markKey} raw={v} className="v2-g-val">
                 {Number.isFinite(v) ? g.fmt(v) : 'N/A'}
             </Delta>
             <span className="v2-g-rule">{g.rule}</span>
+            {open && <GaugePanel g={g} note={note} />}
         </div>
     );
 }
 
 function Board({ rows }) {
+    const [openKey, setOpenKey] = useState(null);
     if (!rows) return <div className="card"><Skeleton count={6} /></div>;
     const live = rows.filter((r) => Number.isFinite(r.m?.value));
     const good = live.filter((r) => r.tone === 'good');
@@ -235,11 +297,11 @@ function Board({ rows }) {
         <div className="card">
             <div className="card-header">
                 <span className="v2-score" title={`${good.length} of ${live.length} green`}>
-                    <span className="v2-score-bar">{[...sorted].reverse().filter((r) => live.includes(r)).map((r) => <i key={r.key} data-tone={r.tone} />)}</span>
+                    <span className="v2-score-bar">{[...sorted].reverse().filter((r) => live.includes(r)).map((r) => <i key={r.key} data-tone={r.tone} title={r.label} />)}</span>
                     {good.length}/{live.length}
                 </span>
             </div>
-            <div className="v2-gauges">{sorted.map((g) => <Gauge key={g.key} g={g} />)}</div>
+            <div className="v2-gauges">{sorted.map((g) => <Gauge key={g.key} g={g} open={openKey === g.key} onToggle={() => setOpenKey(openKey === g.key ? null : g.key)} />)}</div>
         </div>
     );
 }

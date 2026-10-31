@@ -455,7 +455,7 @@ body:has(.v2) { background: #0b0c0e; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .v2 .card, .v2-glance { animation: none; }
+  .v2 .card, .v2-glance, .v2-gp { animation: none; }
   .v2-scale-mark { transition: none; }
 }
 
@@ -687,6 +687,46 @@ body:has(.v2) { background: #0b0c0e; }
 .v2-g.is-near .v2-g-track b { background: var(--surface); box-shadow: inset 0 0 0 2px var(--warn), 0 0 0 3px var(--surface); }
 .v2-slot.is-open .v2-g { grid-template-columns: 150px minmax(0, 1fr) 70px 168px; grid-template-areas: "label track val rule"; }
 .v2-slot.is-open .v2-g-rule { display: block; }
+/* a row is a button: hover shows its zones and cut-off levels on the track, a click opens it */
+.v2-g { cursor: pointer; transition: background-color .15s; }
+.v2-g-label button { all: unset; display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.v2-g-label button:focus-visible { outline: 1px solid var(--accent); outline-offset: 3px; border-radius: 3px; }
+.v2-g-track { transition: background .15s; }
+.v2-g-track em { position: absolute; top: -4px; bottom: -4px; width: 1px; margin-left: -.5px; background: var(--ink-2); opacity: 0; transition: opacity .15s; }
+.v2-g-track em span { position: absolute; bottom: calc(100% + 3px); left: 50%; transform: translateX(-50%); font: 500 10.5px var(--sans); font-style: normal; color: var(--ink-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.v2-g.is-open { background-color: var(--surface-2); }
+.v2-g.is-open .v2-g-track { background: var(--zones); }
+.v2-g.is-open .v2-g-track em { opacity: 1; }
+.v2-g.is-open .v2-g-track i { opacity: 0; }
+@media (hover: hover) {
+  .v2-g:hover { background-color: var(--surface-2); }
+  .v2-g:hover .v2-g-track { background: var(--zones); }
+  .v2-g:hover .v2-g-track em { opacity: 1; }
+  .v2-g:hover .v2-g-track i { opacity: 0; }
+}
+/* the opened row: months since the sheet began, green above its line and red below (or the other way for lower-is-better) */
+.v2-gp { grid-column: 1 / -1; display: grid; gap: 10px; padding: 12px 0 4px; cursor: default; animation: v2-fade .25s ease both; }
+.v2-gp-chart { position: relative; height: 72px; }
+.v2-gp-chart svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.v2-gp-chart path { fill: none; stroke-width: 1.75; stroke-linejoin: round; vector-effect: non-scaling-stroke; stroke: currentColor; }
+.v2-gp-chart svg.is-above { clip-path: inset(-4px 0 calc(100% - var(--ty)) 0); }
+.v2-gp-chart svg.is-below { clip-path: inset(var(--ty) 0 -4px 0); }
+.v2-gp-chart svg.is-good { color: var(--up); }
+.v2-gp-chart svg.is-bad { color: var(--down); }
+.v2-gp-chart svg.is-flat { color: var(--ink-2); }
+.v2-gp-chart svg.is-flat.is-below { display: none; }
+.v2-gp-chart svg.is-flat.is-above { clip-path: none; }
+.v2-gp-line { position: absolute; left: 0; right: 0; top: var(--ty); border-top: 1px dashed var(--ink-3); }
+.v2-gp-line em { position: absolute; right: 12px; bottom: 3px; padding: 0 6px; background: var(--surface-2); font: 500 10.5px var(--sans); font-style: normal; color: var(--ink-3); white-space: nowrap; }
+.v2-gp-end { position: absolute; right: 0; top: var(--end); width: 7px; height: 7px; margin: -3.5px -3.5px 0 0; border-radius: 50%; background: var(--ink); box-shadow: 0 0 0 3px var(--surface-2); }
+.v2-gp-since { position: absolute; left: 0; bottom: -2px; font: 500 10.5px var(--sans); color: var(--ink-3); background: var(--surface-2); padding-right: 6px; }
+.v2-gp-info { display: flex; gap: 14px; align-items: baseline; font-size: 12px; color: var(--ink-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.v2-gp-info b { font-weight: 600; color: var(--up); }
+.v2-g[data-tone="bad"] .v2-gp-info b { color: var(--down); }
+.v2-g[data-tone="flat"] .v2-gp-info b { color: var(--ink-2); }
+.v2-gp-info b:empty { display: none; }
+.v2-gp-rule { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.v2-gp-tip { font-size: 12px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* ---------- global markets: biggest move against its own normal day first; daily FX and home prints quiet ---------- */
 .v2-mkt { display: grid; grid-template-columns: minmax(0, 1.75fr) minmax(0, 1fr); gap: 20px 44px; align-items: start; }
@@ -725,6 +765,11 @@ body:has(.v2) { background: #0b0c0e; }
 @media (max-width: 640px) {
   .v2-g { grid-template-columns: 132px minmax(0, 1fr) 62px; gap: 12px; }
   .v2-slot.is-open .v2-g { grid-template-columns: 132px minmax(0, 1fr) 62px; grid-template-areas: "label track val" "rule rule rule"; row-gap: 2px; }
+  .v2-g-track em span { display: none; }
+  .v2-gp-info { display: grid; grid-template-columns: minmax(0, 1fr) auto; row-gap: 8px; }
+  .v2-gp-asof { grid-column: 2; grid-row: 1; }
+  .v2-gp-rule { grid-column: 1 / -1; grid-row: 2; }
+  .v2-gp-info:has(b:empty) { display: flex; }
   .v2-mkt { grid-template-columns: minmax(0, 1fr); gap: 18px; }
   .v2-mk { grid-template-columns: 84px minmax(0, 1fr) 76px 34px; grid-template-areas: "label val chg x"; gap: 10px; }
   .v2-mk :is(.v2-mk-spark, .v2-mv-bar) { display: none; }
