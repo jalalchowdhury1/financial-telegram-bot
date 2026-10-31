@@ -52,11 +52,12 @@ export default function LeadCombos({ spy, onState }) {
         });
     }, [files, series]);
 
-    // For the page's top line: each pair's state, and its leg furthest from its line.
+    // For the page's top line: each pair's state, and its leg furthest from its line (null = unread).
     useEffect(() => {
         if (!onState) return;
-        if (files === false) onState([]);
-        if (rows) onState(rows.filter((r) => r.now).map(({ c, now, until }) => {
+        if (files === false) onState(COMBOS.map(() => null));
+        if (rows) onState(rows.map(({ c, now, until }) => {
+            if (!now) return null;
             const k = now.legs.reduce((m, v, i) => (v / c.legs[i].line < now.legs[m] / c.legs[m].line ? i : m), 0);
             return { jump: 'Lead combos', fire: until && `${c.name} bullish to ${shortDate(until)}`, share: now.value,
                 gap: `${c.name} · ${c.legs[k].label} ${fmt(now.legs[k], c.legs[k])} → ${lineOf(c.legs[k])}` };

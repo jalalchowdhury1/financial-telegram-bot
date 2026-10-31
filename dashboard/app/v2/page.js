@@ -884,12 +884,12 @@ function Signals({ sheets, spy, loading, onState }) {
     }, [aaiiHist]);
     const today = new Date().toLocaleDateString('en-CA'); // the local calendar day (a UTC date turns over at ~8 pm ET)
     const bullUntil = Number.isFinite(aaii) && aaii >= AAII_LINE ? plusMonths(today, AAII_MONTHS) : fired && fired.until >= today ? fired.until : null;
-    // The top line reads these two straight from here, so it always says what the tiles say.
+    // The top line reads these two straight from here, so it always says what the tiles say (null = unread).
     useEffect(() => {
         if (loading) return;
         onState([
-            ...(Number.isFinite(aaii) ? [{ jump: 'Indicators', fire: bullUntil && `AAII bullish to ${shortDate(bullUntil)}`, share: aaii / AAII_LINE, gap: `AAII ${aaii.toFixed(1)} → ${AAII_LINE}` }] : []),
-            ...(Number.isFinite(vixCur) && vix3m > 0 ? [{ jump: 'Indicators', fire: vixCur > vix3m && 'VIX over 3M', share: vixCur / vix3m, gap: `VIX/3M ${(vixCur / vix3m).toFixed(2)} → 1` }] : []),
+            Number.isFinite(aaii) ? { jump: 'Indicators', fire: bullUntil && `AAII bullish to ${shortDate(bullUntil)}`, share: aaii / AAII_LINE, gap: `AAII ${aaii.toFixed(1)} → ${AAII_LINE}` } : null,
+            Number.isFinite(vixCur) && vix3m > 0 ? { jump: 'Indicators', fire: vixCur > vix3m && 'VIX over 3M', share: vixCur / vix3m, gap: `VIX/3M ${(vixCur / vix3m).toFixed(2)} → 1` } : null,
         ]);
     }, [loading, aaii, bullUntil, vixCur, vix3m, onState]);
 
@@ -1018,12 +1018,16 @@ function RegimeRow({ data }) {
     );
 }
 
-/** Today in one line: what's firing, else the signal nearest its line. Tap a part for its card. */
+/**
+ * Today in one line: what's firing, else the signal nearest its line. Tap a part for its card.
+ * A null item is a signal that could not be read, or a source (Signals, Lead combos) that hasn't reported:
+ * fires still show, but never "Nothing firing".
+ */
 function TodayLine({ items }) {
-    if (!items) return <div className="v2-today" aria-hidden="true" />;
+    const known = (items || []).filter(Boolean), firing = known.filter((s) => s.fire);
+    if (!items || (!firing.length && known.length < items.length)) return <div className="v2-today" aria-hidden="true" />;
     if (!items.length) return null;
-    const firing = items.filter((s) => s.fire);
-    const near = items.reduce((a, b) => (b.share > a.share ? b : a));
+    const near = known.reduce((a, b) => (b.share > a.share ? b : a));
     return (
         <div className={`v2-today${firing.length ? ' is-on' : ''}`}>
             <i className="v2-today-dot" aria-hidden="true" />
@@ -1177,7 +1181,7 @@ export default function DashboardV2() {
                     {/* NOW — the price, the mood, the read */}
                     <section id="now" className="v2-now" aria-label="The market now">
                         <div className="v2-phone-clock"><ErrorBoundary><MarketClock /></ErrorBoundary></div>
-                        <ErrorBoundary resetKey={refreshTick}><TodayLine items={sigState && comboState && [...sigState, ...comboState]} /></ErrorBoundary>
+                        <ErrorBoundary resetKey={refreshTick}><TodayLine items={(sigState || comboState) && [...(sigState || [null]), ...(comboState || [null])]} /></ErrorBoundary>
                         <div className="v2-hero" ref={heroRef}>
                             <div className="v2-hero-spy" data-jump="SPY overview" data-cached={saved('spy', 'spyDailyMove')}>
                                 <ErrorBoundary resetKey={refreshTick}>

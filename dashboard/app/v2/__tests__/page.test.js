@@ -222,3 +222,33 @@ it('Risk: each card gives one answer closed, and More opens the proof (loop, fus
     expect(within(slot('Recession watch')).getByText('where past ones began')).toBeInTheDocument();
     expect(slot('Recession watch').querySelectorAll('.rk-band').length).toBeGreaterThanOrEqual(8); // 2 recessions × 4 charts
 });
+
+describe('the top line', () => {
+    const ok = (body) => Promise.resolve({ ok: true, status: 200, json: async () => body });
+    const calm = { AAIIDiff: '3.60%', VIX: { current: '19.42', threeMonth: '20.78' } };
+    const flat = { from: '2025-01-01', t: Array.from({ length: 100 }, (_, i) => i * 7), v: Array(100).fill(5) };
+    const files = Object.fromEntries(['aaiiDiff', 'cl', 'claims', 'usdcad', 'vixCurrent', 'housing', 'peRatio', 'tnx', 'spy-daily'].map((k) => [`/history/${k}.json`, ok(flat)]));
+    const combosSettled = () => waitFor(() => expect([...document.querySelectorAll('.v2-cb-now')].every((e) => e.textContent !== '…')).toBe(true));
+
+    it('says Nothing firing, and the closest signal, only when every signal was read', async () => {
+        mockRoutes({ '/api/sheets': ok(calm), ...files });
+        render(<DashboardV2 />);
+        await waitFor(() => expect(screen.getByText('Nothing firing')).toBeInTheDocument());
+        expect(document.querySelector('.v2-today button').textContent).toBe('closest VIX/3M 0.93 → 1');
+    });
+
+    it('a feed that failed is not a calm one: no Nothing firing while the combos are unread', async () => {
+        mockRoutes({ '/api/sheets': ok(calm) });
+        render(<DashboardV2 />);
+        await waitFor(() => expect(screen.getByText('19.42')).toBeInTheDocument());
+        await combosSettled();
+        expect(document.querySelector('.v2-today')).not.toBeNull(); // the line is there, holding its place
+        expect(screen.queryByText('Nothing firing')).toBeNull();
+    });
+
+    it.each([['failed', undefined], ['hangs', new Promise(() => {})]])('a signal that fires still shows when the combos feed %s', async (_, combos) => {
+        mockRoutes({ '/api/sheets': ok({ ...calm, AAIIDiff: '25.00%' }), ...(combos && { '/history/spy-daily.json': combos }) });
+        render(<DashboardV2 />);
+        await waitFor(() => expect(document.querySelector('.v2-today button')?.textContent).toMatch(/^AAII bullish to [A-Z][a-z]{2} \d+$/));
+    });
+});
