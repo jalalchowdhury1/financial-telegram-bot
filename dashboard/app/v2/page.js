@@ -23,7 +23,7 @@ import MarkChip from '../../components/MarkChip';
 import MarksSheet from '../../components/MarksSheet';
 import { MarkProvider, useMark, collectLiveValues } from '../../components/MarkProvider';
 import BackPill from '../../components/BackPill';
-import WhatMoved, { jumpToCard } from '../../components/WhatMoved';
+import { jumpToCard } from '../../components/WhatMoved';
 import StatusLine from '../../components/StatusLine';
 import SinceLastVisit from '../../components/SinceLastVisit';
 import MarketClock from '../../components/MarketClock';
@@ -33,7 +33,7 @@ import { isLiveAnswer } from '../../lib/snapshot';
 import { freshnessNote, formatAsOf } from '../../lib/freshness';
 import { fgHistoryCells } from '../../lib/fgHistory';
 import { staleOf } from '../../lib/glance';
-import { movedWhen } from '../../lib/whatMoved';
+import { collectMoves, fmtLevel, movedWhen } from '../../lib/whatMoved';
 import { pulseVerdicts } from '../../lib/pulseVerdicts';
 import useFeeds from './useFeeds';
 
@@ -49,6 +49,8 @@ const RSI_ZONES = [{ to: 30, tone: 'good' }, { to: 70, tone: 'flat' }, { to: 100
 const fgTone = (s) => (s < 25 ? 'bad' : s < 45 ? 'caution' : s < 55 ? 'flat' : 'good');
 const signed = (v, d = 2) => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(d)}`;
 const usd = (v) => `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+// Same bands as the Volatility table: 90+ panic, 70+ rich, 10 or under cheap.
+const ivTone = (v) => (v >= 90 ? 'bad' : v >= 70 ? 'caution' : v <= 10 ? 'good' : 'flat');
 
 /** A card body as its own component, so the card's ErrorBoundary catches a throw in it. */
 function Body({ children }) { return children(); }
@@ -75,25 +77,75 @@ function Scale({ value, zones, ticks }) {
     );
 }
 
-/** Last ~3 months of SPY closes: shape only, the full chart lives under Market. */
-function Spark({ history }) {
-    const pts = (history || []).slice(-63).map((p) => p.price).filter(Number.isFinite);
-    if (pts.length < 2) return null;
-    const lo = Math.min(...pts), hi = Math.max(...pts), w = 320, h = 64;
-    const xy = pts.map((p, i) => [(i / (pts.length - 1)) * w, h - 4 - ((p - lo) / (hi - lo || 1)) * (h - 8)]);
-    const line = xy.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`).join('');
+/** Last ~3 months of SPY with its 200-day average and 52-week high drawn in, each tagged at the right edge. */
+function Spark({ spy }) {
+    const rows = (spy.chartHistory || []).slice(-63).filter((p) => Number.isFinite(p.price));
+    if (rows.length < 2) return null;
+    const pts = rows.map((p) => p.price);
+    const ma = rows.every((p) => Number.isFinite(p.ma200)) && Number.isFinite(spy.ma200?.value) ? rows.map((p) => p.ma200) : null;
+    const high = Number.isFinite(spy.week52High?.value) ? spy.week52High.value : null;
+    const all = [...pts, ...(ma || []), ...(high != null ? [high] : [])];
+    const lo = Math.min(...all), hi = Math.max(...all), w = 320, h = 100, pad = 16;
+    const y = (v) => pad + (1 - (v - lo) / (hi - lo || 1)) * (h - 2 * pad);
+    const path = (vs) => vs.map((v, i) => `${i ? 'L' : 'M'}${((i / (vs.length - 1)) * w).toFixed(1)},${y(v).toFixed(1)}`).join('');
+    const line = path(pts);
     const up = pts[pts.length - 1] >= pts[0];
+    const highPct = spy.week52High?.pct;
     return (
-        <svg className={`v2-spark ${up ? 'is-up' : 'is-down'}`} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" aria-hidden="true">
-            <defs>
-                <linearGradient id="v2SparkFill" x1="0" x2="0" y1="0" y2="1">
-                    <stop offset="0%" stopColor="currentColor" stopOpacity="0.18" />
-                    <stop offset="100%" stopColor="currentColor" stopOpacity="0" />
-                </linearGradient>
-            </defs>
-            <path d={`${line}L${w},${h}L0,${h}Z`} fill="url(#v2SparkFill)" />
-            <path d={line} fill="none" stroke="currentColor" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
-        </svg>
+        <div className={`v2-spark ${up ? 'is-up' : 'is-down'}`}>
+            <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" aria-hidden="true">
+                <defs>
+                    <linearGradient id="v2SparkFill" x1="0" x2="0" y1="0" y2="1">
+                        <stop offset="0%" stopColor="currentColor" stopOpacity="0.16" />
+                        <stop offset="100%" stopColor="currentColor" stopOpacity="0" />
+                    </linearGradient>
+                </defs>
+                <path d={`${line}L${w},${h}L0,${h}Z`} fill="url(#v2SparkFill)" />
+                {high != null && <path className="v2-spark-high" d={`M0,${y(high).toFixed(1)}H${w}`} vectorEffect="non-scaling-stroke" />}
+                {ma && <path className="v2-spark-ma" d={path(ma)} vectorEffect="non-scaling-stroke" />}
+                <path d={line} fill="none" stroke="currentColor" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+            </svg>
+            <span className="v2-spark-tag is-span" style={{ top: `${high != null ? y(high) : pad}%` }}>3M</span>
+            {high != null && (
+                <span className="v2-spark-tag is-high" style={{ top: `${y(high)}%` }}>
+                    {highPct >= 0 ? <span className="tone-good">At the 52W high</span> : <>52W high <b>{usd(high)}</b> <em className={highPct >= -1 ? 'tone-good' : 'tone-caution'}>{signed(highPct)}%</em></>}
+                </span>
+            )}
+            {ma && (
+                // a rising line runs below its tag's left end, so the tag sits above it (and below a falling one)
+                <span className={`v2-spark-tag is-ma${ma[ma.length - 1] >= ma[Math.max(0, ma.length - 16)] ? ' is-above' : ''}`} style={{ top: `${y(ma[ma.length - 1])}%` }}>
+                    200D <b>{usd(spy.ma200.value)}</b> <em className={spy.ma200.pct >= 0 ? 'tone-good' : 'tone-bad'}>{signed(spy.ma200.pct)}%</em>
+                </span>
+            )}
+        </div>
+    );
+}
+
+const MOVE_CAP = 4; // bars run out to 4× a normal day; anything bigger pins at the end
+
+/** What moved since the last close, each move drawn against that series' normal day (the shaded ±1× band). */
+function Moves({ spy, fg, extra, vol, history, saved, waiting }) {
+    const moves = useMemo(() => collectMoves({ spy, fg, extra, vol, history }), [spy, fg, extra, vol, history]);
+    const when = useMemo(() => { try { return movedWhen({ spy, vol }); } catch { return null; } }, [spy, vol]);
+    if (!moves.length) return waiting ? <div className="v2-moves is-waiting" aria-busy="true"><div className="v2-moves-head">What moved</div></div> : null;
+    return (
+        <div className="v2-moves" data-cached={saved || undefined}>
+            <div className="v2-moves-head">
+                <span>What moved{when ? ` · ${when}` : ''}{saved ? ` · ${saved}` : ''}</span>
+                <span>× a normal day</span>
+            </div>
+            <div className="v2-moves-grid">
+                {moves.map((m) => (
+                    <button key={m.key} type="button" className={`v2-mv${m.big ? ' is-big' : ''}`} onClick={() => jumpToCard(m.jump)}
+                        title={`${m.label} ${fmtLevel(m.prev)} → ${fmtLevel(m.value)}${m.day ? ` on ${m.day}` : ''} · tap for the card`}>
+                        <span className="v2-mv-label">{m.label}{m.day && <small>{m.day}</small>}</span>
+                        <span className="v2-mv-val">{m.text}</span>
+                        <span className="v2-mv-bar"><i style={{ [m.delta < 0 ? 'right' : 'left']: '50%', width: `${(Math.min(m.z, MOVE_CAP) / MOVE_CAP) * 50}%` }} /></span>
+                        <span className="v2-mv-x">{m.z.toFixed(1)}×</span>
+                    </button>
+                ))}
+            </div>
+        </div>
     );
 }
 
@@ -310,6 +362,7 @@ export default function DashboardV2() {
 
     const spyOk = isLiveAnswer('spy', spy);
     const fgOk = isLiveAnswer('fg', fg);
+    const ivSpy = vol?.tickers?.find((t) => t.ticker === 'SPY' && Number.isFinite(t.ivRank1y) && Number.isFinite(t.ivPctile1y));
     const moveOk = isLiveAnswer('spyDailyMove', spyDailyMove);
     const spyStale = spyOk ? staleOf(spy)?.label : undefined;
     const spyWhen = useMemo(() => { try { return movedWhen({ spy, vol }) || 'today'; } catch { return 'today'; } }, [spy, vol]);
@@ -361,7 +414,7 @@ export default function DashboardV2() {
                                         <>
                                             <div className="v2-hero-label">
                                                 <span>S&P 500 · SPY</span>
-                                                <span className="v2-hero-aside">3M</span>
+                                                {spy.return3y != null && <span className="v2-hero-aside">3Y <b className={spy.return3y >= 0 ? 'tone-good' : 'tone-bad'}>{signed(spy.return3y, 1)}%</b></span>}
                                                 {spyStale && <span className="v2-flag" data-testid="spy-provenance">Stale · {/ close$/.test(spyStale) ? spyStale : `cached ${spyStale}`}</span>}
                                             </div>
                                             <div className="v2-hero-price-row">
@@ -372,12 +425,7 @@ export default function DashboardV2() {
                                                     </span>
                                                 )}
                                             </div>
-                                            <Spark history={spy.chartHistory} />
-                                            <dl className="v2-facts">
-                                                <div><dt>200-day avg</dt><dd>{usd(spy.ma200.value)} <span className={spy.ma200.pct >= 0 ? 'tone-good' : 'tone-bad'}>{signed(spy.ma200.pct)}%</span></dd></div>
-                                                <div><dt>52-week high</dt><dd>{spy.week52High.pct >= 0 ? <span className="tone-good">At the high</span> : <>{usd(spy.week52High.value)} <span className={spy.week52High.pct >= -1 ? 'tone-good' : 'tone-caution'}>{signed(spy.week52High.pct)}%</span></>}</dd></div>
-                                                <div><dt>3-year return</dt><dd className={spy.return3y == null ? '' : spy.return3y >= 0 ? 'tone-good' : 'tone-bad'}>{spy.return3y == null ? 'N/A' : `${signed(spy.return3y, 1)}%`}</dd></div>
-                                            </dl>
+                                            <Spark spy={spy} />
                                         </>
                                     )}</Body>
                                 </ErrorBoundary>
@@ -421,6 +469,14 @@ export default function DashboardV2() {
                                         <Scale value={spy.rsi} zones={RSI_ZONES} ticks={[0, 30, 70, 100]} />
                                     </div>
                                 )}
+                                {ivSpy && (
+                                    <button type="button" className="v2-gauge-block v2-iv" data-cached={saved('vol')} onClick={() => jumpToCard('Volatility')}
+                                        title="SPY implied volatility (VIX) vs its past year · tap for the full table">
+                                        <span>SPY IV · 1y</span>
+                                        <span>Rank <b className={`tone-${ivTone(ivSpy.ivRank1y)}`}>{Math.round(ivSpy.ivRank1y)}</b></span>
+                                        <span>%ile <b className={`tone-${ivTone(ivSpy.ivPctile1y)}`}>{Math.round(ivSpy.ivPctile1y)}</b></span>
+                                    </button>
+                                )}
                             </div>
                         </div>
 
@@ -431,7 +487,7 @@ export default function DashboardV2() {
                         </div>
                         <div className="v2-strips">
                             <ErrorBoundary resetKey={refreshTick}>
-                                <WhatMoved spy={spy} fg={fg} extra={extra} vol={vol} history={history}
+                                <Moves spy={spy} fg={fg} extra={extra} vol={vol} history={history}
                                     saved={saved('spy', 'fg', 'extra', 'vol', 'history')}
                                     waiting={['spy', 'fg', 'extra', 'vol', 'history'].some((k) => pending[k])} />
                             </ErrorBoundary>

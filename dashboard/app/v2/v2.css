@@ -172,7 +172,7 @@ body:has(.v2) { background: #0b0c0e; }
   position: relative;
   min-width: 0;
 }
-.v2-hero-side { display: grid; gap: 16px; grid-template-rows: 1fr auto; min-width: 0; }
+.v2-hero-side { display: grid; gap: 16px; grid-template-rows: 1fr auto auto; min-width: 0; }
 .v2-hero-label {
   display: flex; align-items: center; gap: 10px; white-space: nowrap;
   font-size: 13px; font-weight: 500; color: var(--ink-2);
@@ -195,15 +195,32 @@ body:has(.v2) { background: #0b0c0e; }
 .v2-move-when { font-weight: 500; opacity: .75; }
 .v2-hero-spy { display: flex; flex-direction: column; }
 .v2-hero-aside { margin-left: auto; font-size: 12px; color: var(--ink-3); font-weight: 400; }
-.v2-spark { display: block; width: 100%; flex: 1; min-height: 56px; margin: 18px 0 4px; }
+.v2-hero-aside b { font-weight: 600; margin-left: 3px; }
+/* the chart carries its own context: dashed 52-week high, blue 200-day line, tags at the right edge */
+.v2-spark { position: relative; flex: 1; min-height: 130px; margin: 28px 0 0; }
+.v2-spark svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .v2-spark.is-up { color: var(--up); } .v2-spark.is-down { color: var(--down); }
-.v2-facts {
-  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px;
-  margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--line);
+.v2-spark-high { fill: none; stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 3 4; }
+.v2-spark-ma { fill: none; stroke: var(--accent); stroke-width: 1.25; opacity: .8; }
+.v2-spark-tag {
+  position: absolute; right: 0; transform: translateY(calc(-100% - 5px));
+  font: 500 11px var(--sans); color: var(--ink-3); white-space: nowrap; font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 3px var(--surface), 0 0 6px var(--surface);
 }
-.v2-facts dt { font-size: 12px; color: var(--ink-3); white-space: nowrap; }
-.v2-facts dd { margin-top: 4px; font-size: 14px; font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.v2-facts dd span { font-size: 12px; margin-left: 4px; }
+.v2-spark-tag b { font-weight: 500; color: var(--ink-2); margin: 0 2px 0 3px; }
+.v2-spark-tag em { font-style: normal; font-weight: 600; }
+.v2-spark-tag.is-span { right: auto; left: 0; }
+.v2-spark-tag.is-ma { color: var(--accent); transform: translateY(5px); }
+.v2-spark-tag.is-ma.is-above { transform: translateY(calc(-100% - 5px)); }
+/* SPY IV rank and percentile: one quiet line under RSI; tap opens the Volatility card */
+.v2-iv {
+  display: flex; align-items: baseline; gap: 18px; width: 100%; padding: 14px 26px;
+  font: 500 13px var(--sans); color: var(--ink-3); text-align: left; white-space: nowrap; cursor: pointer;
+  transition: background .2s;
+}
+.v2-iv > :first-child { margin-right: auto; color: var(--ink-2); }
+.v2-iv b { margin-left: 5px; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.v2-iv:hover { background: var(--surface-2); }
 
 .v2-gauge-head { display: flex; align-items: baseline; gap: 10px; margin: 12px 0 16px; white-space: nowrap; }
 .v2-num-xl { font-size: 34px; font-weight: 600; letter-spacing: -0.03em; line-height: 1; font-variant-numeric: tabular-nums; font-family: var(--sans); }
@@ -264,17 +281,39 @@ body:has(.v2) { background: #0b0c0e; }
 .v2-read.tone-bad .v2-read-text { color: var(--down); }
 .v2-read.tone-caution .v2-read-text, .v2-read.tone-watch .v2-read-text { color: var(--warn); }
 
-/* what moved + since last visit: two quiet strips under the read */
+/* what moved + since last visit, under the read */
 .v2-strips { margin-top: 14px; display: grid; gap: 10px; }
-.v2 .moved-strip, .v2 .since-strip, .v2 [class*="since-"] {
+.v2 .since-strip, .v2 [class*="since-"] {
   background: none; border: 0; padding: 0; margin: 0;
 }
-.v2 .moved-title { font: 500 12.5px var(--sans); color: var(--ink-3); text-transform: none; letter-spacing: 0; }
-.v2 .moved-chip {
-  background: transparent; border: 1px solid var(--line-2); border-radius: 999px;
-  font-family: var(--sans); font-size: 12.5px; color: var(--ink-2); box-shadow: none;
+/* what moved: each move as a bar against its own normal day (shaded ±1× band, 4× at the ends) */
+.v2-moves-head {
+  display: flex; justify-content: space-between; gap: 12px; margin: 6px 2px 8px;
+  font: 500 12px var(--sans); color: var(--ink-3); white-space: nowrap;
 }
-.v2 .moved-chip.is-big { border-color: rgba(227, 168, 87, 0.45); color: var(--ink); }
+.v2-moves-grid {
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr);
+  gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden;
+}
+.v2-mv {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "label val" "bar x";
+  align-items: center; gap: 10px; min-width: 0; padding: 13px 16px;
+  background: var(--surface); border: 0; color: var(--ink); font: 500 13px var(--sans);
+  text-align: left; white-space: nowrap; cursor: pointer; transition: background .2s;
+}
+.v2-mv:hover { background: var(--surface-2); }
+.v2-mv-label { grid-area: label; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; }
+.v2-mv-label small { margin-left: 6px; font-size: 11px; color: var(--ink-3); }
+.v2-mv-val { grid-area: val; font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
+.v2-mv-bar {
+  grid-area: bar; position: relative; height: 4px; border-radius: 999px;
+  background: linear-gradient(90deg, transparent 37.5%, rgba(255, 255, 255, 0.09) 37.5% 62.5%, transparent 62.5%), rgba(255, 255, 255, 0.035);
+}
+.v2-mv-bar::after { content: ''; position: absolute; left: 50%; top: -3px; bottom: -3px; width: 1px; background: var(--line-2); }
+.v2-mv-bar i { position: absolute; top: 0; bottom: 0; border-radius: 999px; background: var(--ink-2); }
+.v2-mv.is-big .v2-mv-bar i { background: var(--warn); }
+.v2-mv-x { grid-area: x; font-size: 11.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; text-align: right; }
+.v2-mv.is-big .v2-mv-x { color: var(--warn); }
 
 /* ---------- signals ---------- */
 .v2-signals { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
@@ -467,7 +506,6 @@ body:has(.v2) { background: #0b0c0e; }
 }
 .v2 .horse-stats [style*="flex-wrap"] { flex-wrap: nowrap !important; overflow: hidden; white-space: nowrap; }
 .v2 .mark-chip { display: inline-block; }
-.v2 .moved-strip { -webkit-mask-image: linear-gradient(90deg, #000 88%, transparent); mask-image: linear-gradient(90deg, #000 88%, transparent); }
 
 /* colour means status, so it goes on values only, never on labels */
 .v2 .horse-stats .tooltip-trigger { color: var(--ink-3) !important; }
@@ -590,11 +628,25 @@ body:has(.v2) { background: #0b0c0e; }
 .v2 .jev-pill { background: var(--surface); border: 0; border-radius: 0; backdrop-filter: none; }
 .v2 .jev-pill:hover { background: var(--surface-2); border: 0; box-shadow: none; transform: none; }
 
-/* what moved: quiet chips; a big move gets an amber dot, not a lightning emoji */
-.v2 .moved-chip > span[aria-hidden="true"] { display: none; }
-.v2 .moved-chip, .v2 .moved-chip.is-big { border-color: var(--line-2); }
-.v2 .moved-chip.is-big::before {
-  content: ''; flex: none; width: 5px; height: 5px; border-radius: 999px; background: var(--warn);
+/* volatility, calm: SPY's rank and percentile sit under RSI now, so the table waits for More */
+.v2-slot.is-calm[data-jump="Volatility"] [style*="grid-template-columns"] { display: none !important; }
+.v2-slot.is-calm[data-jump="Volatility"] .vol-regime { margin-top: 0; padding-top: 0; border-top: 0; }
+/* and the curve spreads over the card height, so it is not one short block over empty space */
+.v2-slot.is-calm[data-jump="Volatility"] :is(.vol-curve, .vol-bars) { flex: 1; display: flex; flex-direction: column; }
+.v2-slot.is-calm[data-jump="Volatility"] .vol-bars { justify-content: space-evenly; }
+
+/* regime, desktop: one slim row (title, five calls, trend badge) */
+@media (min-width: 641px) {
+  .v2-slot:has(.jev-grid) > .card { flex-direction: row; align-items: center; padding: 0 16px 0 92px; }
+  .v2-slot:has(.jev-grid) .v2-slot-title { top: 50%; transform: translateY(-50%); }
+  .v2-slot:has(.jev-grid) .card-header { order: 2; flex: none; min-height: 0; margin: 0; padding: 0 0 0 14px; border: 0; }
+  .v2-slot:has(.jev-grid) > .card > .jev-grid { display: flex; flex: 1; gap: 0; background: none; min-width: 0; }
+  .v2-slot:has(.jev-grid) .jev-pill {
+    display: flex; flex-direction: row; align-items: baseline; gap: 8px; flex: 1 1 auto; width: auto; min-width: 0;
+    padding: 15px 14px; border-left: 1px solid var(--line); white-space: nowrap;
+  }
+  .v2-slot:has(.jev-grid) .jev-pill .jev-pill-label { margin: 0; font-size: 10.5px; }
+  .v2-slot:has(.jev-grid) .jev-pill-right { flex-wrap: nowrap; }
 }
 
 @media (max-width: 640px) {
@@ -612,8 +664,11 @@ body:has(.v2) { background: #0b0c0e; }
   .v2-signal-value { font-size: 17px; }
   .v2-signal-sub { font-size: 11.5px; }
 
-  .v2 .jev-pill { min-height: 0; padding: 12px 2px; }
+  .v2 .jev-pill { min-height: 0; padding: 10px 2px; }
+  .v2-slot:has(.jev-grid) .card-header { border: 0; margin-bottom: 4px; }
   .v2 .jev-pill .jev-pill-label { font-size: 11px; }
   .v2 .jev-grid { margin: 0 -2px; }
-  .v2 .moved-chip { height: 28px; padding: 0 10px; font-size: 12px; }
+  .v2-iv { padding: 14px 20px; }
+  .v2-moves-grid { grid-auto-flow: row; }
+  .v2-mv { grid-template-columns: 64px minmax(0, 1fr) 60px 34px; grid-template-areas: "label bar val x"; padding: 11px 14px; }
 }

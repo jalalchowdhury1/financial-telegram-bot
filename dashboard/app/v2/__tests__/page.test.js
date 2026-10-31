@@ -13,6 +13,7 @@ const spyPayload = {
     return3y: 81.05,
     rsi: 55.2,
     dailyChange: { value: 1.2, pct: 0.2 },
+    chartHistory: [{ date: '2026-01-02', price: 600, ma200: 578.4 }, { date: '2026-01-05', price: 612.34, ma200: 580.1 }],
     _meta: { source: 'Polygon', hasErrors: false },
 };
 
