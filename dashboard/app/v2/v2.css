@@ -1102,6 +1102,7 @@ body:has(.v2) { background: #0b0c0e; }
 .v2-aa-now { position: absolute; pointer-events: none; }
 .v2-aa-now i { position: absolute; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 999px; background: var(--accent); box-shadow: 0 0 12px var(--accent); animation: v2-aa-pulse 2.4s ease-in-out infinite; }
 .v2-aa-now b { position: absolute; left: 9px; top: -7px; font: 600 11px var(--sans); color: var(--accent); white-space: nowrap; text-shadow: 0 0 4px var(--surface), 0 0 8px var(--surface); }
+.v2-aa-now.is-left b { left: auto; right: 9px; } /* past halfway the label would run into the end labels */
 @keyframes v2-aa-pulse { 50% { transform: scale(1.35); box-shadow: 0 0 18px var(--accent); } }
 .v2-aa-dot { position: absolute; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; border-radius: 999px; background: var(--ink); box-shadow: 0 0 0 3px rgb(255 255 255 / .15); pointer-events: none; }
 .v2-aa-xs { position: relative; height: 16px; margin: 6px 0 0 34px; font-size: 11px; color: var(--ink-3); }

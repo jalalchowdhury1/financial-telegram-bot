@@ -1,10 +1,11 @@
 /**
- * AAII bears − bulls at 20+: what SPY did next. Pure, so the v2 drill-in and its test share it.
+ * A signal at or past its line (AAII bears − bulls 20+, VIX ÷ VIX 3M 1+): what SPY did next. Pure,
+ * so the v2 drill-in (components/SignalStudy.js) and its test share it.
  *
- * An episode starts at the first 20+ survey after 3 quiet months (no 20+ reading in the 91 days
+ * An episode starts at the first reading at/past the line after 3 quiet months (none in the 91 days
  * before), so a long fearful run counts once. Its path is SPY's close (price only, no dividends)
- * from the first trading day on/after the survey to `months` later. The base rate is the same
- * window started on every trading day, so "after a 20+ reading" has something honest to beat.
+ * from the first trading day on/after the reading to `months` later. The base rate is the same
+ * window started on every trading day the signal has data for, so "after a signal" has something honest to beat.
  */
 const DAY = 86400000;
 const ms = (iso) => Date.parse(`${iso}T00:00:00Z`);
@@ -31,11 +32,11 @@ function stats(rets) {
     };
 }
 
-/** The readings that started a 20+ episode, from `aaii` [{date, value}]. */
-export function aaiiEpisodes(aaii, line = 20) {
+/** The readings that started an episode, from `points` [{date, value}]. */
+export function signalEpisodes(points, line) {
     const eps = [];
     let last = -Infinity;
-    for (const p of aaii) {
+    for (const p of points) {
         if (!(p.value >= line)) continue;
         if (ms(p.date) - last > QUIET) eps.push({ date: p.date, value: p.value });
         last = ms(p.date);
@@ -48,10 +49,10 @@ export function aaiiEpisodes(aaii, line = 20) {
  * path:[{x 0..1, r}]}`; `ret`/`low` are SPY's change at the end of the window (so far, when live)
  * and its worst point inside it. Live episodes stay out of `stats` and `avgPath`.
  */
-export function aaiiStudy(aaii, spy, months, line = 20) {
-    if (!aaii?.length || !spy?.length) return null;
+export function signalStudy(points, spy, months, line) {
+    if (!points?.length || !spy?.length) return null;
     const lastSpy = spy[spy.length - 1].date;
-    const episodes = aaiiEpisodes(aaii, line).map((e) => {
+    const episodes = signalEpisodes(points, line).map((e) => {
         const i0 = from(spy, e.date);
         if (e.date < spy[0].date || i0 >= spy.length) return null; // SPY starts 1993
         const end = plusMonthsIso(e.date, months), t0 = ms(spy[i0].date), T = ms(end) - t0;
@@ -71,7 +72,7 @@ export function aaiiStudy(aaii, spy, months, line = 20) {
 
     const done = episodes.filter((e) => !e.live);
     const base = [];
-    for (let i = 0, j = 0; i < spy.length; i++) {
+    for (let i = from(spy, points[0].date), j = i; i < spy.length; i++) { // the signal's own years
         const end = plusMonthsIso(spy[i].date, months);
         if (end > lastSpy) break;
         while (j < spy.length - 1 && spy[j + 1].date <= end) j++;

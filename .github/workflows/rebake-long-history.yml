@@ -75,6 +75,14 @@ jobs:
         working-directory: dashboard
         run: python scripts/bake_spy_daily.py
 
+      # v2 VIX tile's drill-in: VIX ÷ VIX 3M every day since 2007 (public/history/vix-ratio-daily.json).
+      # A failure keeps the old file; the history sheet's daily rows cover a missed quarter.
+      - name: Re-bake VIX ratio daily
+        if: github.ref == 'refs/heads/main'
+        continue-on-error: true
+        working-directory: dashboard
+        run: python scripts/bake_vix_ratio.py
+
       - name: Dry run (pull request or another branch — nothing written)
         if: github.ref != 'refs/heads/main'
         working-directory: dashboard

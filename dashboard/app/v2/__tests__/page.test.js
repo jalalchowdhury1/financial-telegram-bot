@@ -154,3 +154,19 @@ it('What moved draws each move as its last month against a normal day (30 Oct: a
     expect(document.querySelector('.v2-mv-past').getAttribute('d')).not.toMatch(/NaN/);
     expect(screen.queryByText(/Component Error/)).toBeNull();
 });
+
+it('the VIX / 3M tile opens what SPY did after each day VIX closed over VIX 3M, 1 month out first', async () => {
+    const ratio = { from: '2020-01-02', t: [0, 1], v: [1.05, 0.9] };
+    const spy = { from: '2020-01-01', t: Array.from({ length: 500 }, (_, i) => i), v: Array.from({ length: 500 }, (_, i) => 100 + i) };
+    const ok = (body) => Promise.resolve({ ok: true, status: 200, json: async () => body });
+    mockRoutes({ '/api/sheets': ok({ VIX: { current: '19.42', threeMonth: '20.78' } }), '/history/vix-ratio-daily.json': ok(ratio), '/history/spy-daily.json': ok(spy) });
+    render(<DashboardV2 />);
+    await waitFor(() => expect(screen.getByText('VIX / 3M')).toBeInTheDocument());
+    fireEvent.click(screen.getByText('VIX / 3M').closest('[role="button"]'));
+    const dialog = await screen.findByRole('dialog', { name: 'VIX over VIX 3M' });
+    expect(within(dialog).getByText('Now 19.42 / 20.78 · 0.93')).toBeInTheDocument();
+    await waitFor(() => expect(within(dialog).getAllByText('+30.7%')).toHaveLength(2)); // Jan 2 (101) → Feb 2 (132)
+    expect(within(dialog).getByRole('button', { name: '1M' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(within(dialog).getByRole('button', { name: /Jan 2, 2020/ }));
+    expect(within(dialog).getByText('VIX/3M 1.050')).toBeInTheDocument();
+});

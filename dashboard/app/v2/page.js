@@ -20,7 +20,7 @@ import VolMetricsTable from '../../components/VolMetricsTable';
 import RubberBandRadar from '../../components/RubberBandRadar';
 import FactorRow from '../../components/FactorRow';
 import Delta from '../../components/Delta';
-import AaiiStudy from '../../components/AaiiStudy';
+import SignalStudy from '../../components/SignalStudy';
 import MarkChip from '../../components/MarkChip';
 import MarksSheet from '../../components/MarksSheet';
 import { MarkProvider, useMark, useChart, collectLiveValues } from '../../components/MarkProvider';
@@ -900,7 +900,7 @@ function Signals({ sheets, spy, loading }) {
 
     const ratioPts = useMemo(() => {
         const v3 = new Map((v3Hist?.points || []).map((p) => [p.date, p.value]));
-        const pts = (vixHist?.points || []).filter((p) => v3.get(p.date) > 0).map((p) => ({ value: p.value / v3.get(p.date) }));
+        const pts = (vixHist?.points || []).filter((p) => v3.get(p.date) > 0).map((p) => ({ date: p.date, value: p.value / v3.get(p.date) }));
         return Number.isFinite(vixCur) && vix3m > 0 ? [...pts, { value: vixCur / vix3m }] : pts;
     }, [vixHist, v3Hist, vixCur, vix3m]);
 
@@ -923,7 +923,7 @@ function Signals({ sheets, spy, loading }) {
         },
         {
             key: 'aaii', label: 'AAII', tip: `Bears minus bulls. ${AAII_LINE}%+ has meant a good next 6 months. Tap for the proof.`,
-            alert: !!bullUntil, good: true, open: () => setStudy(true),
+            alert: !!bullUntil, good: true, open: Number.isFinite(aaii) ? () => setStudy('aaii') : null,
             value: Number.isFinite(aaii) ? (
                 <Delta mark={aaiiMark} chartKey="aaiiDiff" raw={aaii} format={(v) => `${v > 0 ? '+' : ''}${v.toFixed(2)}%`}>
                     <span className={aaii >= AAII_LINE ? 'tone-good' : ''}>{sheets.AAIIDiff}</span>
@@ -935,8 +935,8 @@ function Signals({ sheets, spy, loading }) {
             viz: aaiiPts.length > 6 && <TriggerLine points={aaiiPts} line={AAII_LINE} tag={`${AAII_LINE}%`} tone="good" />,
         },
         {
-            key: 'vix', label: 'VIX / 3M', tip: 'VIX above 3-month VIX: panic. Often before a rebound.',
-            alert: Number.isFinite(vixCur) && vixCur > vix3m,
+            key: 'vix', label: 'VIX / 3M', tip: 'VIX above 3-month VIX: panic. Often before a rebound. Tap for the proof.',
+            alert: Number.isFinite(vixCur) && vixCur > vix3m, open: Number.isFinite(vixCur) && vix3m > 0 ? () => setStudy('vix') : null,
             value: Number.isFinite(vixCur) ? (
                 <span className="v2-pair">
                     <Delta chartKey="vixCurrent" raw={vixCur}>{sheets.VIX.current}</Delta>
@@ -970,7 +970,18 @@ function Signals({ sheets, spy, loading }) {
                         onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); t.open(); } }}>{inner}</div>
                 ) : <div key={t.key} className={cls}>{inner}</div>;
             })}
-            {study && <AaiiStudy now={aaii} until={bullUntil} sheet={aaiiHist?.points} spyLive={spy} onClose={() => setStudy(false)} />}
+            {study === 'aaii' && (
+                <SignalStudy id="aaii" src="/history/aaiiDiff.json" line={AAII_LINE} horizons={[3, 6, 12]} start={6} title={`AAII fear at ${AAII_LINE}+`}
+                    sub={`Now ${aaii.toFixed(1)} · ${bullUntil ? `bullish to ${shortDate(bullUntil)}` : `${(AAII_LINE - aaii).toFixed(1)} pts to go`}`}
+                    label={(v) => `AAII ${v.toFixed(1)}`} foot={`first ${AAII_LINE}+ week after 3 quiet months`}
+                    now={aaii} sheet={aaiiHist?.points} spyLive={spy} onClose={() => setStudy(false)} />
+            )}
+            {study === 'vix' && (
+                <SignalStudy id="vix" src="/history/vix-ratio-daily.json" line={1} horizons={[1, 3, 6, 12]} start={1} title="VIX over VIX 3M"
+                    sub={`Now ${sheets.VIX.current} / ${sheets.VIX.threeMonth} · ${(vixCur / vix3m).toFixed(2)}`}
+                    label={(v) => `VIX/3M ${v.toFixed(3)}`} foot="VIX > VIX 3M after 3 quiet months"
+                    now={vixCur / vix3m} sheet={ratioPts.filter((p) => p.date)} spyLive={spy} onClose={() => setStudy(false)} />
+            )}
         </div>
     );
 }

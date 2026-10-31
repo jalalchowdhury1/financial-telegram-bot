@@ -1,21 +1,21 @@
 'use client';
 /**
- * The AAII drill-in (v2 Signals tile): every time bears beat bulls by 20+, what SPY did next, in one
- * overlay chart. Thin lines = each signal (green ended up, red ended down), bold = their average,
+ * A v2 Signals tile's drill-in (AAII 20+, VIX over VIX 3M): every time the signal fired, what SPY did
+ * next, in one overlay chart. Thin lines = each signal (green ended up, red ended down), bold = their average,
  * dashed = any day's average, blue = the signal still running. Under it, every signal best → worst.
  * Hover or tap a line or bar to read it; ← → step through them. The two baked files load on open
- * only; lib/aaiiStudy.js does the math.
+ * only; lib/signalStudy.js does the math.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import useSheetLock, { useSheetFocus } from './useSheetLock';
-import { decodeLong, loadLong } from '../lib/longHistory';
-import { aaiiStudy } from '../lib/aaiiStudy';
+import { decodeLong } from '../lib/longHistory';
+import { signalStudy } from '../lib/signalStudy';
 
-const HORIZONS = [3, 6, 12];
-const KEY = 'v2-aaii-months';
 const pct = (r, dp = 1) => `${r > 0 ? '+' : r < 0 ? '−' : ''}${Math.abs(r * 100).toFixed(dp)}%`;
-const day = (iso, opts = { year: 'numeric' }) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', ...opts, timeZone: 'UTC' });
+const day = (iso) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+const load = (src) => fetch(src).then((r) => (r.ok ? r.json() : null)).then(decodeLong);
+const XS = { 1: ['Hit', '2W', '1M'], 3: ['Hit', '1M', '2M', '3M'], 6: ['Hit', '2M', '4M', '6M'], 12: ['Hit', '3M', '6M', '9M', '12M'] };
 const tail = (pts, more) => [...pts, ...(more || []).filter((p) => p.date > pts[pts.length - 1].date)];
 
 /** r on a path at x (0..1), or null past where it ends (a live signal). */
@@ -27,31 +27,38 @@ function rAt(path, x) {
     return a.r + ((b.r - a.r) * (x - a.x)) / (b.x - a.x || 1);
 }
 
-export default function AaiiStudy({ now, until, sheet, spyLive, onClose }) {
+/**
+ * `id` keys the remembered horizon; `src` = the signal's baked daily/weekly file, `sheet` = its newer
+ * history-sheet points and `now` today's reading (both appended after the file); `line` = where it
+ * fires; `label(v)` names a reading; `sub` = the header's one line; `foot` = what counts as a signal;
+ * `horizons` = the month chips, `start` = the one it opens on.
+ */
+export default function SignalStudy({ id, src, line, title, sub, label, foot, horizons, start, now, sheet, spyLive, onClose }) {
+    const KEY = `v2-${id}-months`;
     const backRef = useRef(null), sheetRef = useRef(null);
     const [raw, setRaw] = useState(null); // {a, s} | false when a file failed
-    const [months, setMonths] = useState(6);
+    const [months, setMonths] = useState(start);
     const [hot, setHot] = useState(null); // {date, x?} under the pointer
     const [pin, setPin] = useState(null); // date tapped
     useSheetLock(true);
     useSheetFocus(true, sheetRef);
 
     useEffect(() => {
-        try { const m = Number(window.localStorage.getItem(KEY)); if (HORIZONS.includes(m)) setMonths(m); } catch { /* private mode */ }
+        try { const m = Number(window.localStorage.getItem(KEY)); if (horizons.includes(m)) setMonths(m); } catch { /* private mode */ }
         let live = true;
-        Promise.all([loadLong('aaiiDiff'), fetch('/history/spy-daily.json').then((r) => (r.ok ? r.json() : null)).then(decodeLong)])
+        Promise.all([load(src), load('/history/spy-daily.json')])
             .then(([a, s]) => { if (live) setRaw(a && s ? { a, s } : false); })
             .catch(() => { if (live) setRaw(false); });
         return () => { live = false; };
-    }, []);
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     const study = useMemo(() => {
         if (!raw) return null;
         const today = new Date().toLocaleDateString('en-CA');
-        const aaii = tail(raw.a, Number.isFinite(now) ? [...(sheet || []), { date: today, value: now }] : sheet);
+        const pts = tail(raw.a, Number.isFinite(now) ? [...(sheet || []), { date: today, value: now }] : sheet);
         const spy = tail(raw.s.map((p) => ({ date: p.date, price: p.value })), (spyLive || []).map((p) => ({ date: p.date, price: p.price })));
-        return aaiiStudy(aaii, spy, months);
-    }, [raw, sheet, now, spyLive, months]);
+        return signalStudy(pts, spy, months, line);
+    }, [raw, sheet, now, spyLive, months, line]);
 
     const eps = study?.episodes || [];
     const ranked = useMemo(() => [...eps].sort((a, b) => b.ret - a.ret), [eps]);
@@ -109,8 +116,6 @@ export default function AaiiStudy({ now, until, sheet, spyLive, onClose }) {
         const hotR = hot?.x != null && sel ? rAt(sel.path, hot.x) : null;
         const maxUp = Math.max(0.01, ...eps.map((e) => e.ret)), maxDn = Math.max(0.01, ...eps.map((e) => -e.ret));
         const span = maxUp + maxDn;
-        const tick = (m) => (m ? `${m}M` : 'Hit');
-        const xs = months === 12 ? [0, 3, 6, 9, 12] : months === 6 ? [0, 2, 4, 6] : [0, 1, 2, 3];
         const stat = (label, v, b, show) => (
             <span className="v2-aa-stat">
                 <small>{label}</small>
@@ -129,7 +134,7 @@ export default function AaiiStudy({ now, until, sheet, spyLive, onClose }) {
                     {sel ? (
                         <>
                             <b>{day(sel.date)}</b>
-                            <span>AAII {sel.value.toFixed(1)}</span>
+                            <span>{label(sel.value)}</span>
                             <span className={`tone-${sel.live ? 'flat' : sel.ret >= 0 ? 'good' : 'bad'}`}>SPY {pct(sel.ret)}{sel.live ? ' so far' : ''}</span>
                             <span className="v2-aa-low">low {pct(sel.low)}</span>
                         </>
@@ -151,13 +156,13 @@ export default function AaiiStudy({ now, until, sheet, spyLive, onClose }) {
                     <span className="v2-aa-end is-avg" style={{ top: `${yAvg}%` }}>avg {pct(st.avg)}</span>
                     <span className="v2-aa-end" style={{ top: `${Math.abs(yAvg - yBase) < 8 ? yAvg + (yBase >= yAvg ? 8 : -8) : yBase}%` }}>any day {pct(base.avg)}</span>
                     {lastLive && (
-                        <span className="v2-aa-now" style={{ left: `${lastLive.x * 100}%`, top: `${y(lastLive.r)}%` }}>
+                        <span className={`v2-aa-now${lastLive.x > 0.5 ? ' is-left' : ''}`} style={{ left: `${lastLive.x * 100}%`, top: `${y(lastLive.r)}%` }}>
                             <i /><b>now {pct(live.ret)}</b>
                         </span>
                     )}
                     {hotR != null && <i className="v2-aa-dot" style={{ left: `${hot.x * 100}%`, top: `${y(hotR)}%` }} />}
                 </div>
-                <div className="v2-aa-xs">{xs.map((m) => <span key={m} style={{ left: `${(m / months) * 100}%` }}>{tick(m)}</span>)}</div>
+                <div className="v2-aa-xs">{XS[months].map((t, i, a) => <span key={t} style={{ left: `${(i / (a.length - 1)) * 100}%` }}>{t}</span>)}</div>
                 <div className="v2-aa-rank-head"><span>{eps.length} signals since {eps[0].date.slice(0, 4)} · best → worst</span><span className="v2-aa-key">┄ any day</span></div>
                 <div className="v2-aa-rank" role="group" aria-label="Every signal, best to worst">
                     <i className="v2-aa-rank-base" style={{ top: `${((maxUp - base.avg) / span) * 100}%` }} />
@@ -168,7 +173,7 @@ export default function AaiiStudy({ now, until, sheet, spyLive, onClose }) {
                             onPointerEnter={() => setHot({ date: ep.date })} onPointerLeave={() => setHot(null)} onClick={() => toggle(ep.date)} />
                     ))}
                 </div>
-                <p className="v2-aa-foot">SPY price only · a signal = first 20+ week after 3 quiet months</p>
+                <p className="v2-aa-foot">SPY price only · a signal = {foot}</p>
             </>
         );
     }
@@ -180,11 +185,11 @@ export default function AaiiStudy({ now, until, sheet, spyLive, onClose }) {
             <div className="v2-aa" ref={sheetRef} data-sheet-scroll="">
                 <div className="v2-aa-head">
                     <div className="v2-aa-title">
-                        <h2 id="v2-aa-title">AAII fear at 20+</h2>
-                        <p>Now {Number.isFinite(now) ? now.toFixed(1) : '–'}{until ? ` · bullish to ${day(until, {})}` : Number.isFinite(now) ? ` · ${(20 - now).toFixed(1)} pts to go` : ''}</p>
+                        <h2 id="v2-aa-title">{title}</h2>
+                        <p>{sub}</p>
                     </div>
                     <div className="v2-aa-tfs" role="group" aria-label="Months after">
-                        {HORIZONS.map((m) => <button key={m} type="button" className={m === months ? 'is-on' : ''} aria-pressed={m === months} onClick={() => pick(m)}>{m}M</button>)}
+                        {horizons.map((m) => <button key={m} type="button" className={m === months ? 'is-on' : ''} aria-pressed={m === months} onClick={() => pick(m)}>{m}M</button>)}
                     </div>
                     <button type="button" className="v2-aa-close sheet-x" onClick={onClose} aria-label="Close">×</button>
                 </div>

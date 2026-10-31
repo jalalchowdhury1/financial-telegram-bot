@@ -1,24 +1,24 @@
-import { aaiiEpisodes, aaiiStudy } from '../aaiiStudy';
+import { signalEpisodes, signalStudy } from '../signalStudy';
 
 // SPY: 100 on Jan 1 2020, +1 every day (a trading day every day keeps the math readable)
 const spy = Array.from({ length: 500 }, (_, i) => ({ date: new Date(Date.UTC(2020, 0, 1 + i)).toISOString().slice(0, 10), price: 100 + i }));
 
-describe('aaiiEpisodes', () => {
+describe('signalEpisodes', () => {
     it('counts a run of 20+ readings once, and again only after 3 quiet months', () => {
-        const eps = aaiiEpisodes([
+        const eps = signalEpisodes([
             { date: '2020-01-02', value: 21 },
             { date: '2020-01-09', value: 30 }, // same run
             { date: '2020-02-06', value: 5 },
             { date: '2020-04-02', value: 22 }, // 84 days after the last 20+: same episode
             { date: '2020-08-06', value: 25 }, // 126 days quiet: new episode
-        ]);
+        ], 20);
         expect(eps).toEqual([{ date: '2020-01-02', value: 21 }, { date: '2020-08-06', value: 25 }]);
     });
 });
 
-describe('aaiiStudy', () => {
+describe('signalStudy', () => {
     const aaii = [{ date: '2019-06-01', value: 40 }, { date: '2020-01-02', value: 21 }, { date: '2021-03-01', value: 25 }];
-    const s = aaiiStudy(aaii, spy, 6);
+    const s = signalStudy(aaii, spy, 6, 20);
 
     it('skips signals before SPY starts and measures SPY from the signal day to 6 months on', () => {
         expect(s.episodes.map((e) => e.date)).toEqual(['2020-01-02', '2021-03-01']);
@@ -46,6 +46,6 @@ describe('aaiiStudy', () => {
     });
 
     it('returns null without data', () => {
-        expect(aaiiStudy([], spy, 6)).toBeNull();
+        expect(signalStudy([], spy, 6, 20)).toBeNull();
     });
 });
