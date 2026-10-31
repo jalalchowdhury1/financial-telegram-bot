@@ -221,7 +221,7 @@ function MoveTile({ m, feeds: { spy, extra, vol } }) {
         const lo = Math.min(...pts, m.prev - band), hi = Math.max(...pts, m.prev + band);
         const pad = (hi - lo) * 0.12 || 1;
         const y = (v) => 100 - ((v - lo + pad) / (hi - lo + 2 * pad)) * 100;
-        const x = (i) => ((Date.parse(pts[i].date) - t0) / T) * 100; // by date: the IMF years are monthly, the Wise years daily
+        const x = (i) => (i / (pts.length - 1)) * 100;
         const n = pts.length;
         return {
             past: pts.slice(0, -1).map((v, i) => `${i ? 'L' : 'M'}${x(i)} ${y(v)}`).join(''),

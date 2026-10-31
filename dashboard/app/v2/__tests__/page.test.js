@@ -124,3 +124,14 @@ it('Fear & Greed draws its Prev / 1W / 1M / 1Y readings as one trail, each with 
     expect([...document.querySelectorAll('.v2-fgt-pt b')].map((e) => e.textContent)).toEqual(['30', '17', '35']);
     expect(document.querySelector('.v2-fgt-pt.is-now').className).toMatch(/tone-caution/);
 });
+
+it('What moved draws each move as its last month against a normal day (30 Oct: a stray USD/BDT line crashed the strip)', async () => {
+    const day = (i) => new Date(Date.now() - (30 - i) * 86400000).toISOString().slice(0, 10);
+    const chartHistory = Array.from({ length: 30 }, (_, i) => ({ date: day(i), price: i % 2 ? 101 : 100 }));
+    const spy = { ...spyPayload, current: 102, dailyChange: { value: 2, pct: 2 }, chartHistory };
+    mockRoutes({ '/api/spy': Promise.resolve({ status: 200, json: async () => spy }) });
+    render(<DashboardV2 />);
+    await waitFor(() => expect(document.querySelector('.v2-mv-past')).not.toBeNull());
+    expect(document.querySelector('.v2-mv-past').getAttribute('d')).not.toMatch(/NaN/);
+    expect(screen.queryByText(/Component Error/)).toBeNull();
+});
