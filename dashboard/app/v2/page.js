@@ -10,10 +10,8 @@ import Skeleton from '../../components/Skeleton';
 import SpyChart from '../../components/SpyChart';
 import MiniChart from '../../components/MiniChart';
 import JevPills from '../../components/JevPills';
-import EconomicIndicatorGrid from '../../components/EconomicIndicatorGrid';
+import { valuationRow } from '../../components/EconomicIndicatorGrid';
 import FourHorsemen from '../../components/FourHorsemen';
-import BullChecklist from '../../components/BullChecklist';
-import ExtraMarketsGrid from '../../components/ExtraMarketsGrid';
 import PolymarketTable from '../../components/PolymarketTable';
 import VolMetricsTable from '../../components/VolMetricsTable';
 import RubberBandRadar from '../../components/RubberBandRadar';
@@ -33,7 +31,8 @@ import { isLiveAnswer } from '../../lib/snapshot';
 import { freshnessNote, formatAsOf } from '../../lib/freshness';
 import { fgHistoryCells } from '../../lib/fgHistory';
 import { staleOf } from '../../lib/glance';
-import { collectMoves, fmtLevel, movedWhen } from '../../lib/whatMoved';
+import { collectMoves, fmtLevel, movedWhen, sigmaOf, BIG_Z } from '../../lib/whatMoved';
+import { marketWindow } from '../../lib/marketWindow';
 import { pulseVerdicts } from '../../lib/pulseVerdicts';
 import useFeeds from './useFeeds';
 
@@ -144,6 +143,183 @@ function Moves({ spy, fg, extra, vol, history, saved, waiting }) {
                         <span className="v2-mv-x">{m.z.toFixed(1)}×</span>
                     </button>
                 ))}
+            </div>
+        </div>
+    );
+}
+
+const pctS = (v) => `${signed(v, 1)}%`;
+const pct2 = (v) => `${v.toFixed(2)}%`;
+const kfmt = (v) => `${Math.round(v).toLocaleString('en-US')}K`;
+const fixed = (d) => (v) => v.toFixed(d);
+
+/**
+ * Economy: each signal drawn as its distance from the line where the backend turns it green
+ * (app/api/fred/route.js). `band` is that route's next tier step (OK → Strong, or green → the
+ * next colour), so a dot one band out is one tier past the line; the track shows two a side.
+ * `low`: lower is better. Rows run worst first, so what needs a look is on top.
+ */
+const BULL = [
+    { key: 'nfci', label: 'Financial conditions', line: 0, band: 0.5, low: true, fmt: fixed(2), tip: 'Chicago Fed money tightness. Below 0 = easy.' },
+    { key: 'm2', label: 'M2 money supply', line: 2, band: 2, fmt: pctS, tip: 'Cash + deposits, 1-year growth.' },
+    { key: 'retail', label: 'Retail sales', line: 0, band: 1, fmt: pctS, tip: 'Retail sales, 3-month growth.' },
+    { key: 'housing', label: 'Housing starts', line: 1300, band: 100, fmt: kfmt, tip: 'New homes started. Green also needs a rising trend.' },
+    { key: 'indpro', label: 'Industrial production', line: 0, band: 1, fmt: pctS, tip: 'Factory output, 6-month trend.' },
+    { key: 'jolts', label: 'Job openings', line: 6000, band: 1000, fmt: kfmt, tip: 'JOLTS job openings.' },
+    { key: 'durable', label: 'Durable goods', line: 0, band: 2, fmt: pctS, tip: 'Big-ticket orders, 3-month trend.' },
+    { key: 'savings', label: 'Savings rate', line: 3.5, band: 1.5, fmt: (v) => `${v.toFixed(1)}%`, tip: 'Share of income saved.' },
+].map((d) => ({ ...d, rule: `OK ${d.low ? '<' : '>'} ${d.fmt(d.line)} · Strong ${d.low ? '<' : '>'} ${d.fmt(d.line + (d.low ? -d.band : d.band))}` }));
+
+// Copper/gold has no tiers: green while its 1-month change is up, so that change is its distance (one band = a 5% month).
+const INDICATORS = [
+    { key: 'sahmRule', label: 'Sahm rule', line: 0.5, band: 0.5, low: true, fmt: fixed(2), rule: 'Safe < 0.50', tip: 'Fires when the 3-month jobless rate is 0.5 over its 12-month low.' },
+    { key: 'sentiment', label: 'Consumer sentiment', line: 80, band: 20, fmt: fixed(1), rule: 'Strong > 80 · Weak < 60', tip: 'UMich consumer confidence survey.' },
+    { key: 'claims', label: 'Jobless claims', line: 250, band: 100, low: true, fmt: kfmt, rule: 'Healthy < 250K', tip: 'New jobless claims, 4-week average.' },
+    { key: 'creditSpread', label: 'Credit spread', line: 1.5, band: 1, low: true, fmt: pct2, rule: 'Calm < 1.50%', tip: 'BBB yield over Treasuries. Wider = stress.' },
+    { key: 'realYields', label: 'Real yields', line: 0, band: 2, low: true, fmt: pct2, rule: 'Easy ≤ 0% · Tight > 2%', tip: '10-year TIPS yield: borrowing cost after inflation.' },
+    { key: 'copperGold', label: 'Copper/gold', line: 0, band: 5, fmt: fixed(2), pos: (m) => m.changePct ?? m.changePct3mo, tip: 'Copper vs gold. Rising = growth mood.' },
+];
+
+function gauge(def, m, tone) {
+    const pos = def.pos ? def.pos(m || {}) : m?.value;
+    const s = Number.isFinite(m?.value) && Number.isFinite(pos) ? ((pos - def.line) / def.band) * (def.low ? -1 : 1) : NaN;
+    const rule = def.key === 'copperGold' && Number.isFinite(pos) ? `Green while rising · 1mo ${pctS(pos)}` : def.rule;
+    return { markKey: def.key, ...def, m, rule, s, tone };
+}
+
+function bullRows(fred) {
+    const c = fred?.checklist;
+    return c ? BULL.map((d) => gauge(d, c[d.key], c[d.key]?.bullish ? 'good' : 'bad')) : null;
+}
+
+function indicatorRows(fred) {
+    const ind = fred?.indicators;
+    if (!ind) return null;
+    const pe = valuationRow(fred);
+    const cape = !!fred.peIsCape;
+    return [
+        ...INDICATORS.map((d) => gauge(d, ind[d.key], statusTone(ind[d.key]?.status))),
+        gauge({ key: 'peRatio', markKey: pe.markKey, label: cape ? 'CAPE' : 'P/E', line: cape ? 17 : 20, band: cape ? 13 : 5, low: true, fmt: fixed(1),
+            rule: cape ? 'Avg ~17 · Tight > 30' : 'Fair ~20 · Tight > 25', tip: pe.tooltip }, pe.metric, statusTone(pe.status)),
+    ];
+}
+
+const NEAR = 0.25; // a green dot this close to its line is about to flip: drawn as a ring
+
+function Gauge({ g }) {
+    const note = freshnessNote(g.m);
+    const v = g.m?.value;
+    const mark = useMark(g.markKey, v);
+    const x = Number.isFinite(g.s) ? Math.max(-2, Math.min(2, g.s)) * 25 : null; // two bands a side fill the half track
+    return (
+        <div className={`v2-g${x != null && g.s >= 0 && g.s < NEAR ? ' is-near' : ''}`} data-tone={note.tone === 'stale' ? 'caution' : Number.isFinite(v) ? g.tone : 'flat'}>
+            <span className="v2-g-label"><span className="tooltip-trigger" data-tooltip={`${g.tip}${note.suffix}`}>{g.label}</span></span>
+            <span className="v2-g-track">
+                {x != null && <><i style={{ [x < 0 ? 'right' : 'left']: '50%', width: `${Math.abs(x)}%` }} /><b style={{ left: `${50 + x}%` }} /></>}
+            </span>
+            <Delta mark={note.tone === 'fresh' ? mark : null} format={g.fmt} chartKey={g.markKey} raw={v} className="v2-g-val">
+                {Number.isFinite(v) ? g.fmt(v) : 'N/A'}
+            </Delta>
+            <span className="v2-g-rule">{g.rule}</span>
+        </div>
+    );
+}
+
+function Board({ rows }) {
+    if (!rows) return <div className="card"><Skeleton count={6} /></div>;
+    const live = rows.filter((r) => Number.isFinite(r.m?.value));
+    const good = live.filter((r) => r.tone === 'good');
+    const sorted = [...rows].sort((a, b) => (Number.isFinite(a.s) ? a.s : Infinity) - (Number.isFinite(b.s) ? b.s : Infinity));
+    return (
+        <div className="card">
+            <div className="card-header">
+                <span className="v2-score" title={`${good.length} of ${live.length} green`}>
+                    <span className="v2-score-bar">{[...sorted].reverse().filter((r) => live.includes(r)).map((r) => <i key={r.key} data-tone={r.tone} />)}</span>
+                    {good.length}/{live.length}
+                </span>
+            </div>
+            <div className="v2-gauges">{sorted.map((g) => <Gauge key={g.key} g={g} />)}</div>
+        </div>
+    );
+}
+
+/** Global markets: the same rows as ExtraMarketsGrid. `chart` is the history-sheet key; `mark` rows also get fresh-print marks. */
+const MARKETS = [
+    { t: 'GOLD', label: 'Gold', pick: (e) => e.commodities?.gc, fmt: usd, chart: 'gold' },
+    { t: 'BTC', label: 'Bitcoin', pick: (e) => e.commodities?.btc, fmt: (v) => `$${Math.round(v).toLocaleString('en-US')}`, chart: 'btc' },
+    { t: 'CL', label: 'Oil', pick: (e) => e.commodities?.cl, fmt: usd, chart: 'cl' },
+    { t: 'TNX', label: '10Y yield', pick: (e) => e.rates?.tnx, fmt: pct2, rate: true, chart: 'tnx' },
+    { t: 'T2Y', label: '2Y yield', pick: (e) => e.rates?.t2y, fmt: pct2, rate: true, chart: 't2y' },
+    { t: 'DXY', label: 'Dollar index', pick: (e) => e.fx?.dxy, fmt: fixed(2), chart: 'dxy' },
+    { t: 'USD/CAD', label: 'USD/CAD', pick: (e) => e.fx?.usdcad, fmt: fixed(4), chart: 'usdcad' },
+    { t: 'USD/INR', label: 'USD/INR', pick: (e) => e.fx?.usdinr, fmt: fixed(2), chart: 'usdinr' },
+    { t: 'USD/BDT', label: 'USD/BDT', pick: (e) => e.fx?.usdbdt, fmt: fixed(2), chart: 'usdbdt' },
+    { t: 'CAD/BDT', label: 'CAD/BDT', pick: (e) => e.fx?.cadbdt, fmt: fixed(2), chart: 'cadbdt' },
+    { t: 'INR/BDT', label: 'INR/BDT', pick: (e) => e.fx?.inrbdt, fmt: fixed(4), chart: 'inrbdt' },
+    { t: 'CAD/INR', label: 'CAD/INR', pick: (e) => e.fx?.cadinr, fmt: fixed(2), chart: 'cadinr' },
+    { t: 'MORT30', label: '30Y mortgage', pick: (e) => e.rates?.mortgageRate, fmt: pct2, rate: true, chart: 'mortgageRate', mark: true, home: true },
+    { t: 'MTGPMT', label: 'Mortgage payment', pick: (e) => e.realEstate?.mortgagePayment, fmt: (v) => `$${Math.round(v).toLocaleString('en-US')}`, chart: 'mortgagePayment', mark: true, home: true },
+    { t: 'ZRI', label: 'Rent', pick: (e) => e.realEstate?.rentIndex, fmt: (v) => `$${Math.round(v).toLocaleString('en-US')}`, chart: 'rentIndex', mark: true, home: true },
+    { t: 'ATNHPI', label: 'House prices', pick: (e) => e.realEstate?.atnhpi, fmt: fixed(2), chart: 'atnhpi', mark: true, home: true },
+];
+
+function MarketSpark({ history }) {
+    const v = (history || []).slice(-63).map((p) => p?.price ?? p?.value).filter(Number.isFinite);
+    if (v.length < 2) return <span className="v2-mk-spark" />;
+    const lo = Math.min(...v), k = Math.max(...v) - lo || 1;
+    const pts = v.map((y, i) => `${((i / (v.length - 1)) * 80).toFixed(1)},${(22 - ((y - lo) / k) * 20).toFixed(1)}`).join(' ');
+    return (
+        <svg className={`v2-mk-spark ${v[v.length - 1] >= v[0] ? 'is-up' : 'is-down'}`} viewBox="0 0 80 24" preserveAspectRatio="none" aria-hidden="true">
+            <polyline points={pts} />
+        </svg>
+    );
+}
+
+function MarketRow({ r }) {
+    const mark = useMark(r.mark ? r.chart : undefined, r.d.current);
+    const heat = r.z == null ? 0 : Math.min(r.z, MOVE_CAP) / MOVE_CAP;
+    return (
+        <div className={`v2-mk${r.z == null ? ' is-quiet' : ''}${r.z >= BIG_Z ? ' is-big' : ''}`} data-dir={r.win?.dir ?? 0} style={{ '--heat': heat }}
+            title={r.d.stale ? 'Live sources failed: last good value' : undefined}>
+            <span className="v2-mk-label">{r.label}</span>
+            {r.z != null && <MarketSpark history={r.d.history} />}
+            <Delta mark={mark} format={r.fmt} chartKey={r.chart} raw={r.d.current} className={`v2-mk-val${r.d.stale ? ' tone-caution' : ''}`}>
+                {Number.isFinite(r.d.current) ? r.fmt(r.d.current) : 'N/A'}
+            </Delta>
+            {r.win && <span className="v2-mk-chg">{r.win.text}{r.home && r.win.tag && <small>{r.win.tag}</small>}</span>}
+            {r.z != null && <span className="v2-mv-bar"><i style={{ [r.win.dir < 0 ? 'right' : 'left']: '50%', width: `${heat * 50}%` }} /></span>}
+            {r.z != null && <span className="v2-mk-x">{r.z.toFixed(1)}×</span>}
+        </div>
+    );
+}
+
+/** Daily markets ranked by their last move against their own normal day (σ, as What moved); slow prints and once-a-day FX after, quiet. */
+function Markets({ extra, loading }) {
+    if (loading) return <div className="card"><Skeleton count={7} /></div>;
+    if (!extra || extra.error) return null;
+    const rows = MARKETS.map((r) => {
+        const d = r.pick(extra);
+        if (!d) return null;
+        const win = marketWindow(d, { rate: r.rate, ticker: r.t });
+        const sigma = win && !r.home ? sigmaOf((d.history || []).map((p) => p?.price ?? p?.value), r.rate ? 'bp' : 'pct') : null;
+        // z from the shown change, so the bar always agrees with the number beside it
+        return { ...r, d, win, z: sigma ? Math.abs(parseFloat(win.text.replace('−', '-'))) / sigma : null };
+    }).filter(Boolean);
+    const movers = rows.filter((r) => r.z != null).sort((a, b) => b.z - a.z);
+    const home = rows.filter((r) => r.home);
+    const rates = rows.filter((r) => !r.home && r.z == null);
+    return (
+        <div className="card">
+            <div className="card-header" />
+            <div className="v2-mkt">
+                <div>
+                    <div className="v2-mkt-head"><span>Biggest move first</span><span>× a normal day</span></div>
+                    <div className="v2-mk-list">{movers.map((r) => <MarketRow key={r.t} r={r} />)}</div>
+                </div>
+                <div className="v2-mkt-side">
+                    {rates.length > 0 && <div><div className="v2-mkt-head">Daily rates</div><div className="v2-mk-list">{rates.map((r) => <MarketRow key={r.t} r={r} />)}</div></div>}
+                    {home.length > 0 && <div className="v2-mkt-home"><div className="v2-mkt-head">Home</div><div className="v2-mk-list">{home.map((r) => <MarketRow key={r.t} r={r} />)}</div></div>}
+                </div>
             </div>
         </div>
     );
@@ -540,11 +716,11 @@ export default function DashboardV2() {
 
                     <Section id="economy" title="Economy">
                         <div className="v2-grid">
-                            <Slot jump="Bull checklist" title="Bull checklist" span={7} saved={saved('fred')} more>
-                                <ErrorBoundary resetKey={refreshTick}><BullChecklist fred={fred} loading={pending.fred && !fred} /></ErrorBoundary>
+                            <Slot jump="Bull checklist" title="Bull checklist" span={6} saved={saved('fred')} more>
+                                <ErrorBoundary resetKey={refreshTick}><Board rows={bullRows(fred)} /></ErrorBoundary>
                             </Slot>
-                            <Slot jump="Economy" title="Indicators" span={5} saved={saved('fred')} more>
-                                <ErrorBoundary resetKey={refreshTick}><EconomicIndicatorGrid fred={fred} loading={pending.fred && !fred} statusColor={statusColor} /></ErrorBoundary>
+                            <Slot jump="Economy" title="Indicators" span={6} saved={saved('fred')} more>
+                                <ErrorBoundary resetKey={refreshTick}><Board rows={indicatorRows(fred)} /></ErrorBoundary>
                             </Slot>
                             <div className={`v2-trio span-12 ${trioOpen ? 'is-open' : 'is-calm'}`} data-cached={saved('fred')}>
                                 <FredTile fred={fred} metric="yieldCurve" title="Yield curve" jump="Yield curve" markKey="yieldCurve" refreshTick={refreshTick}
@@ -567,7 +743,7 @@ export default function DashboardV2() {
                     <Section id="world" title="World">
                         <div className="v2-grid">
                             <Slot jump="Markets" title="Global markets" span={12} saved={saved('extra')} more>
-                                <ErrorBoundary resetKey={refreshTick}><ExtraMarketsGrid data={extra} loading={pending.extra && !extra} /></ErrorBoundary>
+                                <ErrorBoundary resetKey={refreshTick}><Markets extra={extra} loading={pending.extra && !extra} /></ErrorBoundary>
                             </Slot>
                         </div>
                     </Section>
@@ -603,7 +779,7 @@ export default function DashboardV2() {
 }
 
 // The same word → colour map v1 hands the economic indicator grid.
-function statusColor(s) {
-    return ['safe', 'healthy', 'strong', 'tight', 'easy', 'rising'].includes(s) ? 'stat-positive'
-        : ['danger', 'weak', 'stressed', 'restrictive', 'falling'].includes(s) ? 'stat-negative' : 'stat-neutral';
+function statusTone(s) {
+    return ['safe', 'healthy', 'strong', 'tight', 'easy', 'rising'].includes(s) ? 'good'
+        : ['danger', 'weak', 'stressed', 'restrictive', 'falling'].includes(s) ? 'bad' : 'flat';
 }
