@@ -914,11 +914,11 @@ function Signals({ sheets, spy, loading }) {
             viz: Number.isFinite(nsb?.drawdownPct) ? <DropMeter pct={nsb.drawdownPct} /> : null,
         },
         {
-            key: 'fr', label: 'FrontRunner', tip: 'Hedges with VIX when RSIs run hot; buys deep tech dips. Tap for Catalyst Radar.',
+            key: 'fr', label: 'FrontRunner', tip: 'Hedges with VIX when RSIs run hot; buys deep tech dips. Tap for the NUTS radar (a different algo).',
             href: 'https://nuts-radar.vercel.app',
             alert: !loading && fr && !fr.startsWith('BIL'),
             value: fr || na,
-            sub: staleNote(sheets, ['FrontRunner']) || <span className="v2-muted">{fr ? `${FR_MODE(fr)} · ` : ''}Radar ↗</span>,
+            sub: staleNote(sheets, ['FrontRunner']) || <span className="v2-muted">{fr ? `${FR_MODE(fr)} · ` : ''}NUTS radar ↗</span>,
             viz: frRsi ? <RsiStrip rsi={frRsi} pick={fr} /> : null,
         },
         {
