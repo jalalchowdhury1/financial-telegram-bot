@@ -60,10 +60,21 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/setup-python@v6
+      # 30 Oct 2026: setup-python hung 10 min (normally 3 s) and the job timeout cancelled the
+      # whole check. Cap it at 3 min, then try once more WITHOUT the pip cache (the likely hang).
+      - id: py
+        uses: actions/setup-python@v6
+        timeout-minutes: 3
+        continue-on-error: true
         with:
           python-version: '3.11'
           cache: 'pip'
+
+      - if: steps.py.outcome != 'success'
+        uses: actions/setup-python@v6
+        timeout-minutes: 3
+        with:
+          python-version: '3.11'
 
       - name: Install deps
         run: pip install -r requirements-dev.txt
@@ -169,6 +180,14 @@ jobs:
           else
             echo "No auto-remediable miss; leaving for the weekly agent / owner."
           fi
+
+      - name: Job died → Telegram
+        # A timeout/cancel used to end this check silently (30 Oct 2026). Inline curl like keepalive.yml.
+        if: failure() || cancelled()
+        run: |
+          curl -s -m 20 -X POST "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage" \
+            --data-urlencode chat_id="${TELEGRAM_CHAT_ID}" \
+            --data-urlencode text="⚠️ financial-telegram-bot health check DIED (${{ job.status }}): ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
       # Durable health history = these per-run artifacts (the weekly self-improve agent
       # pulls the recent ones). We deliberately do NOT commit to main: branch protection

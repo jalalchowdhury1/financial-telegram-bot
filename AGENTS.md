@@ -2037,6 +2037,8 @@ back, restore them from git history (`git log --diff-filter=D -- .github/workflo
 - `health-check.yml` has a `gate` job: the 14:00 UTC cron backstop yields when a One Clock
   `workflow_dispatch` run already succeeded in the last 20 h (both used to run at 10:00 EDT and
   both alerted on a bad day). Manual runs are never gated.
+- `health-check.yml` setup-python is capped at 3 min with one no-cache retry, and a `failure() || cancelled()`
+  step pings Telegram (30 Oct 2026: a 10-min setup hang cancelled the check silently). `test_health_check_cannot_die_silently` guards it.
 
 ## Defensive trigger: buttons instead of "Reply DONE" (11 Sep 2026)
 

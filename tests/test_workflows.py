@@ -233,3 +233,14 @@ def test_lambda_smoke_fails_when_no_gateway_answers():
     run = next(s["run"] for s in _steps(_load("deploy-lambda.yml"), "deploy") if "Smoke test" in s.get("name", ""))
     block = run.split('if [ "$tested" -eq 0 ]; then', 1)[1].split("else", 1)[0]
     assert "hard_fail=1" in block and "::error::" in block
+
+
+def test_health_check_cannot_die_silently():
+    # 30 Oct 2026 (run 41063809893): setup-python hung 10 min, the job timeout cancelled the
+    # whole check and nobody heard. Setup is capped with a retry, and a death pings Telegram.
+    steps = _steps(_load("health-check.yml"), "health-check")
+    setups = [s for s in steps if "setup-python" in s.get("uses", "")]
+    assert len(setups) == 2 and all(s.get("timeout-minutes", 99) <= 3 for s in setups)
+    assert setups[0].get("continue-on-error") and "steps.py.outcome" in setups[1]["if"]
+    dead = [s for s in steps if s.get("if") == "failure() || cancelled()"]
+    assert len(dead) == 1 and "api.telegram.org" in dead[0]["run"]
