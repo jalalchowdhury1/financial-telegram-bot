@@ -2708,6 +2708,8 @@ html:not(:has(.jump-fab)) .back-pill {
   bottom: -15px; /* 17 + 12 + 15 = 44 */
 }
 .tf-btn-spy::before { left: -2px; right: -2px; bottom: -12px; } /* 20 + 12 + 12 = 44 */
+/* The row's last band stops at its own edge: 2px past the end gave the full-width SPY view buttons a 2px sideways scroll. */
+.tf-btn-spy:last-child::before { right: 0; }
 /* On the phone the tappable hero number's box hangs ~4px into that band (Yield curve, Profit margin
    cards: 8px gap, 12px reach). Its own pixels must open the 90-day chart, not switch the timeframe,
    so it stacks above the band. The card (backdrop-filter) is the stacking context: the lift never
