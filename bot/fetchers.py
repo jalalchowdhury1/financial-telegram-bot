@@ -1378,8 +1378,22 @@ def fetch_market_extra(fred_api_key: str,
             id(fr_usdcad): 'Frankfurter', id(fr_usdinr): 'Frankfurter',
             id(gold_spot): 'gold-api', id(btc_candles): 'Coinbase', id(btc_coinbase): 'Coinbase',
         }
-        for c in candidates:
-            if c and c.get('current') is not None:
+        # The newest-dated print wins; ties (and undated spots, which rank after any dated
+        # one) keep the waterfall order. 1 Nov 2026: Polygon's Oct 31 BTC bar outranked
+        # CNBC's live Nov 1 quote. FX/gold/oil trade ~24/5, so their weekend-dated print
+        # (CNBC dates Friday's settle Saturday) ranks as Friday's; BTC trades 24/7.
+        def rank(c: Dict) -> str:
+            d = c.get('lastDate') or ''
+            if d and key != 'btc':
+                day = datetime.strptime(d, '%Y-%m-%d')
+                if day.weekday() >= 5:
+                    d = (day - timedelta(days=day.weekday() - 4)).strftime('%Y-%m-%d')
+            return d
+
+        live = [c for c in candidates if c and c.get('current') is not None]
+        newest = max((rank(c) for c in live), default='')
+        for c in live:
+            if rank(c) == newest:
                 source_log[key] = labels.get(id(c), 'ER-API')
                 return c
         source_log[key] = 'null'

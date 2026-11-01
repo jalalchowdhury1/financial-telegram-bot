@@ -1,4 +1,4 @@
-import { polygonDaily, erApiRates, frankfurterRates, fawazRates, dxyFromUsdRates, coinbaseSpot, coingeckoPrice, krakenSpot, fredObservations, dailyChange, goldApiSpot } from '../../../lib/sources';
+import { polygonDaily, cnbcQuotes, erApiRates, frankfurterRates, fawazRates, dxyFromUsdRates, coinbaseSpot, coingeckoPrice, krakenSpot, fredObservations, dailyChange, goldApiSpot } from '../../../lib/sources';
 import { serve } from '../../../lib/store';
 import { faultsFrom, gate } from '../../../lib/faults';
 import { assessmentAuthorized } from '../../../lib/claudeAssessment';
@@ -41,6 +41,20 @@ async function fredMetric(seriesId, apiKey) {
 }
 const polyMetric = (ticker, key) => async () => toMetric(await polygonDaily(ticker, key, { years: 2, revalidate: 1800 }));
 
+/**
+ * A dated live quote beats an older bar for the same instrument: 1 Nov 2026 (a Sunday) the
+ * card showed Polygon's Oct 31 BTC bar while BTC traded on (FX + gold the same on weekdays:
+ * Polygon's free tier ends a session back). The quote becomes its own dated bar, so the
+ * history and the change since the last close stay. FX/gold trade ~24/5: a weekend-dated
+ * print is Friday's close, never a new bar; BTC trades 24/7.
+ */
+export function withQuote(p, q, { allWeek = false } = {}) {
+    if (!p || !q || !Number.isFinite(q.price) || !/^\d{4}-\d{2}-\d{2}$/.test(q.date || '') || q.date <= (p.lastDate || '')) return null;
+    if (!allWeek && [0, 6].includes(new Date(`${q.date}T12:00:00Z`).getUTCDay())) return null;
+    const history = [...p.history, { date: q.date, price: q.price }].slice(-HIST);
+    return { current: q.price, dailyChange: dailyChange(q.price, p.current), history, lastDate: q.date };
+}
+
 const getPath = (o, p) => p.split('.').reduce((a, k) => (a ? a[k] : undefined), o);
 const setPath = (o, p, v) => { const ks = p.split('.'); const last = ks.pop(); let cur = o; for (const k of ks) cur = cur[k] ??= {}; cur[last] = v; };
 
@@ -60,12 +74,19 @@ export function staleIfOld(metric, days, now = Date.now()) {
     return { ...metric, stale: true, savedAt: `${metric.lastDate}T12:00:00Z` };
 }
 
-async function directMetric(path, { apiKey, poly, er, faults = new Set(), tiers }) {
+async function directMetric(path, { apiKey, poly, er, faults = new Set(), tiers, liveQuotes }) {
     const tier = (name, fn) => safe(() => gate(name, faults, fn));
     const cnbc = (name, fn) => safe(() => gate('cnbc', faults, () => gate(name, faults, fn)));
+    // Polygon's bars, topped by a newer dated CNBC quote (one batched call per request).
+    const polyLive = async (ticker, sym, opts) => {
+        const p = await safe(polyMetric(ticker, poly)); if (!p) return null;
+        const q = (await safe(() => gate('cnbc', faults, liveQuotes)))?.[sym];
+        const m = withQuote(p, q && { price: q.price, date: q.asOf }, opts);
+        return m ? { metric: m, src: 'Polygon + CNBC quote' } : { metric: p, src: 'Polygon' };
+    };
     switch (path) {
-        case 'fx.usdcad': { if (poly) { const p = await safe(polyMetric('C:USDCAD', poly)); if (p) return { metric: p, src: 'Polygon' }; } return er?.CAD != null ? { metric: flat(er.CAD), src: 'ER-API' } : null; }
-        case 'fx.usdinr': { if (poly) { const p = await safe(polyMetric('C:USDINR', poly)); if (p) return { metric: p, src: 'Polygon' }; } return er?.INR != null ? { metric: flat(er.INR), src: 'ER-API' } : null; }
+        case 'fx.usdcad': { if (poly) { const p = await polyLive('C:USDCAD', 'CAD='); if (p) return p; } return er?.CAD != null ? { metric: flat(er.CAD), src: 'ER-API' } : null; }
+        case 'fx.usdinr': { if (poly) { const p = await polyLive('C:USDINR', 'INR='); if (p) return p; } return er?.INR != null ? { metric: flat(er.INR), src: 'ER-API' } : null; }
         case 'fx.usdbdt': {
             if (er?.BDT != null) return { metric: flat(er.BDT), src: 'ER-API' };
             // Frankfurter (usdRates' 2nd tier) has no BDT, so a dead ER-API used to blank this.
@@ -78,7 +99,12 @@ async function directMetric(path, { apiKey, poly, er, faults = new Set(), tiers 
             if (faults.has('dxy_computed')) return null;
             const d = dxyFromUsdRates(er); return d != null ? { metric: flat(d), src: 'computed (FX basket)' } : null;
         }
-        case 'commodities.gc': { const p = poly && await safe(polyMetric('C:XAUUSD', poly)); if (p) return { metric: p, src: 'Polygon' }; const g = await tier('gold_api', () => goldApiSpot('XAU')); return g ? { metric: flat(g.current), src: 'gold-api' } : null; }  // FRED's GOLDPMGBD228NLBM is discontinued
+        case 'commodities.gc': {  // FRED's GOLDPMGBD228NLBM is discontinued
+            const p = poly && await safe(polyMetric('C:XAUUSD', poly));
+            const g = await tier('gold_api', () => goldApiSpot('XAU'));  // spot, like Polygon's XAUUSD (CNBC's @GC.1 is the future)
+            if (p) { const m = withQuote(p, g && { price: g.current, date: g.asOf }); return m ? { metric: m, src: 'Polygon + gold-api' } : { metric: p, src: 'Polygon' }; }
+            return g ? { metric: flat(g.current), src: 'gold-api' } : null;
+        }
         case 'commodities.cl': {
             // CNBC first: FRED's DCOILWTICO runs days behind (live 2026-10-09 it held Oct 6's
             // $96.24 while WTI was $91.66) — FRED is last, and flagged stale when it lags.
@@ -86,7 +112,7 @@ async function directMetric(path, { apiKey, poly, er, faults = new Set(), tiers 
             const f = await safe(() => fredMetric('DCOILWTICO', apiKey)); return f ? { metric: staleIfOld(f, 3), src: 'FRED' } : null;
         }
         case 'commodities.btc': {
-            const p = poly && await safe(polyMetric('X:BTCUSD', poly)); if (p) return { metric: p, src: 'Polygon' };
+            const p = poly && await polyLive('X:BTCUSD', 'BTC.CB=', { allWeek: true }); if (p) return p;
             if (!faults.has('coinbase')) { const cb = await safe(() => coinbaseSpot('BTC-USD', { revalidate: 300 })); if (cb) return { metric: flat(cb.current), src: 'Coinbase' }; }
             if (!faults.has('coingecko')) { const cg = await safe(() => coingeckoPrice('bitcoin', { revalidate: 300 })); if (cg) return { metric: { current: cg.current, dailyChange: dailyChange(cg.current, cg.prevClose), history: [], lastDate: null }, src: 'CoinGecko' }; }
             if (!faults.has('kraken')) { const kr = await safe(() => krakenSpot('XBTUSD', { revalidate: 120 })); if (kr) return { metric: flat(kr.current), src: 'Kraken' }; }
@@ -209,7 +235,9 @@ export async function GET(request) {
         within(usdRates(faults), LAMBDA_TIMEOUT_MS),
         faults.has('lambda') ? null : lambdaExtra(messages),
     ]);
-    const ctx = { apiKey, poly, er, faults, tiers };
+    let quotes;
+    const liveQuotes = () => (quotes ??= cnbcQuotes(['CAD=', 'INR=', 'BTC.CB='], { revalidate: 300, timeout: 6000, tries: 1 }));
+    const ctx = { apiKey, poly, er, faults, tiers, liveQuotes };
 
     // Runs both paths uncached on every hit, so only with header x-assessment-secret (audit 25 Oct 2026).
     if (debug === 'compare' && assessmentAuthorized(request)) {

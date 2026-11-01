@@ -275,7 +275,8 @@ def test_cnbc_serves_gold_oil_fx_btc_with_history_when_yfinance_and_polygon_are_
 
 
 def test_cnbc_sits_below_polygon_but_above_spot(quiet_sleep):
-    out = _run_with({'_fetch_polygon_aggs': _slow(0, _metric(4400.0)),
+    # same date (Polygon's real bars are always dated): the waterfall order holds
+    out = _run_with({'_fetch_polygon_aggs': _slow(0, _hist_metric(4400.0, 4480.0)),
                      '_fetch_cnbc_metrics': _slow(0, {'@GC.1': _hist_metric(4404.3, 4481.5)})})
     assert out['_meta']['sourceLog']['gold'] == 'Polygon'
     out = _run_with({'_fetch_cnbc_metrics': _slow(0, {'@GC.1': _hist_metric(4404.3, 4481.5)}),
@@ -493,3 +494,56 @@ def test_fred_chain_fetches_series_concurrently(quiet_sleep):
         for c in ctxs:
             c.stop()
     assert elapsed < 2.0, f'took {elapsed:.1f}s -- FRED series are still fetched one at a time'
+
+
+def test_dated_live_quote_beats_an_older_bar(quiet_sleep):
+    """1 Nov 2026 (a Sunday) the dashboard showed BTC from Polygon's Oct 31 daily bar while
+    CNBC's BTC.CB= quote was live: Polygon outranked it in the waterfall. For one
+    instrument, the newest-dated candidate wins; ties keep the waterfall order."""
+    def dated(v, d):
+        return {'current': v, 'dailyChange': {'value': 0, 'pct': 0}, 'history': [{'date': d, 'price': v}], 'lastDate': d}
+
+    def poly(symbol, key, days=400):
+        return {'X:BTCUSD': dated(77423.98, '2026-10-31'), 'C:XAUUSD': dated(3874.0, '2026-10-30'),
+                'C:USDCAD': dated(1.397, '2026-10-30')}.get(symbol)
+
+    cnbc = {'BTC.CB=': dated(79100.0, '2026-11-01'), '@GC.1': dated(3880.0, '2026-10-30'),
+            'CAD=': dated(1.398, '2026-10-29')}
+    ctxs = _all_dead()
+    for c in ctxs:
+        c.start()
+    try:
+        with patch.object(fetchers, '_fetch_polygon_aggs', poly), \
+             patch.object(fetchers, '_fetch_cnbc_metrics', _slow(0, cnbc)):
+            out = fetch_market_extra('key', polygon_api_key='p')
+    finally:
+        for c in ctxs:
+            c.stop()
+    assert out['commodities']['btc']['current'] == 79100.0
+    assert out['commodities']['btc']['lastDate'] == '2026-11-01'
+    assert out['_meta']['sourceLog']['btc'] == 'CNBC'
+    # same date -> waterfall order (Polygon); an older CNBC print never wins
+    assert out['_meta']['sourceLog']['gold'] == 'Polygon'
+    assert out['_meta']['sourceLog']['usdcad'] == 'Polygon'
+
+
+def test_weekend_dated_fx_gold_print_does_not_outrank_fridays_bar(quiet_sleep):
+    """CNBC dates Friday's gold settle on Saturday (a flat phantom bar); FX/gold trade
+    ~24/5, so on a weekend Polygon's Friday bar keeps its waterfall place."""
+    def dated(v, d):
+        return {'current': v, 'dailyChange': {'value': 0, 'pct': 0}, 'history': [{'date': d, 'price': v}], 'lastDate': d}
+
+    def poly(symbol, key, days=400):
+        return {'C:XAUUSD': dated(3874.0, '2026-10-30')}.get(symbol)
+
+    ctxs = _all_dead()
+    for c in ctxs:
+        c.start()
+    try:
+        with patch.object(fetchers, '_fetch_polygon_aggs', poly), \
+             patch.object(fetchers, '_fetch_cnbc_metrics', _slow(0, {'@GC.1': dated(3880.0, '2026-10-31')})):
+            out = fetch_market_extra('key', polygon_api_key='p')
+    finally:
+        for c in ctxs:
+            c.stop()
+    assert out['_meta']['sourceLog']['gold'] == 'Polygon'

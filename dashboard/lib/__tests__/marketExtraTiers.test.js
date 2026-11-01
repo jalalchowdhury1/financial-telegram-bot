@@ -52,7 +52,11 @@ const PMMS = 'date,pmms30,pmms30p,pmms15,pmms15p,pmms51,pmms51p,pmms51m,pmms51sp
 const QUOTES = { QuickQuoteResult: { QuickQuote: [
     { symbol: '@CL.1', last: '91.66', change: '0.17', change_pct: '0.1858', last_time: '2026-10-09T16:59:58.000-0400' },
     { symbol: '.DXY', last: '102.231', change: '0.00', change_pct: '0.00', last_time: '2026-10-09' },
+    { symbol: 'CAD=', last: '1.372', change: '0.007', change_pct: '0.5', last_time: '2026-10-09T15:59:00.000-0400' },
+    { symbol: 'INR=', last: '84.2', change: '0.15', change_pct: '0.2', last_time: '2026-10-09T15:59:00.000-0400' },
+    { symbol: 'BTC.CB=', last: '62500', change: '1500', change_pct: '2.4', last_time: '2026-10-09T15:59:00.000-0400' },
 ] } };
+const POLY = { 'X:BTCUSD': [60000, 61000], 'C:XAUUSD': [2600, 2640], 'C:USDCAD': [1.36, 1.365], 'C:USDINR': [84, 84.05] };
 const bars = (rows) => ({ barData: { priceBars: rows.map(([d, c]) => ({ tradeTime: `${d.replace(/-/g, '')}000000`, close: String(c) })) } });
 const CL_BARS = bars([['2026-10-07', 88.28], ['2026-10-08', 91.49]]);          // lags the quote a session
 const DXY_BARS = bars([['2026-10-08', 102.115], ['2026-10-09', 102.231]]);
@@ -80,6 +84,11 @@ jest.mock('../fetcher', () => ({
         if (hit(url, 'coinbase')) { failIf(url, 'btc'); return { data: { amount: '62000' } }; }
         if (hit(url, 'coingecko')) { failIf(url, 'btc'); return { bitcoin: { usd: 62000, usd_24h_change: 1 } }; }
         if (hit(url, 'kraken')) { failIf(url, 'btc'); return { result: { XXBTZUSD: { c: ['62000'] } } }; }
+        if (hit(url, 'api.polygon.io')) { // daily bars ending YESTERDAY (Polygon's free tier lags a session)
+            failIf(url, 'polygon');
+            const t = decodeURIComponent(/ticker\/([^/]+)\//.exec(url)[1]);
+            return { status: 'OK', results: POLY[t].map((c, i) => ({ t: Date.parse(`2026-10-0${7 + i}T00:00:00Z`), c })) };
+        }
         if (hit(url, 'quote.cnbc.com')) { failIf(url, 'cnbc'); return QUOTES; }
         if (hit(url, 'ts-api.cnbc.com')) { failIf(url, 'cnbc'); return url.includes('DXY') ? DXY_BARS : CL_BARS; }
         throw new Error(`unexpected ${url}`);
@@ -289,6 +298,28 @@ describe('/api/market-extra direct tiers (Lambda down)', () => {
         await flush();
         expect(fs.__mem.size).toBe(0);
         expect(kvMod.defaultKv.set).not.toHaveBeenCalled();
+    });
+});
+
+describe('a dated live quote beats an older Polygon bar (audit A3)', () => {
+    // 1 Nov 2026 (a Sunday) the card showed Polygon's Oct 31 BTC bar while BTC traded on.
+    test('Polygon bar dated yesterday + a quote dated today -> the quote, dated today, on the bars', async () => {
+        process.env.POLYGON_KEY = 'pk';
+        const b = await get('?_fail=lambda');
+        expect(b.commodities.btc).toMatchObject({ current: 62500, lastDate: '2026-10-09' });
+        expect(b.commodities.btc.history.slice(-2)).toEqual([{ date: '2026-10-08', price: 61000 }, { date: '2026-10-09', price: 62500 }]);
+        expect(b.commodities.btc.dailyChange.value).toBeCloseTo(1500, 6);
+        expect(b.commodities.gc).toMatchObject({ current: 2650.5, lastDate: '2026-10-09' });
+        expect(b.fx.usdcad).toMatchObject({ current: 1.372, lastDate: '2026-10-09' });
+        expect(b.fx.usdinr).toMatchObject({ current: 84.2, lastDate: '2026-10-09' });
+    });
+
+    test('no newer quote -> the Polygon bar, still dated by its own day', async () => {
+        process.env.POLYGON_KEY = 'pk';
+        const b = await get('?_fail=lambda,cnbc,gold_api');
+        expect(b.commodities.btc).toMatchObject({ current: 61000, lastDate: '2026-10-08' });
+        expect(b.commodities.gc).toMatchObject({ current: 2640, lastDate: '2026-10-08' });
+        expect(b._meta.sourceLog).toMatchObject({ btc: 'Polygon', gc: 'Polygon', usdcad: 'Polygon' });
     });
 });
 
