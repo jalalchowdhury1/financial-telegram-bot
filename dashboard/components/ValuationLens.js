@@ -142,7 +142,7 @@ export default function ValuationLens({ lens, spy, tf, onTf, peNow, chip }) {
     return (
         <div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 8px', marginBottom: '8px', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'flex', flexWrap: 'nowrap', gap: '4px', overflowX: 'auto', maxWidth: '100%' }}>
+                <div style={{ display: 'flex', flexWrap: 'nowrap', gap: '4px', overflowX: 'auto', overflowY: 'hidden', maxWidth: '100%' }}>
                     {TF_KEYS.map((k) => (
                         <button key={k} className="tf-btn tf-btn-spy" onClick={() => { onTf(k); setHover(null); }} disabled={!usable.includes(k)}
                             title={usable.includes(k) ? undefined : 'Not enough history for this view'}

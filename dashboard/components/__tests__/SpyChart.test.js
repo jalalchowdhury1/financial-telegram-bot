@@ -132,3 +132,15 @@ test('📅 picks any from / to dates; a range with no trading days says so and k
     fireEvent.click(screen.getByRole('button', { name: '1Y' })); // a tab closes the picker
     expect(screen.queryByLabelText('From')).toBeNull();
 });
+
+test('the chip rows never slide up or down: one scroll over them hid the lens buttons (1 Nov 2026)', async () => {
+    // each chip's tap band sits 12px below it, so a sideways-scrolling row is taller inside than out
+    const fwd = { from: '2026-01-02', to: '2026-09-18', t: [0, 259], v: [22, 19], a5: [19.8, 19.8], a10: [19.1, 19.1] };
+    global.fetch = jest.fn((url) => Promise.resolve(url === '/history/fwdPE.json' ? { ok: true, json: async () => fwd } : { ok: false }));
+    window.localStorage.setItem('ftb:lens:spy', 'Fwd P/E');
+    render(<SpyChart chartHistory={bars(302, 600)} current={630} lenses={{ peNow: null }} />);
+    expect(screen.getByRole('tablist', { name: 'Chart' }).style.overflowY).toBe('hidden');
+    await waitFor(() => expect(screen.getByRole('button', { name: '1Y' }).parentElement.style.overflowY).toBe('hidden')); // the lens's own row
+    fireEvent.click(screen.getByRole('tab', { name: 'Price' }));
+    expect(screen.getByRole('button', { name: '1Y' }).parentElement.style.overflowY).toBe('hidden');
+});

@@ -153,8 +153,10 @@ export default function SpyChart({ chartHistory, recessions = [], current = null
     const onLeave = (e) => { if (e.pointerType === 'mouse') setHover(null); };
     const fmtPx = (v) => (v == null ? '—' : isIndex ? Math.round(v).toLocaleString('en-US') : `$${v.toFixed(2)}`);
     const pickLens = (l) => { setLens(l); setHover(null); try { window.localStorage.setItem(LENS_KEY, l); } catch { /* not remembered */ } };
+    // overflowY hidden on the chip rows: each chip's tap band (.tf-btn::before) sits 12px below it, so a sideways row was
+    // 12px taller inside than out and one scroll over it slid the chips out of sight (1 Nov 2026, "i can't see the buttons").
     const lensRow = lenses && (
-        <div role="tablist" aria-label="Chart" style={{ display: 'flex', flexWrap: 'nowrap', gap: '4px', overflowX: 'auto', marginBottom: '8px' }}>
+        <div role="tablist" aria-label="Chart" style={{ display: 'flex', flexWrap: 'nowrap', gap: '4px', overflowX: 'auto', overflowY: 'hidden', marginBottom: '8px' }}>
             {LENSES.map((l) => (
                 <button key={l} role="tab" aria-selected={l === lens} className="tf-btn tf-btn-spy" onClick={() => pickLens(l)} style={chip(l === lens)}>{l}</button>
             ))}
@@ -171,7 +173,7 @@ export default function SpyChart({ chartHistory, recessions = [], current = null
             {/* Timeframe selector */}
             {/* The chips stay one row (sideways scroll if ever too narrow); the return label drops below on a phone. */}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 8px', marginBottom: '8px', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'flex', flexWrap: 'nowrap', gap: '4px', overflowX: 'auto', maxWidth: '100%' }}>
+                <div style={{ display: 'flex', flexWrap: 'nowrap', gap: '4px', overflowX: 'auto', overflowY: 'hidden', maxWidth: '100%' }}>
                     {TF_KEYS.map(tf => (
                         <button key={tf} className="tf-btn tf-btn-spy" onClick={() => pick(tf)} disabled={!usable.includes(tf)}
                             title={usable.includes(tf) ? undefined : 'Not enough history from this source'}
