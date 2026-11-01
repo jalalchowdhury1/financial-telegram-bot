@@ -322,7 +322,16 @@ behave differently, it gets a v2-only prop (`race` on FactorRow, `asCards` on `p
     and the short "Author's Note" editions 2025-06-06, 2026-06-18).
   - `/api/fwd-pe`: KV `ftb:fwdpe` {rows, seen, checkedAt}; looks at FactSet at most every 3 h and only once the
     newest is 5+ days old, newest day first, ≤ 25 s (`PROBE_BUDGET_MS`), 10 s a PDF (`freshnessTimeout.test.js`
-    keeps `/api/freshness` waiting longer). PDF text = `unpdf` (pinned 1.6.2). Fault gates `fwdpe_http`, `fwdpe_kv`.
+    keeps `/api/freshness` waiting longer). PDF text = `unpdf` (pinned 1.6.2). Fault gates `fwdpe_http`, `fwdpe_blog`,
+    `fwdpe_kv`. Backup layers (1 Nov 2026, his "layers of backups like the rest"): PDF → FactSet's blog (the
+    earnings RSS `insight.factset.com/topic/earnings/rss.xml`; each Friday post prints the same sentence and numbers,
+    a Monday post retells Friday's, so a post is keyed to its last Wed–Fri) → KV → this instance's /tmp copy
+    (`fwd-pe` last-good) → the bake. A blog row counts as `seen` too, so freshness stays green while the blog carries
+    it. One provider (FactSet) under both: WSJ's P/E table is off limits (auto-mode said no to its data endpoint).
+  - Lens look (1 Nov 2026, "make it better"): y ticks on round numbers (1/2/5 × 10ⁿ, ≤ 6), idle header
+    `16.0x → 18.4x` over the window, a dotted line at today's level back to the "Lowest since" day, a tap shows
+    `SPY +x% in 6M` after that day (`since` inside the last 6M), and the legend says `· est. since Oct 30` in amber
+    once FactSet's newest report is > 9 days older than SPY's last close.
 - **Young Lead combo** (1 Nov 2026, his "add it as young"): `pf` Fwd selloff + rates = `pt` with FactSet's forward
   P/E, a leg LeadCombos builds itself (`loadFwd` rows → `fwdDaily` with SPY; no /history file). 7 for 7 up 6M later
   since 2011, but chance-level (p ≈ 0.2), so `young`: a tag on the card, its proof, the top line only while it fires,

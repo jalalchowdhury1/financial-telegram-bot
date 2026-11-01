@@ -5,12 +5,14 @@
  *       rows = reports newer than the bake (the SPY chart joins them on); latest = the newest of bake + rows;
  *       seen = the newest report found, even one that would not parse (/api/freshness grades both).
  *
- * Never 5xx: with FactSet or KV down it answers with what it has (the bake at worst). The work and the
- * KV list live in lib/fwdPe.js resolveFwdPe. Fault gates: fwdpe_http, fwdpe_kv.
+ * Never 5xx: with FactSet or KV down it answers with what it has (the bake at worst). Layers, the work and the
+ * KV list live in lib/fwdPe.js resolveFwdPe: PDF → FactSet's blog → KV → this instance's /tmp copy → the bake.
+ * Fault gates: fwdpe_http, fwdpe_blog, fwdpe_kv.
  */
 import { faultsFrom } from '../../../lib/faults';
 import { cacheHeaders } from '../../../lib/cdn';
 import { defaultKv } from '../../../lib/kv';
+import { saveLastGood, loadLastGood } from '../../../lib/store';
 import { etParts } from '../../../lib/marketClock';
 import { resolveFwdPe, decodeFwd } from '../../../lib/fwdPe';
 import baked from '../../../public/history/fwdPE.json';
@@ -35,12 +37,20 @@ async function pdfText(bytes) {
     return text;
 }
 
+async function fetchText(url) {
+    const res = await fetch(url, { cache: 'no-store', headers: { 'user-agent': UA }, signal: AbortSignal.timeout(10000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.text();
+}
+
+const lastGood = { load: () => loadLastGood('fwd-pe')?.data || null, save: (doc) => saveLastGood('fwd-pe', doc) };
+
 export async function GET(request) {
     request.headers.get('user-agent');
     const faults = faultsFrom(request);
     const now = Date.now();
     const { rows, seen, checkedAt, messages } = await resolveFwdPe({
-        fetchPdf, pdfText, kv: defaultKv, bakedTo: baked.to, today: etParts(now).date, now, faults,
+        fetchPdf, pdfText, fetchText, kv: defaultKv, lastGood, bakedTo: baked.to, today: etParts(now).date, now, faults,
     });
     const body = {
         rows,

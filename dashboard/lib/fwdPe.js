@@ -100,22 +100,57 @@ export const FWD_KV_KEY = 'ftb:fwdpe';
 export const PROBE_GAP_MS = 3 * 3600e3;
 export const PROBE_BUDGET_MS = 25000; // no new FactSet fetch after this: /api/fwd-pe answers well inside /api/freshness's wait
 
+// FactSet's blog prints each weekly report's sentence too ("The forward 12-month P/E ratio is 18.7, which is below the
+// 5-year average (19.8) and below the 10-year average (19.1)"): same numbers, another host, no PDF to parse.
+export const BLOG_FEED = 'https://insight.factset.com/topic/earnings/rss.xml';
+
+/** The blog feed → `[{date, link}]`, newest first; date = the post's day in New York (pubDate is GMT). */
+export function blogPosts(xml) {
+    const out = [];
+    for (const [, item] of String(xml || '').matchAll(/<item>([\s\S]*?)<\/item>/g)) {
+        const link = item.match(/<link>\s*(https:\/\/insight\.factset\.com\/[^<\s]+)\s*<\/link>/)?.[1];
+        const t = Date.parse(item.match(/<pubDate>([^<]+)<\/pubDate>/)?.[1] || '');
+        if (link && Number.isFinite(t)) out.push({ date: new Date(t - 5 * 3600e3).toISOString().slice(0, 10), link });
+    }
+    return out.sort((a, b) => (a.date < b.date ? 1 : -1));
+}
+
+/** The report a post repeats: the last Wednesday–Friday on or before its day (a Monday post retells Friday's). */
+export function reportDayOf(iso) {
+    let t = Date.parse(`${iso}T12:00:00Z`);
+    while (![3, 4, 5].includes(new Date(t).getUTCDay())) t -= DAY;
+    return new Date(t).toISOString().slice(0, 10);
+}
+
+/** A page's words: tags out, the entities FactSet uses decoded. */
+export function htmlText(html) {
+    return String(html || '').replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]+>/g, ' ')
+        .replace(/&nbsp;|&#160;/g, ' ').replace(/&amp;/g, '&').replace(/&#8217;|&rsquo;/g, '\'');
+}
+
 /**
- * The reports since the bake (`bakedTo`): KV's list, plus any FactSet posted since, looked for at most every
- * 3 h and only once the newest is 5+ days old. `fetchPdf(url)` → bytes, or null on 404; `pdfText(bytes)` → its
- * text. `seen` = the newest report found even if it would not parse (/api/freshness turns that red). Newest day
- * first, until PROBE_BUDGET_MS; the bake fills any week skipped. Never throws.
+ * The reports since the bake (`bakedTo`), in layers: KV's list (this instance's /tmp copy, `lastGood`, when KV is
+ * down), then anything new, looked for at most every 3 h and only once the newest is 5+ days old: FactSet's PDF
+ * (`fetchPdf(url)` → bytes, or null on 404; `pdfText(bytes)` → its text), and when no PDF reads, the same
+ * report's blog post (`fetchText(url)` → body). `seen` = the newest PDF found even if it would not parse
+ * (/api/freshness turns that red). Newest day first, until PROBE_BUDGET_MS; the bake fills any week skipped.
+ * Fault gates: fwdpe_kv, fwdpe_http (the PDFs), fwdpe_blog. Never throws.
  */
-export async function resolveFwdPe({ fetchPdf, pdfText, kv = null, bakedTo, today, now = Date.now(), faults = new Set() }) {
+export async function resolveFwdPe({ fetchPdf, pdfText, fetchText = null, kv = null, lastGood = null, bakedTo, today, now = Date.now(), faults = new Set() }) {
     let doc = null;
     const messages = [];
     if (kv && !faults.has('fwdpe_kv')) {
         try { doc = parseEnvelope(await kv.get(FWD_KV_KEY)); } catch { messages.push('KV read failed'); }
     }
+    if (!doc && lastGood) {
+        try { doc = lastGood.load(); } catch { /* none */ }
+        if (doc) messages.push('KV missed: served this instance\'s last copy');
+    }
     let rows = (Array.isArray(doc?.rows) ? doc.rows : []).filter((r) => r?.date > bakedTo && r.pe > 0);
     let seen = doc?.seen || null, checkedAt = doc?.checkedAt || 0;
     const newest = rows.length ? rows[rows.length - 1].date : bakedTo;
-    if ((ms(today) - ms(newest)) / DAY < 5 || now - checkedAt < PROBE_GAP_MS) return { rows, seen, checkedAt, messages };
+    const keep = () => { try { lastGood?.save({ rows, seen, checkedAt }); } catch { /* best effort */ } };
+    if ((ms(today) - ms(newest)) / DAY < 5 || now - checkedAt < PROBE_GAP_MS) { keep(); return { rows, seen, checkedAt, messages }; }
     const found = [], until = Date.now() + PROBE_BUDGET_MS;
     for (const day of reportCandidates(today, newest)) {
         let buf = null;
@@ -131,10 +166,24 @@ export async function resolveFwdPe({ fetchPdf, pdfText, kv = null, bakedTo, toda
         if (got) found.push({ date: day, ...got });
         else messages.push(`${day}: report has no forward P/E line`);
     }
+    if (!found.length && fetchText && !faults.has('fwdpe_blog')) {
+        try {
+            for (const p of blogPosts(await fetchText(BLOG_FEED)).filter((x) => reportDayOf(x.date) > newest).slice(0, 4)) {
+                const day = reportDayOf(p.date);
+                if (found.some((r) => r.date === day)) continue;
+                if (Date.now() > until) { messages.push('time budget hit in the blog'); break; }
+                const got = parseFactSet(htmlText(await fetchText(p.link)));
+                if (got) found.push({ date: day, ...got });
+                if (got && (!seen || day > seen)) seen = day; // on screen, so /api/freshness stays green while the blog carries it
+            }
+            if (found.length) messages.push(`from the blog: ${found.map((r) => r.date).join(', ')}`);
+        } catch (e) { messages.push(`blog: ${String(e?.message || e).slice(0, 80)}`); }
+    }
     rows = joinFwd(rows, found);
     checkedAt = now;
     if (kv && !faults.has('fwdpe_kv')) {
         try { await kv.set(FWD_KV_KEY, { rows, seen, checkedAt }); } catch { messages.push('KV write failed'); }
     }
+    keep();
     return { rows, seen, checkedAt, messages };
 }

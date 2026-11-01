@@ -1,4 +1,4 @@
-import { parseFactSet, reportUrl, reportCandidates, decodeFwd, encodeFwd, joinFwd, resolveFwdPe, FWD_KV_KEY, PROBE_GAP_MS, PROBE_BUDGET_MS } from '../fwdPe';
+import { parseFactSet, reportUrl, reportCandidates, decodeFwd, encodeFwd, joinFwd, resolveFwdPe, FWD_KV_KEY, PROBE_GAP_MS, PROBE_BUDGET_MS, BLOG_FEED, blogPosts, reportDayOf, htmlText } from '../fwdPe';
 
 // Sentences copied from real reports (text as unpdf gives it, line breaks and all).
 const OCT_2026 = 'PS guidance. • Valuation: The forward 12-month P/E ratio for the S&P 500 is 18.7. This P/E ratio is below the\n5-year average (19.8) and below the 10-year average (19.1). To receive this report via e-mail';
@@ -115,5 +115,51 @@ describe('resolveFwdPe', () => {
         const gated = jest.fn();
         await run(kvWith(null), gated, { faults: new Set(['fwdpe_http']) });
         expect(gated).not.toHaveBeenCalled();
+    });
+});
+
+describe('FactSet blog (the second layer)', () => {
+    const post = (pe) => `<html><script>var x = "P/E ratio is 99.9";</script><p>The forward 12-month P/E ratio is <b>${pe}</b>, which is below the 5-year average (19.8) and below the 10-year average&nbsp;(19.1).</p></html>`;
+    const feed = (items) => `<rss><channel><link>https://insight.factset.com</link>${items.map(([slug, when]) => `<item><title>S&amp;P 500 ${slug}</title><link>https://insight.factset.com/${slug}</link><pubDate>${when}</pubDate></item>`).join('')}</channel></rss>`;
+
+    it('reads the same sentence as the PDF, and dates a post by the report it retells', () => {
+        expect(parseFactSet(htmlText(post('18.7')))).toEqual({ pe: 18.7, a5: 19.8, a10: 19.1 });
+        expect(blogPosts(feed([['fri', 'Sat, 07 Nov 2026 02:00:00 GMT'], ['mon', 'Mon, 09 Nov 2026 16:00:00 GMT']])))
+            .toEqual([{ date: '2026-11-09', link: 'https://insight.factset.com/mon' }, { date: '2026-11-06', link: 'https://insight.factset.com/fri' }]); // 02:00 GMT Sat = Fri evening in New York
+        expect(['2026-11-09', '2026-11-08', '2026-11-05'].map(reportDayOf)).toEqual(['2026-11-06', '2026-11-06', '2026-11-05']);
+    });
+
+    const NOW = Date.parse('2026-11-06T20:00:00Z');
+    const kvWith = (doc) => ({ get: async () => doc, set: jest.fn(async () => true) });
+    const pdfText = async (bytes) => bytes.text;
+    const run = (extra) => resolveFwdPe({ pdfText, bakedTo: '2026-10-23', today: '2026-11-06', now: NOW, ...extra });
+    const PAGES = {
+        [BLOG_FEED]: feed([['fri', 'Fri, 06 Nov 2026 18:08:00 GMT'], ['mining', 'Thu, 05 Nov 2026 16:00:00 GMT'], ['mon', 'Mon, 02 Nov 2026 16:00:00 GMT']]),
+        'https://insight.factset.com/fri': post('18.4'), 'https://insight.factset.com/mining': '<p>Drill results</p>', 'https://insight.factset.com/mon': post('18.7'),
+    };
+    const fetchText = jest.fn(async (url) => PAGES[url]);
+    beforeEach(() => fetchText.mockClear());
+
+    it('no PDF this week: the blog post stands in; posts retelling a known report are never fetched', async () => {
+        const kv = kvWith({ rows: [{ date: '2026-10-30', pe: 18.7, a5: 19.8, a10: 19.1 }], checkedAt: 0 });
+        const r = await run({ kv, fetchPdf: async () => null, fetchText });
+        expect(r.rows.map((x) => [x.date, x.pe])).toEqual([['2026-10-30', 18.7], ['2026-11-06', 18.4]]);
+        expect(r.messages).toContain('from the blog: 2026-11-06');
+        expect(r.seen).toBe('2026-11-06'); // found = seen: no red freshness row while the screen is current
+        expect(fetchText.mock.calls.map(([u]) => u)).not.toContain('https://insight.factset.com/mon'); // Mon 2 Nov retells 30 Oct
+        expect(kv.set).toHaveBeenCalledWith(FWD_KV_KEY, expect.objectContaining({ rows: r.rows }));
+    });
+    it('not read when a PDF did, nor behind its gate', async () => {
+        await run({ kv: kvWith(null), fetchPdf: async (url) => (url.includes('110626.pdf') ? { text: OCT_2026 } : null), fetchText });
+        await run({ kv: kvWith(null), fetchPdf: async () => null, fetchText, faults: new Set(['fwdpe_http', 'fwdpe_blog']) });
+        expect(fetchText).not.toHaveBeenCalled();
+    });
+    it('KV down: the instance copy stands in, and every answer refreshes that copy', async () => {
+        const copy = { rows: [{ date: '2026-11-06', pe: 18.4 }], seen: '2026-11-06', checkedAt: NOW - 3600e3 };
+        const lastGood = { load: jest.fn(() => copy), save: jest.fn() };
+        const r = await run({ kv: { get: async () => { throw new Error('down'); } }, lastGood, fetchPdf: jest.fn(), fetchText });
+        expect(r.rows).toEqual(copy.rows);
+        expect(r.messages).toEqual(['KV read failed', 'KV missed: served this instance\'s last copy']);
+        expect(lastGood.save).toHaveBeenCalledWith(copy);
     });
 });
