@@ -35,7 +35,7 @@ function MarketRow({ item }) {
     // Hooks must run unconditionally, so this sits above the early return.
     // markKey is undefined for every FX / commodity / crypto row, and useMark
     // returns null for an unclassified key — those rows are never marked.
-    const mark = useMark(item?.markKey, item?.data?.current);
+    const mark = useMark(item?.markKey, item?.data?.stale ? undefined : item?.data?.current);
     if (!item?.data) return null;
     const d = item.data;
     const val = d.current;

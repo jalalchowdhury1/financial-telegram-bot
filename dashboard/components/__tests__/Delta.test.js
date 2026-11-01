@@ -174,6 +174,12 @@ describe('collectLiveValues freshness', () => {
         expect(v.profitMargin).toBeUndefined();
     });
 
+    test('withholds a stale market-extra row (audit D2)', () => {
+        const old = { current: 6.1, stale: true, savedAt: '2026-10-10T12:00:00Z' };
+        const v = collectLiveValues(null, { rates: { mortgageRate: old }, realEstate: { rentIndex: old, mortgagePayment: old, atnhpi: old } }, null);
+        expect([v.mortgageRate, v.rentIndex, v.mortgagePayment, v.atnhpi]).toEqual([undefined, undefined, undefined, undefined]);
+    });
+
     test('survives entirely absent payloads', () => {
         expect(() => collectLiveValues(null, null, null)).not.toThrow();
     });

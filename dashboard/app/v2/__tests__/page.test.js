@@ -383,3 +383,14 @@ describe.each([
         }
     });
 });
+
+it.each([[false, 1], [true, 0]])('Global markets: a row with stale=%s wears %i new-print marks (audit D2)', async (stale, n) => {
+    const ok = (body) => Promise.resolve({ ok: true, status: 200, json: async () => body });
+    const history = { today: '2026-11-01', metrics: { mortgageRate: { baseline: 6.3, dp: 2 } } };
+    const extra = { rates: { mortgageRate: { current: 6.85, stale, savedAt: '2026-10-10T12:00:00Z', history: [] } }, fx: {}, commodities: {} };
+    mockRoutes({ '/api/market-extra': ok(extra), '/api/history': ok(history) });
+    render(<DashboardV2 />);
+    await waitFor(() => expect(document.querySelector('[data-jump="Markets"] .v2-mk')).not.toBeNull());
+    await waitFor(() => expect(screen.getByLabelText('Refresh all data')).not.toBeDisabled());
+    expect(document.querySelectorAll('[data-jump="Markets"] [data-mark]')).toHaveLength(n);
+});

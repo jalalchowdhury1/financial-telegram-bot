@@ -446,7 +446,7 @@ function MarketSpark({ history }) {
 }
 
 function MarketRow({ r }) {
-    const mark = useMark(r.mark ? r.chart : undefined, r.d.current);
+    const mark = useMark(r.mark ? r.chart : undefined, r.d.stale ? undefined : r.d.current);
     const heat = r.z == null ? 0 : Math.min(r.z, MOVE_CAP) / MOVE_CAP;
     return (
         <div className={`v2-mk${r.z == null ? ' is-quiet' : ''}${r.z >= BIG_Z ? ' is-big' : ''}`} data-dir={r.win?.dir ?? 0} style={{ '--heat': heat }}

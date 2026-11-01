@@ -82,3 +82,17 @@ describe('Global Markets: a row filled from the last-known-good copy says so', (
         expect(screen.queryByTestId('mkt-stale-BTC')).toBeNull();
     });
 });
+
+test('a stale row never wears a new-print mark (audit D2)', () => {
+    const { MarkProvider } = require('../MarkProvider');
+    const history = { today: '2026-11-01', metrics: { mortgageRate: { baseline: 6.3, dp: 2 } } };
+    const row = (stale) => ({ rates: { mortgageRate: { current: 6.85, stale, savedAt: '2026-10-10T12:00:00Z', history: [] } }, fx: {}, commodities: {} });
+    const marks = (stale) => {
+        const { container, unmount } = render(<MarkProvider history={history}><ExtraMarketsGrid data={row(stale)} loading={false} /></MarkProvider>);
+        const n = container.querySelectorAll('[data-mark]').length;
+        unmount();
+        return n;
+    };
+    expect(marks(false)).toBe(1);
+    expect(marks(true)).toBe(0);
+});

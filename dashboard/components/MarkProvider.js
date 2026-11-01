@@ -114,11 +114,11 @@ export function collectLiveValues(fred, extra, sheets) {
         nfci: fresh(c.nfci), m2: fresh(c.m2), retail: fresh(c.retail),
         housing: fresh(c.housing), indpro: fresh(c.indpro), jolts: fresh(c.jolts),
         durable: fresh(c.durable), savings: fresh(c.savings),
-        // market-extra rows carry no staleness flag of their own
-        rentIndex: re.rentIndex?.current,
-        mortgagePayment: re.mortgagePayment?.current,
-        mortgageRate: ra.mortgageRate?.current,
-        atnhpi: re.atnhpi?.current,
+        // market-extra stamps a last-good row stale: true
+        rentIndex: re.rentIndex?.stale ? undefined : re.rentIndex?.current,
+        mortgagePayment: re.mortgagePayment?.stale ? undefined : re.mortgagePayment?.current,
+        mortgageRate: ra.mortgageRate?.stale ? undefined : ra.mortgageRate?.current,
+        atnhpi: re.atnhpi?.stale ? undefined : re.atnhpi?.current,
         aaiiDiff: parseFloat(sheets?.AAIIDiff),
         yieldCurve: yc?.stale ? undefined : yc?.current,
         profitMargin: pm?.stale ? undefined : pm?.current,
