@@ -62,3 +62,16 @@ test('B1: FRED down and no base anywhere → full payload shape (cards N/A, labe
     expect(b.horsemen.unemployment.source).toBe('bls');
     expect(b._meta.hasErrors).toBe(true);
 });
+
+test('B2: FRED hanging (each call times out at 8 s) no longer eats the Horsemen repair budget', async () => {
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'queueMicrotask', 'setImmediate'] });
+    try {
+        fetchJson.mockImplementation(() => new Promise((_, rej) => setTimeout(() => rej(new Error('timeout 8000ms')), 8000)));
+        mockSrc.blsSeries = jest.fn(() => new Promise((r) => setTimeout(() => r({}), 3000))); // BLS takes 3 s
+        const p = get();
+        await jest.advanceTimersByTimeAsync(60000);
+        const b = await (await p).json();
+        expect(b.horsemen.unemployment.source).toBe('bls');
+        expect(b._meta.messages.join(' | ')).not.toMatch(/Horsemen repair skipped/);
+    } finally { jest.useRealTimers(); }
+});

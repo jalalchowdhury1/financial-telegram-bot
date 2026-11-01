@@ -25,6 +25,9 @@ export const fetchCache = 'default-cache';
 // route degrades (that card N/A) long before 60 s instead of a 504 that skips serve().
 export const maxDuration = 60;
 const FRED_BUDGET_MS = 40000;
+// The FRED series loop gets its own slice of that budget: a hung FRED (5 batches × 8 s
+// timeouts) used to spend all 40 s and leave the Horsemen repair 1 s (audit B2).
+const FRED_SERIES_CAP_MS = 15000;
 
 const REVALIDATE_SECONDS = 1800; // 30 minutes
 const RETRY_DELAYS_MS = [400, 900, 1800]; // back-off on 429
@@ -550,13 +553,15 @@ export async function GET(request) {
         const BATCH_SIZE = 4;
         const STAGGER_MS = 150;
         const settled = [];
+        const seriesBudget = makeBudget(FRED_SERIES_CAP_MS, { minMs: 0 });
         // No key → don't fire 17 doomed requests; mark them all failed and go
         // straight to the independent providers.
         for (let i = 0; !keyMissing && i < FRED_REQUESTS.length; i += BATCH_SIZE) {
             const batch = FRED_REQUESTS.slice(i, i + BATCH_SIZE).map(([id, limit]) =>
-                fetchSeries(id, liveKey, limit)
+                seriesBudget.race(fetchSeries(id, liveKey, limit)
                     .then(value => ({ id, status: 'fulfilled', value }))
                     .catch(e => ({ id, status: 'rejected', reason: e })),
+                { id, status: 'rejected', reason: new Error(`${id}: FRED series cap (${FRED_SERIES_CAP_MS / 1000} s) spent`) }),
             );
             settled.push(...(await Promise.all(batch)));
             if (i + BATCH_SIZE < FRED_REQUESTS.length) await new Promise(r => setTimeout(r, STAGGER_MS));
