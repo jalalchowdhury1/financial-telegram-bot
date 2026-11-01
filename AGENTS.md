@@ -318,7 +318,8 @@ behave differently, it gets a v2-only prop (`race` on FactorRow, `asCards` on `p
   weeks fwd P/E sits under its 5-yr avg (`underAvg`; 2013→, the years FactSet printed a 5-yr avg).
   - Bake: `node scripts/bake-fwd-pe.mjs` (from dashboard/) adds the reports since the file's last row; it
     REFUSES to shrink the file. 2011–2016 came from Wayback copies (`--dir <folder of YYYY-MM-DD.pdf>`). A few
-    reports have no forward P/E sentence (2021-06-25, 2022-01-07, 2023-07-14, 2024-06-21, 2024-10-11, 2024-12-20).
+    reports have no forward P/E sentence (2021-06-25, 2022-01-07, 2023-07-14, 2024-06-21, 2024-10-11, 2024-12-20,
+    and the short "Author's Note" editions 2025-06-06, 2026-06-18).
   - `/api/fwd-pe`: KV `ftb:fwdpe` {rows, seen, checkedAt}; looks at FactSet at most every 3 h and only once the
     newest is 5+ days old, newest day first, ≤ 25 s (`PROBE_BUDGET_MS`), 10 s a PDF (`freshnessTimeout.test.js`
     keeps `/api/freshness` waiting longer). PDF text = `unpdf` (pinned 1.6.2). Fault gates `fwdpe_http`, `fwdpe_kv`.
