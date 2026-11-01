@@ -1,6 +1,7 @@
 'use client';
 import Delta from './Delta';
 import { useMark } from './MarkProvider';
+import { plusMonthsIso } from '../lib/signalStudy';
 
 // "Survey Sep 23 · aaii.com" under the AAII pill; a missed week (> 9 days, set by
 // /api/sheets from lib/aaii.js) turns it into a warning so old data never looks fresh.
@@ -73,7 +74,7 @@ export default function CustomIndicatorBar({ sheets, loading }) {
     const aaiiMark = useMark('aaiiDiff', parseFloat(sheets?.AAIIDiff));
     return (
         <div className="indicator-bar">
-            <div className={`indicator-pill${!loading && sheets?.NotSoBoring && sheets.NotSoBoring !== 'ON' ? ' pill-alert' : ''}`}>
+            <div className={`indicator-pill${!loading && sheets?.NotSoBoring && sheets.NotSoBoring !== 'ON' && sheets.NotSoBoring !== 'N/A' ? ' pill-alert' : ''}`}>
                 <div className="label">
                     <span className="tooltip-trigger" data-tooltip="Watches QQQ and TMF for 6–7% drops; then adds gold + USD.">
                         <span className="emoji">🛡️</span>NotSoBoring
@@ -89,7 +90,7 @@ export default function CustomIndicatorBar({ sheets, loading }) {
                 target="_blank"
                 rel="noopener noreferrer"
                 title="Open the Catalyst Radar — how close each trigger is, and what is scheduled"
-                className={`indicator-pill pill-link${!loading && sheets?.FrontRunner && !sheets.FrontRunner.startsWith('BIL') ? ' pill-alert' : ''}`}
+                className={`indicator-pill pill-link${!loading && sheets?.FrontRunner && sheets.FrontRunner !== 'N/A' && !sheets.FrontRunner.startsWith('BIL') ? ' pill-alert' : ''}`}
             >
                 <div className="label">
                     <span className="tooltip-trigger" data-tooltip="VIX hedges when RSI tops 79; buys deep tech dips. Tap for Catalyst Radar.">
@@ -100,14 +101,14 @@ export default function CustomIndicatorBar({ sheets, loading }) {
                 <div className="value">{loading ? '...' : (sheets?.FrontRunner || 'N/A')}</div>
                 {!loading && staleNote(sheets, ['FrontRunner'])}
             </a>
-            <div className={`indicator-pill${!loading && sheets?.AAIIDiff && parseFloat(sheets.AAIIDiff) > 20 ? ' pill-alert' : ''}`}>
+            <div className={`indicator-pill${!loading && parseFloat(sheets?.AAIIDiff) >= 20 ? ' pill-alert' : ''}`}>
                 <div className="label"><span className="emoji">🔸</span>AAII Diff</div>
-                {!loading && sheets?.AAIIDiff ? (() => {
+                {!loading && Number.isFinite(parseFloat(sheets?.AAIIDiff)) ? (() => {
                     const val = parseFloat(sheets.AAIIDiff);
-                    const isBullish = val > 20;
-                    const targetDate = new Date();
-                    targetDate.setMonth(targetDate.getMonth() + 6);
-                    const dateStr = targetDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+                    const isBullish = val >= 20; // as v2, the study and the ping
+                    const asOf = sheets.AAII?.as_of; // 6 months from the survey, not from today
+                    const from = /^\d{4}-\d{2}-\d{2}$/.test(asOf || '') ? asOf : new Date().toLocaleDateString('en-CA');
+                    const dateStr = new Date(`${plusMonthsIso(from, 6)}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
                     return (
                         <>
                             <Delta mark={aaiiMark} className="value" chartKey="aaiiDiff" raw={parseFloat(sheets?.AAIIDiff)}
@@ -128,7 +129,7 @@ export default function CustomIndicatorBar({ sheets, loading }) {
                     );
                 })() : <div className="value">{loading ? '...' : 'N/A'}</div>}
             </div>
-            <div className={`indicator-pill${!loading && sheets?.VIX?.current && parseFloat(sheets.VIX.current) > parseFloat(sheets.VIX.threeMonth) ? ' pill-alert' : ''}`}>
+            <div className={`indicator-pill${!loading && sheets?.VIX?.current && parseFloat(sheets.VIX.current) >= parseFloat(sheets.VIX.threeMonth) ? ' pill-alert' : ''}`}>
                 <div className="label">
                     <span className="tooltip-trigger" data-tooltip="VIX above 3-month VIX: panic. Often before a rebound.">
                         <span className="emoji">🎢</span>VIX (Current | 3M)

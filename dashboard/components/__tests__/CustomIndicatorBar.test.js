@@ -126,3 +126,22 @@ describe('📈 VIX current and VIX 3M open their own charts', () => {
         expect(container.querySelectorAll('.chartable')).toHaveLength(0);
     });
 });
+
+// v1 fires on the same rules as v2, the study and the ping (audit C4).
+describe('fire rules match v2', () => {
+    const pill = (c, re) => [...c.querySelectorAll('.indicator-pill')].find((p) => re.test(p.textContent));
+    test('AAII 20.0 and VIX equal to VIX 3M light their pills (≥, not >)', () => {
+        const { container } = render(<CustomIndicatorBar loading={false} sheets={{ AAIIDiff: '20.00%', VIX: { current: '20.00', threeMonth: '20.00', fearGreed: 'X' } }} />);
+        expect(pill(container, /AAII Diff/)).toHaveClass('pill-alert');
+        expect(pill(container, /VIX \(Current/)).toHaveClass('pill-alert');
+    });
+    test('N/A feeds light nothing, and AAII N/A says no outlook', () => {
+        const { container } = render(<CustomIndicatorBar loading={false} sheets={{ NotSoBoring: 'N/A', FrontRunner: 'N/A', AAIIDiff: 'N/A', VIX: { current: 'N/A', threeMonth: 'N/A' } }} />);
+        expect(container.querySelectorAll('.pill-alert')).toHaveLength(0);
+        expect(container.textContent).not.toMatch(/outlook/);
+    });
+    test('the AAII outlook runs 6 months from the survey, not from today', () => {
+        render(<CustomIndicatorBar loading={false} sheets={{ AAIIDiff: '25.00%', AAII: { ...LIVE_AAII, as_of: '2026-03-12', stale: true } }} />);
+        expect(screen.getByText(/Bullish outlook/).textContent).toBe('🟢 Bullish outlook → Sep 2026');
+    });
+});
