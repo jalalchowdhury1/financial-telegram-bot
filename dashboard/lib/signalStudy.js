@@ -151,6 +151,7 @@ export function signalStudy(points, spy, months, line) {
             low = Math.min(low, r);
             path.push({ x: (ms(spy[i].date) - t0) / T, r });
         }
+        if (!path.length) return null; // SPY's next day is past the window's end (a gap in the file)
         const step = Math.ceil(path.length / 90); // ≤ ~90 points a line
         return {
             ...e, live: lastSpy < end, ret: path[path.length - 1].r, low,

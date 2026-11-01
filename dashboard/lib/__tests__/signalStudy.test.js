@@ -58,6 +58,14 @@ describe('plusMonthsIso', () => {
     });
 });
 
+describe('signalStudy: a SPY gap longer than the horizon (audit C9)', () => {
+    it('skips that episode instead of throwing', () => {
+        const gap = spy.filter((p) => p.date < '2020-01-02' || p.date > '2020-03-01');
+        const out = signalStudy([{ date: '2020-01-05', value: 25 }, { date: '2020-08-06', value: 25 }], gap, 1, 20);
+        expect(out.episodes.map((e) => e.date)).toEqual(['2020-08-06']);
+    });
+});
+
 describe('comboSeries', () => {
     const combo = { legs: [{ key: 'a', line: 20 }, { key: 'b', days: 365, pct: true, line: -15 }] };
     // leg a: weekly-ish readings; leg b: weekly through 2020 at 100, then daily in 2021 at 80 (oil's real spacing change)
