@@ -45,9 +45,9 @@ it('carries each baked file up to the sheet\'s newest day, and fires on it', asy
     expect(Object.keys(st)).toEqual(['aaii', 'vix', 'fo', 'cu', 'hv', 'pt']);
     expect(st.aaii).toMatchObject({ fired: '2026-09-29', asOf: '2026-09-29', share: 1.25 });
     expect(st.vix).toMatchObject({ fired: '2026-09-29', asOf: '2026-09-29', share: 1.05 }); // 21 / 20, from the sheet's own VIX and VIX 3M
-    // Housing isn't in this sheet: its pair stops 45 days after the last baked reading. The ping sees the old
-    // asOf and ends its run "stale: hv …" (~/.local/bin/signal-ping) instead of calling it a calm day.
-    expect(st.hv).toMatchObject({ fired: null, asOf: '2026-08-13' });
+    // Housing isn't in this sheet: its pair's asOf is housing's own last baked reading (audit C1), not the 45 days the
+    // pair carries it. The ping sees the old asOf and ends its run "stale: hv …" (~/.local/bin/signal-ping) instead of calling it a calm day.
+    expect(st.hv).toMatchObject({ fired: null, asOf: '2026-06-29' });
 });
 
 it('a baked file that comes back empty gives its signal no data (asOf null), never a reading', async () => {

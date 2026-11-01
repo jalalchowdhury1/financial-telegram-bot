@@ -54,7 +54,7 @@ export default function LeadCombos({ spy, waiting, onState }) {
         return COMBOS.map((c) => {
             const pts = comboSeries(c, ...c.legs.map((l) => (l.key === FWD ? fwdPts : tail(files[l.key], sheetPts(series, l.key)))));
             const end = pts[pts.length - 1];
-            const now = end?.date >= recent ? end : null; // older = the sheet stopped (or hasn't landed): no state, N/A
+            const now = end?.asOf >= recent ? end : null; // an older leg = the sheet stopped (or hasn't landed): no state, N/A
             const last = signalEpisodes(pts, 1).pop();
             const until = last && plusMonthsIso(last.date, 6);
             const { stats, base } = signalStudy(pts, s, 6, 1) || {};

@@ -73,9 +73,19 @@ describe('comboSeries', () => {
     });
 
     it('scores the weaker leg against its line, and starts when both legs have a reading', () => {
-        expect(out[0]).toEqual({ date: '2021-01-04', value: 1.25, legs: [25, expect.any(Number)] });
+        expect(out[0]).toEqual({ date: '2021-01-04', asOf: '2021-01-04', value: 1.25, legs: [25, expect.any(Number)] });
         expect(on('2021-01-11').value).toBe(0.5);
         expect(on('2021-04-01').value).toBeCloseTo(4 / 3, 9);
+    });
+
+    it('asOf = the oldest leg\'s own date: a leg frozen 40 days is never read as today\'s (audit C1)', () => {
+        const cu = COMBOS.find((c) => c.id === 'cu');
+        const daily = (from, n, f) => Array.from({ length: n }, (_, i) => ({ date: day(2026, 0, from + i), value: f(i) }));
+        const claims = daily(1, 305, (i) => 100 - i / 10); // to 2026-11-01
+        const usdcad = daily(1, 265, (i) => 1.3 + i / 1000); // stops 2026-09-22
+        const pts = comboSeries(cu, claims, usdcad);
+        expect(pts.at(-1)).toMatchObject({ date: '2026-11-01', asOf: '2026-09-22' });
+        expect(signalStates({ claims, usdcad }, spy).find((g) => g.id === 'cu').asOf).toBe('2026-09-22');
     });
 
     it('drops days where a leg has not printed for 45+ days', () => {

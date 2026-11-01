@@ -65,6 +65,15 @@ it('a pair whose newest reading is over 5 days old says N/A and is unread for th
     expect(cu).toEqual({ jump: 'Lead combos', fire: expect.stringMatching(/^Jobs fine \+ CAD slump bullish to /) });
 });
 
+it('a pair with one leg frozen 40 days says N/A, though the other leg runs to today (audit C1)', async () => {
+    const cut = (f, n) => ({ ...f, t: f.t.slice(0, -n), v: f.v.slice(0, -n) });
+    serve({ ...FILES, usdcad: cut(FILES.usdcad, 40) });
+    const onState = jest.fn();
+    render(<LeadCombos spy={null} onState={onState} />);
+    await waitFor(() => expect(row('Jobs fine + CAD slump').querySelector('.v2-cb-now').textContent).toBe('N/A'));
+    expect(onState.mock.calls.at(-1)[0][1]).toBeNull();
+});
+
 it('waits (…) while the sheet is on its way, instead of N/A on old files', async () => {
     serve(OLD);
     const { rerender } = render(<LeadCombos spy={null} waiting />);

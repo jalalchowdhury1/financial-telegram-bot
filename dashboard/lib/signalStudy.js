@@ -89,6 +89,7 @@ function legSeries(pts, { days, pct }) {
 /**
  * One combo as one series for the study: on every date any leg has, `value` = the LESSER of each leg ÷ its
  * line (1+ = both past their lines; clamped −1..2 for the charts) and `legs` = each leg's reading.
+ * `asOf` = the oldest leg's own date (a leg carried 45 days is that old, whatever the other's date).
  * `series` = each leg's points, in the combo's order.
  */
 export function comboSeries(combo, ...series) {
@@ -96,13 +97,14 @@ export function comboSeries(combo, ...series) {
     const dates = [...new Set(L.flatMap((s) => s.map((p) => p.date)))].sort();
     const at = L.map(() => 0), out = [];
     for (const d of dates) {
-        const legs = L.map((s, i) => {
+        const ps = L.map((s, i) => {
             while (at[i] < s.length - 1 && s[at[i] + 1].date <= d) at[i]++;
             const p = s[at[i]];
-            return p && p.date <= d && ms(d) - ms(p.date) <= STALE ? p.value : null;
+            return p && p.date <= d && ms(d) - ms(p.date) <= STALE ? p : null;
         });
-        if (legs.includes(null)) continue;
-        out.push({ date: d, value: Math.max(-1, Math.min(2, ...legs.map((v, i) => v / combo.legs[i].line))), legs });
+        if (ps.includes(null)) continue;
+        const legs = ps.map((p) => p.value), asOf = ps.reduce((m, p) => (p.date < m ? p.date : m), d);
+        out.push({ date: d, asOf, value: Math.max(-1, Math.min(2, ...legs.map((v, i) => v / combo.legs[i].line))), legs });
     }
     return out;
 }
@@ -126,7 +128,7 @@ export function signalStates(files, spy) {
         const pts = g.combo ? comboSeries(g.combo, ...g.combo.legs.map((l) => files[l.key])) : files[g.key] || [];
         const st = signalStudy(pts, spy, g.months, g.line)?.stats, now = pts[pts.length - 1];
         return { id: g.id, name: g.name, months: g.months, fired: signalEpisodes(pts, g.line).pop()?.date || null,
-            asOf: now?.date || null, share: now ? now.value / g.line : null, n: st?.n || 0, avg: st?.avg ?? null, win: st?.win ?? null };
+            asOf: now?.asOf || now?.date || null, share: now ? now.value / g.line : null, n: st?.n || 0, avg: st?.avg ?? null, win: st?.win ?? null };
     });
 }
 
