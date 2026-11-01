@@ -444,6 +444,27 @@ describe('per-metric last-known-good (the 12-blanks bug)', () => {
         } finally { global.fetch = realFetch; }
     });
 
+    test('Lambda DXY is the ER-API basket -> the real CNBC .DXY replaces it; ?_fail=cnbc_dxy keeps the basket (audit A4)', async () => {
+        process.env.LAMBDA_URL = 'https://lambda.test';
+        const realFetch = global.fetch;
+        const m = (v) => ({ current: v, dailyChange: { value: 0, pct: 0 }, history: [], lastDate: '2026-10-09' });
+        const lam = () => ({
+            fx: { usdcad: m(1.37), usdinr: m(84.1), usdbdt: m(123.2), dxy: { current: 99.1, dailyChange: { value: 0, pct: 0 }, history: [] } },
+            commodities: { gc: m(2650), cl: m(91.6), btc: m(62000) },
+            rates: { tnx: m(5.24), t2y: m(4.8), mortgageRate: m(7.4) },
+            _meta: { source: 'Lambda', hasErrors: false, messages: [], sourceLog: { dxy: 'ER-API' } },
+        });
+        try {
+            global.fetch = jest.fn(async () => ({ ok: true, json: async () => lam() }));
+            let b = await get('?_fail=polygon');
+            expect(b.fx.dxy).toMatchObject({ current: 102.231, lastDate: '2026-10-09' });
+            expect(b._meta.sourceLog.dxy).toBe('CNBC');
+            b = await get('?_fail=polygon,cnbc_dxy');
+            expect(b.fx.dxy.current).toBe(99.1);
+            expect(b._meta.sourceLog.dxy).toBe('ER-API');
+        } finally { global.fetch = realFetch; }
+    });
+
     test('Lambda up but missing real-estate prints -> filled stale from last good', async () => {
         const re = { current: 2100, dailyChange: { value: 0, pct: 0 }, history: [], lastDate: '2026-09-01' };
         fs.__mem.set('/tmp/lg-market-extra.json', JSON.stringify({ data: { realEstate: { rentIndex: re, atnhpi: { ...re, current: 400 } } }, savedAt: '2026-10-08T00:00:00.000Z' }));
