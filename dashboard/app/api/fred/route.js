@@ -1,7 +1,7 @@
 import { FRED_SERIES, FRED_FRESHNESS, EXTERNAL_URLS } from '../../../lib/constants';
 import { fetchJson, proxyFetch } from '../../../lib/fetcher';
 import { withFreshness } from '../../../lib/freshness';
-import { serve, loadLastGood } from '../../../lib/store';
+import { serve, loadLastGood, loadLastGoodKV } from '../../../lib/store';
 import { fetchSheetLkg } from '../../../lib/sheetLkg';
 import { faultsFrom } from '../../../lib/faults';
 import { makeBudget, TIMED_OUT } from '../../../lib/budget';
@@ -716,11 +716,18 @@ export async function GET(request) {
             // this check the fault silently did nothing and the Sheet tier could
             // not be reached in combination with live Horsemen (found on prod:
             // `?_fail=fred,lastgood` still served the /tmp snapshot).
+            // /tmp → KV (`ftb:lg:fred`, survives a cold start; `?_fail=kvlg` skips it like
+            // serve() does) → Sheet. A cold instance used to skip KV and, with the Sheet also
+            // down, merged over NOTHING: every non-Horsemen card vanished (audit B1).
             const lg = faults.has('lastgood') ? null : loadLastGood('fred', 7 * 864e5);
-            const base = lg?.data ?? await fetchSheetLkg(now).catch(() => null);
+            const kvlg = (lg || faults.has('lastgood') || faults.has('kvlg')) ? null : await loadLastGoodKV('fred', 7 * 864e5);
+            const base = lg?.data ?? kvlg?.data ?? await fetchSheetLkg(now).catch(() => null);
             const baseLabel = lg ? `cache (last-known-good ${lg.savedAt})`
+                : kvlg ? `KV last-good (${kvlg.savedAt})`
                 : (base?._meta?.source || 'no cached base');
-            const merged = mergeHorsemenOverBase(base, {
+            // No base at all → skip the merge and serve `live` below: the full shape, every
+            // FRED card honestly unavailable, the live Horsemen kept, hasErrors set.
+            const merged = base && mergeHorsemenOverBase(base, {
                 baseLabel,
                 horsemen: Object.fromEntries(Object.entries(repairedHorsemen).filter(([k]) => k !== 'spread')),
                 yieldCurve: repairedHorsemen.spread || null,
