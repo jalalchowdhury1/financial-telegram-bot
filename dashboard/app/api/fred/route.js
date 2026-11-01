@@ -76,14 +76,18 @@ const cachedText = async (key, url, ms) => {
     return res.text();
 };
 
+// The point nearest `nMonths` before the newest — none if that is over 35 days off (a
+// short history used to hand back its oldest point as "a year ago"; audit B10). 35, not
+// 20: a month FRED skipped (Oct 2025 shutdown) must fall back to its neighbour, not N/A.
 function findByMonthOffset(arr, nMonths) {
     if (!arr?.length) return undefined;
     const target = new Date(arr[0].date);
     target.setMonth(target.getMonth() - nMonths);
-    return arr.reduce((best, obs) => {
+    const best = arr.reduce((best, obs) => {
         const d = Math.abs(new Date(obs.date) - target);
         return d < Math.abs(new Date(best.date) - target) ? obs : best;
     });
+    return Math.abs(new Date(best.date) - target) <= 35 * 864e5 ? best : undefined;
 }
 
 const dateOf = (arr) => arr?.[0]?.date ?? null;
@@ -474,7 +478,9 @@ function buildResponse(series, peRatio, now, peSource = null, peAsOf = null) {
     const retail3mo = findByMonthOffset(rsxfs, 3)?.value;
     const retailGrowth = retail3mo ? ((retailCurrent - retail3mo) / retail3mo) * 100 : undefined;
     const housingCurrent = houst[0]?.value;
-    const housing6moAvg = houst.length >= 6 ? houst.slice(0, 6).reduce((s, v) => s + v.value, 0) / 6 : 0;
+    // Under 6 points: no average. undefined (not 0, not null — both compare as 0) so
+    // `housingCurrent > housing6moAvg` is false instead of always true (audit B10).
+    const housing6moAvg = houst.length >= 6 ? houst.slice(0, 6).reduce((s, v) => s + v.value, 0) / 6 : undefined;
     const indproCurrent = indpro[0]?.value;
     const indpro6mo = findByMonthOffset(indpro, 6)?.value;
     const indproChange = indpro6mo ? ((indproCurrent - indpro6mo) / indpro6mo) * 100 : undefined;

@@ -80,7 +80,7 @@ test('B2: FRED hanging (each call times out at 8 s) no longer eats the Horsemen 
 const fredExcept = (...down) => fetchJson.mockImplementation(async (url) => {
     const id = /series_id=([A-Z0-9]+)/.exec(url)[1];
     if (down.includes(id)) throw new Error(`${id} 500`);
-    return fredObs(30, 7);
+    return fredObs(30, 30);
 });
 
 test('B5: FRED ICSA failing + DOL ok → indicators.claims is recomputed from the repaired line', async () => {
@@ -105,4 +105,18 @@ test('B5: total FRED outage merged over a cached base → the claims indicator c
     defaultKv.get.mockResolvedValue(JSON.stringify({ data: { indicators: { claims: { value: 999 } }, _meta: {} }, savedAt: new Date().toISOString() }));
     const b = await (await get()).json();
     expect(b.indicators.claims.value).toBe(220);
+});
+
+test('B10: 4 housing points → no 6-month average (not 0, which made any print > 1300 "bullish")', async () => {
+    fetchJson.mockImplementation(async (url) => (/series_id=HOUST/.test(url) ? fredObs(4, 30, () => 1350) : fredObs(30, 30)));
+    const b = await (await get()).json();
+    expect(b.checklist.housing.value).toBe(1350);
+    expect(b.checklist.housing.bullish).toBe(false);
+});
+
+test('B10: M2 with only 5 monthly points → no year-ago match (nearest point 4 months off is not "a year ago")', async () => {
+    fetchJson.mockImplementation(async (url) => (/series_id=M2SL/.test(url) ? fredObs(5, 30, (i) => 100 - i) : fredObs(30, 30)));
+    const b = await (await get()).json();
+    expect(b.checklist.m2.value).toBeNull();
+    expect(b.checklist.retail.value).not.toBeNull();   // a real 3-month match still works
 });
