@@ -604,9 +604,11 @@ export function toData(raw) {
     };
 
     // /api/fear-greed
+    // A VIX-derived proxy (`_meta.proxy`) is NOT the CNN index: no score, so no vote or
+    // "Greed (81) despite …" pill rides on it (audit B3).
     const fgRaw = raw.fg || {};
     const fg = {
-        score: num(fgRaw.score ?? null),
+        score: fgRaw._meta?.proxy ? null : num(fgRaw.score ?? null),
         rating: fgRaw.rating ?? null,
         prevWeek: num(fgRaw.previousWeek ?? fgRaw.prevWeek ?? null),
         prevMonth: num(fgRaw.previousMonth ?? fgRaw.prevMonth ?? null),
@@ -626,17 +628,19 @@ export function toData(raw) {
         };
     }
 
-    // /api/fred
+    // /api/fred — a card flagged stale (past its deadline, or filled from last-good) is
+    // not a current input: treated as missing, never as this week's print (audit B3).
     const fredRaw = raw.fred || {};
+    const card = (c) => (c?.stale ? null : c?.value);
     const fred = {
-        yieldCurve: num(fredRaw.yieldCurve?.value ?? fredRaw.yieldCurve ?? null),
-        sahmRule: num(fredRaw.indicators?.sahmRule?.value ?? fredRaw.sahmRule ?? null),
-        claims: num(fredRaw.indicators?.claims?.value ?? fredRaw.claims ?? null),
-        creditSpread: num(fredRaw.indicators?.creditSpread?.value ?? fredRaw.creditSpread ?? null),
-        realYields: num(fredRaw.indicators?.realYields?.value ?? fredRaw.realYields ?? null),
-        copperGold: num(fredRaw.indicators?.copperGold?.value ?? fredRaw.copperGold ?? null),
-        sentiment: num(fredRaw.indicators?.sentiment?.value ?? fredRaw.sentiment ?? null),
-        nfci: num(fredRaw.checklist?.nfci?.value ?? fredRaw.nfci ?? null),
+        yieldCurve: num(card(fredRaw.yieldCurve) ?? fredRaw.yieldCurve ?? null),
+        sahmRule: num(card(fredRaw.indicators?.sahmRule) ?? fredRaw.sahmRule ?? null),
+        claims: num(card(fredRaw.indicators?.claims) ?? fredRaw.claims ?? null),
+        creditSpread: num(card(fredRaw.indicators?.creditSpread) ?? fredRaw.creditSpread ?? null),
+        realYields: num(card(fredRaw.indicators?.realYields) ?? fredRaw.realYields ?? null),
+        copperGold: num(card(fredRaw.indicators?.copperGold) ?? fredRaw.copperGold ?? null),
+        sentiment: num(card(fredRaw.indicators?.sentiment) ?? fredRaw.sentiment ?? null),
+        nfci: num(card(fredRaw.checklist?.nfci) ?? fredRaw.nfci ?? null),
     };
 
     // /api/breadth

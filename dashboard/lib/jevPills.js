@@ -61,9 +61,10 @@ export function assemblePills({ raw, jevAnswers, yesterday, mode, inputSources =
     const spyHist = Array.isArray(raw?.spy?.chartHistory) ? raw.spy.chartHistory : [];
     const dataAsOf = {
         spy: spyHist.length ? (spyHist[spyHist.length - 1]?.date ?? null) : null,
-        // CNN's gauge is read live at call time, so its data is "through" today — New York's
-        // today: the UTC date runs a day ahead every evening after 8 PM ET
-        fg: Number.isFinite(raw?.fg?.score) ? etParts(Date.parse(asOf)).date : null,
+        // CNN's own as-of, as a New York date (the UTC date runs a day ahead every evening
+        // after 8 PM ET). Not today: CNN holds Friday's print all weekend (audit B3). None
+        // for a VIX proxy — toData drops its score.
+        fg: data?.fg?.score != null && Number.isFinite(Date.parse(raw?.fg?.asOf)) ? etParts(Date.parse(raw.fg.asOf)).date : null,
         breadth: raw?.breadth?.updated_at ?? null,
         vol: raw?.vol?.updated_at ?? null,
         fred: raw?.fred?.yieldCurve?.asOf ?? raw?.fred?.yieldCurve?.date ?? null,

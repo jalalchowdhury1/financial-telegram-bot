@@ -166,7 +166,7 @@ export async function repairPillInputs(raw, { fredKey, faults = new Set(), now =
     // -- 2. NFCI — only when the sibling has no finite value --
     const nfci = async () => {
         const cur = raw?.fred?.checklist?.nfci;
-        if (isFinite_(cur?.value)) { seeded.push('nfci'); await seed('jev-nfci', cur); return; }
+        if (isFinite_(cur?.value) && !cur.stale) { seeded.push('nfci'); await seed('jev-nfci', cur); return; }
         const r = await resolvePillInput({
             sources: [
                 { name: 'sheet', freshnessDays: FRESH.NFCI, read: readSheet((s) => s.checklist?.nfci) },
@@ -182,7 +182,7 @@ export async function repairPillInputs(raw, { fredKey, faults = new Set(), now =
     // -- 3. Claims — 4-week average in thousands, exactly like indicators.claims --
     const claims = async () => {
         const cur = raw?.fred?.indicators?.claims;
-        if (isFinite_(cur?.value)) { seeded.push('claims'); await seed('jev-claims', cur); return; }
+        if (isFinite_(cur?.value) && !cur.stale) { seeded.push('claims'); await seed('jev-claims', cur); return; }
         const horsemenHist = raw?.fred?.horsemen?.claims?.history;
         const r = await resolvePillInput({
             sources: [
@@ -205,7 +205,7 @@ export async function repairPillInputs(raw, { fredKey, faults = new Set(), now =
     // -- 4. Sahm — same shape over monthly UNRATE --
     const sahm = async () => {
         const cur = raw?.fred?.indicators?.sahmRule;
-        if (isFinite_(cur?.value)) { seeded.push('sahm'); await seed('jev-sahm', cur); return; }
+        if (isFinite_(cur?.value) && !cur.stale) { seeded.push('sahm'); await seed('jev-sahm', cur); return; }
         const unHist = raw?.fred?.horsemen?.unemployment?.history;
         const r = await resolvePillInput({
             sources: [
@@ -244,8 +244,10 @@ export async function repairPillInputs(raw, { fredKey, faults = new Set(), now =
     };
 
     // Seed the last-good tier from the sibling's own healthy value (never in fault mode).
+    // Never from a served copy (`_meta.stale`): re-saving it would stamp an old value as
+    // new; a stale card (`cur.stale`) goes down the repair cascade instead (audit B3).
     async function seed(key, cur) {
-        if (faults.size > 0) return;
+        if (faults.size > 0 || raw?.fred?._meta?.stale) return;
         try { await lg.save(key, { value: cur.value, asOf: cur.asOf ?? null, source: 'fred-route' }); } catch { /* best effort */ }
     }
 

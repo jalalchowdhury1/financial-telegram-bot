@@ -892,15 +892,16 @@ describe('repairPillInputs — v3.1 tiers', () => {
 });
 
 describe('assemblePills — dataAsOf covers every feed a pill reads', () => {
-    test('spy through = last chartHistory date; fg through = today', () => {
+    test('spy through = last chartHistory date; fg through = CNN\'s own as-of (New York date), not today', () => {
         const raw = {
             ...sampleRaw,
             spy: { ...sampleRaw.spy, chartHistory: [{ date: '2026-09-17', price: 1 }, { date: '2026-09-18', price: 2 }] },
+            // 23:59 UTC = 7:59 PM ET the same day; after 8 PM ET the UTC date is already tomorrow
+            fg: { ...sampleRaw.fg, asOf: '2026-09-19T01:30:00+00:00' },
         };
         const p = assemblePills({ raw, jevAnswers: null, yesterday: null, mode: 'rules' });
         expect(p._meta.dataAsOf.spy).toBe('2026-09-18');
-        // New York's date: after 8 PM ET the UTC date is already tomorrow
-        expect(p._meta.dataAsOf.fg).toBe(new Date(p.asOf).toLocaleDateString('en-CA', { timeZone: 'America/New_York' }));
+        expect(p._meta.dataAsOf.fg).toBe('2026-09-18');
     });
 
     test('no chartHistory / no score → null, never a made-up date', () => {
