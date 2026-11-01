@@ -362,6 +362,48 @@ async function repairHorsemen(responseData, { now, faults, blsKey, messages }) {
     return repaired;
 }
 
+// Claims 4-wk average + Sahm rule from newest-first histories. Shared by buildResponse
+// and GET's post-repair step: a line FRED failed but BLS/DOL repaired must still feed
+// its indicator, else the card says N/A beside a live Horsemen line (audit B5).
+function claimsIndicator(icsa, now) {
+    const claims4wk = icsa.length >= 4 ? icsa.slice(0, 4).reduce((s, v) => s + v.value, 0) / 4 : undefined;
+    return { ...withFreshness(claims4wk !== undefined ? claims4wk / 1000 : undefined, dateOf(icsa), FRED_FRESHNESS.ICSA, now), status: claims4wk < 250000 ? 'healthy' : claims4wk < 350000 ? 'elevated' : 'weak' };
+}
+
+function sahmIndicator(unrate, now) {
+    // Standard Sahm rule (sahmFromHistory): current 3-mo average minus the lowest 3-mo
+    // average of the prior 12 months. MUST slice: unrate (newest first) carries FULL
+    // history for the Horsemen chart, and a min over all of it would break the rule.
+    const sahmRule = sahmFromHistory([...unrate.slice(0, 15)].reverse()) ?? undefined;
+    return { ...withFreshness(sahmRule, dateOf(unrate), FRED_FRESHNESS.UNRATE, now), status: sahmRule >= 0.5 ? 'danger' : 'safe' };
+}
+
+// Payload cards each FRED series feeds. A series that failed this load gets its cards
+// from the last-good copy, stamped stale with their own asOf, instead of N/A (audit B5).
+const CARDS_BY_SERIES = {
+    T10Y2Y: ['yieldCurve'], UNRATE: ['indicators.sahmRule', 'horsemen.unemployment'],
+    ICSA: ['indicators.claims', 'horsemen.claims'], UMCSENT: ['indicators.sentiment'],
+    BAMLC0A4CBBB: ['indicators.creditSpread'], DFII10: ['indicators.realYields'],
+    NFCI: ['checklist.nfci'], M2SL: ['checklist.m2'], RSXFS: ['checklist.retail'], HOUST: ['checklist.housing'],
+    INDPRO: ['checklist.indpro'], JTSJOL: ['checklist.jolts'], DGORDER: ['checklist.durable'], PSAVERT: ['checklist.savings'],
+    A053RC1Q027SBEA: ['profitMargin'], GDP: ['profitMargin'], USREC: ['recessions'],
+};
+
+function fillFromLastGood(target, lgData, failedIds) {
+    const filled = [];
+    const empty = (c) => (Array.isArray(c) ? !c.length : !c || c.unavailable);
+    for (const path of new Set(failedIds.flatMap((id) => CARDS_BY_SERIES[id] || []))) {
+        const [a, b] = path.split('.');
+        const cur = b ? target[a]?.[b] : target[a];
+        const old = b ? lgData?.[a]?.[b] : lgData?.[a];
+        if (!empty(cur) || empty(old)) continue;
+        const v = Array.isArray(old) ? old : { ...old, stale: true };
+        if (b) target[a] = { ...target[a], [b]: v }; else target[a] = v;
+        filled.push(path);
+    }
+    return filled;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Build the dashboard payload, stamping each metric with asOf + staleness.
 // A value older than its series' freshness deadline (or missing) becomes null,
@@ -415,14 +457,8 @@ function buildResponse(series, peRatio, now, peSource = null, peAsOf = null) {
     const profitMargin = { ...pm, current: pm.value, date: profitMarginHistory[0]?.date || '', history: [...profitMarginHistory].reverse() };
 
     // ── Economic indicators ──
-    // Standard Sahm rule (sahmFromHistory): current 3-mo average minus the lowest 3-mo
-    // average of the prior 12 months. MUST slice: unrate (newest first) carries FULL
-    // history for the Horsemen chart, and a min over all of it would break the rule.
-    const sahmRule = sahmFromHistory([...unrate.slice(0, 15)].reverse()) ?? undefined;
-
     const sentimentCurrent = umcsent[0]?.value;
     const sentimentPrev = umcsent[1]?.value;
-    const claims4wk = icsa.length >= 4 ? icsa.slice(0, 4).reduce((s, v) => s + v.value, 0) / 4 : undefined;
     const bbbCurrent = bbb[0]?.value;
     const tipsCurrent = dfii10[0]?.value;
     const tipsPrev = dfii10[1]?.value;
@@ -479,9 +515,9 @@ function buildResponse(series, peRatio, now, peSource = null, peAsOf = null) {
         peIsCape: peSource === 'cape',
         recessions: recessionPeriods,
         indicators: {
-            sahmRule: F(sahmRule, 'UNRATE', dateOf(unrate), { status: sahmRule >= 0.5 ? 'danger' : 'safe' }),
+            sahmRule: sahmIndicator(unrate, now),
             sentiment: F(sentimentCurrent, 'UMCSENT', dateOf(umcsent), { change: sentimentCurrent - sentimentPrev, status: sentimentCurrent > 80 ? 'strong' : sentimentCurrent > 60 ? 'neutral' : 'weak' }),
-            claims: F(claims4wk !== undefined ? claims4wk / 1000 : undefined, 'ICSA', dateOf(icsa), { status: claims4wk < 250000 ? 'healthy' : claims4wk < 350000 ? 'elevated' : 'weak' }),
+            claims: claimsIndicator(icsa, now),
             creditSpread: F(bbbCurrent, 'BAMLC0A4CBBB', dateOf(bbb), { status: bbbCurrent < 1.5 ? 'tight' : bbbCurrent < 2.5 ? 'normal' : 'stressed' }),
             realYields: F(tipsCurrent, 'DFII10', dateOf(dfii10), { change: tipsCurrent - tipsPrev, status: tipsCurrent > 2.0 ? 'restrictive' : tipsCurrent > 0 ? 'neutral' : 'easy' }),
             // copperGold is added in GET() after buildResponse (it's fetched from price
@@ -662,6 +698,15 @@ export async function GET(request) {
             messages.push(...horsemenMsgs);
         }
         const horsemenLive = Object.keys(repairedHorsemen).length;
+        // Repaired lines are oldest-first; the indicators read newest-first.
+        if (repairedHorsemen.claims) responseData.indicators.claims = claimsIndicator([...repairedHorsemen.claims.history].reverse(), now);
+        if (repairedHorsemen.unemployment) responseData.indicators.sahmRule = sahmIndicator([...repairedHorsemen.unemployment.history].reverse(), now);
+        // A partial load: each failed series' still-empty cards come from /tmp → KV last-good.
+        if (failed.length && failed.length < FRED_REQUESTS.length && !faults.has('lastgood')) {
+            const lg = (!faults.has('tmplg') && loadLastGood('fred', 7 * 864e5)) || (!faults.has('kvlg') && await loadLastGoodKV('fred', 7 * 864e5)) || null;
+            const filled = lg ? fillFromLastGood(responseData, lg.data, failed) : [];
+            if (filled.length) messages.push(`Filled from last-good ${lg.savedAt} (stale): ${filled.join(', ')}`);
+        }
 
         const cgr = await cgP;
         if (cgr === TIMED_OUT) messages.push(overBudget('Copper/Gold'));
@@ -742,6 +787,10 @@ export async function GET(request) {
             });
             if (merged) {
                 overlayLiveExtras(merged, responseData);
+                // The live lines' indicators too, not the cached base's (audit B5).
+                for (const [line, card] of [['claims', 'claims'], ['unemployment', 'sahmRule']]) {
+                    if (repairedHorsemen[line]) merged.indicators = { ...(merged.indicators || {}), [card]: responseData.indicators[card] };
+                }
                 merged._meta = { ...merged._meta, horsemenLive, loadedCount: 0, fetchedAt: now.toISOString() };
                 return merged;
             }

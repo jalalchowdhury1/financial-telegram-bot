@@ -75,3 +75,34 @@ test('B2: FRED hanging (each call times out at 8 s) no longer eats the Horsemen 
         expect(b._meta.messages.join(' | ')).not.toMatch(/Horsemen repair skipped/);
     } finally { jest.useRealTimers(); }
 });
+
+// FRED answers every series except the ones named (those throw like a 500).
+const fredExcept = (...down) => fetchJson.mockImplementation(async (url) => {
+    const id = /series_id=([A-Z0-9]+)/.exec(url)[1];
+    if (down.includes(id)) throw new Error(`${id} 500`);
+    return fredObs(30, 7);
+});
+
+test('B5: FRED ICSA failing + DOL ok → indicators.claims is recomputed from the repaired line', async () => {
+    fredExcept('ICSA');
+    const b = await (await get()).json();
+    expect(b.horsemen.claims.source).toBe('dol');
+    expect(b.indicators.claims.value).toBe(220);
+});
+
+test('B5: one failed FRED series is filled from the KV last-good, flagged stale (not N/A)', async () => {
+    fredExcept('NFCI');
+    const kvPayload = { checklist: { nfci: { value: -0.4, asOf: day(9), stale: false, unavailable: false, label: 'Financial Conditions' } }, _meta: { loadedCount: 17 } };
+    defaultKv.get.mockResolvedValue(JSON.stringify({ data: kvPayload, savedAt: new Date(Date.now() - 3600e3).toISOString() }));
+    const b = await (await get()).json();
+    expect(b.checklist.nfci).toMatchObject({ value: -0.4, stale: true, asOf: day(9) });
+    expect(b.checklist.m2.unavailable).toBe(false);   // healthy series stay live
+    expect(b._meta.hasErrors).toBe(true);
+});
+
+test('B5: total FRED outage merged over a cached base → the claims indicator comes from the live DOL line', async () => {
+    fetchJson.mockRejectedValue(new Error('FRED 503'));
+    defaultKv.get.mockResolvedValue(JSON.stringify({ data: { indicators: { claims: { value: 999 } }, _meta: {} }, savedAt: new Date().toISOString() }));
+    const b = await (await get()).json();
+    expect(b.indicators.claims.value).toBe(220);
+});
