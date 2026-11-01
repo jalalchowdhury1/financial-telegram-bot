@@ -18,6 +18,7 @@ import { EXTERNAL_URLS } from './constants';
 const INDICATOR_KEYS = ['sahmRule', 'sentiment', 'claims', 'creditSpread', 'realYields', 'copperGold'];
 const CHECKLIST_KEYS = ['nfci', 'm2', 'retail', 'housing', 'indpro', 'jolts', 'durable', 'savings'];
 const STALE_DAYS = 4; // > 3 so the health check flags the genuine outage
+const MAX_AGE_DAYS = 30;
 
 // Four Horsemen lines carried in the helper tab. Unlike every other metric here
 // these ship a compact HISTORY as well as a value, because the recession-watch
@@ -111,6 +112,11 @@ export function parsePackedHistory(str) {
 export function reconstructFred(map, now = new Date()) {
     if (!map || typeof map !== 'object') return null;
     const updatedAt = orNull(map['updated_at']);
+    // The copy's real age: a tab the scraper stopped writing was served forever as
+    // "4 days stale" (audit B8). Over MAX_AGE_DAYS → null; staleDays never under STALE_DAYS.
+    const ageDays = Number.isFinite(Date.parse(updatedAt)) ? Math.floor((now.getTime() - Date.parse(updatedAt)) / 864e5) : null;
+    if (ageDays > MAX_AGE_DAYS) return null;
+    const staleDays = Math.max(STALE_DAYS, ageDays ?? 0);
 
     const indicators = {};
     for (const k of INDICATOR_KEYS) {
@@ -120,7 +126,7 @@ export function reconstructFred(map, now = new Date()) {
             value,
             asOf: orNull(map[`indicators.${k}.asOf`]),
             status: orNull(map[`indicators.${k}.status`]) ?? undefined,
-            stale: true, unavailable: false, staleDays: STALE_DAYS,
+            stale: true, unavailable: false, staleDays,
         };
     }
 
@@ -134,7 +140,7 @@ export function reconstructFred(map, now = new Date()) {
             status: orNull(map[`checklist.${k}.status`]) ?? undefined,
             bullish: String(map[`checklist.${k}.bullish`]).toLowerCase() === 'true',
             label: orNull(map[`checklist.${k}.label`]) ?? undefined,
-            stale: true, unavailable: false, staleDays: STALE_DAYS,
+            stale: true, unavailable: false, staleDays,
         };
     }
 
@@ -151,7 +157,7 @@ export function reconstructFred(map, now = new Date()) {
         horsemen[k] = {
             current: value ?? history[history.length - 1]?.value ?? null,
             asOf: orNull(map[`horsemen.${k}.asOf`]) ?? history[history.length - 1]?.date ?? null,
-            stale: true, unavailable: value === null && history.length === 0, staleDays: STALE_DAYS,
+            stale: true, unavailable: value === null && history.length === 0, staleDays,
             history,
         };
     }
@@ -179,10 +185,10 @@ export function reconstructFred(map, now = new Date()) {
         // reconstructed metric carries them: the health check's N/A sweep now covers
         // these two top-level cards, and a card without staleDays reads as fresh.
         yieldCurve: ycCurrent !== null
-            ? { current: ycCurrent, asOf: orNull(map['yieldCurve.asOf']), stale: true, staleDays: STALE_DAYS, unavailable: false, history: ycHistory }
+            ? { current: ycCurrent, asOf: orNull(map['yieldCurve.asOf']), stale: true, staleDays, unavailable: false, history: ycHistory }
             : { current: null, asOf: null, stale: false, staleDays: 0, unavailable: true, history: ycHistory },
         profitMargin: pmCurrent !== null
-            ? { current: pmCurrent, asOf: orNull(map['profitMargin.asOf']), stale: true, staleDays: STALE_DAYS, unavailable: false, history: [] }
+            ? { current: pmCurrent, asOf: orNull(map['profitMargin.asOf']), stale: true, staleDays, unavailable: false, history: [] }
             : { current: null, asOf: null, stale: false, staleDays: 0, unavailable: true, history: [] },
         peRatio,
         peRatioAsOf: updatedAt || now.toISOString(),

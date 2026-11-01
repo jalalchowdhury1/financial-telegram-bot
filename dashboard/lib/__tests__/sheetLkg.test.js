@@ -185,3 +185,13 @@ describe('parsePackedHistory', () => {
         expect(parsePackedHistory(undefined)).toEqual([]);
     });
 });
+
+describe('updated_at age (audit B8)', () => {
+    test('a helper tab last written 60 days ago is rejected (null), not served as a 4-day-stale copy', () => {
+        expect(reconstructFred(parseLkgCsv(CSV), new Date('2026-08-20T10:00:00Z'))).toBeNull();
+    });
+    test('staleDays is the real age of the copy (10 days), never under 4', () => {
+        expect(reconstructFred(parseLkgCsv(CSV), new Date('2026-07-01T10:00:00Z')).indicators.sentiment.staleDays).toBe(10);
+        expect(reconstructFred(parseLkgCsv(CSV), NOW).indicators.sentiment.staleDays).toBe(4);
+    });
+});
