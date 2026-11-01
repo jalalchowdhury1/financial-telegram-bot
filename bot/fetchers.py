@@ -556,7 +556,7 @@ def _fetch_polygon_aggs(symbol: str, api_key: str, days: int = 1500) -> Optional
     end = datetime.now().strftime('%Y-%m-%d')
     start = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
     url = (f'https://api.polygon.io/v2/aggs/ticker/{symbol}/range/1/day/{start}/{end}'
-           f'?apiKey={api_key}&limit=1000&sort=asc&adjusted=true')
+           f'?apiKey={api_key}&limit=50000&sort=asc&adjusted=true')  # 1000 + asc kept the OLDEST 1000: over ~4y it dropped the newest
     r = requests.get(url, timeout=20, headers=_HEADERS)
     if r.status_code == 429:
         raise PolygonRateLimited(f'Polygon 429 for {symbol}')
@@ -991,7 +991,9 @@ def fetch_spy_with_fallback(fred_api_key: Optional[str] = None,
         # Override with Finnhub spot price to guarantee live data if Polygon metrics are stale
         # Finnhub 'c' (current) / 'pc' (previous close)
         spot_date = None
-        if finnhub_api_key:
+        # FRED rows are S&P 500 index points (~6,500): a SPY spot (~680) on them read
+        # "-89% vs 200-day" (audit 1 Nov 2026), so they stay one scale, spot-free.
+        if finnhub_api_key and not data_source.startswith('FRED'):
             try:
                 fh = _fetch_finnhub_quote('SPY', finnhub_api_key)
                 if fh and fh.get('current') and fh['current'] > 0:
