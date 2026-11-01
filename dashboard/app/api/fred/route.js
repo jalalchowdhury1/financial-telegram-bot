@@ -5,7 +5,7 @@ import { serve, loadLastGood, loadLastGoodKV } from '../../../lib/store';
 import { fetchSheetLkg } from '../../../lib/sheetLkg';
 import { faultsFrom } from '../../../lib/faults';
 import { makeBudget, TIMED_OUT } from '../../../lib/budget';
-import { resolvePeRatio } from '../../../lib/peRatio';
+import { resolvePeRatio, parseMultplPe } from '../../../lib/peRatio';
 import { resolveLeg, buildCopperGold, westmetallCopperLeg, LB_PER_TONNE } from '../../../lib/copperGold';
 import { resolveSpEps, parseMultplEps, parseShillerCsv, toMonthlyHistory } from '../../../lib/spEps';
 import { resolveBankruptcies } from '../../../lib/bankruptcies';
@@ -70,11 +70,15 @@ function fetchSeries(seriesId, apiKey, limit = 15) {
     return fetchSeriesRaw(seriesId, apiKey, limit);
 }
 
-// Cache the slow HTML P/E scrapes the same way (30 min).
-const cachedText = async (key, url, ms) => {
-    const res = await proxyFetch(url, { revalidate: REVALIDATE_SECONDS, timeout: ms });
-    return res.text();
+// Cache the slow HTML P/E scrapes the same way (30 min). The Data Cache keeps ANY 200,
+// so a maintenance page sat there for 30 min: when `parses` rejects the cached text, one
+// uncached refetch gets its chance (audit B11).
+const cachedText = async (key, url, ms, parses) => {
+    const text = await (await proxyFetch(url, { revalidate: REVALIDATE_SECONDS, timeout: ms })).text();
+    if (!parses || parses(text)) return text;
+    return (await proxyFetch(url, { revalidate: 0, timeout: ms })).text();
 };
+const multplEpsOk = (t) => parseMultplEps(t).length > 0;
 
 // The point nearest `nMonths` before the newest — none if that is over 35 days off (a
 // short history used to hand back its oldest point as "a year ago"; audit B10). 35, not
@@ -211,7 +215,7 @@ function goldSources(fredKey, polyKey) {
 function spEpsSources({ fredKey, pe, peSource }) {
     return [
         { name: 'multpl', freshnessDays: 400, fetch: async () => {
-            const html = await cachedText('multpl-eps', EXTERNAL_URLS.MULTPL_EPS, 8000);
+            const html = await cachedText('multpl-eps', EXTERNAL_URLS.MULTPL_EPS, 8000, multplEpsOk);
             const hist = parseMultplEps(html);
             const last = hist[hist.length - 1];
             if (!last) throw new Error('multpl EPS: no rows parsed');
@@ -230,7 +234,7 @@ function spEpsSources({ fredKey, pe, peSource }) {
         // maxAgeDays: past ~6 months the mirror is REJECTED, not served stale — it froze
         // at 2023-06-01 (181.77 vs 295.36 live), which would be a wrong headline.
         { name: 'datahub', freshnessDays: 400, maxAgeDays: 183, fetch: async () => {
-            const csv = await cachedText('datahub-eps', EXTERNAL_URLS.DATAHUB_SHILLER, 8000);
+            const csv = await cachedText('datahub-eps', EXTERNAL_URLS.DATAHUB_SHILLER, 8000, (t) => parseShillerCsv(t).length > 0);
             const hist = parseShillerCsv(csv);
             const last = hist[hist.length - 1];
             if (!last) throw new Error('datahub EPS: no rows parsed');
@@ -630,7 +634,7 @@ export async function GET(request) {
         // leg below can refuse CAPE (a 10-yr smoothed P/E) and the tile can label it.
         const overBudget = (what) => `${what} skipped: request time budget (${FRED_BUDGET_MS / 1000} s) spent`;
         let pe = await budget.race(resolvePeRatio({
-            multplHtml: () => cachedText('multpl', EXTERNAL_URLS.MULTPL_PE, 8000),
+            multplHtml: () => cachedText('multpl', EXTERNAL_URLS.MULTPL_PE, 8000, parseMultplPe),
             yahooHtml: () => cachedText('yahoo-pe', EXTERNAL_URLS.YAHOO_PE, 8000),
             // S&P close: CNBC .SPX (same-day) → FRED SP500. EPS: multpl's EPS table (a
             // different page from its P/E) → this route's own saved spEps (EPS moves quarterly).
@@ -646,7 +650,7 @@ export async function GET(request) {
                 }
                 let eps = null;
                 try {
-                    const hist = parseMultplEps(await cachedText('multpl-eps', EXTERNAL_URLS.MULTPL_EPS, 8000));
+                    const hist = parseMultplEps(await cachedText('multpl-eps', EXTERNAL_URLS.MULTPL_EPS, 8000, multplEpsOk));
                     const last = hist[hist.length - 1];
                     if (last?.value > 0) eps = { v: last.value, d: last.date };
                 } catch (e) { messages.push(`P/E computed: multpl EPS failed: ${maskKey(e.message)}`); }

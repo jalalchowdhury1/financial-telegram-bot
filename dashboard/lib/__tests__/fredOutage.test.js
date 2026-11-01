@@ -120,3 +120,16 @@ test('B10: M2 with only 5 monthly points → no year-ago match (nearest point 4 
     expect(b.checklist.m2.value).toBeNull();
     expect(b.checklist.retail.value).not.toBeNull();   // a real 3-month match still works
 });
+
+test('B11: a cached 200 maintenance page from multpl is not served for 30 min: one uncached refetch', async () => {
+    const { proxyFetch } = require('../fetcher');
+    const { EXTERNAL_URLS } = require('../constants');
+    fredExcept();
+    proxyFetch.mockImplementation(async (url, opts) => {
+        if (url !== EXTERNAL_URLS.MULTPL_PE) throw new Error('down');
+        return { text: async () => (opts.revalidate ? '<html>Down for maintenance</html>' : '<meta content="Current S&P 500 PE Ratio is 25.86, a change">') };
+    });
+    const b = await (await get()).json();
+    expect(b.peRatio).toBe(25.86);
+    expect(b.peSource).toBe('multpl');
+});
