@@ -288,6 +288,10 @@ describe('overlayLiveExtras', () => {
         expect(m.horsemen.bankruptcies.asOf).toBe('now');
         expect(m.horsemen.claims.current).toBe(1);
     });
+    test("a live P/E brings its stale flag: a cached copy's flag never sticks to a fresh P/E, or goes missing", () => {
+        expect(overlayLiveExtras({ ...base, peStale: true }, { peRatio: 27.1, peRatioAsOf: 'now', peSource: 'multpl', peIsCape: false, peStale: false }).peStale).toBe(false);
+        expect(overlayLiveExtras({ ...base }, { peRatio: 25.86, peRatioAsOf: '2026-10-22', peSource: 'multpl', peIsCape: false, peStale: true }).peStale).toBe(true);
+    });
     test('a live source that failed keeps the cached copy', () => {
         const live = {
             spEps: { current: null, unavailable: true },

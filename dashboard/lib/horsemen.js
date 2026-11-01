@@ -332,7 +332,7 @@ export function mergeHorsemenOverBase(base, live) {
 export function overlayLiveExtras(merged, live) {
     if (live.spEps && !live.spEps.unavailable) merged.spEps = live.spEps;
     if (live.peRatio != null) {
-        Object.assign(merged, { peRatio: live.peRatio, peRatioAsOf: live.peRatioAsOf, peSource: live.peSource, peIsCape: live.peIsCape });
+        Object.assign(merged, { peRatio: live.peRatio, peRatioAsOf: live.peRatioAsOf, peSource: live.peSource, peIsCape: live.peIsCape, peStale: !!live.peStale });
     }
     const cg = live.indicators?.copperGold;
     if (cg && !cg.unavailable) merged.indicators = { ...(merged.indicators || {}), copperGold: cg };

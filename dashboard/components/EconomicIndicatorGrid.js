@@ -53,7 +53,7 @@ export function valuationRow(fred) {
         value: pe ? `P/E ~${pe.toFixed(1)}` : 'P/E N/A', status: pe > 25 ? 'restrictive' : 'neutral',
         // computed tier (lib/peRatio.js): S&P ÷ EPS by us, not multpl's own figure — say so
         benchmark: fred?.peSource === 'computed' ? 'Fair at ~20 · computed' : 'Fair at ~20',
-        metric: { value: pe ?? null, asOf: fred?.peRatioAsOf, stale: false }, markKey: 'peRatio', raw: pe, fmtPrev: (v) => `P/E ~${v.toFixed(1)}`,
+        metric: { value: pe ?? null, asOf: fred?.peRatioAsOf, stale: !!fred?.peStale }, markKey: 'peRatio', raw: pe, fmtPrev: (v) => `P/E ~${v.toFixed(1)}`,
     };
 }
 

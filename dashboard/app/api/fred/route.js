@@ -418,7 +418,7 @@ function fillFromLastGood(target, lgData, failedIds) {
 // so the UI shows N/A — never a misleadingly old number.
 // ─────────────────────────────────────────────────────────────────────────────
 
-function buildResponse(series, peRatio, now, peSource = null, peAsOf = null) {
+function buildResponse(series, peRatio, now, peSource = null, peAsOf = null, peStale = false) {
     const {
         T10Y2Y: t10y2y, UNRATE: unrate, UMCSENT: umcsent, ICSA: icsa, BAMLC0A4CBBB: bbb,
         DFII10: dfii10, NFCI: nfci, M2SL: m2sl, RSXFS: rsxfs,
@@ -523,6 +523,7 @@ function buildResponse(series, peRatio, now, peSource = null, peAsOf = null) {
         // field: it is the only signal that a different metric is on screen.
         peSource,
         peIsCape: peSource === 'cape',
+        peStale, // a frozen multpl page served last (lib/peRatio): the tile shows its 🕐
         recessions: recessionPeriods,
         indicators: {
             sahmRule: sahmIndicator(unrate, now),
@@ -667,7 +668,7 @@ export async function GET(request) {
         const peSource = pe.peSource;
         messages.push(...pe.messages);
 
-        const responseData = buildResponse(series, peRatio, now, peSource, pe.peAsOf);
+        const responseData = buildResponse(series, peRatio, now, peSource, pe.peAsOf, !!pe.stale);
 
         // Four Horsemen: back the three FRED-fed lines with independent providers
         // (Treasury / BLS / keyless FRED CSV) whenever the primary left one empty

@@ -21,6 +21,11 @@ describe('Market Valuation row — CAPE fallback is labelled CAPE, never P/E', (
         expect(r.metric.asOf).toBe('2026-09-01');
     });
 
+    test('a P/E the route flags stale (a frozen multpl page, served last) wears its 🕐 instead of reading fresh', () => {
+        expect(valuationRow({ peRatio: 25.86, peSource: 'multpl', peRatioAsOf: '2026-10-22', peStale: true }).metric.stale).toBe(true);
+        expect(valuationRow({ peRatio: 25.86, peSource: 'multpl', peRatioAsOf: '2026-10-30' }).metric.stale).toBe(false);
+    });
+
     test('no P/E at all → "P/E N/A"', () => {
         expect(valuationRow({ peRatio: null }).value).toBe('P/E N/A');
         expect(valuationRow(undefined).value).toBe('P/E N/A');

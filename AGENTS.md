@@ -896,7 +896,8 @@ Each rule has a tripwire test named in its commit (`audit A1…D11`).
 - **`/api/fred`:** merge base /tmp → KV → Sheet (none → the live shape, cards unavailable); the series loop is capped at
   15 s so the Horsemen repair keeps its time; a failed series' cards come from last-good stamped `stale:true`; claims /
   Sahm are recomputed after a BLS/DOL repair; `findByMonthOffset` ±35 days or none; `housing6moAvg` undefined under 6
-  points; a multpl P/E page over 5 days old is demoted; a cached page that does not parse gets one uncached refetch.
+  points; a multpl P/E page over 5 days old is demoted (served last it is `peStale`, through the
+  live-over-cache merge too, and the tile wears 🕐); a cached page that does not parse gets one uncached refetch.
 - **Dateless sources** (sheet cell, scraped page) are cross-checked against a dated one (sheet VIX vs the CBOE close:
   15% market closed, 25% in session) or their own page date before they count as live. In session the VIX tag says
   "prior close <date>" and is `live:false`. Sheet LKG `staleDays` = real age; over 30 days → none. A last-good copy is
