@@ -1,6 +1,10 @@
 import fs from 'fs';
 
 export const dynamic = 'force-dynamic';
+// Four GitHub layers × GH_TIMEOUT_MS fit well inside this; without it a hung GitHub ran
+// the route into the platform's default limit (audit B13).
+export const maxDuration = 30;
+const GH_TIMEOUT_MS = 5000;
 
 const CACHE_FILE = '/tmp/last-run-cache.json';
 const REPO = 'jalalchowdhury1/financial-telegram-bot';
@@ -20,7 +24,7 @@ function loadCache() {
 async function ghFetch(url) {
     const headers = { 'Accept': 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' };
     if (process.env.GITHUB_TOKEN) headers['Authorization'] = `Bearer ${process.env.GITHUB_TOKEN}`;
-    const res = await fetch(url, { headers, next: { revalidate: 0 } });
+    const res = await fetch(url, { headers, next: { revalidate: 0 }, signal: AbortSignal.timeout(GH_TIMEOUT_MS) });
     if (!res.ok) throw new Error(`GitHub returned ${res.status}`);
     return res.json();
 }
@@ -39,13 +43,15 @@ export async function GET() {
         throw new Error('No successful runs found');
     } catch (e) { messages.push(`Layer 1 failed: ${e.message}`); }
 
+    // Layers 2-4 are fallbacks (a possibly FAILED run, another workflow, a commit time):
+    // served with hasErrors so they never read as the report's clean last run (audit B13).
     // Layer 2: GitHub Actions — any run of this workflow (completed, regardless of status)
     try {
         const data = await ghFetch(`https://api.github.com/repos/${REPO}/actions/workflows/${WORKFLOW}/runs?per_page=1`);
         if (data?.workflow_runs?.length > 0) {
             const lastRun = data.workflow_runs[0].updated_at;
             saveCache(lastRun);
-            return Response.json({ lastRun, _meta: { source: 'GitHub Actions (any status)', messages } });
+            return Response.json({ lastRun, _meta: { source: 'GitHub Actions (any status)', hasErrors: true, messages } });
         }
         throw new Error('No runs found');
     } catch (e) { messages.push(`Layer 2 failed: ${e.message}`); }
@@ -57,7 +63,7 @@ export async function GET() {
         if (runs?.length > 0) {
             const lastRun = runs[0].updated_at;
             saveCache(lastRun);
-            return Response.json({ lastRun, _meta: { source: 'GitHub Actions (all workflows)', messages } });
+            return Response.json({ lastRun, _meta: { source: 'GitHub Actions (all workflows)', hasErrors: true, messages } });
         }
         throw new Error('No workflow runs found');
     } catch (e) { messages.push(`Layer 3 failed: ${e.message}`); }
@@ -69,7 +75,7 @@ export async function GET() {
             const lastRun = data[0].commit?.committer?.date || data[0].commit?.author?.date;
             if (lastRun) {
                 saveCache(lastRun);
-                return Response.json({ lastRun, _meta: { source: 'GitHub Commits (proxy)', messages } });
+                return Response.json({ lastRun, _meta: { source: 'GitHub Commits (proxy)', hasErrors: true, messages } });
             }
         }
         throw new Error('No commit data');
