@@ -16,7 +16,7 @@ const get = async (path) => {
 };
 const decode = (b) => b.t.flatMap((d, i) => (Number.isFinite(b.v[i]) ? [{ date: iso(Date.parse(`${b.from}T00:00:00Z`) + d * DAY), value: b.v[i] }] : []));
 const sheet = (s, key) => (s.v[key] || []).flatMap((x, i) => (Number.isFinite(x) ? [{ date: iso(Date.parse(`${s.from}T00:00:00Z`) + i * DAY), value: x }] : []));
-const tail = (pts, more) => [...pts, ...more.filter((p) => p.date > pts[pts.length - 1].date)];
+const tail = (pts, more) => [...pts, ...more.filter((p) => !pts.length || p.date > pts[pts.length - 1].date)]; // an empty bake: the sheet alone
 
 const keys = [...new Set(SIGNALS.flatMap((g) => (g.combo ? g.combo.legs.map((l) => l.key) : [g.key])))];
 const [series, spy, ...baked] = await Promise.all([get('/api/history').then((h) => h.series), get('/history/spy-daily.json'), ...keys.map((k) => get(`/history/${k}.json`))]);

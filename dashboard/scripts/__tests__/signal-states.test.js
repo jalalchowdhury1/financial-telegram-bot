@@ -57,6 +57,16 @@ it('a baked file that comes back empty gives its signal no data (asOf null), nev
     expect(JSON.parse(stdout).find((g) => g.id === 'pt')).toMatchObject({ fired: null, asOf: null, share: null });
 });
 
+it('an empty baked file the sheet carries on (cl): its pair has no data, the rest still report (audit C5)', async () => {
+    routes['/history/cl.json'] = [200, { from: '2024-01-01', t: [], v: [] }];
+    routes['/api/history'] = [200, { series: { ...sheet, v: { ...sheet.v, cl: day(60, 70, 70) } } }];
+    const { code, stdout } = await run();
+    expect(code).toBe(0);
+    const st = Object.fromEntries(JSON.parse(stdout).map((g) => [g.id, g]));
+    expect(st.fo).toMatchObject({ fired: null, asOf: null, share: null }); // 60 sheet days: no 1-year change yet
+    expect(st.aaii).toMatchObject({ asOf: '2026-09-29' });
+});
+
 it.each([
     ['a baked file fails', '/history/housing.json', [500, {}], /housing\.json → 500/],
     ['the sheet has no series', '/api/history', [200, {}], /no series/],
