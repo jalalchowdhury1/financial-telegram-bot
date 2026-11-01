@@ -1351,15 +1351,15 @@ export default function DashboardV2() {
                                 <FredTile fred={fred} metric="yieldCurve" title="Yield curve" jump="Yield curve" markKey="yieldCurve" refreshTick={refreshTick}
                                     tip="10-year minus 2-year. Below 0 = classic recession warning."
                                     fmt={(v) => `${signed(v)}%`} tone={(v) => (v >= 0 ? 'good' : 'bad')}
-                                    chart={{ color: '#9fb4c7', gradientId: 'v2Yield', showZero: true }} />
+                                    chart={{ color: '#9fb4c7', gradientId: 'v2Yield', showZero: true, nice: true, inverted: 'rgba(251,191,36,0.2)' }} />
                                 <FredTile fred={fred} metric="profitMargin" title="Profit margin" jump="Profit margin" markKey="profitMargin" refreshTick={refreshTick}
                                     tip="Corporate profits ÷ GDP. High = pricing power."
                                     fmt={(v) => `${v.toFixed(2)}%`} tone={() => 'flat'}
-                                    chart={{ color: '#9fb4c7', gradientId: 'v2Profit' }} />
+                                    chart={{ color: '#9fb4c7', gradientId: 'v2Profit', nice: true }} />
                                 <FredTile fred={fred} metric="spEps" title="S&P 500 EPS" jump="S&P 500 EPS" markKey={undefined} refreshTick={refreshTick}
                                     tip="S&P 500 earnings per share, last 12 months. History in today's dollars."
                                     fmt={(v) => `$${v.toFixed(2)}`} tone={() => 'flat'}
-                                    chart={{ color: '#9fb4c7', gradientId: 'v2Eps', cadence: 'monthly' }} />
+                                    chart={{ color: '#9fb4c7', gradientId: 'v2Eps', cadence: 'monthly', nice: true }} />
                                 <MoreButton open={trioOpen} onClick={toggleTrio} className="v2-trio-more" />
                             </div>
                         </div>

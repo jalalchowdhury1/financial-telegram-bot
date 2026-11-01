@@ -142,3 +142,44 @@ describe('QoL: readable axis labels', () => {
         expect(texts.some((t) => /^\d+K$/.test(t))).toBe(true);
     });
 });
+
+describe('v2: round y ticks and the inverted stretch', () => {
+    const lbls = (c) => [...c.querySelectorAll('.axis-lbl')].map((l) => l.textContent).filter((t) => !/^\d{4}$/.test(t));
+    // 5 years: +1.25 falling, under zero for months 12–35 (deepest −1.09 at month 26), then back up
+    const curve = monthly(5).map((h, i) => ({ ...h, value: i < 12 ? 1.25 - i * 0.1 : i < 36 ? -1.08 * (1 - Math.abs(i - 26) / 15) - 0.01 : (i - 35) * 0.04 }));
+
+    test('nice ticks land on round numbers (zero is 0.0, not 0.08); v1 keeps its five even splits', () => {
+        const { container, unmount } = render(<MiniChart history={curve} cadence="monthly" defaultTimeframe="ALL" gradientId="tNice" nice />);
+        expect(lbls(container)).toEqual(['-1.0', '-0.5', '0.0', '0.5', '1.0']);
+        unmount();
+        const eps = monthly(5).map((h, i) => ({ ...h, value: 195 + i * (103 / 59) }));
+        const { container: c2, unmount: u2 } = render(<MiniChart history={eps} cadence="monthly" defaultTimeframe="ALL" gradientId="tEps" nice />);
+        expect(lbls(c2)).toEqual(['200', '220', '240', '260', '280']);
+        u2();
+        const { container: c3 } = render(<MiniChart history={curve} cadence="monthly" defaultTimeframe="ALL" gradientId="tV1" />);
+        expect(lbls(c3)).toEqual(['-1.09', '-0.51', '0.08', '0.66', '1.25']);
+    });
+
+    test('the inverted stretch is tinted and labelled at its deepest point; nothing on v1 or on a curve that never inverts', () => {
+        const { container, unmount } = render(<MiniChart history={curve} cadence="monthly" defaultTimeframe="ALL" gradientId="tInv" showZero inverted="rgba(251,191,36,0.2)" />);
+        expect(container.querySelector('clipPath#tInv-below')).toBeTruthy();
+        expect(container.querySelector('polygon[clip-path="url(#tInv-below)"]').getAttribute('fill')).toBe('rgba(251,191,36,0.2)');
+        const tag = screen.getByText('inverted');
+        const x = (i) => ((42 + (i / 59) * 430) / 480) * 100; // toX in % (42 = the gutter before it is measured)
+        expect(parseFloat(tag.style.left)).toBeCloseTo(x(26), 1);
+        unmount();
+        const { container: c2, unmount: u2 } = render(<MiniChart history={curve} cadence="monthly" defaultTimeframe="ALL" gradientId="tInvV1" showZero />);
+        expect(c2.querySelector('clipPath')).toBeNull();
+        expect(screen.queryByText('inverted')).toBeNull();
+        u2();
+        const { container: c3, unmount: u3 } = render(<MiniChart history={monthly(5)} cadence="monthly" defaultTimeframe="ALL" gradientId="tUp" inverted="red" />);
+        expect(c3.querySelector('clipPath')).toBeNull();
+        expect(screen.queryByText('inverted')).toBeNull();
+        u3();
+        // a 2px dip: tinted, but no room for the word
+        const dip = curve.map((h) => ({ ...h, value: h.value < 0 ? -0.02 : h.value }));
+        const { container: c4 } = render(<MiniChart history={dip} cadence="monthly" defaultTimeframe="ALL" gradientId="tDip" inverted="red" />);
+        expect(c4.querySelector('clipPath')).toBeTruthy();
+        expect(screen.queryByText('inverted')).toBeNull();
+    });
+});

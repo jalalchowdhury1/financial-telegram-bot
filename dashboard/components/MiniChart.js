@@ -4,7 +4,12 @@ import { yearTicks, indexFromPointer, tfAvailable, fmtDay, readChoice, saveChoic
 import useElementWidth from './useElementWidth';
 import AxisLabels from './AxisLabels';
 
-export default function MiniChart({ history, color = '#818cf8', gradientId = 'chartGrad', showZero = false, recessions = [], label = '', cadence = 'auto', defaultTimeframe = null, fmt = null }) {
+/**
+ * v2-only props: `nice` puts the y ticks on round numbers (1, 2 or 5 × 10ⁿ apart, at most 6), so the zero line sits at
+ * 0 rather than 0.08; `inverted` = a fill for the stretches under zero (the yield curve's inversions), the longest one
+ * labelled at its deepest point.
+ */
+export default function MiniChart({ history, color = '#818cf8', gradientId = 'chartGrad', showZero = false, recessions = [], label = '', cadence = 'auto', defaultTimeframe = null, fmt = null, nice = false, inverted = null }) {
     const [timeframe, setTimeframe] = useState(defaultTimeframe || '5Y');
     const [hover, setHover] = useState(null);
     const svgRef = useRef(null);
@@ -52,9 +57,16 @@ export default function MiniChart({ history, color = '#818cf8', gradientId = 'ch
     // Y-axis ticks (fmt lets big-number series render compact labels like 350K)
     const fmtTick = fmt || ((v) => (v >= 10 ? v.toFixed(1) : v.toFixed(2)));
     const yTicks = [];
-    for (let i = 0; i <= 4; i++) {
-        const val = min + (range * i) / 4;
-        yTicks.push({ y: toY(val), label: fmtTick(val) });
+    if (nice) {
+        const base = 10 ** Math.floor(Math.log10(range)) / 10;
+        const step = [1, 2, 5, 10, 20, 50].map((m) => m * base).find((st) => Math.floor(max / st) - Math.ceil(min / st) < 6);
+        const dp = Math.max(0, -Math.floor(Math.log10(step) + 1e-9));
+        for (let k = Math.ceil(min / step); k <= Math.floor(max / step); k++) yTicks.push({ y: toY(k * step), label: fmt ? fmt(k * step) : (k * step).toFixed(dp) });
+    } else {
+        for (let i = 0; i <= 4; i++) {
+            const val = min + (range * i) / 4;
+            yTicks.push({ y: toY(val), label: fmtTick(val) });
+        }
     }
     // The left gutter fits the longest tick at a real 10px (the old 42 units until measured).
     const padL = gutterFor(yTicks.map((t) => t.label), w, plotPx, 42);
@@ -63,6 +75,18 @@ export default function MiniChart({ history, color = '#818cf8', gradientId = 'ch
 
     const line = values.map((v, i) => `${toX(i)},${toY(v)}`).join(' ');
     const area = line + ` ${w - padR},${h - padB} ${padL},${h - padB}`;
+    // under zero: the line closed along zero, clipped to below it; the longest stretch is labelled at its deepest point,
+    // kept inside the stretch, only when the word fits (56px wide, 12px deep)
+    const zy = Math.max(padT, Math.min(h - padB, toY(0)));
+    let run = null;
+    for (let i = 0, j; inverted && min < 0 && i < values.length; i = j + 1) {
+        for (j = i; j < values.length && values[j] < 0; j++);
+        if (j > i && (!run || j - 1 - i > run.b - run.a)) run = { a: i, b: j - 1 };
+    }
+    const deep = run && values.indexOf(Math.min(...values.slice(run.a, run.b + 1)), run.a);
+    const half = unitsForPx(28, w, plotPx) ?? 28;
+    const tag = run && toX(run.b) - toX(run.a) >= 2 * half && toY(values[deep]) - zy >= 12
+        && { x: Math.min(Math.max(toX(deep), toX(run.a) + half), toX(run.b) - half), y: (zy + toY(values[deep])) / 2 };
 
     // Date to X for recessions
     const dateToX = (dateStr) => {
@@ -141,6 +165,7 @@ export default function MiniChart({ history, color = '#818cf8', gradientId = 'ch
                                 <stop offset="0%" stopColor={color} stopOpacity="0.2" />
                                 <stop offset="100%" stopColor={color} stopOpacity="0" />
                             </linearGradient>
+                            {run && <clipPath id={`${gradientId}-below`}><rect x={padL} y={zy} width={w - padL - padR} height={h - padB - zy} /></clipPath>}
                         </defs>
                         {/* Y-axis grid (its labels are HTML, below) */}
                         {yTicks.map((t, i) => (
@@ -162,6 +187,7 @@ export default function MiniChart({ history, color = '#818cf8', gradientId = 'ch
                             />
                         )}
                         <polygon points={area} fill={`url(#${gradientId})`} />
+                        {run && <polygon points={`${line} ${toX(values.length - 1)},${zy} ${toX(0)},${zy}`} fill={inverted} clipPath={`url(#${gradientId}-below)`} />}
                         <polyline points={line} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" />
                         {hi != null && (
                             <g className="chart-cursor" pointerEvents="none">
@@ -171,6 +197,12 @@ export default function MiniChart({ history, color = '#818cf8', gradientId = 'ch
                         )}
                     </svg>
                     <AxisLabels w={w} h={h} labels={axisLabels} />
+                    {tag && (
+                        <span className="chart-tag" aria-hidden="true" style={{
+                            position: 'absolute', left: `${(tag.x / w) * 100}%`, top: `${(tag.y / h) * 100}%`, transform: 'translate(-50%, -50%)',
+                            pointerEvents: 'none', fontSize: '0.55rem', fontWeight: 700, letterSpacing: '0.04em', color: 'var(--text-muted)', whiteSpace: 'nowrap',
+                        }}>inverted</span>
+                    )}
                 </div>
             </div>
         </div>
