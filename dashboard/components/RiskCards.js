@@ -1,6 +1,7 @@
 'use client';
-import { useEffect, useId, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import Skeleton from './Skeleton';
+import { getJson } from '../lib/loadJson';
 import {
     COLOUR_WORD, BADGE, PLAIN, EXPLAIN, dayName, nextRun, signed, pct0, minus,
     contextOf, legColour, legUsed, tripFuse,
@@ -263,10 +264,11 @@ function RubberBandBody({ data, open }) {
     );
 }
 
-export function RubberBandCard({ open, onVerdict = null }) {
+export function RubberBandCard({ open, onVerdict = null, refreshKey = null, bust = false }) {
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const lastFetch = useRef(0);
 
     // The Readout shows this card's verdict as a chip: hand it the answer (null = failed).
     useEffect(() => {
@@ -274,13 +276,18 @@ export function RubberBandCard({ open, onVerdict = null }) {
         try { onVerdict(data); } catch { /* the readout never breaks this card */ }
     }, [loading, data, onVerdict]);
 
+    // On the page's refresh cycle, as PolymarketTable (the floor skips the first tick's double fetch).
+    // A failed refresh keeps the card it had.
     useEffect(() => {
-        fetch('/api/rubber-band')
-            .then((res) => res.json())
-            .then((json) => (!json || !json.dials || !json.verdict ? setError(json?._meta?.messages?.[0] || 'no data') : setData(json)))
-            .catch(() => setError('fetch failed'))
-            .finally(() => setLoading(false));
-    }, []);
+        if (!bust && Date.now() - lastFetch.current < 60e3) return;
+        lastFetch.current = Date.now();
+        getJson('/api/rubber-band', { bust }).then((json) => {
+            if (!json) setError('fetch failed');
+            else if (!json.dials || !json.verdict) setError(json._meta?.messages?.[0] || 'no data');
+            else { setData(json); setError(null); }
+            setLoading(false);
+        });
+    }, [refreshKey]); // `bust` changes together with each tick
 
     const v = data?.verdict?.colour || 'grey';
     const plan = data && data.defensive?.mode in MODE_BADGE ? verdictOf(data) : null; // a defensive plan outranks the colour, as the headline
@@ -290,7 +297,7 @@ export function RubberBandCard({ open, onVerdict = null }) {
                 {data?._meta?.stale && <span className="badge badge-red">Stale</span>}
                 <span className={`badge ${plan ? MODE_BADGE[data.defensive.mode] : BADGE[v]}`}>{loading ? '…' : plan ? plan.t : COLOUR_WORD[v]}</span>
             </div>
-            {loading ? <Skeleton count={3} /> : error || !data
+            {loading ? <Skeleton count={3} /> : !data
                 ? <div className="rk-na">Snapshot unavailable{error ? ` (${error})` : ''}. The Mac mini publishes it after each close.</div>
                 : <RubberBandBody data={data} open={open} />}
         </div>

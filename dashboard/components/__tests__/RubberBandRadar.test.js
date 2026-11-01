@@ -60,7 +60,7 @@ describe('RubberBandRadar', () => {
     test('never crashes when fetch itself throws', async () => {
         global.fetch = jest.fn(() => Promise.reject(new Error('net down')));
         render(<RubberBandRadar />);
-        await waitFor(() => expect(screen.getByText(/unavailable/i)).toBeInTheDocument());
+        await waitFor(() => expect(screen.getByText(/unavailable/i)).toBeInTheDocument(), { timeout: 3000 }); // getJson retries once after 1.5 s
     });
 
     test('📡 hands its answer to Market Pulse once (null when it fails); a throwing callback never breaks the card', async () => {
@@ -97,3 +97,26 @@ describe('RubberBandRadar', () => {
     });
 });
 
+
+describe('the page refresh reaches the Rubber band radar (audit D5)', () => {
+    const { act } = require('@testing-library/react');
+    afterEach(() => { delete global.fetch; jest.useRealTimers(); });
+
+    test('a refresh tick asks /api/rubber-band again', async () => {
+        mockFetch(snap);
+        const { rerender } = render(<RubberBandRadar refreshKey={0} />);
+        await waitFor(() => expect(screen.getByText(/rubber band is working/i)).toBeInTheDocument());
+        rerender(<RubberBandRadar refreshKey={1} bust />);
+        await act(async () => {});
+        expect(global.fetch.mock.calls.filter(([u]) => String(u).startsWith('/api/rubber-band'))).toHaveLength(2);
+    });
+
+    test('a hung route ends in the unavailable line, not an endless "…"', async () => {
+        global.fetch = jest.fn((u, { signal } = {}) => new Promise((_, no) => signal?.addEventListener('abort', () => no(new Error('aborted')))));
+        jest.useFakeTimers();
+        render(<RubberBandRadar refreshKey={0} />);
+        await act(async () => { await jest.advanceTimersByTimeAsync(61000); });
+        expect(screen.queryByText('…')).toBeNull();
+        expect(screen.getByText(/unavailable/i)).toBeInTheDocument();
+    });
+});

@@ -704,7 +704,7 @@ export default function Dashboard() {
                 <div className="saved-wrap" data-jump="Recession watch" data-cached={saved('fred')} style={{ display: 'contents', ...savedVar('fred') }}><ErrorBoundary resetKey={refreshTick}><FourHorsemen fred={fred} loading={pending.fred && !fred} /></ErrorBoundary></div>
 
                 {/* RUBBER BAND RADAR — is the dip-buying regime alive? (full width, nightly from the Mac mini) */}
-                <div data-jump="Rubber band" style={{ display: 'contents' }}><ErrorBoundary resetKey={refreshTick}><RubberBandRadar onVerdict={setRubberBand} /></ErrorBoundary></div>
+                <div data-jump="Rubber band" style={{ display: 'contents' }}><ErrorBoundary resetKey={refreshTick}><RubberBandRadar onVerdict={setRubberBand} refreshKey={refreshTick} bust={bustKey} /></ErrorBoundary></div>
 
                 {/* SPY HISTORICAL CHART */}
                 <div className="card" style={{ animationDelay: '0.55s' }} data-jump="SPY chart" data-cached={saved('spy')}>

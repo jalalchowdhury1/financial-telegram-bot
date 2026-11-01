@@ -1335,7 +1335,7 @@ export default function DashboardV2() {
                     <Section id="risk" title="Risk">
                         <div className="v2-grid">
                             <Slot jump="Rubber band" title="Rubber band" tip="Is dip-buying still paying? Nightly check of three tripwires." span={12} more>
-                                {(open) => <ErrorBoundary resetKey={refreshTick}><RubberBandCard open={open} onVerdict={setRubberBand} /></ErrorBoundary>}
+                                {(open) => <ErrorBoundary resetKey={refreshTick}><RubberBandCard open={open} onVerdict={setRubberBand} refreshKey={refreshTick} bust={f.bustKey} /></ErrorBoundary>}
                             </Slot>
                             <Slot jump="Recession watch" title="Recession watch" tip="Four recession tells: each one's 1-year move vs its usual move before past recessions." span={12} saved={saved('fred')} more>
                                 {(open) => <ErrorBoundary resetKey={refreshTick}><RecessionCard fred={fred} loading={pending.fred && !fred} open={open} /></ErrorBoundary>}

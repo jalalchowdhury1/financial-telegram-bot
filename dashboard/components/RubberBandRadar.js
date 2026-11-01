@@ -1,7 +1,8 @@
 'use client';
-import { Fragment, useEffect, useId, useState } from 'react';
+import { Fragment, useEffect, useId, useRef, useState } from 'react';
 import ErrorBoundary from './ErrorBoundary';
 import Skeleton from './Skeleton';
+import { getJson } from '../lib/loadJson';
 import { gutterFor, spreadLabels, yearTicks } from '../lib/chartAxis';
 import useElementWidth from './useElementWidth';
 import AxisLabels from './AxisLabels';
@@ -531,10 +532,11 @@ function Trigger({ def, rules, open, onToggle }) {
     );
 }
 
-export default function RubberBandRadar({ onVerdict = null } = {}) {
+export default function RubberBandRadar({ onVerdict = null, refreshKey = null, bust = false } = {}) {
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const lastFetch = useRef(0);
     const [open, setOpen] = useState(null);          // dial key, 'trigger', or null — one panel at a time
 
     // 📡 Market Pulse shows this card's verdict as a chip: hand it the answer (null = failed).
@@ -543,21 +545,18 @@ export default function RubberBandRadar({ onVerdict = null } = {}) {
         try { onVerdict(data); } catch { /* the pulse line never breaks this card */ }
     }, [loading, data, onVerdict]);
 
+    // On the page's refresh cycle, as PolymarketTable (the floor skips the first tick's double fetch).
+    // A failed refresh keeps the card it had.
     useEffect(() => {
-        const load = async () => {
-            try {
-                const res = await fetch('/api/rubber-band');
-                const json = await res.json();
-                if (!json || !json.dials || !json.verdict) setError(json?._meta?.messages?.[0] || 'no data');
-                else setData(json);
-            } catch {
-                setError('fetch failed');
-            } finally {
-                setLoading(false);
-            }
-        };
-        load();
-    }, []);
+        if (!bust && Date.now() - lastFetch.current < 60e3) return;
+        lastFetch.current = Date.now();
+        getJson('/api/rubber-band', { bust }).then((json) => {
+            if (!json) setError('fetch failed');
+            else if (!json.dials || !json.verdict) setError(json._meta?.messages?.[0] || 'no data');
+            else { setData(json); setError(null); }
+            setLoading(false);
+        });
+    }, [refreshKey]); // `bust` changes together with each tick
 
     const verdictColour = data?.verdict?.colour || 'grey';
     const stale = !!data?._meta?.stale;
@@ -578,7 +577,7 @@ export default function RubberBandRadar({ onVerdict = null } = {}) {
                 </span>
             </div>
             <ErrorBoundary>
-                {loading ? <Skeleton count={4} /> : error || !data ? (
+                {loading ? <Skeleton count={4} /> : !data ? (
                     <div className="error-message" style={{ color: 'var(--text-muted)' }}>
                         ⚠️ Rubber band snapshot unavailable{error ? ` (${error})` : ''}. The Mac mini publishes it after each close.
                     </div>
