@@ -38,6 +38,10 @@ describe('extremeSince', () => {
         expect(extremeSince(pts([20, 22, 21, 19, 14]))).toEqual({ low: true, since: null });
         expect(extremeSince(pts([20, 18, 21, 19, 25]))).toEqual({ low: false, since: null });
     });
+    it('a flat series is no extreme, a flat tail after a fall still is (audit C10)', () => {
+        expect(extremeSince(Array.from({ length: 400 }, (_, i) => ({ date: day(i), value: 18 })))).toBeNull();
+        expect(extremeSince(pts([20, 22, 19, 19, 19, 19]))).toEqual({ low: true, since: null });
+    });
     it('null when the run is under 90 days', () => {
         expect(extremeSince(pts([20, 25, 22, 23]))).toBeNull();
     });

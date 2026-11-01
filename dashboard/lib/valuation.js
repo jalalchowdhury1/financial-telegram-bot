@@ -46,6 +46,7 @@ export function extremeSince(points, key = 'value', minDays = 90) {
         let j = n - 2;
         while (j >= 0 && (low ? points[j][key] >= v : points[j][key] <= v)) j--;
         const since = j < 0 ? null : points[j].date;
+        if (!points.slice(j + 1, n - 1).some((p) => p[key] !== v)) continue; // only equal readings passed: flat, no extreme
         if (since == null ? end - ms(points[0].date) >= minDays * DAY : end - ms(since) >= minDays * DAY) return { low, since };
     }
     return null;
