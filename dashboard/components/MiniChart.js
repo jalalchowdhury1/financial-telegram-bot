@@ -123,9 +123,10 @@ export default function MiniChart({ history, color = '#818cf8', gradientId = 'ch
 
     return (
         <div>
-            {/* Timeframe selector + change */}
+            {/* Timeframe selector + change. The change never wraps: when tight (8 tabs on a phone) the tabs scroll sideways;
+                overflowY hidden because each tab's tap band (.tf-btn::before) hangs below the row (see SpyChart). */}
             <div style={{ display: 'flex', gap: '4px', marginBottom: '6px', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'flex', gap: '3px' }}>
+                <div style={{ display: 'flex', gap: '3px', minWidth: 0, overflowX: 'auto', overflowY: 'hidden' }}>
                     {tfKeys.map(tf => (
                         <button key={tf} className="tf-btn" onClick={() => pick(tf)} disabled={!usable.includes(tf)}
                             title={usable.includes(tf) ? undefined : 'Not enough history yet'}
@@ -147,9 +148,9 @@ export default function MiniChart({ history, color = '#818cf8', gradientId = 'ch
                         {fmtDay(dates[hi])} · {fmtVal(values[hi])}
                     </span>
                 ) : (
-                    <span style={{
+                    <span className="chart-change" style={{
                         fontSize: '0.6rem', fontFamily: "'JetBrains Mono', monospace",
-                        color: change >= 0 ? 'var(--green)' : 'var(--red)', fontWeight: 700
+                        color: change >= 0 ? 'var(--green)' : 'var(--red)', fontWeight: 700, whiteSpace: 'nowrap'
                     }}>
                         {change >= 0 ? '▲' : '▼'} {fmt ? fmt(Math.abs(change)) : Math.abs(change).toFixed(2)}
                     </span>

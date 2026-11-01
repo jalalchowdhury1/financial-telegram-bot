@@ -182,4 +182,11 @@ describe('v2: round y ticks and the inverted stretch', () => {
         expect(c4.querySelector('clipPath')).toBeTruthy();
         expect(screen.queryByText('inverted')).toBeNull();
     });
+
+    test('the change label never wraps; a tight tab row scrolls sideways instead (EPS 10Y on a phone broke "▲ 175.31")', () => {
+        const { container } = render(<MiniChart history={monthly(40)} cadence="monthly" gradientId="tWrap" />);
+        expect(container.querySelector('.chart-change').style.whiteSpace).toBe('nowrap');
+        const tabs = screen.getByRole('button', { name: '1Y' }).parentElement;
+        expect([tabs.style.minWidth, tabs.style.overflowX, tabs.style.overflowY]).toEqual(['0', 'auto', 'hidden']);
+    });
 });
