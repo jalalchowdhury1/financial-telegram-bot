@@ -61,3 +61,40 @@ describe('KV outage never wipes last-good (audit 19 Oct 2026)', () => {
         expect(kv.set).not.toHaveBeenCalled();
     });
 });
+
+describe('sheet VIX cross-checked against the CBOE close (audit B4)', () => {
+    const { resolveLiveFields, CBOE_URLS } = require('../sheetsCascade');
+    const { GOOGLE_SHEETS } = require('../constants');
+    const cboe = 'DATE,OPEN,HIGH,LOW,CLOSE\n10/29/2026,17.00,18.00,16.50,17.40\n10/30/2026,18.00,21.00,17.90,20.78\n';
+    const run = (vix, now) => resolveLiveFields({
+        faults: new Set(),
+        now: new Date(now),
+        fetchJson: async () => { throw new Error('x'); },
+        fetchText: async (u) => {
+            if (u === CBOE_URLS.vixCurrent) return cboe;
+            if (u.startsWith(GOOGLE_SHEETS.VIX)) return `VIX,VIX 3M\n${vix},22.10\n`;
+            throw new Error('x');
+        },
+    });
+
+    test('market closed (Sunday): a sheet frozen at 14.84 vs CBOE Friday close 20.78 → CBOE serves', async () => {
+        const r = await run('14.84', '2026-11-01T21:00:00Z');
+        expect(r.fields.vixCurrent).toMatchObject({ value: '20.78', tier: 'cboe' });
+        expect(r.messages.join(' ')).toMatch(/sheet VIX 14\.84 is 29% off CBOE/);
+    });
+
+    test('market closed: a sheet within 15% of the close stays the live main tier', async () => {
+        const r = await run('20.50', '2026-11-01T21:00:00Z');
+        expect(r.fields.vixCurrent).toMatchObject({ value: '20.50', tier: 'main', live: true, stale: false });
+    });
+
+    test('intraday: CBOE holds Friday, so a normal move (+12%) stays live', async () => {
+        const r = await run('23.30', '2026-11-02T15:00:00Z');
+        expect(r.fields.vixCurrent).toMatchObject({ value: '23.30', tier: 'main', live: true });
+    });
+
+    test('intraday: 29% off the prior close → the sheet value is kept but flagged stale', async () => {
+        const r = await run('14.84', '2026-11-02T15:00:00Z');
+        expect(r.fields.vixCurrent).toMatchObject({ value: '14.84', stale: true, live: false });
+    });
+});

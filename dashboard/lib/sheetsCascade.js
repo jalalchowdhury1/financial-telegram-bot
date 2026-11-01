@@ -188,6 +188,26 @@ export async function resolveLiveFields({ faults, fetchText, fetchJson, fredApiK
     }
     if (signalsP) applySignals(fields, await signalsP, messages, nowMs);
 
+    // The sheet's VIX cell carries no date: a frozen cell (14.84 while VIX closed at 20.78)
+    // was served as live main tier. Cross-check it against CBOE's close (the tag resolver
+    // reads the same CSV and the route memoizes it, so no extra download). Market closed and
+    // CBOE holds the latest session → the sheet must sit within 15% of that close, else the
+    // loop below serves CBOE. In session CBOE holds the PRIOR close, so the bar is 25% (VIX
+    // tops that vs the prior close on ~1% of days) and a miss only flags it stale (audit B4).
+    const sv = fields.vixCurrent;
+    if (sv && (sv.tier === 'main' || sv.tier === 'alt') && !faults?.has?.('sheets_cboe')) {
+        try {
+            const last = await cboeLatest('vixCurrent', fetchText, now);
+            const st = dailyCloseStatus(last.date, nowMs);
+            const off = Math.abs(parseFloat(sv.value) / last.value - 1);
+            if (off > (st.current ? 0.15 : 0.25)) {
+                const msg = `sheet VIX ${sv.value} is ${Math.round(off * 100)}% off CBOE close ${last.value.toFixed(2)} (${last.date})`;
+                if (st.current) { fields.vixCurrent = null; messages.push(`${msg}: serving CBOE`); }
+                else { fields.vixCurrent = { ...sv, source: `${sv.source} (${msg})`, live: false, stale: true }; messages.push(`${msg}: flagged stale`); }
+            }
+        } catch { /* no CBOE reference: the sheet value stands, as before */ }
+    }
+
     // VIX levels the sheet couldn't give: CBOE (same-day) → FRED (lags a trading day).
     for (const f of ['vixCurrent', 'vixThreeMonth']) {
         if (fields[f]) continue;
