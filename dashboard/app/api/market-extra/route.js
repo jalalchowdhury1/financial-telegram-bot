@@ -74,6 +74,9 @@ export function staleIfOld(metric, days, now = Date.now()) {
     return { ...metric, stale: true, savedAt: `${metric.lastDate}T12:00:00Z` };
 }
 
+// How many calendar days a FRED copy may lag before it is flagged stale, on BOTH paths.
+const FRED_STALE_DAYS = { cl: 3, tnx: 4, t2y: 4, mortgageRate: 13 };
+
 async function directMetric(path, { apiKey, poly, er, faults = new Set(), tiers, liveQuotes }) {
     const tier = (name, fn) => safe(() => gate(name, faults, fn));
     const cnbc = (name, fn) => safe(() => gate('cnbc', faults, () => gate(name, faults, fn)));
@@ -109,7 +112,7 @@ async function directMetric(path, { apiKey, poly, er, faults = new Set(), tiers,
             // CNBC first: FRED's DCOILWTICO runs days behind (live 2026-10-09 it held Oct 6's
             // $96.24 while WTI was $91.66) — FRED is last, and flagged stale when it lags.
             const c = await cnbc('cnbc_cl', () => tiers.oil()); if (c) return { metric: c, src: 'CNBC' };
-            const f = await safe(() => fredMetric('DCOILWTICO', apiKey)); return f ? { metric: staleIfOld(f, 3), src: 'FRED' } : null;
+            const f = await safe(() => fredMetric('DCOILWTICO', apiKey)); return f ? { metric: staleIfOld(f, FRED_STALE_DAYS.cl), src: 'FRED' } : null;
         }
         case 'commodities.btc': {
             const p = poly && await polyLive('X:BTCUSD', 'BTC.CB=', { allWeek: true }); if (p) return p;
@@ -121,16 +124,16 @@ async function directMetric(path, { apiKey, poly, er, faults = new Set(), tiers,
         case 'rates.tnx': {
             // Treasury publishes the yield the same evening; FRED republishes it a day later.
             const t = await tier('treasury', () => tiers.tnx()); if (t) return { metric: t, src: 'US Treasury' };
-            const f = await safe(() => fredMetric('DGS10', apiKey)); return f ? { metric: staleIfOld(f, 4), src: 'FRED' } : null;
+            const f = await safe(() => fredMetric('DGS10', apiKey)); return f ? { metric: staleIfOld(f, FRED_STALE_DAYS.tnx), src: 'FRED' } : null;
         }
         case 'rates.t2y': {
             const t = await tier('treasury', () => tiers.t2y()); if (t) return { metric: t, src: 'US Treasury' };
-            const f = await safe(() => fredMetric('DGS2', apiKey)); return f ? { metric: staleIfOld(f, 4), src: 'FRED' } : null;
+            const f = await safe(() => fredMetric('DGS2', apiKey)); return f ? { metric: staleIfOld(f, FRED_STALE_DAYS.t2y), src: 'FRED' } : null;
         }
         case 'rates.mortgageRate': {
             // Freddie Mac is the publisher (weekly, Thursdays); FRED's MORTGAGE30US copies it.
             const m = await tier('pmms', () => tiers.mortgage()); if (m) return { metric: m, src: 'Freddie Mac PMMS' };
-            const f = await safe(() => fredMetric('MORTGAGE30US', apiKey)); return f ? { metric: staleIfOld(f, 13), src: 'FRED' } : null;
+            const f = await safe(() => fredMetric('MORTGAGE30US', apiKey)); return f ? { metric: staleIfOld(f, FRED_STALE_DAYS.mortgageRate), src: 'FRED' } : null;
         }
         default: return null;
     }
@@ -270,6 +273,12 @@ export async function GET(request) {
             for (const [k, t] of await treasury) {
                 const m = lam.rates?.[k];
                 if (t?.current != null && m?.current != null && t.lastDate > (m.lastDate || '')) { lam.rates[k] = t; log[k] = 'US Treasury (fresher)'; }
+            }
+            // The Lambda's FRED answers get the direct path's staleness rule (its mortgage rate
+            // carries no source log: it is always FRED MORTGAGE30US).
+            for (const p of ['commodities.cl', 'rates.tnx', 'rates.t2y', 'rates.mortgageRate']) {
+                const k = p.split('.').pop(), m = getPath(lam, p);
+                if (m?.current != null && (log[k] || 'FRED') === 'FRED') setPath(lam, p, staleIfOld(m, FRED_STALE_DAYS[k]));
             }
             if (!lam.fx) lam.fx = {};
             const d = await dxy;

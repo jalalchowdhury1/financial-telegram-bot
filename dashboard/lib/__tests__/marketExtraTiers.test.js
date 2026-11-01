@@ -465,6 +465,24 @@ describe('per-metric last-known-good (the 12-blanks bug)', () => {
         } finally { global.fetch = realFetch; }
     });
 
+    test('Lambda FRED fallbacks get the direct path\'s staleness rule: Oct 6 FRED oil + a Sep mortgage seen Oct 9 are flagged (audit A5)', async () => {
+        process.env.LAMBDA_URL = 'https://lambda.test';
+        const realFetch = global.fetch;
+        const m = (v, lastDate = '2026-10-09') => ({ current: v, dailyChange: { value: 0, pct: 0 }, history: [{ date: lastDate, price: v }], lastDate });
+        global.fetch = jest.fn(async () => ({ ok: true, json: async () => ({
+            fx: { usdcad: m(1.37), usdinr: m(84.1), usdbdt: m(123.2), dxy: m(102.2) },
+            commodities: { gc: m(2650), cl: m(96.24, '2026-10-06'), btc: m(62000) },
+            rates: { tnx: m(5.22, '2026-10-08'), t2y: m(4.75, '2026-10-08'), mortgageRate: m(7.1, '2026-09-24') },
+            _meta: { source: 'Lambda', hasErrors: false, messages: [], sourceLog: { cl: 'FRED', tnx: 'FRED', t2y: 'FRED' } },
+        }) }));
+        try {
+            const b = await get('?_fail=polygon,treasury');
+            expect(b.commodities.cl).toMatchObject({ current: 96.24, stale: true, savedAt: '2026-10-06T12:00:00Z' });
+            expect(b.rates.mortgageRate).toMatchObject({ stale: true, savedAt: '2026-09-24T12:00:00Z' });
+            expect(b.rates.tnx.stale).toBeUndefined();                       // a day old: inside 4
+        } finally { global.fetch = realFetch; }
+    });
+
     test('Lambda up but missing real-estate prints -> filled stale from last good', async () => {
         const re = { current: 2100, dailyChange: { value: 0, pct: 0 }, history: [], lastDate: '2026-09-01' };
         fs.__mem.set('/tmp/lg-market-extra.json', JSON.stringify({ data: { realEstate: { rentIndex: re, atnhpi: { ...re, current: 400 } } }, savedAt: '2026-10-08T00:00:00.000Z' }));
