@@ -5,6 +5,7 @@ import Skeleton from './Skeleton';
 import MarketModal from './MarketModal';
 import Spark from './OddsSpark';
 import { getJson } from '../lib/loadJson';
+import { savedLabel } from '../lib/snapshot';
 
 /**
  * 📊 Market Sentiment — three slices of polymarket.com (sports removed from all three):
@@ -109,6 +110,9 @@ export default function PolymarketTable({ refreshKey = null, bust = false, short
   const [all, setAll] = useState({ trending: false, breaking: false });
   const close = useCallback(() => setSelected(null), []);
   const lastFetch = useRef(0);
+  // When the odds on screen landed: a failed refresh tags them 🕐 hh:mm, as FactorRow does.
+  const okAt = useRef(0);
+  const [staleAt, setStaleAt] = useState(null);
   // A mounted flag instead of a per-effect `alive`: under StrictMode (dev) the effect
   // re-runs inside MIN_REFETCH_MS and a per-effect flag would drop the only response.
   const mounted = useRef(true);
@@ -126,9 +130,10 @@ export default function PolymarketTable({ refreshKey = null, bust = false, short
       if (!mounted.current) return;
       const b = data ? normalize(data) : null;
       if (b && (b.trending.length || b.breaking.length || b.macro.length)) {
-        setBoard(b); setStatus('ready');
+        setBoard(b); setStatus('ready'); okAt.current = Date.now(); setStaleAt(null);
       } else {
         // Keep what we had if a refresh comes back empty.
+        if (okAt.current) setStaleAt(okAt.current);
         setStatus((s) => (s === 'ready' ? 'ready' : data ? 'empty' : 'error'));
       }
     });
@@ -164,7 +169,7 @@ export default function PolymarketTable({ refreshKey = null, bust = false, short
 
   return (
     <section aria-label="Polymarket market sentiment">
-      <div className="card pm-card" style={{ animationDelay: '0.8s' }}>
+      <div className="card pm-card" style={{ animationDelay: '0.8s' }} data-cached={staleAt ? savedLabel(staleAt) : undefined}>
         <div className="card-header">
           <h2>📊 Market Sentiment</h2>
           <span className="badge badge-blue">What the crowd&apos;s betting on</span>
