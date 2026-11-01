@@ -71,6 +71,16 @@ describe('resolveLeg cascade', () => {
     });
 });
 
+describe('buildCopperGold staleness (audit B9)', () => {
+    const leg = (daysAgo, source) => ({ current: source === 'fred' ? 5.8 : 4000, currentDate: iso(daysAgo), source, historyAsc: [], tried: [source] });
+    test('a 60-day-old FRED monthly copper leg is served stale:true', () => {
+        expect(buildCopperGold(leg(60, 'fred'), leg(0, 'cnbc'), undefined, NOW).stale).toBe(true);
+    });
+    test('both legs within 7 days → not stale', () => {
+        expect(buildCopperGold(leg(3, 'westmetall'), leg(0, 'cnbc'), undefined, NOW).stale).toBe(false);
+    });
+});
+
 describe('buildCopperGold', () => {
     const copperLeg = {
         current: 6.0, currentDate: iso(0), source: 'cnbc',

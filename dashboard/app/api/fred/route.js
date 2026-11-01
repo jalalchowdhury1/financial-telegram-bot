@@ -251,7 +251,7 @@ async function fetchCopperGold(now, { fredKey, polyKey, faults }) {
         resolveLeg(copperSources(fredKey, now), faults, now),
         resolveLeg(goldSources(fredKey, polyKey), faults, now),
     ]);
-    return buildCopperGold(copper, gold);
+    return buildCopperGold(copper, gold, undefined, now);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -59,7 +59,11 @@ export async function resolveLeg(sources, faults, now = new Date()) {
  * is computed from each leg's own history; if either leg lacks enough history to
  * span a window, that window's change is null (we still show the ratio).
  */
-export function buildCopperGold(copper, gold, windows = CHANGE_WINDOWS) {
+// The ratio's asOf past this = stale:true (orange 🕐). resolveLeg still ACCEPTS the FRED
+// monthly copper leg up to 80 days old, so it was served as fresh (audit B9).
+const RATIO_FRESH_DAYS = 7;
+
+export function buildCopperGold(copper, gold, windows = CHANGE_WINDOWS, now = new Date()) {
     const ratio = copper.current != null && gold.current != null ? copperGoldRatio(copper.current, gold.current) : null;
 
     const [w1, w3] = windows;
@@ -84,7 +88,7 @@ export function buildCopperGold(copper, gold, windows = CHANGE_WINDOWS) {
     return {
         value: ratio,
         asOf,
-        stale: false, // a served value is always fresh — stale sources are rejected in resolveLeg
+        stale: ratio != null && isStale(asOf, RATIO_FRESH_DAYS, now),
         unavailable: ratio == null,
         status,
         change: d30 ? d30.value : null,
