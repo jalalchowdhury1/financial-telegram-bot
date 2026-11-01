@@ -1,6 +1,6 @@
 import {
     rubberBandItem, historyItem, newestRowOf, latestCloseMs, isRed, buildFreshness,
-    servedCopyItem, SERVED_ROUTES, fwdPeItem,
+    servedCopyItem, SERVED_ROUTES, fwdPeItem, polymarketItem,
 } from '../servedFreshness';
 import { parseRows } from '../../app/api/history/route';
 
@@ -143,9 +143,9 @@ describe('served:* items (market routes)', () => {
 // still answers but stopped moving must not grade green. Shapes: live /api/market-extra
 // (metric lastDate) and /api/fear-greed (CNN asOf ISO; VIX proxies a plain date).
 describe('served:* live payloads graded by their own dates', () => {
-    const mx = (tnx, cl = tnx, t2y = tnx) => ({
-        fx: { usdcad: { current: 1.3998, lastDate: '2026-10-01' } },          // Polygon FX: not graded
-        commodities: { cl: { current: 103.27, lastDate: cl }, btc: { current: 80769, lastDate: '2026-10-01' } },
+    const mx = (tnx, cl = tnx, t2y = tnx, fx = cl) => ({
+        fx: { usdcad: { current: 1.3998, lastDate: fx }, usdbdt: { current: 124.1 } },  // ER-API spot: undated
+        commodities: { cl: { current: 103.27, lastDate: cl }, gc: { current: 3874, lastDate: fx }, btc: { current: 80769, lastDate: fx } },
         rates: { tnx: { current: 5, lastDate: tnx }, t2y: { current: 4.69, lastDate: t2y }, mortgageRate: { current: 7.32, lastDate: '2026-09-01' } },
         _meta: { source: 'yfinance/Polygon/Finnhub/FRED/ER-API', hasErrors: false },
     });
@@ -178,6 +178,13 @@ describe('served:* live payloads graded by their own dates', () => {
         expect(red('market-extra', mx('2029-11-09', '2029-11-12'), '2029-11-13T04:30:00Z')).toBe(false);
         expect(red('market-extra', mx('2029-11-09', '2029-11-13'), '2029-11-14T04:30:00Z')).toBe(true);
     });
+    test('FX / gold / BTC are graded too (audit A3): live 1 Nov shape green; FX frozen on Thursday red', () => {
+        const now = '2026-11-01T21:22:00Z';                                             // Sunday
+        const live = mx('2026-10-30');
+        live.commodities.btc.lastDate = '2026-10-31';                                    // BTC trades the weekend
+        expect(red('market-extra', live, now)).toBe(false);
+        expect(red('market-extra', mx('2026-10-30', '2026-10-30', '2026-10-30', '2026-10-29'), now)).toBe(true);
+    });
     test('no dated metric → falls back to the input age (as before)', () => {
         const it = servedCopyItem('market-extra', { fx: { usdcad: { current: 1.4 } }, _meta: { source: 'Lambda' } }, t('2026-10-20T03:00:00Z'));
         expect(it.servedAgeH).toBe(it.inputAgeH);
@@ -188,13 +195,53 @@ describe('served:* live payloads graded by their own dates', () => {
         expect(red('fear-greed', fg('2026-10-23T23:59:44+00:00'), now)).toBe(false);
         expect(red('fear-greed', fg('2026-10-21T23:59:44+00:00'), now)).toBe(true);
         expect(red('fear-greed', fg('2026-10-20T15:00:00+00:00'), '2026-10-20T17:00:00Z')).toBe(false); // intraday print
-        expect(red('fear-greed', fg('2026-10-23', { source: 'CBOE VIX Proxy', proxy: true }), now)).toBe(false);
-        expect(red('fear-greed', fg('2026-10-22', { source: 'CBOE VIX Proxy', proxy: true }), now)).toBe(true);
+        // A VIX proxy is NOT the CNN index (route: proxy + hasErrors): never green, however fresh.
+        expect(red('fear-greed', fg('2026-10-23', { source: 'CBOE VIX Proxy', proxy: true, hasErrors: true }), now)).toBe(true);
         expect(red('fear-greed', fg(undefined), now)).toBe(false);                     // no date: input age
+    });
+    test('fred / sheets: a live answer flagged hasErrors (partial FRED load, stale AAII) is not green', () => {
+        const now = '2026-11-01T21:22:00Z';
+        const fred = (hasErrors, loadedCount) => ({ yieldCurve: { value: 0.38, asOf: '2026-10-30' }, _meta: { source: 'St. Louis Fed', hasErrors, loadedCount, messages: [`Loaded ${loadedCount}/17 series`] } });
+        expect(red('fred', fred(false, 17), now)).toBe(false);
+        expect(red('fred', fred(true, 15), now)).toBe(true);
+        const sheets = (aaiiStale) => ({ NotSoBoring: 'ON', AAII: { bull: 37.8, as_of: '2026-10-28', stale: aaiiStale, lastGood: false },
+            _meta: { source: 'Computed (daily prices) + Google Sheets (Live)', hasErrors: aaiiStale, stale: false, staleFields: [] } });
+        expect(red('sheets', sheets(false), now)).toBe(false);
+        expect(red('sheets', sheets(true), now)).toBe(true);
+        // within the grace after a close nothing is red yet (same rule as every row)
+        expect(red('fred', fred(true, 15), '2026-10-30T21:00:00Z')).toBe(false);
+    });
+    test('vol + breadth: graded by their oldest row date (live 1 Nov shapes green; a lagging row red)', () => {
+        const now = '2026-11-01T21:22:00Z';
+        const vol = (uvxy) => ({ updated_at: '2026-10-30', tickers: [{ ticker: 'SPY', iv: 19.42, asOf: '2026-10-30' }, { ticker: 'UVXY', iv: 90, asOf: uvxy }],
+            _meta: { source: 'VIX:cboe · VVIX:cboe', hasErrors: false, fallback: false } });
+        expect(SERVED_ROUTES).toEqual(expect.arrayContaining(['vol', 'breadth']));
+        expect(red('vol', vol('2026-10-30'), now)).toBe(false);
+        expect(red('vol', vol('2026-10-28'), now)).toBe(true);
+        const breadth = (hyg) => ({ updated_at: '2026-10-30', pairs: { rspSpy: { ratio: 0.29, asOf: '2026-10-30' }, hygLqd: { ratio: 0.74, asOf: hyg } },
+            _meta: { source: 'RSP:polygon · SPY:polygon', hasErrors: false, messages: [] } });
+        expect(red('breadth', breadth('2026-10-30'), now)).toBe(false);
+        expect(red('breadth', breadth('2026-10-29'), now)).toBe(true);
     });
     test('spy-daily-move carries no date: graded as before', () => {
         const it = servedCopyItem('spy-daily-move', { value: '-0.52%', source: 'Google Sheets' }, t('2026-10-25T21:53:00Z'));
         expect(it.servedAgeH).toBe(it.inputAgeH);
+    });
+});
+
+// Polymarket trades 24/7: graded by the board's own fetch `timestamp` (a last-good copy keeps
+// the original one), against a 6 h cap. Nothing usable served = item missing (fleet: red).
+describe('polymarket item', () => {
+    const board = (timestamp, meta = { hasErrors: false, messages: [] }) => ({ trending: [{ slug: 'a' }], breaking: [], macro: [], source: 'Polymarket API', timestamp, _meta: meta });
+    test('live 1 Nov board = green; a 7 h old copy = red; Unavailable / no answer = missing', () => {
+        const now = t('2026-11-01T21:25:00Z');
+        const it = polymarketItem(board('2026-11-01T21:22:29.697932Z'), now);
+        expect(it).toEqual({ name: 'served:polymarket', inputAgeH: null, servedAgeH: 0, graceH: 6, maxAgeH: 6 });
+        expect(isRed(it)).toBe(false);
+        const old = board('2026-11-01T14:00:00Z', { source: 'KV last-good (2026-11-01T14:00:05Z) ← Polymarket API', stale: true, lastGoodAt: '2026-11-01T14:00:05Z' });
+        expect(isRed(polymarketItem(old, now))).toBe(true);
+        expect(polymarketItem({ trending: [], timestamp: '2026-11-01T21:25:00Z', _meta: { source: 'Unavailable', hasErrors: true } }, now)).toBeNull();
+        expect(polymarketItem(null, now)).toBeNull();
     });
 });
 

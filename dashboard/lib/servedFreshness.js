@@ -119,7 +119,7 @@ export function isRed(item) {
 // saved (a copy saved after the close still reflects it; one saved before goes red
 // once the input is > grace old). Nothing served (Unavailable / error) → null → red.
 export const SERVED_COPY_GRACE_H = 6;
-export const SERVED_ROUTES = ['spy', 'spy-daily-move', 'market-extra', 'fred', 'sheets', 'fear-greed'];
+export const SERVED_ROUTES = ['spy', 'spy-daily-move', 'market-extra', 'fred', 'sheets', 'fear-greed', 'vol', 'breadth'];
 const ISO_RE = /(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)/;
 
 /** null = nothing usable served; { copy:false } = live; { copy:true, savedMs } = a saved copy. */
@@ -139,8 +139,9 @@ export function servedCopyOf(payload) {
 
 // A LIVE payload is as old as its own newest market date when it carries one (audit 25 Oct
 // 2026): a feed that still answers but stopped moving must not grade green. market-extra =
-// the oldest of the 10Y, 2Y and oil (Polygon FX/gold bars are not dated against the close);
-// fear-greed = its asOf (CNN ISO time, or a VIX proxy's date). No date → the input age.
+// the oldest of the 10Y, 2Y, oil, gold, BTC and the dated FX pairs (audit A3: a dated quote
+// beats an older bar, so each carries the day it was priced); fear-greed = its asOf; vol =
+// its oldest ticker asOf; breadth = its oldest pair asOf. No date → the input age.
 const dayMs = (d) => (isDate(d) ? closeMsOf(d) ?? etWallToMs(d, 16 * 60) : null);
 // Bond-market holidays with NYSE open (Columbus Day, Veterans Day on a weekday or observed
 // Monday 12th after a Sunday): Treasury publishes no yields (no 10/12/2026, 11/11/2025 or
@@ -169,25 +170,43 @@ export function liveAsOfMs(name, payload) {
         const ms = Date.parse(a ?? '');
         return Number.isFinite(ms) ? ms : null;
     }
+    const oldest = (ms) => { const v = ms.filter((x) => x != null); return v.length ? Math.min(...v) : null; };
     if (name === 'market-extra') {
-        const r = payload.rates || {};
-        const ms = [yieldThroughMs(r.tnx?.lastDate), yieldThroughMs(r.t2y?.lastDate), dayMs(payload.commodities?.cl?.lastDate)]
-            .filter((x) => x != null);
-        return ms.length ? Math.min(...ms) : null;
+        const r = payload.rates || {}, c = payload.commodities || {}, fx = payload.fx || {};
+        return oldest([yieldThroughMs(r.tnx?.lastDate), yieldThroughMs(r.t2y?.lastDate),
+            ...[c.cl, c.gc, c.btc, fx.usdcad, fx.usdinr].map((m) => dayMs(m?.lastDate))]);
     }
+    if (name === 'vol') return oldest((payload.tickers || []).map((x) => dayMs(x?.asOf)));
+    if (name === 'breadth') return oldest(Object.values(payload.pairs || {}).map((x) => dayMs(x?.asOf)));
     return null;
 }
+
+// fred / sheets / fear-greed carry no single market date: a live answer that flags itself
+// (`_meta.hasErrors` / `stale`: a partial FRED load, a stale AAII, a VIX proxy standing in
+// for CNN's index) is not the newest data, so it grades as nothing served.
+const FLAGGED_IS_UNSERVED = new Set(['fred', 'sheets', 'fear-greed']);
 
 export function servedCopyItem(name, payload, now = Date.now()) {
     const newest = latestCloseMs(now);
     const inputAgeH = newest == null ? null : round1((now - newest) / H);
-    const s = servedCopyOf(payload);
+    let s = servedCopyOf(payload);
+    if (s && !s.copy && FLAGGED_IS_UNSERVED.has(name) && (payload._meta?.hasErrors || payload._meta?.stale)) s = null;
     let servedAgeH = null;
     const own = s && !s.copy ? liveAsOfMs(name, payload) : null;
     if (own != null) servedAgeH = round1(Math.max(0, now - own) / H);
     else if (s && !s.copy) servedAgeH = inputAgeH;
     else if (s && s.savedMs != null) servedAgeH = round1((now - s.savedMs) / H);
     return { name: `served:${name}`, inputAgeH, servedAgeH, graceH: SERVED_COPY_GRACE_H };
+}
+
+// Polymarket trades 24/7, so no close to grade against: the board's own fetch `timestamp` (a
+// last-good copy keeps the original) against a 6 h cap. Nothing usable served → no item
+// (the fleet's expect_items reads a missing item as red).
+export const POLYMARKET_MAX_AGE_H = 6;
+export function polymarketItem(payload, now = Date.now()) {
+    const ms = servedCopyOf(payload) ? Date.parse(payload.timestamp ?? '') : NaN;
+    if (!Number.isFinite(ms)) return null;
+    return { name: 'served:polymarket', inputAgeH: null, servedAgeH: round1(Math.max(0, now - ms) / H), graceH: POLYMARKET_MAX_AGE_H, maxAgeH: POLYMARKET_MAX_AGE_H };
 }
 
 export function buildFreshness(raw, now = Date.now()) {
@@ -197,7 +216,7 @@ export function buildFreshness(raw, now = Date.now()) {
         items: [
             rubberBandItem(raw.rubberBand, now), historyItem(raw.history, now),
             ...SERVED_ROUTES.map((r) => servedCopyItem(r, raw.served?.[r], now)),
-            fwdPeItem(raw.fwdPe, now),
+            fwdPeItem(raw.fwdPe, now), polymarketItem(raw.polymarket, now),
         ].filter(Boolean),
     };
 }

@@ -48,12 +48,12 @@ export async function GET(request) {
         const origin = new URL(request.url).origin;
         // A market route that errors is graded (null → red), it does not 500 the whole probe.
         const soft = (p) => sibling(origin, p).catch(() => null);
-        const [rubberBand, history, fwdPe, ...served] = await Promise.all([
-            sibling(origin, '/api/rubber-band'), sibling(origin, '/api/history'), soft('/api/fwd-pe'),
+        const [rubberBand, history, fwdPe, polymarket, ...served] = await Promise.all([
+            sibling(origin, '/api/rubber-band'), sibling(origin, '/api/history'), soft('/api/fwd-pe'), soft('/api/polymarket'),
             ...SERVED_ROUTES.map((r) => soft(`/api/${r}`)),
         ]);
         const servedMap = Object.fromEntries(SERVED_ROUTES.map((r, i) => [r, served[i]]));
-        const body = buildFreshness({ rubberBand, history, served: servedMap, fwdPe });
+        const body = buildFreshness({ rubberBand, history, served: servedMap, fwdPe, polymarket });
         return Response.json(body, { status: 200, headers: freshnessHeaders(body) });
     } catch (e) {
         return Response.json({ error: String(e?.message || e).slice(0, 160) }, { status: 500, headers });
