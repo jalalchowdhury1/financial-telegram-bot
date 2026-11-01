@@ -133,14 +133,38 @@ test('📅 picks any from / to dates; a range with no trading days says so and k
     expect(screen.queryByLabelText('From')).toBeNull();
 });
 
+// FactSet's file for the lens tests: one shared copy, since loadFwd keeps the first answer for the whole file
+const fwdFile = { from: '2026-01-02', to: '2026-09-18', t: [0, 259], v: [22, 19], a5: [19.8, 19.8], a10: [19.1, 19.1] };
+const fwdFetch = () => jest.fn((url) => Promise.resolve(url === '/history/fwdPE.json' ? { ok: true, json: async () => fwdFile } : { ok: false }));
+
 test('the chip rows never slide up or down: one scroll over them hid the lens buttons (1 Nov 2026)', async () => {
     // each chip's tap band sits 12px below it, so a sideways-scrolling row is taller inside than out
-    const fwd = { from: '2026-01-02', to: '2026-09-18', t: [0, 259], v: [22, 19], a5: [19.8, 19.8], a10: [19.1, 19.1] };
-    global.fetch = jest.fn((url) => Promise.resolve(url === '/history/fwdPE.json' ? { ok: true, json: async () => fwd } : { ok: false }));
+    global.fetch = fwdFetch();
     window.localStorage.setItem('ftb:lens:spy', 'Fwd P/E');
     render(<SpyChart chartHistory={bars(302, 600)} current={630} lenses={{ peNow: null }} />);
     expect(screen.getByRole('tablist', { name: 'Chart' }).style.overflowY).toBe('hidden');
     await waitFor(() => expect(screen.getByRole('button', { name: '1Y' }).parentElement.style.overflowY).toBe('hidden')); // the lens's own row
     fireEvent.click(screen.getByRole('tab', { name: 'Price' }));
     expect(screen.getByRole('button', { name: '1Y' }).parentElement.style.overflowY).toBe('hidden');
+});
+
+test('Fwd P/E lens: round y ticks, start → end up top, SPY 6 months later on tap, "est." once FactSet goes quiet', async () => {
+    global.fetch = fwdFetch();
+    window.localStorage.setItem('ftb:lens:spy', 'Fwd P/E');
+    const { container, unmount } = render(<SpyChart chartHistory={bars(302, 600)} current={630} lenses={{ peNow: null }} />);
+    await waitFor(() => expect(container.querySelector('.axis-layer')).not.toBeNull());
+    fireEvent.click(screen.getByRole('button', { name: 'ALL' }));
+    const ticks = [...container.querySelectorAll('.axis-layer .axis-lbl')].map((l) => l.textContent).filter((t) => /x$/.test(t));
+    expect(ticks).toEqual(['19x', '20x', '21x', '22x']); // each label on its own gridline, never 21.4x
+    expect(screen.getByText('22.0x → 19.0x')).toBeTruthy();
+    expect(screen.getByText('━ Fwd P/E')).toBeTruthy(); // the newest report is a week old: no "est."
+    const svg = container.querySelector('svg');
+    svg.getBoundingClientRect = () => ({ left: 0, width: 540, top: 0, height: 220 });
+    fireEvent.pointerDown(svg, { clientX: 60, pointerType: 'touch' });
+    expect(container.querySelector('.chart-readout').textContent).toMatch(/^Jan \d+, 2026 · \d+\.\dx · SPY \+3% in 6M$/);
+    unmount();
+    // ten more days of SPY and no new report: the line still moves with SPY, and says so
+    const later = bars(302, 600).map((b) => ({ ...b, date: new Date(Date.parse(b.date) + 10 * 864e5).toISOString().slice(0, 10) }));
+    render(<SpyChart chartHistory={later} current={630} lenses={{ peNow: null }} />);
+    await waitFor(() => expect(screen.getByText('━ Fwd P/E · est. since Sep 18')).toBeTruthy());
 });

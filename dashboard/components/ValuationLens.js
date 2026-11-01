@@ -99,8 +99,12 @@ export default function ValuationLens({ lens, spy, tf, onTf, peNow, chip }) {
     const pad = ((hi - lo) || 1) * 0.06, min = lo - pad, max = hi + pad;
     const w = 540, h = 220, padT = 12, padB = 24;
     const toY = (v) => h - padB - ((Math.min(v, max) - min) / (max - min)) * (h - padT - padB);
-    const tickFmt = (v) => (isPe ? `${v.toFixed(hi - lo < 4 ? 1 : 0)}x` : `$${Math.round(v)}`);
-    const yTicks = [0, 1, 2, 3, 4].map((i) => { const v = min + ((max - min) * i) / 4; return { y: toY(v), label: tickFmt(v) }; });
+    // y ticks on round numbers (1, 2 or 5 × 10ⁿ apart, at most 6), so the 18x line sits at 18
+    const base = 10 ** Math.floor(Math.log10(max - min)) / 10;
+    const tStep = [1, 2, 5, 10, 20, 50].map((m) => m * base).find((s) => Math.floor(max / s) - Math.ceil(min / s) < 6);
+    const tickFmt = (v) => (isPe ? `${v.toFixed(Math.max(0, -Math.floor(Math.log10(tStep) + 1e-9)))}x` : `$${Math.round(v)}`);
+    const yTicks = [];
+    for (let k = Math.ceil(min / tStep); k <= Math.floor(max / tStep); k++) yTicks.push({ y: toY(k * tStep), label: tickFmt(k * tStep) });
     const padL = gutterFor(yTicks.map((t) => t.label), w, plotPx, 34);
     const padR = isPe ? (unitsForPx(46, w, plotPx) ?? 44) : 8; // room for the end pill
     const t0 = ms(data[0].date), t1 = ms(data[data.length - 1].date);
@@ -126,7 +130,18 @@ export default function ValuationLens({ lens, spy, tf, onTf, peNow, chip }) {
     const turns = end.value - first.value;
     const parts = !isPe && decompose(first.d, end.d);
     const extreme = isPe ? extremeSince(series) : null;
+    const si = extreme?.since && extreme.since >= first.date ? data.findIndex((p) => p.date >= extreme.since) : -1; // where "since" starts on screen
     const hi2 = hover != null && hover < data.length ? data[hover] : null;
+    // the time machine: what SPY did in the 6 months after a hovered day (or since, for the last 6 months)
+    let then = null;
+    if (isPe && hi2 && spy?.length && spy[0].date <= hi2.date) {
+        const a = spy.find((p) => p.date >= hi2.date), b = spy.find((p) => p.date >= back(hi2.date, -182));
+        const z = b || spy[spy.length - 1];
+        if (a && z !== a) then = `SPY ${pct(z.price / a.price - 1)} ${b ? 'in 6M' : 'since'}`;
+    }
+    // FactSet skipped a week or more: the line still moves with SPY, on the newest report's earnings
+    const asOf = lens !== 'P/E' && fwd ? fwd[fwd.length - 1].date : null;
+    const est = asOf && ms(last) - ms(asOf) > 9 * DAY ? ` · est. since ${fmtDay(asOf).replace(/, \d{4}$/, '')}` : '';
     const onPoint = (e) => {
         const r = svgRef.current?.getBoundingClientRect();
         if (!r?.width) return;
@@ -151,10 +166,10 @@ export default function ValuationLens({ lens, spy, tf, onTf, peNow, chip }) {
                 </div>
                 {hi2 ? (
                     <span className="chart-readout" style={{ ...label, color: 'var(--text-primary)' }}>
-                        {fmtDay(hi2.date)} · {isPe ? `${hi2.value.toFixed(1)}x` : `SPY $${hi2.value.toFixed(0)} · line $${hi2.line.toFixed(0)}`}
+                        {fmtDay(hi2.date)} · {isPe ? `${hi2.value.toFixed(1)}x${then ? ` · ${then}` : ''}` : `SPY $${hi2.value.toFixed(0)} · line $${hi2.line.toFixed(0)}`}
                     </span>
                 ) : isPe ? (
-                    <span style={{ ...label, color: turns <= 0 ? TEAL : AMBER }}>{signed(turns)} turns</span>
+                    <span style={{ ...label, color: turns <= 0 ? TEAL : AMBER }}>{first.value.toFixed(1)}x → {end.value.toFixed(1)}x</span>
                 ) : (
                     <span style={label}>
                         <span style={{ color: VIOLET }}>EPS {pct(parts.eps)}</span>
@@ -198,9 +213,12 @@ export default function ValuationLens({ lens, spy, tf, onTf, peNow, chip }) {
                         <g clipPath={`url(#${uid}-plot)`}>
                             {/* teal = cheaper than usual (P/E under its 5-yr average / SPY under its earnings line), amber = pricier */}
                             {xa != null && <>
-                                <polygon points={`${main} ${xR},0 ${xL},0`} fill="rgba(45,212,191,0.18)" clipPath={`url(#${uid}-under)`} />
-                                <polygon points={`${main} ${xR},${h} ${xL},${h}`} fill="rgba(251,191,36,0.13)" clipPath={`url(#${uid}-over)`} />
+                                <polygon points={`${main} ${xR},0 ${xL},0`} fill="rgba(45,212,191,0.14)" clipPath={`url(#${uid}-under)`} />
+                                <polygon points={`${main} ${xR},${h} ${xL},${h}`} fill="rgba(251,191,36,0.07)" clipPath={`url(#${uid}-over)`} />
                             </>}
+                            {/* "Lowest since …": today's level, back to the last day it was past it */}
+                            {si >= 0 && <line x1={toX(si)} x2={xR} y1={toY(end.value)} y2={toY(end.value)} stroke={extreme.low ? TEAL : AMBER}
+                                strokeOpacity="0.7" strokeWidth="1" strokeDasharray="2 3" vectorEffect="non-scaling-stroke" />}
                             {isPe ? ['line', 'line2'].map((k, i) => (
                                 <polyline key={k} points={line(k)} fill="none" stroke={i ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.6)'}
                                     strokeWidth="1" strokeDasharray="4 3" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
@@ -227,12 +245,12 @@ export default function ValuationLens({ lens, spy, tf, onTf, peNow, chip }) {
             </div>
             <div style={{ display: 'flex', justifyContent: 'center', gap: '14px', marginTop: '6px', flexWrap: 'nowrap', overflowX: 'auto' }}>
                 {isPe ? <>
-                    <span style={{ ...legend, color: BLUE }} title={lens === 'P/E' ? 'S&P 500 price ÷ the last 12 months of earnings (multpl, monthly since 1871)' : 'S&P 500 price ÷ the next 12 months of expected earnings (FactSet, weekly since 2011; moves with SPY between reports)'}>━ {lens === 'P/E' ? 'P/E (trailing)' : 'Fwd P/E'}</span>
+                    <span style={{ ...legend, color: est ? AMBER : BLUE }} title={lens === 'P/E' ? 'S&P 500 price ÷ the last 12 months of earnings (multpl, monthly since 1871)' : `S&P 500 price ÷ the next 12 months of expected earnings (FactSet, weekly since 2011; moves with SPY between reports). Newest report: ${fmtDay(asOf)}.`}>━ {lens === 'P/E' ? 'P/E (trailing)' : 'Fwd P/E'}{est}</span>
                     {Number.isFinite(end.line) && <span style={{ ...legend, color: 'rgba(255,255,255,0.75)' }}>┄ 5-yr avg {end.line.toFixed(1)}</span>}
                     {Number.isFinite(end.line2) && <span style={{ ...legend, color: 'rgba(255,255,255,0.45)' }}>┄ 10-yr avg {end.line2.toFixed(1)}</span>}
                 </> : <>
                     <span style={{ ...legend, color: BLUE }}>━ SPY</span>
-                    <span style={{ ...legend, color: VIOLET }} title={`Forward 12-month earnings × the 10-yr average P/E (${newest.a10.toFixed(1)}): where SPY would trade at a normal valuation`}>━ Earnings × {newest.a10.toFixed(1)}</span>
+                    <span style={{ ...legend, color: est ? AMBER : VIOLET }} title={`Forward 12-month earnings × the 10-yr average P/E (${newest.a10.toFixed(1)}): where SPY would trade at a normal valuation. Newest FactSet report: ${fmtDay(asOf)}.`}>━ Earnings × {newest.a10.toFixed(1)}{est}</span>
                 </>}
             </div>
             {study && (
