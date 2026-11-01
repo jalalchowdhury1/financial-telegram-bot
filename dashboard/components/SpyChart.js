@@ -14,13 +14,14 @@ const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 const LENSES = ['Price', 'Fwd P/E', 'P/E', 'Earnings'];
 const BLUE = '#38bdf8', TEAL = '#2dd4bf', AMBER = '#fbbf24', VIOLET = '#a78bfa';
 
-/** A view button's last year: one line, no axes. */
+/** A view button's last year, `[{date, value}]`: one line, no axes, spaced by date (the P/E's older points are monthly). */
 function Spark({ pts, color }) {
     if (!(pts?.length > 1)) return null;
-    const lo = Math.min(...pts), hi = Math.max(...pts), n = pts.length - 1;
-    const d = pts.map((v, i) => `${((i / n) * 60).toFixed(1)},${(13 - ((v - lo) / (hi - lo || 1)) * 12).toFixed(1)}`).join(' ');
+    const vs = pts.map((p) => p.value), lo = Math.min(...vs), hi = Math.max(...vs);
+    const t0 = Date.parse(pts[0].date), span = Date.parse(pts[pts.length - 1].date) - t0 || 1;
+    const d = pts.map((p) => `${(((Date.parse(p.date) - t0) / span) * 60).toFixed(1)},${(13 - ((p.value - lo) / (hi - lo || 1)) * 12).toFixed(1)}`).join(' ');
     return (
-        <svg viewBox="0 0 60 14" preserveAspectRatio="none" aria-hidden="true" style={{ flex: '1 1 24px', minWidth: '24px', maxWidth: '80px', height: '14px' }}>
+        <svg viewBox="0 0 60 14" preserveAspectRatio="none" aria-hidden="true" style={{ width: '24px', flex: '1 1 24px', maxWidth: '80px', height: '14px' }}>
             <polyline points={d} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
         </svg>
     );
@@ -196,10 +197,10 @@ export default function SpyChart({ chartHistory, recessions = [], current = null
     const px = current ?? full[full.length - 1].price;
     const peNow = lenses?.peNow == null || lenses.peNow === '' ? NaN : Number(lenses.peNow);
     const tiles = lenses ? {
-        Price: { value: isIndex ? Math.round(px).toLocaleString('en-US') : `$${Math.round(px)}`, color: BLUE, pts: full.slice(-252).map((p) => p.price) },
-        'Fwd P/E': now && { value: `${now.pe.toFixed(1)}x`, color: now.a5 != null && now.pe > now.a5 ? AMBER : TEAL, pts: daily.slice(-252).map((d) => d.pe) },
-        'P/E': Number.isFinite(peNow) && { value: `${peNow.toFixed(1)}x`, color: 'var(--text-primary)', pts: joinLong(peChart?.points, peLong, longInfo('peRatio')).filter((p) => p.date >= yr).map((p) => p.value) },
-        Earnings: now && epsYr && { value: `${now.eps >= epsYr.eps ? '+' : '−'}${Math.abs((now.eps / epsYr.eps - 1) * 100).toFixed(0)}%`, color: VIOLET, pts: daily.slice(-252).map((d) => d.eps) },
+        Price: { value: isIndex ? Math.round(px).toLocaleString('en-US') : `$${Math.round(px)}`, color: BLUE, pts: full.slice(-252).map((p) => ({ date: p.date, value: p.price })) },
+        'Fwd P/E': now && { value: `${now.pe.toFixed(1)}x`, color: now.a5 != null && now.pe > now.a5 ? AMBER : TEAL, pts: daily.slice(-252).map((d) => ({ date: d.date, value: d.pe })) },
+        'P/E': Number.isFinite(peNow) && { value: `${peNow.toFixed(1)}x`, color: 'var(--text-primary)', pts: joinLong(peChart?.points, peLong, longInfo('peRatio')).filter((p) => p.date >= yr) },
+        Earnings: now && epsYr && { value: `${now.eps >= epsYr.eps ? '+' : '−'}${Math.abs((now.eps / epsYr.eps - 1) * 100).toFixed(0)}%`, color: VIOLET, pts: daily.slice(-252).map((d) => ({ date: d.date, value: d.eps })) },
     } : {};
     const hotColor = attn && (attn.lens === 'Fwd P/E' && attn.low ? TEAL : AMBER);
     const sinceText = attn && fmtDay(attn.since || (attn.lens === 'Price' ? full : daily)[0].date).replace(/ \d+,/, ''); // 'Apr 2025'
