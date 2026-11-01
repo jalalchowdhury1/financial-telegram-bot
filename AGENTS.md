@@ -318,7 +318,8 @@ behave differently, it gets a v2-only prop (`race` on FactorRow, `asCards` on `p
   daily by `lib/valuation.js fwdDaily` (forward EPS = SPY ÷ P/E on each report's prior close, straight line
   between reports, held after the newest, so the line moves with SPY between reports); dashed lines = FactSet's
   own 5-yr / 10-yr averages. P/E = multpl trailing (the `peRatio` stat). Earnings = SPY vs forward EPS × the
-  10-yr avg P/E, with the move split `EPS · P/E → SPY` (`decompose`). "Then what? ›" opens `SignalStudy` on the
+  10-yr avg P/E, with the move drawn as three bars `Earnings × P/E = SPY` (`Split`, log scale so the first two add up
+  to the third; `decompose`; a tap moves the start to that day). "Then what? ›" opens `SignalStudy` on the
   weeks fwd P/E sits under its 5-yr avg (`underAvg`; 2013→, the years FactSet printed a 5-yr avg).
   - Bake: `node scripts/bake-fwd-pe.mjs` (from dashboard/) adds the reports since the file's last row; it
     REFUSES to shrink the file. 2011–2016 came from Wayback copies (`--dir <folder of YYYY-MM-DD.pdf>`). A few
@@ -327,20 +328,33 @@ behave differently, it gets a v2-only prop (`race` on FactorRow, `asCards` on `p
   - `/api/fwd-pe`: KV `ftb:fwdpe` {rows, seen, checkedAt}; looks at FactSet at most every 3 h and only once the
     newest is 5+ days old, newest day first, ≤ 25 s (`PROBE_BUDGET_MS`), 10 s a PDF (`freshnessTimeout.test.js`
     keeps `/api/freshness` waiting longer). PDF text = `unpdf` (pinned 1.6.2). Fault gates `fwdpe_http`, `fwdpe_blog`,
-    `fwdpe_kv`. Backup layers (1 Nov 2026, his "layers of backups like the rest"): PDF → FactSet's blog (the
-    earnings RSS `insight.factset.com/topic/earnings/rss.xml`; each Friday post prints the same sentence and numbers,
-    a Monday post retells Friday's, so a post is keyed to its last Wed–Fri) → KV → this instance's /tmp copy
-    (`fwd-pe` last-good) → the bake. A blog row counts as `seen` too, so freshness stays green while the blog carries
+    `fwdpe_kv`, and `fwdpe_probe` = look again for the last 3 weeks' reports as if new (a live test of the layers:
+    `?_fail=fwdpe_probe` proves the PDFs, `?_fail=fwdpe_probe,fwdpe_http` the blog). Under any fault nothing is
+    written to KV or /tmp: a test answers only its caller. Backup layers (1 Nov 2026, his "layers of backups like
+    the rest"): PDF → FactSet's blog (the earnings RSS `insight.factset.com/topic/earnings/rss.xml`; a post is
+    dated by the date in its link, `…-update-november-6-2026`, so a mid-week post repeating Friday's ratio is never
+    taken for a new report; only the earnings-season "update" posts print the ratio) → KV → this instance's /tmp
+    copy (`fwd-pe` last-good) → the bake. A blog row counts as `seen` too, so freshness stays green while the blog carries
     it. One provider (FactSet) under both: WSJ's P/E table is off limits (auto-mode said no to its data endpoint).
   - Lens look (1 Nov 2026, "make it better"): y ticks on round numbers (1/2/5 × 10ⁿ, ≤ 6), idle header
     `16.0x → 18.4x` over the window, a dotted line at today's level back to the "Lowest since" day, a tap shows
     `SPY +x% in 6M` after that day (`since` inside the last 6M), and the legend says `· est. since Oct 30` in amber
     once FactSet's newest report is > 9 days older than SPY's last close.
+  - When a source fails (1 Nov 2026, his "every metric needs to be robust"): `loadFwd` = the bake (tried twice)
+    joined with `/api/fwd-pe` capped at 8 s, so a hung route never holds the lens; no bake → Fwd P/E says
+    "Forward P/E unavailable right now" and the card's attention pick still runs on SPY. The P/E view and button
+    show nothing old as today's: `peNow` null (multpl missing, or `peIsCape`, where `peRatio` holds CAPE) →
+    "P/E unavailable right now".
 - **Young Lead combo** (1 Nov 2026, his "add it as young"): `pf` Fwd selloff + rates = `pt` with FactSet's forward
   P/E, a leg LeadCombos builds itself (`loadFwd` rows → `fwdDaily` with SPY; no /history file). 7 for 7 up 6M later
   since 2011, but chance-level (p ≈ 0.2), so `young`: a tag on the card, its proof, the top line only while it fires,
   and never in `SIGNALS` (no ping). To promote it, drop `young` AND teach `scripts/signal-states.mjs` the fwdPe leg:
   it would fetch `/history/fwdPe.json`, which does not exist, and the whole ping run would fail.
+- **Economy charts** (1 Nov 2026, his "other charts where you can apply your creativity while still being robust"):
+  v2-only `MiniChart` props, default off so v1 is unchanged. `nice` = y ticks on round numbers (1/2/5 × 10ⁿ, ≤ 6:
+  the zero line reads 0.0, not 0.08). `inverted` = an amber fill between the yield curve and zero wherever it was
+  under zero, labelled "inverted" at the longest stretch's deepest point (only when the word fits: 56 px wide,
+  12 px deep).
 - **Not built on purpose**: signal dots on the SPY chart, tap-a-number "ping me at X".
 - Tests: `app/v2/__tests__/page.test.js` (`the top line`), `components/__tests__/LeadCombos.test.js`,
   `components/__tests__/RiskCards.test.js`, `lib/__tests__/pulseVerdicts.test.js` (`asCards`).
