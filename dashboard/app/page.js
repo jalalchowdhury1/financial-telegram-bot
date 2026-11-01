@@ -208,7 +208,7 @@ export default function Dashboard() {
                 // A failure answer (an error, a route's 200 fallback body, or no answer at all)
                 // never replaces a saved copy on screen — it stays, tagged 🕐 — and is never saved.
                 if (isLiveAnswer(key, res)) {
-                    live++;
+                    if (['spy', 'sheets', 'fg', 'fred'].includes(key)) live++; // a side feed alone is not 'Updated'
                     setters[key](res);
                     dropSaved(key);
                     landedRef.current = { ...landedRef.current, [key]: Date.now() };

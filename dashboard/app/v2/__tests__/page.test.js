@@ -425,3 +425,13 @@ it.each([[{ enabled: true, pills: null }], [{ enabled: false }]])('no empty Regi
     await waitFor(() => expect(screen.getByLabelText('Refresh all data')).not.toBeDisabled());
     expect(document.querySelector('.v2-rg-row')).toBeNull();
 });
+
+it('only a side feed landing live never stamps the header "Updated" (audit D10)', async () => {
+    mockRoutes({
+        '/api/spy': Promise.resolve({ status: 200, json: async () => ({ error: 'SPY temporarily unavailable' }) }),
+        '/api/market-extra': Promise.resolve({ status: 200, json: async () => ({ rates: { tnx: { current: 4.1 } } }) }),
+    });
+    render(<DashboardV2 />);
+    await waitFor(() => expect(screen.getByLabelText('Refresh all data')).not.toBeDisabled());
+    expect(document.querySelector('header').textContent).not.toMatch(/Updated|just now|ago/);
+});

@@ -181,9 +181,10 @@ it('🔝 a warm open where SPY fails but other feeds land live: the glance bar s
     mockRoutes({
         '/api/spy': Promise.resolve({ status: 200, json: async () => ({ error: 'SPY temporarily unavailable' }) }),
         '/api/market-extra': Promise.resolve({ status: 200, json: async () => ({ rates: { tnx: { current: 4.1 } } }) }),
+        '/api/fear-greed': Promise.resolve({ status: 200, json: async () => ({ score: 45, rating: 'FEAR', _meta: { source: 'CNN' } }) }),
     });
     render(<Dashboard />);
-    await waitFor(() => expect(screen.getByText(/Updated/)).toBeInTheDocument()); // extra landed live
+    await waitFor(() => expect(screen.getByText(/Updated/)).toBeInTheDocument()); // F&G landed live
     expect(document.querySelector('.glance-bar .glance-saved').textContent).toBe(`🕐 Saved ${savedLabel(at)}`);
 });
 
@@ -493,4 +494,14 @@ it('a market-extra feed that fails outright leaves a tap-to-retry line where Glo
     await act(async () => { await jest.advanceTimersByTimeAsync(4000); });
     jest.useRealTimers();
     expect(document.querySelector('[data-jump="Markets"] .card-unavailable').textContent).toBe('Markets unavailable · tap ↻');
+});
+
+it('only a side feed landing live never stamps the header "Updated" (audit D10)', async () => {
+    mockRoutes({
+        '/api/spy': Promise.resolve({ status: 200, json: async () => ({ error: 'SPY temporarily unavailable' }) }),
+        '/api/market-extra': Promise.resolve({ status: 200, json: async () => ({ rates: { tnx: { current: 4.1 } } }) }),
+    });
+    render(<Dashboard />);
+    await waitFor(() => expect(screen.getByLabelText('Refresh all data')).not.toBeDisabled());
+    expect(document.querySelector('header').textContent).not.toMatch(/Updated|just now|ago/);
 });
