@@ -41,10 +41,10 @@ const fin = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
  */
 export function pickSeen({ spy, vol, fg, extra } = {}, prints = {}) {
     const v = {
-        spy: spy && !spy.error ? fin(spy.current) : null,
+        spy: spy && !spy.error && !spy._meta?.stale ? fin(spy.current) : null,
         vix: fin(vol?.vixDay?.value),
         fg: LIVE_FG_SOURCES.includes(fg?._meta?.source) ? fin(fg.score) : null,
-        tnx: fin(extra?.rates?.tnx?.current),
+        tnx: extra?.rates?.tnx?.stale ? null : fin(extra?.rates?.tnx?.current),
     };
     const p = {};
     for (const [k, x] of Object.entries(prints || {})) {

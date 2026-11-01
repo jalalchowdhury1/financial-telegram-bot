@@ -18,6 +18,11 @@ test('pickSeen keeps live numbers only; F&G only from CNN/RapidAPI; prints only 
     expect(pickSeen({ spy: { error: 'x' } }).v.spy).toBeNull();
 });
 
+test('pickSeen skips a last-good SPY or 10Y copy: it is not a new look (audit D11)', () => {
+    const p = pickSeen(live({ spy: { current: 780, _meta: { stale: true } }, extra: { rates: { tnx: { current: 5.13, stale: true } } } }));
+    expect([p.v.spy, p.v.tnx]).toEqual([null, null]);
+});
+
 test('mergeSeen: a field that is not live now keeps its old value and time', () => {
     const m = mergeSeen(base(), { v: { spy: 781, vix: null }, p: {} }, T0 + 2 * HOUR);
     expect(m.v.spy).toEqual({ x: 781, at: T0 + 2 * HOUR });
