@@ -422,7 +422,7 @@ export default function Dashboard() {
                 {/* 🕰️ NYSE open/closed + countdown, computed on the device */}
                 <div className="mkt-clock-row"><ErrorBoundary><MarketClock /></ErrorBoundary></div>
                 {fred?._meta?.fetchedAt && (
-                    <EconChecked fred={fred} />
+                    <ErrorBoundary resetKey={refreshTick}><EconChecked fred={fred} /></ErrorBoundary>
                 )}
             </header>
 
@@ -805,8 +805,8 @@ export default function Dashboard() {
 
             {/* SYSTEM STATUS BAR — one line; a degraded feed is an amber chip that jumps to its card */}
             {systemStatus && (
-                <StatusLine bodies={systemStatus}
-                    saved={{ spy: saved('spy'), fred: saved('fred'), fg: saved('fg'), sheets: saved('sheets'), extra: saved('extra') }} />
+                <ErrorBoundary resetKey={refreshTick}><StatusLine bodies={systemStatus}
+                    saved={{ spy: saved('spy'), fred: saved('fred'), fg: saved('fg'), sheets: saved('sheets'), extra: saved('extra') }} /></ErrorBoundary>
             )}
         </div>
         </MarkProvider>

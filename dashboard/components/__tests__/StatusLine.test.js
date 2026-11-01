@@ -66,3 +66,10 @@ test('problem chips lead the line (red, then amber), so on a phone a down feed i
     expect([...document.querySelectorAll('.status-item')].map((e) => e.textContent))
         .toEqual(['⚠ Markets: no data', '🕐 Sheets: saved 10:42', 'SPY yfinance', 'FRED 17/17', 'F&G CNN']);
 });
+
+test('a _meta.messages entry that is not a string never throws (audit D8)', () => {
+    const b = healthy();
+    b.fred._meta.messages = [{ code: 1 }];
+    b.extra._meta.messages = [42, 'FRED: 2'];
+    expect(() => statusFeeds(b, {})).not.toThrow();
+});

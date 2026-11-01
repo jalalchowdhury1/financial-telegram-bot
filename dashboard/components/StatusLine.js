@@ -20,7 +20,7 @@ const READ = {
         level: m.hasErrors && !m.stale ? 'error' : m.stale || has(m.source, 'FRED') || isDegraded(b) ? 'warn' : 'ok',
     }),
     fred: (b, m) => ({
-        text: m.messages?.[0]?.replace('Loaded ', '').replace(' series', '') || 'live',
+        text: m.messages?.[0] != null && String(m.messages[0]).replace('Loaded ', '').replace(' series', '') || 'live',
         level: m.hasErrors ? 'error' : isDegraded(b) ? 'warn' : 'ok',
     }),
     fg: (b, m) => ({
@@ -37,8 +37,8 @@ const READ = {
         level: has(m.source, 'Failed', 'Static', 'Stale') ? 'error' : has(m.source, 'Cached', 'Alt', 'Proxy', 'FRED') ? 'warn' : 'ok',
     }),
     extra: (b, m) => ({
-        text: m.messages?.map((x) => x.replace(/skipped (.+)$/i, (_, l) => `skipped ${l.split(',').length}`)).join(' · ') || 'live',
-        level: m.messages?.some((x) => x.includes('unavailable')) ? 'error' : m.hasErrors ? 'warn' : 'ok',
+        text: m.messages?.map((x) => String(x).replace(/skipped (.+)$/i, (_, l) => `skipped ${l.split(',').length}`)).join(' · ') || 'live',
+        level: m.messages?.some((x) => String(x).includes('unavailable')) ? 'error' : m.hasErrors ? 'warn' : 'ok',
     }),
 };
 const FEEDS = [

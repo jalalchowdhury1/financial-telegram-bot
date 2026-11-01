@@ -1392,8 +1392,8 @@ export default function DashboardV2() {
 
                 <footer className="v2-foot">
                     {f.systemStatus && (
-                        <StatusLine bodies={f.systemStatus}
-                            saved={{ spy: saved('spy'), fred: saved('fred'), fg: saved('fg'), sheets: saved('sheets'), extra: saved('extra') }} />
+                        <ErrorBoundary resetKey={refreshTick}><StatusLine bodies={f.systemStatus}
+                            saved={{ spy: saved('spy'), fred: saved('fred'), fg: saved('fg'), sheets: saved('sheets'), extra: saved('extra') }} /></ErrorBoundary>
                     )}
                     {f.apiErrors.length > 0 && (
                         <div className="v2-errors" role="status">{f.apiErrors.map((e, i) => <div key={i}>{e}</div>)}</div>
