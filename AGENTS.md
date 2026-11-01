@@ -302,7 +302,7 @@ behave differently, it gets a v2-only prop (`race` on FactorRow, `asCards` on `p
   - VIX: not last visit's saved copy (`saved('sheets')`) and not a field the server marked stale. A refresh
     that fails after the feed landed flips `saved` too, and the items drop on that re-render.
   - Lead combos: a pair whose newest reading is more than 5 days old says N/A (`…` while `/api/history` is on
-    its way). A fire stays true: it speaks for 6 months.
+    its way). A fire stays true: it speaks for 6 months. A `young` pair joins the line only while it fires.
   - A card that crashes or unmounts sends `onState(null)`, never leaves its last state behind.
   - Fire rules = the study's and the ping's: AAII ≥ 20, VIX ÷ VIX 3M ≥ 1, a pair's lesser leg ÷ its line ≥ 1.
 - **Readout chips** = `pulseVerdicts({…, asCards: true})`: Bull counts the items it could read (the Bull
@@ -323,6 +323,11 @@ behave differently, it gets a v2-only prop (`race` on FactorRow, `asCards` on `p
   - `/api/fwd-pe`: KV `ftb:fwdpe` {rows, seen, checkedAt}; looks at FactSet at most every 3 h and only once the
     newest is 5+ days old, newest day first, ≤ 25 s (`PROBE_BUDGET_MS`), 10 s a PDF (`freshnessTimeout.test.js`
     keeps `/api/freshness` waiting longer). PDF text = `unpdf` (pinned 1.6.2). Fault gates `fwdpe_http`, `fwdpe_kv`.
+- **Young Lead combo** (1 Nov 2026, his "add it as young"): `pf` Fwd selloff + rates = `pt` with FactSet's forward
+  P/E, a leg LeadCombos builds itself (`loadFwd` rows → `fwdDaily` with SPY; no /history file). 7 for 7 up 6M later
+  since 2011, but chance-level (p ≈ 0.2), so `young`: a tag on the card, its proof, the top line only while it fires,
+  and never in `SIGNALS` (no ping). To promote it, drop `young` AND teach `scripts/signal-states.mjs` the fwdPe leg:
+  it would fetch `/history/fwdPe.json`, which does not exist, and the whole ping run would fail.
 - **Not built on purpose**: signal dots on the SPY chart, tap-a-number "ping me at X".
 - Tests: `app/v2/__tests__/page.test.js` (`the top line`), `components/__tests__/LeadCombos.test.js`,
   `components/__tests__/RiskCards.test.js`, `lib/__tests__/pulseVerdicts.test.js` (`asCards`).
@@ -2111,7 +2116,7 @@ The overnight send calls `digest_post("report", text, parse_mode)` first (health
 
 ## Signal ping (31 Oct 2026)
 
-The day a /v2 signal fires (AAII fear 20+, VIX over VIX 3M, the 4 Lead combos — `SIGNALS` in
+The day a /v2 signal fires (AAII fear 20+, VIX over VIX 3M, the 4 Lead combos, never a young one — `SIGNALS` in
 `dashboard/lib/signalStudy.js`), Jalal gets one Telegram line + a Now-page item. The Mac runs it:
 launchd `com.jalal.signal-ping` (daily 08:30) → `~/.local/bin/signal-ping` → `node
 dashboard/scripts/signal-states.mjs` (the dashboard's own code over the LIVE site's baked files + sheet

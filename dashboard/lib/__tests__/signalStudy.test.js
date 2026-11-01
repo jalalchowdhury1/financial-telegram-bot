@@ -1,4 +1,4 @@
-import { signalEpisodes, signalStudy, plusMonthsIso, comboSeries, signalStates, SIGNALS } from '../signalStudy';
+import { signalEpisodes, signalStudy, plusMonthsIso, comboSeries, signalStates, SIGNALS, COMBOS } from '../signalStudy';
 
 // SPY: 100 on Jan 1 2020, +1 every day (a trading day every day keeps the math readable)
 const spy = Array.from({ length: 500 }, (_, i) => ({ date: new Date(Date.UTC(2020, 0, 1 + i)).toISOString().slice(0, 10), price: 100 + i }));
@@ -92,5 +92,9 @@ describe('signalStates', () => {
         expect(st[0]).toMatchObject({ id: 'aaii', fired: '2020-08-06', asOf: '2020-08-13', share: 0.5, n: 2, win: 1 });
         expect(st[1]).toMatchObject({ id: 'vix', fired: null, asOf: null, share: null, n: 0 });
         expect(st.find((g) => g.id === 'cu')).toMatchObject({ fired: null, share: null });
+    });
+    it('a young combo is on the card but never pinged', () => {
+        expect(COMBOS.filter((c) => c.young).map((c) => c.id)).toEqual(['pf']);
+        expect(SIGNALS.map((g) => g.id)).toEqual(['aaii', 'vix', 'fo', 'cu', 'hv', 'pt']);
     });
 });

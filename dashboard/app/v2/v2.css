@@ -1258,6 +1258,7 @@ body:has(.v2) { background: #0b0c0e; }
 .v2-cb-row:disabled { cursor: default; }
 .v2-cb-row.is-on { box-shadow: inset 2px 0 0 var(--up); }
 .v2-cb-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 13.5px; font-weight: 500; }
+.v2-cb-young { margin-left: 6px; padding: 1px 5px; border: 1px solid var(--line); border-radius: 999px; font: 500 10.5px var(--sans); color: var(--ink-3); vertical-align: 1px; }
 .v2-cb-legs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; min-width: 0; }
 .v2-cb-leg { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
 .v2-cb-leg-txt { overflow: hidden; text-overflow: ellipsis; font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; }

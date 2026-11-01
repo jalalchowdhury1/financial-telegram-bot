@@ -1,7 +1,9 @@
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import LeadCombos from '../LeadCombos';
+import { loadFwd } from '../ValuationLens';
 
 jest.mock('../MarkProvider', () => ({ useSeries: () => null }));
+jest.mock('../ValuationLens', () => ({ loadFwd: jest.fn() }));
 
 // 501 daily readings ending today; `steps` = [[days ago, value], …] changes the value from that day on
 const DAY = 86400000;
@@ -24,7 +26,10 @@ const serve = (files) => {
         return Promise.resolve(key in files ? { ok: true, json: async () => files[key] } : { ok: false });
     });
 };
-beforeEach(() => serve(FILES));
+beforeEach(() => { serve(FILES); loadFwd.mockResolvedValue(null); });
+// FactSet reports 200 and 3 days ago: SPY rose 100 → 150 while the forward P/E fell 20 → 16 (≈ −8% in 3 months)
+const ago = (n) => new Date(Date.now() - n * DAY).toISOString().slice(0, 10);
+const FWD_ROWS = [{ date: ago(200), pe: 20, a5: 19, a10: 18 }, { date: ago(3), pe: 16, a5: 19, a10: 18 }];
 // The same files, ending 8 days ago: the sheet that should carry them to today has stopped (or not landed yet).
 const OLD = Object.fromEntries(Object.entries(FILES).map(([k, f]) => [k, { ...f, from: new Date(Date.parse(f.from) - 8 * DAY).toISOString().slice(0, 10) }]));
 
@@ -53,10 +58,10 @@ it('a pair whose newest reading is over 5 days old says N/A and is unread for th
     serve(OLD);
     const onState = jest.fn();
     render(<LeadCombos spy={null} onState={onState} />);
-    await waitFor(() => expect(screen.getAllByText('N/A')).toHaveLength(3));
+    await waitFor(() => expect(screen.getAllByText('N/A')).toHaveLength(4));
     expect(row('Jobs fine + CAD slump').querySelector('.v2-cb-now').textContent).toMatch(/^Bullish to /); // fired 38 days ago
-    const [fo, cu, hv, pt] = onState.mock.calls.at(-1)[0];
-    expect([fo, hv, pt]).toEqual([null, null, null]);
+    const [fo, cu, hv, pt, pf] = onState.mock.calls.at(-1)[0];
+    expect([fo, hv, pt, pf]).toEqual([null, null, null, undefined]); // the young pair: only while it fires
     expect(cu).toEqual({ jump: 'Lead combos', fire: expect.stringMatching(/^Jobs fine \+ CAD slump bullish to /) });
 });
 
@@ -64,9 +69,9 @@ it('waits (…) while the sheet is on its way, instead of N/A on old files', asy
     serve(OLD);
     const { rerender } = render(<LeadCombos spy={null} waiting />);
     await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
-    expect(screen.getAllByText('…')).toHaveLength(3);
+    expect(screen.getAllByText('…')).toHaveLength(4);
     rerender(<LeadCombos spy={null} />);
-    expect(screen.getAllByText('N/A')).toHaveLength(3);
+    expect(screen.getAllByText('N/A')).toHaveLength(4);
 });
 
 it('unmounting (a crash, a refresh) leaves the top line unread, never the last state', async () => {
@@ -77,8 +82,27 @@ it('unmounting (a crash, a refresh) leaves the top line unread, never the last s
     expect(onState).toHaveBeenLastCalledWith(null);
 });
 
+it('the young pair: tagged young, its forward P/E leg built from FactSet rows + SPY; in the top line only while it fires', async () => {
+    loadFwd.mockResolvedValue(FWD_ROWS);
+    const onState = jest.fn();
+    const { unmount } = render(<LeadCombos spy={null} onState={onState} />);
+    await waitFor(() => expect(row('Fwd selloff + rates').querySelector('.v2-cb-now').textContent).toBe('1 of 2'));
+    const pf = row('Fwd selloff + rates');
+    expect(pf.querySelector('.v2-cb-young').textContent).toBe('young');
+    expect(pf.querySelector('.v2-cb-leg.is-lit').textContent).toMatch(/^Fwd P\/E 3m −7\.\d% → −6\.5%/);
+    expect(onState.mock.calls.at(-1)[0]).toHaveLength(4); // quiet: never holds back "Nothing firing"
+    fireEvent.click(pf);
+    expect(await screen.findByRole('dialog', { name: 'Fwd selloff + rates' })).toBeInTheDocument();
+    unmount();
+
+    serve({ ...FILES, tnx: file(4, [[60, 3.5]]) }); // the 10Y fell 0.5 pts 60 days ago: both legs past their lines
+    render(<LeadCombos spy={null} onState={onState} />);
+    await waitFor(() => expect(row('Fwd selloff + rates').querySelector('.v2-cb-now').textContent).toMatch(/^Bullish to /));
+    expect(onState.mock.calls.at(-1)[0][4]).toMatchObject({ jump: 'Lead combos', fire: expect.stringMatching(/^Fwd selloff \+ rates bullish to /) });
+});
+
 it('says N/A when a file is missing, and never crashes', async () => {
     delete FILES.tnx;
     render(<LeadCombos spy={null} />);
-    await waitFor(() => expect(screen.getAllByText('N/A')).toHaveLength(4));
+    await waitFor(() => expect(screen.getAllByText('N/A')).toHaveLength(5));
 });

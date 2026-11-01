@@ -31,8 +31,8 @@ const BLUE = '#38bdf8', TEAL = '#2dd4bf', AMBER = '#fbbf24', VIOLET = '#a78bfa';
 const MONO = "'JetBrains Mono', monospace";
 
 let fwdLoad = null;
-/** FactSet's weekly rows: the baked file, then the reports since (/api/fwd-pe). null when the file fails. */
-function loadFwd() {
+/** FactSet's weekly rows: the baked file, then the reports since (/api/fwd-pe). null when the file fails. LeadCombos uses it too. */
+export function loadFwd() {
     if (!fwdLoad) {
         fwdLoad = Promise.all([
             fetch('/history/fwdPE.json').then((r) => (r.ok ? r.json() : null)).then(decodeFwd).catch(() => null),

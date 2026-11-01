@@ -4,15 +4,20 @@
  * 6 months (lib/signalStudy.js COMBOS). One row each: both legs as meters filling toward their line,
  * SPY's average 6 months after every past signal, and today's state. Tap a row for the proof
  * (components/SignalStudy.js). The baked files load after first paint; the 90-day sheet series
- * carries each leg up to today.
+ * carries each leg up to today. The young pair's forward P/E = FactSet's weekly rows (ValuationLens
+ * loadFwd) made daily with SPY (lib/valuation.js fwdDaily).
  */
 import { useEffect, useMemo, useState } from 'react';
 import SignalStudy from './SignalStudy';
 import { useSeries } from './MarkProvider';
 import { decodeLong } from '../lib/longHistory';
+import { loadFwd } from './ValuationLens';
 import { COMBOS, comboSeries, signalEpisodes, signalStudy, plusMonthsIso } from '../lib/signalStudy';
+import { fwdDaily } from '../lib/valuation';
 
-const KEYS = [...new Set(COMBOS.flatMap((c) => c.legs.map((l) => l.key)))];
+const FWD = 'fwdPe'; // a leg on FactSet's forward P/E: built here, not a /history file
+const needsFwd = (c) => c.legs.some((l) => l.key === FWD);
+const KEYS = [...new Set(COMBOS.flatMap((c) => c.legs.map((l) => l.key)))].filter((k) => k !== FWD);
 const load = (key) => fetch(`/history/${key}.json`).then((r) => (r.ok ? r.json() : null)).then(decodeLong);
 const DAY = 86400000;
 const sheetPts = (s, key) => (s?.v?.[key] || []).flatMap((x, i) => (typeof x === 'number' && Number.isFinite(x)
@@ -28,6 +33,7 @@ const pct0 = (r) => `${sign(r)}${Math.abs(r * 100).toFixed(0)}%`;
 export default function LeadCombos({ spy, waiting, onState }) {
     const series = useSeries();
     const [files, setFiles] = useState(null); // {key: points} | false when a file failed
+    const [fwd, setFwd] = useState(null); // FactSet's weekly rows | false when unavailable
     const [open, setOpen] = useState(null);
 
     useEffect(() => {
@@ -35,6 +41,7 @@ export default function LeadCombos({ spy, waiting, onState }) {
         Promise.all([...KEYS, 'spy-daily'].map(load))
             .then((got) => { if (live) setFiles(got.every(Boolean) ? Object.fromEntries([...KEYS, 'spy-daily'].map((k, i) => [k, got[i]])) : false); })
             .catch(() => { if (live) setFiles(false); });
+        loadFwd().then((r) => { if (live) setFwd(r || false); });
         return () => { live = false; };
     }, []);
 
@@ -43,8 +50,9 @@ export default function LeadCombos({ spy, waiting, onState }) {
         const today = new Date().toLocaleDateString('en-CA');
         const recent = new Date(Date.now() - 5 * DAY).toLocaleDateString('en-CA');
         const s = files['spy-daily'].map((p) => ({ date: p.date, price: p.value }));
+        const fwdPts = fwd ? fwdDaily(fwd, tail(s, (spy || []).map((p) => ({ date: p.date, price: p.price })))).map((d) => ({ date: d.date, value: d.pe })) : [];
         return COMBOS.map((c) => {
-            const pts = comboSeries(c, ...c.legs.map((l) => tail(files[l.key], sheetPts(series, l.key))));
+            const pts = comboSeries(c, ...c.legs.map((l) => (l.key === FWD ? fwdPts : tail(files[l.key], sheetPts(series, l.key)))));
             const end = pts[pts.length - 1];
             const now = end?.date >= recent ? end : null; // older = the sheet stopped (or hasn't landed): no state, N/A
             const last = signalEpisodes(pts, 1).pop();
@@ -52,13 +60,14 @@ export default function LeadCombos({ spy, waiting, onState }) {
             const { stats, base } = signalStudy(pts, s, 6, 1) || {};
             return { c, pts, now, until: until >= today ? until : null, stats, base };
         });
-    }, [files, series]);
+    }, [files, series, fwd, spy]);
 
-    // For the page's top line: each pair's state, and its leg furthest from its line (null = unread).
+    // For the page's top line: each pair's state, and its leg furthest from its line (null = unread). A young
+    // pair joins only while it fires: it never holds back "Nothing firing" or becomes the closest.
     useEffect(() => {
         if (!onState) return;
         if (files === false) onState(COMBOS.map(() => null));
-        if (rows) onState(rows.map(({ c, now, until }) => {
+        if (rows) onState(rows.filter(({ c, until }) => !c.young || until).map(({ c, now, until }) => {
             if (!now) return until ? { jump: 'Lead combos', fire: `${c.name} bullish to ${shortDate(until)}` } : null; // a fire stays true
             const k = now.legs.reduce((m, v, i) => (v / c.legs[i].line < now.legs[m] / c.legs[m].line ? i : m), 0);
             return { jump: 'Lead combos', fire: until && `${c.name} bullish to ${shortDate(until)}`, share: now.value,
@@ -68,16 +77,20 @@ export default function LeadCombos({ spy, waiting, onState }) {
     useEffect(() => () => onState?.(null), [onState]); // a crashed or gone card leaves the top line unread, not stuck
 
     const sel = rows?.find((r) => r.c.id === open);
+    const own = sel && needsFwd(sel.c); // no /history file to re-read: the proof takes the series built here
     return (
         <div className="card v2-combos">
             <div className="v2-cb-head" aria-hidden="true"><span /><span>Leg → line</span><span>SPY 6M after</span><span>Now</span></div>
             {COMBOS.map((c, i) => {
                 const r = rows?.[i], lit = r?.now ? r.now.legs.filter((v, k) => v / c.legs[k].line >= 1).length : 0;
-                const state = r?.until ? `Bullish to ${shortDate(r.until)}` : !r?.now ? (files === null || waiting ? '…' : 'N/A') : `${lit} of 2`;
+                const state = r?.until ? `Bullish to ${shortDate(r.until)}` : !r?.now ? (files === null || waiting || (fwd === null && needsFwd(c)) ? '…' : 'N/A') : `${lit} of 2`;
                 return (
                     <button key={c.id} type="button" className={`v2-cb-row${r?.until ? ' is-on' : ''}`} disabled={!r?.now}
                         aria-haspopup="dialog" onClick={() => setOpen(c.id)}>
-                        <span className="v2-cb-name"><span className="tooltip-trigger" data-tooltip={`${c.tip} Tap for the proof.`}>{c.name}</span></span>
+                        <span className="v2-cb-name">
+                            <span className="tooltip-trigger" data-tooltip={`${c.tip}${c.young ? ' Young: too few times to prove it yet, so no ping.' : ''} Tap for the proof.`}>{c.name}</span>
+                            {c.young && <i className="v2-cb-young">young</i>}
+                        </span>
                         <span className="v2-cb-legs">
                             {c.legs.map((l, k) => {
                                 const v = r?.now?.legs[k], f = Number.isFinite(v) ? Math.max(0, Math.min(1, v / l.line)) : 0;
@@ -97,7 +110,7 @@ export default function LeadCombos({ spy, waiting, onState }) {
                 );
             })}
             {sel && (
-                <SignalStudy id={`combo-${sel.c.id}`} src={sel.c.legs.map((l) => `/history/${l.key}.json`)} join={(...f) => comboSeries(sel.c, ...f)}
+                <SignalStudy id={`combo-${sel.c.id}`} src={own ? [] : sel.c.legs.map((l) => `/history/${l.key}.json`)} join={own ? () => sel.pts : (...f) => comboSeries(sel.c, ...f)}
                     line={1} horizons={[1, 3, 6, 12]} start={6} title={sel.c.name}
                     sub={`Now ${sel.c.legs.map((l, k) => `${l.label} ${fmt(sel.now.legs[k], l)}`).join(' · ')}`}
                     label={(v, p) => (p?.legs ? sel.c.legs.map((l, k) => `${l.label} ${fmt(p.legs[k], l, 0)}`).join(' · ') : `${v.toFixed(2)}× the lines`)}

@@ -53,6 +53,9 @@ export function signalEpisodes(points, line) {
  * pre-2010 data, then a 2010+ re-test, a time-shift placebo and the lines around each; notes in the commit)
  * kept these. `key` = the sheet metric and /history file; `days` = a change over that many days (`pct` = in %,
  * else in points), none = the level.
+ * `young` = on the card before it passed that bar (Jalal's call, 1 Nov 2026): marked young, never pinged (not in
+ * SIGNALS). `pf` = `pt` with FactSet's forward P/E (key `fwdPe`: made daily by LeadCombos, not a /history file),
+ * 7 for 7 since 2011, too few to tell from luck.
  */
 export const COMBOS = [
     { id: 'fo', name: 'Fear + oil crash', tip: 'AAII 20+ while oil is down 15%+ on the year.',
@@ -63,6 +66,8 @@ export const COMBOS = [
         legs: [{ key: 'vixCurrent', label: 'VIX', line: 25 }, { key: 'housing', label: 'Housing 3m', days: 91, pct: true, line: 8 }] },
     { id: 'pt', name: 'Selloff + falling rates', tip: 'P/E down 6.5%+ and the 10Y down 0.4+ pts, both in 3 months.',
         legs: [{ key: 'peRatio', label: 'P/E 3m', days: 91, pct: true, line: -6.5 }, { key: 'tnx', label: '10Y 3m', days: 91, line: -0.4 }] },
+    { id: 'pf', name: 'Fwd selloff + rates', young: true, tip: 'Forward P/E down 6.5%+ and the 10Y down 0.4+ pts, both in 3 months.',
+        legs: [{ key: 'fwdPe', label: 'Fwd P/E 3m', days: 91, pct: true, line: -6.5 }, { key: 'tnx', label: '10Y 3m', days: 91, line: -0.4 }] },
 ];
 const STALE = 45 * DAY; // a reading still counts this long (monthly stats print about monthly)
 
@@ -103,13 +108,13 @@ export function comboSeries(combo, ...series) {
 }
 
 /**
- * Every /v2 signal with a fire date: AAII, VIX over VIX 3M and the Lead combos. `months` = the horizon its
+ * Every /v2 signal with a fire date: AAII, VIX over VIX 3M and the Lead combos but the young. `months` = the horizon its
  * proof opens on. scripts/signal-states.mjs prints their states for the Mac's daily ping (~/.local/bin/signal-ping).
  */
 export const SIGNALS = [
     { id: 'aaii', name: 'AAII fear 20+', key: 'aaiiDiff', line: 20, months: 6 },
     { id: 'vix', name: 'VIX over VIX 3M', key: 'vix-ratio-daily', line: 1, months: 1 },
-    ...COMBOS.map((c) => ({ id: c.id, name: c.name, combo: c, line: 1, months: 6 })),
+    ...COMBOS.filter((c) => !c.young).map((c) => ({ id: c.id, name: c.name, combo: c, line: 1, months: 6 })),
 ];
 
 /**
