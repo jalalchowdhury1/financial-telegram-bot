@@ -395,7 +395,7 @@ export function RecessionCard({ fred, loading, open }) {
             <div className="card-header">
                 {!loading && riding && <span className={`badge ${riding.riding >= 3 ? 'badge-red' : riding.riding >= 1 ? 'badge-yellow' : 'badge-green'}`}>{riding.riding} of 4 riding</span>}
             </div>
-            {loading || !fred ? <Skeleton count={2} /> : !rows.some((r) => r.cur != null) ? (
+            {loading ? <Skeleton count={2} /> : !rows.some((r) => r.cur != null) ? ( // no fred once loading is over = the feed failed: say so
                 <div className="rk-na">Unavailable — source busy, try again shortly</div>
             ) : !open ? (
                 <div className="rw-tiles">

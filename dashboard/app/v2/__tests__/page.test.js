@@ -425,6 +425,12 @@ it('USD/BDT never shows a stale last-good rate as today\'s: it wears the 🕐 ta
     expect(card.textContent).toMatch(/🕐 Oct 10/);
 });
 
+it('USD/BDT with its history file and the sheet both failing says unavailable, not a skeleton forever', async () => {
+    mockRoutes({ '/v2/usdbdt.json': Promise.reject(new TypeError('Failed to fetch')), '/api/market-extra': Promise.resolve({ ok: true, status: 200, json: async () => ({}) }) });
+    render(<DashboardV2 />);
+    await waitFor(() => expect(document.querySelector('[data-jump="USD/BDT"]').textContent).toMatch(/Unavailable · source busy/));
+});
+
 it('a market-extra feed that fails outright leaves a tap-to-retry line in Global markets, not an empty card (audit D6)', async () => {
     mockRoutes({ '/api/market-extra': Promise.reject(new TypeError('Failed to fetch')) });
     jest.useFakeTimers();

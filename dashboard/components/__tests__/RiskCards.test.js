@@ -4,7 +4,7 @@
  * "All clear" right above that.
  */
 import { render, screen } from '@testing-library/react';
-import { RubberBandCard } from '../RiskCards';
+import { RubberBandCard, RecessionCard } from '../RiskCards';
 
 const RB = require('../../lib/__tests__/fixtures/pulse-rubber-band-2026-10-04.json');
 const serve = (body) => { global.fetch = jest.fn(() => Promise.resolve({ json: async () => body })); };
@@ -45,4 +45,9 @@ describe('the page refresh reaches the Rubber band (audit D5)', () => {
         expect(badge().textContent).not.toBe('…');
         expect(document.querySelector('.rk-na')).not.toBeNull();
     });
+});
+
+it('Recession watch with a failed feed (no fred, done loading) says unavailable, not a skeleton forever', () => {
+    render(<RecessionCard fred={null} loading={false} open={false} />);
+    expect(screen.getByText(/Unavailable — source busy/)).toBeInTheDocument();
 });

@@ -74,6 +74,11 @@ describe('FourHorsemen (run-up bars)', () => {
         expect(screen.queryByText('Initial Jobless Claims')).not.toBeInTheDocument();
     });
 
+    test('a failed feed (no fred, done loading) says unavailable, not a skeleton forever', () => {
+        render(<FourHorsemen fred={null} loading={false} />);
+        expect(screen.getByText(/Unavailable — source busy/)).toBeInTheDocument();
+    });
+
     test('bankruptcies N/A: chip shows N/A, the other rows still render', () => {
         const fred = {
             ...mockFred,

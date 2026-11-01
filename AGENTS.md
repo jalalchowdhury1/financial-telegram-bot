@@ -905,7 +905,8 @@ Each rule has a tripwire test named in its commit (`audit A1…D11`).
   assessment, never a default reading.
 - **Calculations:** a combo's asOf = its oldest leg's date; v2 AAII 20+ is bullish to 6 months after its survey
   (`AAII.as_of`, as v1), so it fires with `/api/history` down and a stuck one runs out.
-- **Cards:** a failed feed says unavailable (v1 econ lines, Markets "tap ↻"), never an endless shimmer; "Updated" is
+- **Cards:** a failed feed says unavailable (v1 econ lines, Markets "tap ↻", Four Horsemen / Recession watch, USD/BDT
+  when its history file fails too), never an endless shimmer: a skeleton waits on `loading`, never on "no data"; "Updated" is
   stamped only when a core feed (SPY, sheets, F&G, FRED) landed live.
 - **Freshness rows:** fred, sheets and fear-greed grade a live answer flagged `hasErrors` / `stale` as unserved; vol and
   breadth grade by their oldest row date; polymarket by its `timestamp`, 6 h cap (no item when Unavailable).

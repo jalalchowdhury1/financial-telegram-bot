@@ -485,7 +485,7 @@ function Taka({ extra, loading }) {
     const [at, setAt] = useState(null);
     useEffect(() => {
         try { const r = window.localStorage.getItem(TAKA_KEY); if (TAKA_RANGES.some(([id]) => id === r)) setRange(r); } catch { /* private mode */ }
-        fetch('/v2/usdbdt.json').then((r) => (r.ok ? r.json() : null)).then((b) => setBaked(decodeLong(b))).catch(() => {});
+        fetch('/v2/usdbdt.json').then((r) => (r.ok ? r.json() : null)).then((b) => setBaked(decodeLong(b) || [])).catch(() => setBaked([])); // [] = tried: no endless skeleton
     }, []);
     const all = useMemo(() => {
         const pts = sheet?.points?.length ? [...joinLong(sheet.points, baked, null)] : [...(baked || [])];

@@ -169,7 +169,7 @@ export default function FourHorsemen({ fred, loading }) {
                 )}
             </div>
             <ErrorBoundary>
-                {loading || !fred ? <Skeleton count={4} /> : stats.length === 0 || !hasAnySeries ? (
+                {loading ? <Skeleton count={4} /> : stats.length === 0 || !hasAnySeries ? ( // no fred once loading is over = the feed failed: say so
                     <div className="hero-price-section">
                         <div className="hero-price" style={{ fontSize: '2.2rem', color: 'var(--yellow)' }}>N/A</div>
                         <div className="hero-change" style={{ color: 'var(--text-muted)', fontSize: '0.72rem', marginTop: '4px' }}>
