@@ -6,8 +6,8 @@ import AxisLabels from './AxisLabels';
 
 /**
  * v2-only props: `nice` puts the y ticks on round numbers (1, 2 or 5 × 10ⁿ apart, at most 6), so the zero line sits at
- * 0 rather than 0.08; `inverted` = a fill for the stretches under zero (the yield curve's inversions), the longest one
- * labelled at its deepest point.
+ * 0 rather than 0.08; `inverted` = a fill for the stretches under zero (the yield curve's inversions), with the word
+ * where it has room.
  */
 export default function MiniChart({ history, color = '#818cf8', gradientId = 'chartGrad', showZero = false, recessions = [], label = '', cadence = 'auto', defaultTimeframe = null, fmt = null, nice = false, inverted = null }) {
     const [timeframe, setTimeframe] = useState(defaultTimeframe || '5Y');
@@ -75,18 +75,17 @@ export default function MiniChart({ history, color = '#818cf8', gradientId = 'ch
 
     const line = values.map((v, i) => `${toX(i)},${toY(v)}`).join(' ');
     const area = line + ` ${w - padR},${h - padB} ${padL},${h - padB}`;
-    // under zero: the line closed along zero, clipped to below it; the longest stretch is labelled at its deepest point,
-    // kept inside the stretch, only when the word fits (56px wide, 12px deep)
+    // under zero: the line closed along zero, clipped to below it. The word goes where the line stays furthest under
+    // zero for the word's width (56px), midway between zero and the line's highest point there, if that gap fits it (12px).
     const zy = Math.max(padT, Math.min(h - padB, toY(0)));
-    let run = null;
-    for (let i = 0, j; inverted && min < 0 && i < values.length; i = j + 1) {
-        for (j = i; j < values.length && values[j] < 0; j++);
-        if (j > i && (!run || j - 1 - i > run.b - run.a)) run = { a: i, b: j - 1 };
+    const tint = inverted && min < 0;
+    const span = unitsForPx(56, w, plotPx) ?? 56, per = (w - padL - padR) / (values.length - 1);
+    let tag = null;
+    for (let x = padL; tint && x + span <= w - padR; x += span / 4) {
+        const top = Math.max(...values.slice(Math.floor((x - padL) / per), Math.ceil((x + span - padL) / per) + 1));
+        if (top < 0 && (!tag || top < tag.top)) tag = { x: x + span / 2, top };
     }
-    const deep = run && values.indexOf(Math.min(...values.slice(run.a, run.b + 1)), run.a);
-    const half = unitsForPx(28, w, plotPx) ?? 28;
-    const tag = run && toX(run.b) - toX(run.a) >= 2 * half && toY(values[deep]) - zy >= 12
-        && { x: Math.min(Math.max(toX(deep), toX(run.a) + half), toX(run.b) - half), y: (zy + toY(values[deep])) / 2 };
+    if (tag) tag = toY(tag.top) - zy >= 12 ? { x: tag.x, y: (zy + toY(tag.top)) / 2 } : null;
 
     // Date to X for recessions
     const dateToX = (dateStr) => {
@@ -166,7 +165,7 @@ export default function MiniChart({ history, color = '#818cf8', gradientId = 'ch
                                 <stop offset="0%" stopColor={color} stopOpacity="0.2" />
                                 <stop offset="100%" stopColor={color} stopOpacity="0" />
                             </linearGradient>
-                            {run && <clipPath id={`${gradientId}-below`}><rect x={padL} y={zy} width={w - padL - padR} height={h - padB - zy} /></clipPath>}
+                            {tint && <clipPath id={`${gradientId}-below`}><rect x={padL} y={zy} width={w - padL - padR} height={h - padB - zy} /></clipPath>}
                         </defs>
                         {/* Y-axis grid (its labels are HTML, below) */}
                         {yTicks.map((t, i) => (
@@ -188,7 +187,7 @@ export default function MiniChart({ history, color = '#818cf8', gradientId = 'ch
                             />
                         )}
                         <polygon points={area} fill={`url(#${gradientId})`} />
-                        {run && <polygon points={`${line} ${toX(values.length - 1)},${zy} ${toX(0)},${zy}`} fill={inverted} clipPath={`url(#${gradientId}-below)`} />}
+                        {tint && <polygon points={`${line} ${toX(values.length - 1)},${zy} ${toX(0)},${zy}`} fill={inverted} clipPath={`url(#${gradientId}-below)`} />}
                         <polyline points={line} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" />
                         {hi != null && (
                             <g className="chart-cursor" pointerEvents="none">
@@ -201,7 +200,7 @@ export default function MiniChart({ history, color = '#818cf8', gradientId = 'ch
                     {tag && (
                         <span className="chart-tag" aria-hidden="true" style={{
                             position: 'absolute', left: `${(tag.x / w) * 100}%`, top: `${(tag.y / h) * 100}%`, transform: 'translate(-50%, -50%)',
-                            pointerEvents: 'none', fontSize: '0.55rem', fontWeight: 700, letterSpacing: '0.04em', color: 'var(--text-muted)', whiteSpace: 'nowrap',
+                            pointerEvents: 'none', fontSize: '0.55rem', fontWeight: 700, letterSpacing: '0.04em', color: 'var(--text-secondary)', whiteSpace: 'nowrap',
                         }}>inverted</span>
                     )}
                 </div>

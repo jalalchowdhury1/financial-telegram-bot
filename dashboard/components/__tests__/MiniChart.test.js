@@ -160,13 +160,19 @@ describe('v2: round y ticks and the inverted stretch', () => {
         expect(lbls(c3)).toEqual(['-1.09', '-0.51', '0.08', '0.66', '1.25']);
     });
 
-    test('the inverted stretch is tinted and labelled at its deepest point; nothing on v1 or on a curve that never inverts', () => {
+    test('the inverted stretch is tinted, the word where the line leaves it room; nothing on v1 or on a curve that never inverts', () => {
         const { container, unmount } = render(<MiniChart history={curve} cadence="monthly" defaultTimeframe="ALL" gradientId="tInv" showZero inverted="rgba(251,191,36,0.2)" />);
         expect(container.querySelector('clipPath#tInv-below')).toBeTruthy();
         expect(container.querySelector('polygon[clip-path="url(#tInv-below)"]').getAttribute('fill')).toBe('rgba(251,191,36,0.2)');
+        // the word sits over the deepest stretch (month 26 ± 2), between zero and the line: clear of both
         const tag = screen.getByText('inverted');
         const x = (i) => ((42 + (i / 59) * 430) / 480) * 100; // toX in % (42 = the gutter before it is measured)
-        expect(parseFloat(tag.style.left)).toBeCloseTo(x(26), 1);
+        const y = (v) => ((158 - ((v + 1.09) / 2.34) * 148) / 180) * 100; // toY in %
+        expect(Math.abs(parseFloat(tag.style.left) - x(26))).toBeLessThan(x(2) - x(0));
+        const top = parseFloat(tag.style.top), half = (6 / 180) * 100; // ±6px around the word's middle
+        expect(top - half).toBeGreaterThan(y(0));
+        const around = curve.slice(21, 32).map((p) => y(p.value)); // the line under the word's 56px
+        expect(top + half).toBeLessThan(Math.min(...around));
         unmount();
         const { container: c2, unmount: u2 } = render(<MiniChart history={curve} cadence="monthly" defaultTimeframe="ALL" gradientId="tInvV1" showZero />);
         expect(c2.querySelector('clipPath')).toBeNull();
