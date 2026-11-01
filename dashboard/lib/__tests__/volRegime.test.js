@@ -92,6 +92,13 @@ describe('buildTermStructure', () => {
         expect(curveDegraded(c)).toBe(true); // a quote-only point is a backup, not CBOE
     });
 
+    it('no ratio when a bare quote leg is newer than the other leg\'s close (audit C14)', () => {
+        const c = buildTermStructure({ ...eod, VIX: null }, { VIX: { value: 30, date: '2026-09-28' } });
+        expect(c.points.find((p) => p.index === 'VIX')).toMatchObject({ value: 30, source: 'cnbc-quote' });
+        expect(c.ratio).toBeNull(); // never intraday VIX ÷ the 25 Sep VIX3M close
+        expect(c.state).toBeNull();
+    });
+
     it('makes no call without VIX3M, and is incomplete with a missing tenor', () => {
         const noV3 = buildTermStructure({ ...eod, VIX3M: null }, {});
         expect(noV3.state).toBeNull();

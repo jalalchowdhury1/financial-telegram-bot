@@ -50,7 +50,7 @@ const liveNewer = (q, eod) => !!(eod && q && goodValue(q.value) && ISO.test(q.da
  * Live levels apply only when BOTH VIX and VIX3M have a quote newer than their close, so
  * the ratio never divides an intraday VIX by yesterday's VIX3M; then each point uses its
  * own quote when newer. An index with no close at all but a quote uses the quote — the
- * last source tier ('cnbc-quote').
+ * last source tier ('cnbc-quote'); no ratio when that quote's day differs from the other leg's.
  */
 export function buildTermStructure(eod = {}, live = {}) {
     const goLive = liveNewer(live?.VIX, eod?.VIX) && liveNewer(live?.VIX3M, eod?.VIX3M);
@@ -72,7 +72,9 @@ export function buildTermStructure(eod = {}, live = {}) {
     const vix = at('VIX');
     const v3 = at('VIX3M');
     const nine = at('VIX9D');
-    const ratio = vix && v3 ? round(vix.value / v3.value, 4) : null; // 4 places: shown as 2, so it never rounds twice (0.935 → 0.94)
+    const bare = (p) => p.source === 'cnbc-quote';
+    const mixed = vix && v3 && bare(vix) !== bare(v3) && vix.asOf !== v3.asOf; // one leg a newer bare quote: an intraday ÷ a close
+    const ratio = vix && v3 && !mixed ? round(vix.value / v3.value, 4) : null; // 4 places: shown as 2, so it never rounds twice (0.935 → 0.94)
     const dates = points.map((p) => p.asOf).sort();
     return {
         points,
