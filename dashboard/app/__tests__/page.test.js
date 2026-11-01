@@ -466,3 +466,22 @@ it('the header claims no AI: nothing on the page calls /api/assessment', async (
     await waitFor(() => expect(screen.getByText('$612.34')).toBeInTheDocument());
     expect(document.querySelector('.dashboard-header .subtitle').textContent).toBe('Live market data & economic indicators');
 });
+
+describe.each([
+    ['fails outright', () => Promise.reject(new TypeError('Failed to fetch'))],
+    ['answers an error', () => Promise.resolve({ status: 200, json: async () => ({ error: 'FRED temporarily unavailable' }) })],
+])('a fred feed that %s', (_, fredAnswer) => {
+    it('leaves no economy card shimmering: each says unavailable (audit D1)', async () => {
+        mockRoutes();
+        const base = global.fetch.getMockImplementation();
+        global.fetch.mockImplementation((url) => (String(url).startsWith('/api/fred') ? fredAnswer() : base(url)));
+        jest.useFakeTimers();
+        render(<Dashboard />);
+        await act(async () => { await jest.advanceTimersByTimeAsync(4000); });
+        jest.useRealTimers();
+        for (const jump of ['Yield curve', 'Profit margin', 'S&P 500 EPS', 'Bull checklist', 'Economy']) {
+            expect([jump, document.querySelector(`[data-jump="${jump}"] .skeleton`)]).toEqual([jump, null]);
+            expect([jump, document.querySelector(`[data-jump="${jump}"]`).textContent]).toEqual([jump, expect.stringMatching(/unavailable/i)]);
+        }
+    });
+});

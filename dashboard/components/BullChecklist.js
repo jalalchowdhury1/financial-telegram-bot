@@ -88,7 +88,7 @@ function ChecklistItem({ itemKey, item }) {
     );
 }
 
-export default function BullChecklist({ fred, loading }) {
+export default function BullChecklist({ fred, loading, onRetry }) {
     return (
         <div className="card full-width" style={{ animationDelay: '0.6s' }}>
             <div className="card-header">
@@ -101,7 +101,7 @@ export default function BullChecklist({ fred, loading }) {
                 })()}
             </div>
             <ErrorBoundary>
-                {loading || !fred || fred.error ? <Skeleton count={8} /> : (
+                {loading ? <Skeleton count={8} /> : !fred || fred.error ? <button type="button" className="card-unavailable" onClick={onRetry}>Bull checklist unavailable · tap ↻</button> : (
                     <>
                         <div className="checklist-grid">
                             {Object.entries(fred.checklist).map(([key, item]) => (

@@ -85,14 +85,14 @@ function IndicatorRow({ ind, statusColor }) {
     );
 }
 
-export default function EconomicIndicatorGrid({ fred, loading, statusColor }) {
+export default function EconomicIndicatorGrid({ fred, loading, statusColor, onRetry }) {
     return (
         <div className="card" style={{ animationDelay: '0.5s' }}>
             <div className="card-header">
                 <h2>📊 Economic Indicators</h2>
             </div>
             <ErrorBoundary>
-                {loading || !fred || fred.error ? <Skeleton count={6} /> : (
+                {loading ? <Skeleton count={6} /> : !fred || fred.error ? <button type="button" className="card-unavailable" onClick={onRetry}>Economy unavailable · tap ↻</button> : (
                     <>
                         {[
                             { icon: fred.indicators.sahmRule?.status === 'safe' ? '✅' : '🔴', label: 'Sahm Rule', tooltip: "Fires when 3-month jobless rate is 0.5 over its 12-month low.", value: fred.indicators.sahmRule?.value?.toFixed(2) ?? 'N/A', status: fred.indicators.sahmRule?.status, benchmark: 'Safe under 0.50', metric: fred.indicators.sahmRule, markKey: 'sahmRule', raw: fred.indicators.sahmRule?.value, fmtPrev: (v) => v.toFixed(2) },

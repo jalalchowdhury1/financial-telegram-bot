@@ -394,9 +394,9 @@ function Gauge({ g, open, onToggle }) {
     );
 }
 
-function Board({ rows }) {
+function Board({ rows, what, waiting, onRetry }) {
     const [openKey, setOpenKey] = useState(null);
-    if (!rows) return <div className="card"><Skeleton count={6} /></div>;
+    if (!rows) return <div className="card">{waiting ? <Skeleton count={6} /> : <Unavailable what={what} onRetry={onRetry} />}</div>;
     const live = rows.filter((r) => Number.isFinite(r.m?.value));
     const good = live.filter((r) => r.tone === 'good');
     const sorted = [...rows].sort((a, b) => (Number.isFinite(a.s) ? a.s : Infinity) - (Number.isFinite(b.s) ? b.s : Infinity));
@@ -761,7 +761,7 @@ function HistRuler({ lo, hi, cur, mark, short, tip }) {
 }
 
 /** Yield curve / profit margin / EPS: one number, one long chart, and what stands out about today. */
-function FredTile({ fred, metric, title, jump, tip, markKey, fmt, tone, chart, refreshTick }) {
+function FredTile({ fred, metric, title, jump, tip, markKey, fmt, tone, chart, refreshTick, waiting, onRetry }) {
     const m = fred?.[metric];
     const story = useMemo(() => fredStory(metric, m?.history), [metric, m?.history]);
     return (
@@ -771,7 +771,7 @@ function FredTile({ fred, metric, title, jump, tip, markKey, fmt, tone, chart, r
                 {story && <span className="v2-fred-badge"><i />{story.text}<small>{story.sub}</small></span>}
             </div>
             <ErrorBoundary resetKey={refreshTick}>
-                <Body>{() => !fred ? <Skeleton count={2} /> : (fred.error || m?.current == null) ? (
+                <Body>{() => !fred ? (waiting ? <Skeleton count={2} /> : <Unavailable what={title} onRetry={onRetry} />) : (fred.error || m?.current == null) ? (
                     <div className="v2-fred-na">Unavailable · source busy, try again shortly</div>
                 ) : (
                     <>
@@ -1343,21 +1343,21 @@ export default function DashboardV2() {
                     <Section id="economy" title="Economy">
                         <div className="v2-grid">
                             <Slot jump="Bull checklist" title="Bull checklist" span={6} saved={saved('fred')} more>
-                                <ErrorBoundary resetKey={refreshTick}><Board rows={bullRows(fred)} /></ErrorBoundary>
+                                <ErrorBoundary resetKey={refreshTick}><Board rows={bullRows(fred)} what="Bull checklist" waiting={pending.fred} onRetry={refreshNow} /></ErrorBoundary>
                             </Slot>
                             <Slot jump="Economy" title="Indicators" span={6} saved={saved('fred')} more>
-                                <ErrorBoundary resetKey={refreshTick}><Board rows={indicatorRows(fred)} /></ErrorBoundary>
+                                <ErrorBoundary resetKey={refreshTick}><Board rows={indicatorRows(fred)} what="Indicators" waiting={pending.fred} onRetry={refreshNow} /></ErrorBoundary>
                             </Slot>
                             <div className={`v2-trio span-12 ${trioOpen ? 'is-open' : 'is-calm'}`} data-cached={saved('fred')}>
-                                <FredTile fred={fred} metric="yieldCurve" title="Yield curve" jump="Yield curve" markKey="yieldCurve" refreshTick={refreshTick}
+                                <FredTile fred={fred} metric="yieldCurve" title="Yield curve" jump="Yield curve" markKey="yieldCurve" refreshTick={refreshTick} waiting={pending.fred} onRetry={refreshNow}
                                     tip="10-year minus 2-year. Below 0 = classic recession warning."
                                     fmt={(v) => `${signed(v)}%`} tone={(v) => (v >= 0 ? 'good' : 'bad')}
                                     chart={{ color: '#9fb4c7', gradientId: 'v2Yield', showZero: true, nice: true, inverted: 'rgba(251,191,36,0.2)' }} />
-                                <FredTile fred={fred} metric="profitMargin" title="Profit margin" jump="Profit margin" markKey="profitMargin" refreshTick={refreshTick}
+                                <FredTile fred={fred} metric="profitMargin" title="Profit margin" jump="Profit margin" markKey="profitMargin" refreshTick={refreshTick} waiting={pending.fred} onRetry={refreshNow}
                                     tip="Corporate profits ÷ GDP. High = pricing power."
                                     fmt={(v) => `${v.toFixed(2)}%`} tone={() => 'flat'}
                                     chart={{ color: '#9fb4c7', gradientId: 'v2Profit', nice: true }} />
-                                <FredTile fred={fred} metric="spEps" title="S&P 500 EPS" jump="S&P 500 EPS" markKey={undefined} refreshTick={refreshTick}
+                                <FredTile fred={fred} metric="spEps" title="S&P 500 EPS" jump="S&P 500 EPS" markKey={undefined} refreshTick={refreshTick} waiting={pending.fred} onRetry={refreshNow}
                                     tip="S&P 500 earnings per share, last 12 months. History in today's dollars."
                                     fmt={(v) => `$${v.toFixed(2)}`} tone={() => 'flat'}
                                     chart={{ color: '#9fb4c7', gradientId: 'v2Eps', cadence: 'monthly', nice: true }} />

@@ -600,7 +600,7 @@ export default function Dashboard() {
                         {fred?.yieldCurve?.current != null && <span className={`badge ${fred.yieldCurve.current >= 0 ? 'badge-green' : 'badge-red'}`}>{fred.yieldCurve.current >= 0 ? 'Positive' : 'Inverted'}</span>}
                     </div>
                     <ErrorBoundary resetKey={refreshTick}>
-                        <Body>{() => !fred ? <Skeleton count={2} /> : (fred.error || fred.yieldCurve?.current == null) ? (
+                        <Body>{() => !fred ? (pending.fred ? <Skeleton count={2} /> : <Unavailable what="Yield curve" onRetry={refreshNow} />) : (fred.error || fred.yieldCurve?.current == null) ? (
                             <div className="hero-price-section">
                                 <div className="hero-price" style={{ fontSize: '2.2rem', color: 'var(--yellow)' }}>N/A</div>
                                 <div className="hero-change" style={{ color: 'var(--text-muted)', fontSize: '0.72rem', marginTop: '4px' }}>
@@ -635,7 +635,7 @@ export default function Dashboard() {
                         {fred?.profitMargin?.current != null && <span className="badge badge-blue">Corp Profits / GDP</span>}
                     </div>
                     <ErrorBoundary resetKey={refreshTick}>
-                        <Body>{() => !fred ? <Skeleton count={2} /> : (fred.error || fred.profitMargin?.current == null) ? (
+                        <Body>{() => !fred ? (pending.fred ? <Skeleton count={2} /> : <Unavailable what="Profit margin" onRetry={refreshNow} />) : (fred.error || fred.profitMargin?.current == null) ? (
                             <div className="hero-price-section">
                                 <div className="hero-price" style={{ fontSize: '2.2rem', color: 'var(--yellow)' }}>N/A</div>
                                 <div className="hero-change" style={{ color: 'var(--text-muted)', fontSize: '0.72rem', marginTop: '4px' }}>
@@ -669,7 +669,7 @@ export default function Dashboard() {
                         {fred?.spEps?.current != null && <span className="badge badge-blue">Trailing 12M</span>}
                     </div>
                     <ErrorBoundary resetKey={refreshTick}>
-                        <Body>{() => !fred ? <Skeleton count={2} /> : (fred.error || fred.spEps?.current == null) ? (
+                        <Body>{() => !fred ? (pending.fred ? <Skeleton count={2} /> : <Unavailable what="EPS" onRetry={refreshNow} />) : (fred.error || fred.spEps?.current == null) ? (
                             <div className="hero-price-section">
                                 <div className="hero-price" style={{ fontSize: '2.2rem', color: 'var(--yellow)' }}>N/A</div>
                                 <div className="hero-change" style={{ color: 'var(--text-muted)', fontSize: '0.72rem', marginTop: '4px' }}>
@@ -698,7 +698,7 @@ export default function Dashboard() {
                 </div>
 
                 {/* ECONOMIC INDICATORS */}
-                <div className="saved-wrap" data-jump="Economy" data-cached={saved('fred')} style={{ display: 'contents', ...savedVar('fred') }}><ErrorBoundary resetKey={refreshTick}><EconomicIndicatorGrid fred={fred} loading={pending.fred && !fred} statusColor={statusColor} /></ErrorBoundary></div>
+                <div className="saved-wrap" data-jump="Economy" data-cached={saved('fred')} style={{ display: 'contents', ...savedVar('fred') }}><ErrorBoundary resetKey={refreshTick}><EconomicIndicatorGrid fred={fred} loading={pending.fred && !fred} statusColor={statusColor} onRetry={refreshNow} /></ErrorBoundary></div>
 
                 {/* FOUR HORSEMEN — RECESSION WATCH (full width) */}
                 <div className="saved-wrap" data-jump="Recession watch" data-cached={saved('fred')} style={{ display: 'contents', ...savedVar('fred') }}><ErrorBoundary resetKey={refreshTick}><FourHorsemen fred={fred} loading={pending.fred && !fred} /></ErrorBoundary></div>
@@ -723,7 +723,7 @@ export default function Dashboard() {
                 <div data-jump="Volatility" style={{ display: 'contents' }}><ErrorBoundary resetKey={refreshTick}><VolMetricsTable data={vol} saved={saved('vol')} waiting={pending.vol} /></ErrorBoundary></div>
 
                 {/* BULL MARKET CHECKLIST */}
-                <div className="saved-wrap" data-jump="Bull checklist" data-cached={saved('fred')} style={{ display: 'contents', ...savedVar('fred') }}><ErrorBoundary resetKey={refreshTick}><BullChecklist fred={fred} loading={pending.fred && !fred} /></ErrorBoundary></div>
+                <div className="saved-wrap" data-jump="Bull checklist" data-cached={saved('fred')} style={{ display: 'contents', ...savedVar('fred') }}><ErrorBoundary resetKey={refreshTick}><BullChecklist fred={fred} loading={pending.fred && !fred} onRetry={refreshNow} /></ErrorBoundary></div>
 
                 {/* EXTRA MARKETS GRID */}
                 <div className="saved-wrap" data-jump="Markets" data-cached={saved('extra')} style={{ display: 'contents', ...savedVar('extra') }}><ErrorBoundary resetKey={refreshTick}><ExtraMarketsGrid data={extraMarkets} loading={pending.extra && !extraMarkets} /></ErrorBoundary></div>
