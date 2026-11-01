@@ -308,6 +308,20 @@ behave differently, it gets a v2-only prop (`race` on FactorRow, `asCards` on `p
 - **Readout chips** = `pulseVerdicts({…, asCards: true})`: Bull counts the items it could read (the Bull
   board's `good/live`); Dips follows the defensive mode, as the Rubber band headline and badge do (never
   "Dips pay ✓" over "Defensive"). Horsemen = the card's `N of 4 riding`, a grey pip for one with no data.
+- **SPY chart lenses** (1 Nov 2026; v2-only `lenses` prop on `SpyChart` → `components/ValuationLens.js`, the
+  pick saved in `ftb:lens:spy`): Price · Fwd P/E · P/E · Earnings, sharing the TF chips. Fwd P/E = FactSet's weekly
+  Earnings Insight number (`public/history/fwdPE.json`, 2011→, + `/api/fwd-pe` for reports since the bake) made
+  daily by `lib/valuation.js fwdDaily` (forward EPS = SPY ÷ P/E on each report's prior close, straight line
+  between reports, held after the newest, so the line moves with SPY between reports); dashed lines = FactSet's
+  own 5-yr / 10-yr averages. P/E = multpl trailing (the `peRatio` stat). Earnings = SPY vs forward EPS × the
+  10-yr avg P/E, with the move split `EPS · P/E → SPY` (`decompose`). "Then what? ›" opens `SignalStudy` on the
+  weeks fwd P/E sits under its 5-yr avg (`underAvg`; 2013→, the years FactSet printed a 5-yr avg).
+  - Bake: `node scripts/bake-fwd-pe.mjs` (from dashboard/) adds the reports since the file's last row; it
+    REFUSES to shrink the file. 2011–2016 came from Wayback copies (`--dir <folder of YYYY-MM-DD.pdf>`). A few
+    reports have no forward P/E sentence (2021-06-25, 2022-01-07, 2023-07-14, 2024-06-21, 2024-10-11, 2024-12-20).
+  - `/api/fwd-pe`: KV `ftb:fwdpe` {rows, seen, checkedAt}; looks at FactSet at most every 3 h and only once the
+    newest is 5+ days old, newest day first, ≤ 25 s (`PROBE_BUDGET_MS`), 10 s a PDF (`freshnessTimeout.test.js`
+    keeps `/api/freshness` waiting longer). PDF text = `unpdf` (pinned 1.6.2). Fault gates `fwdpe_http`, `fwdpe_kv`.
 - **Not built on purpose**: signal dots on the SPY chart, tap-a-number "ping me at X".
 - Tests: `app/v2/__tests__/page.test.js` (`the top line`), `components/__tests__/LeadCombos.test.js`,
   `components/__tests__/RiskCards.test.js`, `lib/__tests__/pulseVerdicts.test.js` (`asCards`).
@@ -1251,6 +1265,10 @@ measures what is SERVED, not whether a writer ran. The fleet monitor (github-not
   `/api/history` (marks, What-moved σ, tap charts). `/api/history` now carries
   `_meta.newestRow {date, rows}` (UTC date; 1 row = 02:00 run, ≥2 = 14:00 run too).
   `maxAgeH` 30 = one dropped GHA run + queue delay stays green, two in a row go red.
+- `fwd-pe` — FactSet's weekly Earnings Insight PDF → `/api/fwd-pe` (route reads it itself). input = the newest
+  report FOUND (`seen`, even one that would not parse), served = the newest report on screen (`latest.date`),
+  both at 13:30 ET of the report day; `graceH` 6 (two 3-hourly looks), `maxAgeH` 30 days (FactSet skips up to
+  4 weeks around holidays and late August). A changed PDF layout = seen moves, served does not = red in 6 h.
 - NOT covered (no timestamp in the served value): `/api/sheets` (NotSoBoring / FrontRunner /
   VIX sheet cells) and the Lambda's Telegram brief built from them.
 - Tests: `lib/__tests__/servedFreshness.test.js` (real producer shapes; fresh=green, stale=red).

@@ -1,6 +1,6 @@
 import {
     rubberBandItem, historyItem, newestRowOf, latestCloseMs, isRed, buildFreshness,
-    servedCopyItem, SERVED_ROUTES,
+    servedCopyItem, SERVED_ROUTES, fwdPeItem,
 } from '../servedFreshness';
 import { parseRows } from '../../app/api/history/route';
 
@@ -195,5 +195,26 @@ describe('served:* live payloads graded by their own dates', () => {
     test('spy-daily-move carries no date: graded as before', () => {
         const it = servedCopyItem('spy-daily-move', { value: '-0.52%', source: 'Google Sheets' }, t('2026-10-25T21:53:00Z'));
         expect(it.servedAgeH).toBe(it.inputAgeH);
+    });
+});
+
+// Writer shape: app/api/fwd-pe/route.js body (rows/latest/seen from lib/fwdPe.js resolveFwdPe).
+describe('fwd-pe item (FactSet forward P/E)', () => {
+    const body = (latest, seen) => ({ rows: [], latest: { date: latest, pe: 18.7, a5: 19.8, a10: 19.1 }, seen, checkedAt: '2026-10-30T19:00:00.000Z', _meta: { bakedTo: '2026-10-23', messages: [] } });
+    test('the newest report served = fresh, through a skipped holiday week', () => {
+        const it = fwdPeItem(body('2026-10-30', '2026-10-30'), t('2026-11-12T15:00:00Z'));
+        expect(it).toMatchObject({ name: 'fwd-pe', graceH: 6, maxAgeH: 720 });
+        expect(it.servedAgeH).toBe(it.inputAgeH);
+        expect(isRed(it)).toBe(false);
+    });
+    test('a newer report it could not read = red after 6 h', () => {
+        expect(isRed(fwdPeItem(body('2026-10-30', '2026-11-06'), t('2026-11-06T22:00:00Z')))).toBe(false);
+        expect(isRed(fwdPeItem(body('2026-10-30', '2026-11-06'), t('2026-11-07T01:00:00Z')))).toBe(true);
+    });
+    test('nothing new for 30 days = red; no answer = item missing (fleet expect_items: red)', () => {
+        expect(isRed(fwdPeItem(body('2026-10-30', '2026-10-30'), t('2026-12-01T00:00:00Z')))).toBe(true);
+        const out = buildFreshness({ rubberBand: snap('2026-10-02'), history: null, fwdPe: null }, t('2026-10-03T02:48:00Z'));
+        expect(out.items.map((i) => i.name)).not.toContain('fwd-pe');
+        expect(buildFreshness({ fwdPe: body('2026-10-30', '2026-10-30') }, t('2026-11-01T00:00:00Z')).items.map((i) => i.name)).toContain('fwd-pe');
     });
 });

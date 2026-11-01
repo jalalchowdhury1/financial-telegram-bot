@@ -4,10 +4,13 @@ import { yearTicks, shortTicks, indexFromPointer, tfAvailable, fmtDay, readChoic
 import useElementWidth from './useElementWidth';
 import AxisLabels from './AxisLabels';
 import { decodeLong } from '../lib/longHistory';
+import ValuationLens from './ValuationLens';
 
 const TF_KEYS = ['1M', '3M', '6M', '1Y', '5Y', '10Y', '15Y', '20Y', '30Y', 'ALL'];
 const STORE_KEY = 'ftb:tf:spy';
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+const LENSES = ['Price', 'Fwd P/E', 'P/E', 'Earnings'];
+const LENS_KEY = 'ftb:lens:spy';
 
 /** Baked closes strictly before the live window, then the live bars; 50/200d MAs over the whole run.
  *  The live bars alone when the two disagree (the backup path charts the S&P INDEX, ~10x SPY). */
@@ -27,14 +30,19 @@ export function joinBaked(baked, live) {
     });
 }
 
-export default function SpyChart({ chartHistory, recessions = [], current = null }) {
+/** `lenses` (v2 only, `{peNow}`): a Price · Fwd P/E · P/E · Earnings row above the chart (components/ValuationLens.js). */
+export default function SpyChart({ chartHistory, recessions = [], current = null, lenses = null }) {
     const [timeframe, setTimeframe] = useState('5Y');
+    const [lens, setLens] = useState('Price');
     const [hover, setHover] = useState(null);
     const svgRef = useRef(null);
     const [plotRef, plotPx] = useElementWidth(); // real px width → 10px labels spaced honestly
     const [baked, setBaked] = useState(null);
     const [dateRange, setDateRange] = useState(null); // 📅 {from, to} ISO dates, or null = a preset tab
     useEffect(() => { const v = readChoice(STORE_KEY); if (v) setTimeframe(v); }, []);
+    useEffect(() => {
+        try { const v = window.localStorage.getItem(LENS_KEY); if (LENSES.includes(v)) setLens(v); } catch { /* private mode */ }
+    }, []);
     // /api/spy carries ~14 months; the baked daily file (scripts/bake_spy_daily.py) fills 5Y…30Y/ALL.
     useEffect(() => {
         fetch('/history/spy-daily.json').then((r) => (r.ok ? r.json() : null)).then(decodeLong).then(setBaked).catch(() => {});
@@ -144,9 +152,22 @@ export default function SpyChart({ chartHistory, recessions = [], current = null
     };
     const onLeave = (e) => { if (e.pointerType === 'mouse') setHover(null); };
     const fmtPx = (v) => (v == null ? '—' : isIndex ? Math.round(v).toLocaleString('en-US') : `$${v.toFixed(2)}`);
+    const pickLens = (l) => { setLens(l); setHover(null); try { window.localStorage.setItem(LENS_KEY, l); } catch { /* not remembered */ } };
+    const lensRow = lenses && (
+        <div role="tablist" aria-label="Chart" style={{ display: 'flex', flexWrap: 'nowrap', gap: '4px', overflowX: 'auto', marginBottom: '8px' }}>
+            {LENSES.map((l) => (
+                <button key={l} role="tab" aria-selected={l === lens} className="tf-btn tf-btn-spy" onClick={() => pickLens(l)} style={chip(l === lens)}>{l}</button>
+            ))}
+        </div>
+    );
+    // The index backup path has no SPY dollars to anchor forward P/E on: price only.
+    if (lensRow && lens !== 'Price' && !isIndex) {
+        return <div>{lensRow}<ValuationLens lens={lens} spy={full} tf={timeframe} onTf={pick} peNow={lenses.peNow} chip={chip} /></div>;
+    }
 
     return (
         <div>
+            {lensRow}
             {/* Timeframe selector */}
             {/* The chips stay one row (sideways scroll if ever too narrow); the return label drops below on a phone. */}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 8px', marginBottom: '8px', justifyContent: 'space-between', alignItems: 'center' }}>

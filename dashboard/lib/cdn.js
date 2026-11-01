@@ -51,6 +51,7 @@ export const CDN_POLICY = {
     breadth:          [7200, 3600], // ≤ 3 h: daily bars
     factors:          [7200, 3600], // ≤ 3 h: daily bars
     fred:             [7200, 3600], // ≤ 3 h: daily/monthly series (the page says "refreshes every 3 h")
+    'fwd-pe':         [7200, 3600], // ≤ 3 h: FactSet's weekly report (the route itself looks at most every 3 h)
     freshness:        [3300, 300],  // ≤ 1 h: monitor probe; only a reply still green an hour on (app/api/freshness)
 };
 

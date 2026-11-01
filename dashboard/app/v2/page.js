@@ -1308,7 +1308,7 @@ export default function DashboardV2() {
                                     <div className="card-header" />
                                     <ErrorBoundary resetKey={refreshTick}>
                                         <Body>{() => !spyOk || !spy.chartHistory ? (pending.spy ? <Skeleton count={4} /> : <Unavailable what="SPY chart" onRetry={refreshNow} />) : (
-                                            <SpyChart chartHistory={spy.chartHistory} recessions={fred?.recessions || []} current={spy.current} />
+                                            <SpyChart chartHistory={spy.chartHistory} recessions={fred?.recessions || []} current={spy.current} lenses={{ peNow: fred?.peRatio }} />
                                         )}</Body>
                                     </ErrorBoundary>
                                 </div>

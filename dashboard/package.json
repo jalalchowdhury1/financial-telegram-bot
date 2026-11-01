@@ -13,7 +13,8 @@
     "@anthropic-ai/sdk": "^0.133.0",
     "next": "15.5.28",
     "react": "^19",
-    "react-dom": "^19"
+    "react-dom": "^19",
+    "unpdf": "1.6.2"
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.2",

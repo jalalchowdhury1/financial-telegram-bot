@@ -95,6 +95,17 @@ export function historyItem(payload, now = Date.now()) {
 }
 
 /** Same rule the fleet monitor applies — exported so tests prove fresh=green / stale=red. */
+// FactSet's forward P/E report (/api/fwd-pe) lands Fridays ~1:30 pm ET and skips up to 3 weeks around
+// holidays and in late August. A report found but not read for 6 h = the parser broke; nothing new for
+// 30 days = the url moved or the route is down. No answer at all = the item is missing (fleet: red).
+export const FWD_PE_GRACE_H = 6;
+export const FWD_PE_MAX_AGE_H = 30 * 24;
+export function fwdPeItem(payload, now = Date.now()) {
+    if (!payload) return null;
+    const age = (date) => (isDate(date) ? round1((now - etWallToMs(date, 13 * 60 + 30)) / H) : null);
+    return { name: 'fwd-pe', inputAgeH: age(payload.seen), servedAgeH: age(payload.latest?.date), graceH: FWD_PE_GRACE_H, maxAgeH: FWD_PE_MAX_AGE_H };
+}
+
 export function isRed(item) {
     const { inputAgeH, servedAgeH, graceH, maxAgeH } = item;
     if (inputAgeH != null && inputAgeH > graceH && (servedAgeH == null || servedAgeH > inputAgeH + 0.25)) return true;
@@ -186,6 +197,7 @@ export function buildFreshness(raw, now = Date.now()) {
         items: [
             rubberBandItem(raw.rubberBand, now), historyItem(raw.history, now),
             ...SERVED_ROUTES.map((r) => servedCopyItem(r, raw.served?.[r], now)),
-        ],
+            fwdPeItem(raw.fwdPe, now),
+        ].filter(Boolean),
     };
 }

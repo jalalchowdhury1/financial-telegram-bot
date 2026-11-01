@@ -16,6 +16,13 @@ test('freshness waits longer than /api/fred budget', () => {
     expect(fresh.TIMEOUT_MS).toBeGreaterThan(fredBudget + 5000);
 });
 
+test('freshness waits longer than /api/fwd-pe can take', () => {
+    const { PROBE_BUDGET_MS } = require('../fwdPe');
+    const fwdSrc = fs.readFileSync(path.join(__dirname, '../../app/api/fwd-pe/route.js'), 'utf8');
+    const fetchMs = Number(fwdSrc.match(/AbortSignal\.timeout\((\d+)\)/)[1]);
+    expect(fresh.TIMEOUT_MS).toBeGreaterThan(PROBE_BUDGET_MS + fetchMs + 5000); // last fetch starts just inside the budget
+});
+
 test('freshness timeout fits inside its own maxDuration', () => {
     expect(fresh.TIMEOUT_MS).toBeLessThan(fresh.maxDuration * 1000);
 });

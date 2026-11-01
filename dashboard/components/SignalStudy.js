@@ -14,7 +14,7 @@ import { signalStudy } from '../lib/signalStudy';
 
 const pct = (r, dp = 1) => `${r > 0 ? '+' : r < 0 ? '−' : ''}${Math.abs(r * 100).toFixed(dp)}%`;
 const day = (iso) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
-const load = (src) => fetch(src).then((r) => (r.ok ? r.json() : null)).then(decodeLong);
+const load = (src, decode = decodeLong) => fetch(src).then((r) => (r.ok ? r.json() : null)).then(decode);
 const XS = { 1: ['Hit', '2W', '1M'], 3: ['Hit', '1M', '2M', '3M'], 6: ['Hit', '2M', '4M', '6M'], 12: ['Hit', '3M', '6M', '9M', '12M'] };
 const tail = (pts, more) => [...pts, ...(more || []).filter((p) => p.date > pts[pts.length - 1].date)];
 
@@ -29,11 +29,11 @@ function rAt(path, x) {
 
 /**
  * `id` keys the remembered horizon; `src` = the signal's baked daily/weekly file (or several, made one
- * series by `join`), `sheet` = its newer history-sheet points and `now` today's reading (both appended
+ * series by `join`; `decode` reads a file not in decodeLong's shape), `sheet` = its newer history-sheet points and `now` today's reading (both appended
  * after the file); `line` = where it fires; `label(v, point)` names a reading; `sub` = the header's one line; `foot` = what counts as a signal;
  * `horizons` = the month chips, `start` = the one it opens on.
  */
-export default function SignalStudy({ id, src, join, line, title, sub, label, foot, horizons, start, now, sheet, spyLive, onClose }) {
+export default function SignalStudy({ id, src, decode, join, line, title, sub, label, foot, horizons, start, now, sheet, spyLive, onClose }) {
     const KEY = `v2-${id}-months`;
     const backRef = useRef(null), sheetRef = useRef(null);
     const [raw, setRaw] = useState(null); // {a, s} | false when a file failed
@@ -46,7 +46,7 @@ export default function SignalStudy({ id, src, join, line, title, sub, label, fo
     useEffect(() => {
         try { const m = Number(window.localStorage.getItem(KEY)); if (horizons.includes(m)) setMonths(m); } catch { /* private mode */ }
         let live = true;
-        Promise.all([...[].concat(src).map(load), load('/history/spy-daily.json')])
+        Promise.all([...[].concat(src).map((f) => load(f, decode)), load('/history/spy-daily.json')])
             .then((got) => {
                 const s = got.pop(), a = got.every(Boolean) ? (join ? join(...got) : got[0]) : null;
                 if (live) setRaw(a?.length && s ? { a, s } : false);
