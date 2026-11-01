@@ -1,6 +1,6 @@
 import {
     rubberBandItem, historyItem, newestRowOf, latestCloseMs, isRed, buildFreshness,
-    servedCopyItem, SERVED_ROUTES, fwdPeItem, polymarketItem,
+    servedCopyItem, SERVED_ROUTES, fwdPeItem, polymarketItem, peItem,
 } from '../servedFreshness';
 import { parseRows } from '../../app/api/history/route';
 
@@ -98,7 +98,7 @@ test('buildFreshness emits only names + hour counts', () => {
     const out = buildFreshness({ rubberBand: snap('2026-10-02'), history: { _meta: { newestRow: { date: '2026-10-03', rows: 1 } } } }, t('2026-10-03T02:48:00Z'));
     expect(out.app).toBe('financial-telegram-bot');
     expect(out.v).toBe(1);
-    expect(out.items.map((i) => i.name)).toEqual(['rubber-band', 'history-sheet', ...SERVED_ROUTES.map((r) => `served:${r}`)]);
+    expect(out.items.map((i) => i.name)).toEqual(['rubber-band', 'history-sheet', ...SERVED_ROUTES.map((r) => `served:${r}`), 'pe']);
     expect(JSON.stringify(out)).not.toMatch(/\d{4}-\d{2}-\d{2}/);
 });
 
@@ -263,5 +263,30 @@ describe('fwd-pe item (FactSet forward P/E)', () => {
         const out = buildFreshness({ rubberBand: snap('2026-10-02'), history: null, fwdPe: null }, t('2026-10-03T02:48:00Z'));
         expect(out.items.map((i) => i.name)).not.toContain('fwd-pe');
         expect(buildFreshness({ fwdPe: body('2026-10-30', '2026-10-30') }, t('2026-11-01T00:00:00Z')).items.map((i) => i.name)).toContain('fwd-pe');
+    });
+});
+
+// Writer shape: app/api/fred/route.js buildResponse (peRatio / peRatioAsOf / peIsCape from lib/peRatio.js).
+describe('pe item (Market Valuation tile: trailing P/E)', () => {
+    const fred = (peRatioAsOf, extra = {}) => ({ peRatio: 25.86, peRatioAsOf, peSource: 'multpl', peIsCape: false, peStale: false, _meta: { source: 'St. Louis Fed' }, ...extra });
+    test('live 1 Nov: Friday\'s multpl page on Sunday = green; Yahoo\'s fetch stamp and an intraday page never read as the future', () => {
+        const it = peItem(fred('2026-10-30'), t('2026-11-01T23:31:00Z'));
+        expect(it).toMatchObject({ name: 'pe', graceH: 6 });
+        expect(it.servedAgeH).toBe(it.inputAgeH);
+        expect(isRed(it)).toBe(false);
+        expect(peItem(fred('2026-11-02T15:00:00.000Z', { peSource: 'yahoo' }), t('2026-11-02T15:10:00Z')).servedAgeH).toBe(0.2);
+        expect(peItem(fred('2026-11-02'), t('2026-11-02T16:00:00Z')).servedAgeH).toBe(0);
+    });
+    test('the prior session\'s P/E = green up to 6 h after the close, red after', () => {
+        expect(isRed(peItem(fred('2026-10-30'), t('2026-11-03T02:00:00Z')))).toBe(false); // Mon 9 pm ET
+        expect(isRed(peItem(fred('2026-10-30'), t('2026-11-03T04:00:00Z')))).toBe(true); // Mon 11 pm ET
+    });
+    test('a frozen page, CAPE standing in or no P/E = red; the item is always there', () => {
+        const now = t('2026-11-01T23:31:00Z');
+        expect(isRed(peItem(fred('2026-10-22', { peStale: true }), now))).toBe(true);
+        expect(isRed(peItem(fred('2026-10-30', { peIsCape: true }), now))).toBe(true);
+        expect(isRed(peItem(fred(null, { peRatio: null, peSource: null }), now))).toBe(true);
+        expect(isRed(peItem(null, now))).toBe(true);
+        expect(buildFreshness({}, now).items.map((i) => i.name)).toContain('pe');
     });
 });

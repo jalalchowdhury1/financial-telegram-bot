@@ -199,6 +199,22 @@ export function servedCopyItem(name, payload, now = Date.now()) {
     return { name: `served:${name}`, inputAgeH, servedAgeH, graceH: SERVED_COPY_GRACE_H };
 }
 
+// The Market Valuation tile's trailing P/E rides inside /api/fred, whose served:fred grade counts
+// only the FRED series: it stays green while the P/E freezes or CAPE stands in (1 Nov 2026).
+// Its own as-of (lib/peRatio.js): multpl's page stamp (moves intraday, cached 30 min), the
+// computed tier's S&P close, Yahoo's fetch time. CAPE or no P/E = nothing served → red past grace.
+export function peItem(fred, now = Date.now()) {
+    const newest = latestCloseMs(now);
+    const a = fred?.peRatio != null && !fred.peIsCape ? fred.peRatioAsOf : null;
+    const ms = isDate(a) ? dayMs(a) : Date.parse(a ?? '');
+    return {
+        name: 'pe',
+        inputAgeH: newest == null ? null : round1((now - newest) / H),
+        servedAgeH: Number.isFinite(ms) ? round1(Math.max(0, now - ms) / H) : null,
+        graceH: SERVED_COPY_GRACE_H,
+    };
+}
+
 // Polymarket trades 24/7, so no close to grade against: the board's own fetch `timestamp` (a
 // last-good copy keeps the original) against a 6 h cap. Nothing usable served → no item
 // (the fleet's expect_items reads a missing item as red).
@@ -215,7 +231,7 @@ export function buildFreshness(raw, now = Date.now()) {
         v: 1,
         items: [
             rubberBandItem(raw.rubberBand, now), historyItem(raw.history, now),
-            ...SERVED_ROUTES.map((r) => servedCopyItem(r, raw.served?.[r], now)),
+            ...SERVED_ROUTES.map((r) => servedCopyItem(r, raw.served?.[r], now)), peItem(raw.served?.fred, now),
             fwdPeItem(raw.fwdPe, now), polymarketItem(raw.polymarket, now),
         ].filter(Boolean),
     };

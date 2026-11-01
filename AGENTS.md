@@ -1338,6 +1338,10 @@ measures what is SERVED, not whether a writer ran. The fleet monitor (github-not
   report FOUND (`seen`, even one that would not parse), served = the newest report on screen (`latest.date`),
   both at 13:30 ET of the report day; `graceH` 6 (two 3-hourly looks), `maxAgeH` 30 days (FactSet skips up to
   4 weeks around holidays and late August). A changed PDF layout = seen moves, served does not = red in 6 h.
+- `pe` (1 Nov 2026) — the Market Valuation tile's trailing P/E inside `/api/fred`. `served:fred` grades only the
+  FRED series, so a frozen multpl page or CAPE standing in stayed green there. served = the P/E's own
+  `peRatioAsOf` (multpl's intraday page stamp → that day's close; computed tier = its S&P close; Yahoo = fetch
+  time); CAPE or no P/E = null. input = newest NYSE close; `graceH` 6.
 - NOT covered (no timestamp in the served value): `/api/sheets` (NotSoBoring / FrontRunner /
   VIX sheet cells) and the Lambda's Telegram brief built from them.
 - Tests: `lib/__tests__/servedFreshness.test.js` (real producer shapes; fresh=green, stale=red).
