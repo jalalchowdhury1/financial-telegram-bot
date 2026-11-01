@@ -26,6 +26,7 @@ import MarkChip from '../../components/MarkChip';
 import MarksSheet from '../../components/MarksSheet';
 import { MarkProvider, useMark, useChart, useSeries, collectLiveValues } from '../../components/MarkProvider';
 import { seriesPoints } from '../../lib/marks';
+import { lastInversion } from '../../lib/horsemenRunup';
 import BackPill from '../../components/BackPill';
 import { jumpToCard } from '../../components/WhatMoved';
 import StatusLine from '../../components/StatusLine';
@@ -726,11 +727,11 @@ function fredStory(metric, hist) {
     const ruler = { lo, hi, cur, mark, short, tip: `Since ${from}: low ${short(lo)}, high ${short(hi)}, ${metric === 'yieldCurve' ? 'tick at 0' : `avg ${short(avg)} (tick)`}` };
     let text, sub, tone = 'quiet';
     if (metric === 'yieldCurve') {
-        let i = v.length - 1;
-        while (i > 0 && (v[i - 1] < 0) === (cur < 0)) i--;
-        const months = (Date.parse(last) - Date.parse(hist[i].date)) / 2.63e9;
+        const inv = lastInversion(hist); // its 90-day blip rule, so this badge and Recession watch agree
+        const start = cur < 0 ? inv.start : hist.find((p) => !inv || p.date > inv.end).date;
+        const months = (Date.parse(last) - Date.parse(start)) / 2.63e9;
         text = cur < 0 ? 'Inverted' : 'Positive';
-        sub = ` since ${monYear(hist[i].date)}`;
+        sub = ` since ${monYear(start)}`;
         tone = cur < 0 ? 'bad' : months < 12 ? 'caution' : 'good'; // a fresh un-inversion is the classic late-cycle tell
     } else if (metric === 'spEps') {
         const ago = hist.findLast((p) => p.date <= plusMonths(last, -12));
@@ -872,7 +873,7 @@ function Signals({ sheets, spy, loading, old, onState }) {
     const nsb = sheets?._meta?.fields?.NotSoBoring?.detail;
     const frRsi = sheets?._meta?.fields?.FrontRunner?.detail;
     const fr = String(sheets?.FrontRunner || '');
-    const nsbRead = sheets?.NotSoBoring === 'ON' || sheets?.NotSoBoring === 'OFF', frRead = !!fr && fr !== 'N/A'; // the route says N/A when unread
+    const nsbRead = !!sheets?.NotSoBoring && sheets.NotSoBoring !== 'N/A', frRead = !!fr && fr !== 'N/A'; // the route says N/A when unread
 
     const aaiiPts = useMemo(() => (Number.isFinite(aaii) ? [...(aaiiHist?.points || []), { value: aaii }] : []), [aaiiHist, aaii]);
     // The latest 20+ reading (daily rows repeat each weekly survey): it fired on the run's first day, and speaks for 6 months after its last survey.
@@ -888,11 +889,11 @@ function Signals({ sheets, spy, loading, old, onState }) {
         return { on: p[i].date, until: plusMonths(p[j].date, AAII_MONTHS) };
     }, [aaiiDays]);
     const today = new Date().toLocaleDateString('en-CA'); // the local calendar day (a UTC date turns over at ~8 pm ET)
-    const bullUntil = Number.isFinite(aaii) && aaii >= AAII_LINE ? plusMonths(today, AAII_MONTHS) : fired && fired.until >= today ? fired.until : null;
     // A quiet reading counts only when it is today's: the sheet's AAII days reach the last 5 (a missed fire hides in an
     // older one), and VIX is neither last visit's saved copy nor a value the server marked stale.
     const recent = new Date(Date.now() - 5 * 864e5).toLocaleDateString('en-CA');
     const aaiiRead = Number.isFinite(aaii) && aaiiDays.at(-1)?.date >= recent;
+    const bullUntil = aaiiRead && aaii >= AAII_LINE ? plusMonths(today, AAII_MONTHS) : fired && fired.until >= today ? fired.until : null; // a stuck 20+ is not bullish forever
     const fresh = (fields) => !old && !staleNote(sheets, fields);
     const vixRead = Number.isFinite(vixCur) && vix3m > 0 && fresh(['vixCurrent', 'vixThreeMonth']);
     const dd = nsb?.drawdownPct;

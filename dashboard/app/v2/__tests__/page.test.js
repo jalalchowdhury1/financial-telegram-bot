@@ -224,6 +224,14 @@ it('Risk: each card gives one answer closed, and More opens the proof (loop, fus
     expect(slot('Recession watch').querySelectorAll('.rk-band').length).toBeGreaterThanOrEqual(8); // 2 recessions × 4 charts
 });
 
+it('the yield curve badge joins a short blip into its inversion, as Recession watch does (audit C13)', async () => {
+    const months = (n, f) => Array.from({ length: n }, (_, i) => ({ date: `${2000 + Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, '0')}-01`, value: f(i) }));
+    const fred = { yieldCurve: { current: -0.2, asOf: '2004-12-01', history: months(60, (i) => (i < 40 ? 1 : i === 55 ? 0.1 : -0.2)) }, recessions: [] };
+    mockRoutes({ '/api/fred': Promise.resolve({ status: 200, json: async () => fred }) });
+    render(<DashboardV2 />);
+    await waitFor(() => expect(document.querySelector('.v2-fred[data-jump="Yield curve"] .v2-fred-badge')?.textContent).toBe('Inverted since May 2003')); // not Sep 2004, after the one-month blip
+});
+
 describe('the top line', () => {
     const ok = (body) => Promise.resolve({ ok: true, status: 200, json: async () => body });
     const calm = { NotSoBoring: 'ON', FrontRunner: 'BIL (T-Bill ETF)', AAIIDiff: '3.60%', VIX: { current: '19.42', threeMonth: '20.78' } };
@@ -319,6 +327,22 @@ describe('the top line', () => {
         expect(document.querySelector('[data-jump="Indicators"]').textContent).not.toMatch(/Dip buy/);
     });
 
+    it('NotSoBoring ON > 8.5% (or NEG MOVE) is read: the line can still say Nothing firing (audit C3)', async () => {
+        mockRoutes({ '/api/sheets': ok({ ...calm, NotSoBoring: 'ON > 8.5%' }), '/api/history': sheet(), ...files });
+        render(<DashboardV2 />);
+        await waitFor(() => expect(screen.getByText('Nothing firing')).toBeInTheDocument());
+    });
+
+    it('a stuck AAII 20+ on a stopped sheet is not bullish from today (audit C7)', async () => {
+        mockRoutes({ '/api/sheets': ok({ ...calm, AAIIDiff: '25.00%' }), '/api/history': sheet({}, 8), ...files });
+        render(<DashboardV2 />);
+        await waitFor(() => expect(screen.getByText('19.42')).toBeInTheDocument());
+        await combosSettled();
+        await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
+        expect(document.querySelector('.v2-today').textContent).not.toMatch(/AAII bullish/);
+        expect(document.querySelector('[data-jump="Indicators"]').textContent).not.toMatch(/Bullish to/);
+    });
+
     it('VIX level with VIX 3M fires, as in the study and the ping (ratio ≥ 1)', async () => {
         mockRoutes({ '/api/sheets': ok({ ...calm, VIX: { current: '20.00', threeMonth: '20.00' } }), '/api/history': sheet(), ...files });
         render(<DashboardV2 />);
@@ -335,7 +359,7 @@ describe('the top line', () => {
     });
 
     it.each([['failed', undefined], ['hangs', new Promise(() => {})]])('a signal that fires still shows when the combos feed %s', async (_, combos) => {
-        mockRoutes({ '/api/sheets': ok({ ...calm, AAIIDiff: '25.00%' }), ...(combos && { '/history/spy-daily.json': combos }) });
+        mockRoutes({ '/api/sheets': ok({ ...calm, AAIIDiff: '25.00%' }), '/api/history': sheet(), ...(combos && { '/history/spy-daily.json': combos }) }); // a live sheet: AAII is read (audit C7)
         render(<DashboardV2 />);
         await waitFor(() => expect(document.querySelector('.v2-today button')?.textContent).toMatch(/^AAII bullish to [A-Z][a-z]{2} \d+$/));
     });
