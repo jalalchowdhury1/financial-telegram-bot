@@ -1,13 +1,15 @@
 import { fallbackMove } from '../../../lib/spyTiers';
 import { serve } from '../../../lib/store';
 import { faultsFrom } from '../../../lib/faults';
+import { assessmentAuthorized } from '../../../lib/claudeAssessment';
 
 export const fetchCache = 'default-cache';
 
 // A hung Lambda must not hold the fallback tiers back until API Gateway's ~29 s cap.
 const LAMBDA_TIMEOUT_MS = 10000;
-// The Lambda reads Sheet B12 raw: '#N/A', 'Loading...' or a blank cell is not a move.
-const isMove = (v) => typeof v === 'string' && /^[-+]?\d/.test(v.trim()) && Number.isFinite(parseFloat(v));
+// The Lambda reads Sheet B12 raw: '#N/A', 'Loading...' or a blank cell is not a move, and
+// neither is a bare fraction ('-0.0177' = -1.77% if the cell loses its % format).
+const isMove = (v) => typeof v === 'string' && /^[-+]?\d[\d.]*%$/.test(v.trim()) && Number.isFinite(parseFloat(v));
 
 async function lambdaMove(messages) {
     const lambdaUrl = process.env.LAMBDA_URL;
@@ -27,7 +29,8 @@ export async function GET(request) {
     const debug = new URL(request.url).searchParams.get('debug');
     const messages = [];
 
-    if (debug === 'compare') {
+    // Two upstream calls per hit (Finnhub's free quota): secret-gated like market-extra's.
+    if (debug === 'compare' && assessmentAuthorized(request)) {
         const lam = await lambdaMove(messages);
         const fb = await fallbackMove(messages).catch((e) => ({ value: null, _err: e.message }));
         return Response.json({ lambda: lam, fallback: fb, messages });

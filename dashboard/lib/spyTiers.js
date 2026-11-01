@@ -40,6 +40,11 @@ export function latestSessionDate(now = Date.now()) {
     const { date, min } = etParts(now);
     const today = sessionOf(date);
     if (today && min >= today.open) return date;
+    return sessionBefore(date);
+}
+
+/** The NYSE session before `date` (YYYY-MM-DD). */
+function sessionBefore(date) {
     let d = date;
     for (let i = 1; i <= 10; i++) { d = addDays(date, -i); if (sessionOf(d)) break; }
     return d;
@@ -170,10 +175,13 @@ async function fromBars(label, history, ctx, extra = {}) {
     const n = history.length;
     const last = history[n - 1];
     const spot = await spotOnce(ctx);
-    if (spot && plausible(spot.current, last.price)) {
+    // The spot is today's bar: it stands in for ONE missing session, never a gap (bars a week
+    // behind + a spot missed those closes in the RSI and 52w high; audit 1 Nov 2026).
+    const reach = last.date >= sessionBefore(ctx.expected);
+    if (spot && plausible(spot.current, last.price) && reach) {
         return { payload: buildSpy(history, spot.current, spot.prevClose, `${label} + ${spot.label} (fallback)`, { ...extra, asOf3y: ctx.expected }) };
     }
-    if (spot) ctx.messages.push(`${spot.label} spot ${spot.current} implausible vs ${label} close ${last.price}; ignored`);
+    if (spot) ctx.messages.push(reach ? `${spot.label} spot ${spot.current} implausible vs ${label} close ${last.price}; ignored` : `${label} newest bar ${last.date} is more than one session behind the ${spot.label} spot; not joined`);
     const prev = history[n - 2]?.price ?? last.price;
     if (last.date >= ctx.expected) return { payload: buildSpy(history, last.price, prev, `${label} (fallback)`, extra) };
     ctx.messages.push(`${label} newest bar ${last.date} is not the latest session ${ctx.expected}`);

@@ -23,7 +23,7 @@ beforeEach(() => { process.env.LAMBDA_URL = 'https://lambda.example'; });
 afterEach(() => { global.fetch = realFetch; delete process.env.LAMBDA_URL; });
 const get = () => GET(new Request('https://dash.example/api/spy-daily-move'));
 
-test.each(['#N/A', 'Loading...', '', '  ', 'N/A', '#REF!'])('Lambda cell %p falls through to Finnhub', async (value) => {
+test.each(['#N/A', 'Loading...', '', '  ', 'N/A', '#REF!', '-0.0177', '0.52'])('Lambda cell %p falls through to Finnhub', async (value) => {
     lambdaSays({ value, source: 'Google Sheets' });
     const { payload, isGood } = await get();
     expect(payload.source).toBe('Finnhub (fallback)');
@@ -37,4 +37,10 @@ test('a real Sheet move is served as the Lambda sent it', async () => {
     expect(isGood(payload)).toBe(true);
     expect(isGood({ value: '+0.40%' })).toBe(true);
     expect(isGood({ value: null })).toBe(false);
+});
+
+test('?debug=compare without the secret is the normal answer (no extra Finnhub spend)', async () => {
+    lambdaSays({ value: '-0.52%', source: 'Google Sheets' });
+    const { payload } = await GET(new Request('https://dash.example/api/spy-daily-move?debug=compare'));
+    expect(payload).toEqual({ value: '-0.52%', source: 'Google Sheets' });
 });

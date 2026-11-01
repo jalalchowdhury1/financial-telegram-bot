@@ -182,6 +182,16 @@ describe('fallbackSpy (/api/spy direct tiers)', () => {
         expect(out._meta).toMatchObject({ stale: true, hasErrors: true, asOf: '2026-10-08', source: 'Polygon (fallback, last close 2026-10-08)' });
     });
 
+    test('a spot is joined only to bars that reach the session before it (audit 1 Nov 2026)', async () => {
+        src.polygonDaily.mockResolvedValue(poly(bars(500, '2026-10-02')));      // a week behind
+        src.finnhubQuote.mockResolvedValue({ current: 700, prevClose: 699, t: OPEN / 1000 });
+        src.nasdaqHistory.mockResolvedValue(bars(1000, '2026-10-08', { base: 150.5 }));
+        const messages = [];
+        const out = await fallbackSpy(messages, F(), { env: ENV, now: OPEN });
+        expect(out._meta.source).toBe('Nasdaq + Finnhub (fallback)');
+        expect(messages.join(' ')).toMatch(/Polygon newest bar 2026-10-02 is more than one session behind/);
+    });
+
     test('a stale Polygon is passed over for a fresh Nasdaq', async () => {
         src.polygonDaily.mockResolvedValue(poly(bars(800, '2026-10-08')));
         src.nasdaqHistory.mockImplementation(async () => bars(1000, '2026-10-09'));
