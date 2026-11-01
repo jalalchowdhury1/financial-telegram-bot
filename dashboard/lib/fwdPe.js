@@ -104,22 +104,23 @@ export const PROBE_BUDGET_MS = 25000; // no new FactSet fetch after this: /api/f
 // 5-year average (19.8) and below the 10-year average (19.1)"): same numbers, another host, no PDF to parse.
 export const BLOG_FEED = 'https://insight.factset.com/topic/earnings/rss.xml';
 
-/** The blog feed → `[{date, link}]`, newest first; date = the post's day in New York (pubDate is GMT). */
+const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+const LINK_DAY = new RegExp(`-(${MONTHS.join('|')})-(\\d{1,2})-(\\d{4})/?$`, 'i');
+
+/**
+ * The feed's weekly update posts → `[{date, link}]`, newest first; date = the report day the link names
+ * ("…/sp-500-earnings-season-update-october-30-2026"). Other posts are skipped: a mid-week piece can repeat last
+ * Friday's ratio, and dated by its own day it would pass for a new report (and hold off the next look for 5 days).
+ */
 export function blogPosts(xml) {
     const out = [];
     for (const [, item] of String(xml || '').matchAll(/<item>([\s\S]*?)<\/item>/g)) {
         const link = item.match(/<link>\s*(https:\/\/insight\.factset\.com\/[^<\s]+)\s*<\/link>/)?.[1];
-        const t = Date.parse(item.match(/<pubDate>([^<]+)<\/pubDate>/)?.[1] || '');
-        if (link && Number.isFinite(t)) out.push({ date: new Date(t - 5 * 3600e3).toISOString().slice(0, 10), link });
+        const m = link?.match(LINK_DAY);
+        const t = m ? Date.UTC(Number(m[3]), MONTHS.indexOf(m[1].toLowerCase()), Number(m[2])) : NaN;
+        if (Number.isFinite(t) && new Date(t).getUTCDate() === Number(m[2])) out.push({ date: new Date(t).toISOString().slice(0, 10), link });
     }
     return out.sort((a, b) => (a.date < b.date ? 1 : -1));
-}
-
-/** The report a post repeats: the last Wednesday–Friday on or before its day (a Monday post retells Friday's). */
-export function reportDayOf(iso) {
-    let t = Date.parse(`${iso}T12:00:00Z`);
-    while (![3, 4, 5].includes(new Date(t).getUTCDay())) t -= DAY;
-    return new Date(t).toISOString().slice(0, 10);
 }
 
 /** A page's words: tags out, the entities FactSet uses decoded. */
@@ -134,11 +135,13 @@ export function htmlText(html) {
  * (`fetchPdf(url)` → bytes, or null on 404; `pdfText(bytes)` → its text), and when no PDF reads, the same
  * report's blog post (`fetchText(url)` → body). `seen` = the newest PDF found even if it would not parse
  * (/api/freshness turns that red). Newest day first, until PROBE_BUDGET_MS; the bake fills any week skipped.
- * Fault gates: fwdpe_kv, fwdpe_http (the PDFs), fwdpe_blog. Never throws.
+ * Fault gates: fwdpe_kv, fwdpe_http (the PDFs), fwdpe_blog, and fwdpe_probe = look again for the last 3 weeks' reports
+ * as if they were new (a live test of the layers: its rows are what it found). A fault test answers only its caller:
+ * nothing goes to KV or /tmp (lib/faults.js). Never throws.
  */
 export async function resolveFwdPe({ fetchPdf, pdfText, fetchText = null, kv = null, lastGood = null, bakedTo, today, now = Date.now(), faults = new Set() }) {
     let doc = null;
-    const messages = [];
+    const messages = [], test = faults.size > 0, probe = faults.has('fwdpe_probe');
     if (kv && !faults.has('fwdpe_kv')) {
         try { doc = parseEnvelope(await kv.get(FWD_KV_KEY)); } catch { messages.push('KV read failed'); }
     }
@@ -148,9 +151,9 @@ export async function resolveFwdPe({ fetchPdf, pdfText, fetchText = null, kv = n
     }
     let rows = (Array.isArray(doc?.rows) ? doc.rows : []).filter((r) => r?.date > bakedTo && r.pe > 0);
     let seen = doc?.seen || null, checkedAt = doc?.checkedAt || 0;
-    const newest = rows.length ? rows[rows.length - 1].date : bakedTo;
-    const keep = () => { try { lastGood?.save({ rows, seen, checkedAt }); } catch { /* best effort */ } };
-    if ((ms(today) - ms(newest)) / DAY < 5 || now - checkedAt < PROBE_GAP_MS) { keep(); return { rows, seen, checkedAt, messages }; }
+    const newest = probe ? new Date(ms(bakedTo) - 21 * DAY).toISOString().slice(0, 10) : rows.length ? rows[rows.length - 1].date : bakedTo;
+    const keep = () => { if (test) return; try { lastGood?.save({ rows, seen, checkedAt }); } catch { /* best effort */ } };
+    if (!probe && ((ms(today) - ms(newest)) / DAY < 5 || now - checkedAt < PROBE_GAP_MS)) { keep(); return { rows, seen, checkedAt, messages }; }
     const found = [], until = Date.now() + PROBE_BUDGET_MS;
     for (const day of reportCandidates(today, newest)) {
         let buf = null;
@@ -168,20 +171,19 @@ export async function resolveFwdPe({ fetchPdf, pdfText, fetchText = null, kv = n
     }
     if (!found.length && fetchText && !faults.has('fwdpe_blog')) {
         try {
-            for (const p of blogPosts(await fetchText(BLOG_FEED)).filter((x) => reportDayOf(x.date) > newest).slice(0, 4)) {
-                const day = reportDayOf(p.date);
-                if (found.some((r) => r.date === day)) continue;
+            for (const p of blogPosts(await fetchText(BLOG_FEED)).filter((x) => x.date > newest).slice(0, 4)) {
+                if (found.some((r) => r.date === p.date)) continue;
                 if (Date.now() > until) { messages.push('time budget hit in the blog'); break; }
                 const got = parseFactSet(htmlText(await fetchText(p.link)));
-                if (got) found.push({ date: day, ...got });
-                if (got && (!seen || day > seen)) seen = day; // on screen, so /api/freshness stays green while the blog carries it
+                if (got) found.push({ date: p.date, ...got });
+                if (got && (!seen || p.date > seen)) seen = p.date; // on screen, so /api/freshness stays green while the blog carries it
             }
             if (found.length) messages.push(`from the blog: ${found.map((r) => r.date).join(', ')}`);
         } catch (e) { messages.push(`blog: ${String(e?.message || e).slice(0, 80)}`); }
     }
-    rows = joinFwd(rows, found);
+    rows = joinFwd(probe ? [] : rows, found);
     checkedAt = now;
-    if (kv && !faults.has('fwdpe_kv')) {
+    if (kv && !test) {
         try { await kv.set(FWD_KV_KEY, { rows, seen, checkedAt }); } catch { messages.push('KV write failed'); }
     }
     keep();

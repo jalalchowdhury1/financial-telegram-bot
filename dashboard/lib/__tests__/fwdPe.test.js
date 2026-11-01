@@ -1,4 +1,4 @@
-import { parseFactSet, reportUrl, reportCandidates, decodeFwd, encodeFwd, joinFwd, resolveFwdPe, FWD_KV_KEY, PROBE_GAP_MS, PROBE_BUDGET_MS, BLOG_FEED, blogPosts, reportDayOf, htmlText } from '../fwdPe';
+import { parseFactSet, reportUrl, reportCandidates, decodeFwd, encodeFwd, joinFwd, resolveFwdPe, FWD_KV_KEY, PROBE_GAP_MS, PROBE_BUDGET_MS, BLOG_FEED, blogPosts, htmlText } from '../fwdPe';
 
 // Sentences copied from real reports (text as unpdf gives it, line breaks and all).
 const OCT_2026 = 'PS guidance. • Valuation: The forward 12-month P/E ratio for the S&P 500 is 18.7. This P/E ratio is below the\n5-year average (19.8) and below the 10-year average (19.1). To receive this report via e-mail';
@@ -112,9 +112,10 @@ describe('resolveFwdPe', () => {
         expect(r.rows).toEqual([]);
         expect(r.messages[0]).toBe('KV read failed');
         expect(r.messages).toContain('2026-11-06: HTTP 429');
-        const gated = jest.fn();
-        await run(kvWith(null), gated, { faults: new Set(['fwdpe_http']) });
+        const gated = jest.fn(), kv2 = kvWith(null);
+        await run(kv2, gated, { faults: new Set(['fwdpe_http']) });
         expect(gated).not.toHaveBeenCalled();
+        expect(kv2.set).not.toHaveBeenCalled(); // a fault test answers only its caller
     });
 });
 
@@ -122,11 +123,12 @@ describe('FactSet blog (the second layer)', () => {
     const post = (pe) => `<html><script>var x = "P/E ratio is 99.9";</script><p>The forward 12-month P/E ratio is <b>${pe}</b>, which is below the 5-year average (19.8) and below the 10-year average&nbsp;(19.1).</p></html>`;
     const feed = (items) => `<rss><channel><link>https://insight.factset.com</link>${items.map(([slug, when]) => `<item><title>S&amp;P 500 ${slug}</title><link>https://insight.factset.com/${slug}</link><pubDate>${when}</pubDate></item>`).join('')}</channel></rss>`;
 
-    it('reads the same sentence as the PDF, and dates a post by the report it retells', () => {
+    const UPDATE = 'sp-500-earnings-season-update-november-6-2026';
+    it('reads the same sentence as the PDF; a post is dated by the report day its link names, and only those count', () => {
         expect(parseFactSet(htmlText(post('18.7')))).toEqual({ pe: 18.7, a5: 19.8, a10: 19.1 });
-        expect(blogPosts(feed([['fri', 'Sat, 07 Nov 2026 02:00:00 GMT'], ['mon', 'Mon, 09 Nov 2026 16:00:00 GMT']])))
-            .toEqual([{ date: '2026-11-09', link: 'https://insight.factset.com/mon' }, { date: '2026-11-06', link: 'https://insight.factset.com/fri' }]); // 02:00 GMT Sat = Fri evening in New York
-        expect(['2026-11-09', '2026-11-08', '2026-11-05'].map(reportDayOf)).toEqual(['2026-11-06', '2026-11-06', '2026-11-05']);
+        expect(blogPosts(feed([['analysts-cut-q4-eps', 'Wed, 11 Nov 2026 16:00:00 GMT'], [UPDATE, 'Fri, 06 Nov 2026 18:00:00 GMT'],
+            ['x-update-february-30-2026', 'Mon, 02 Mar 2026 16:00:00 GMT'], ['sp-500-earnings-season-update-october-30-2026/', 'Fri, 30 Oct 2026 18:00:00 GMT']])))
+            .toEqual([{ date: '2026-11-06', link: `https://insight.factset.com/${UPDATE}` }, { date: '2026-10-30', link: 'https://insight.factset.com/sp-500-earnings-season-update-october-30-2026/' }]);
     });
 
     const NOW = Date.parse('2026-11-06T20:00:00Z');
@@ -134,20 +136,31 @@ describe('FactSet blog (the second layer)', () => {
     const pdfText = async (bytes) => bytes.text;
     const run = (extra) => resolveFwdPe({ pdfText, bakedTo: '2026-10-23', today: '2026-11-06', now: NOW, ...extra });
     const PAGES = {
-        [BLOG_FEED]: feed([['fri', 'Fri, 06 Nov 2026 18:08:00 GMT'], ['mining', 'Thu, 05 Nov 2026 16:00:00 GMT'], ['mon', 'Mon, 02 Nov 2026 16:00:00 GMT']]),
-        'https://insight.factset.com/fri': post('18.4'), 'https://insight.factset.com/mining': '<p>Drill results</p>', 'https://insight.factset.com/mon': post('18.7'),
+        // a Thursday piece repeating last Friday's 18.7 (no day in its link) must not pass for this week's report
+        [BLOG_FEED]: feed([[UPDATE, 'Fri, 06 Nov 2026 18:08:00 GMT'], ['eps-cuts', 'Thu, 05 Nov 2026 16:00:00 GMT'], ['mon', 'Mon, 02 Nov 2026 16:00:00 GMT']]),
+        [`https://insight.factset.com/${UPDATE}`]: post('18.4'), 'https://insight.factset.com/eps-cuts': post('18.7'), 'https://insight.factset.com/mon': post('18.7'),
     };
     const fetchText = jest.fn(async (url) => PAGES[url]);
     beforeEach(() => fetchText.mockClear());
 
-    it('no PDF this week: the blog post stands in; posts retelling a known report are never fetched', async () => {
+    it('no PDF this week: the update post stands in; no other post is fetched', async () => {
         const kv = kvWith({ rows: [{ date: '2026-10-30', pe: 18.7, a5: 19.8, a10: 19.1 }], checkedAt: 0 });
         const r = await run({ kv, fetchPdf: async () => null, fetchText });
         expect(r.rows.map((x) => [x.date, x.pe])).toEqual([['2026-10-30', 18.7], ['2026-11-06', 18.4]]);
         expect(r.messages).toContain('from the blog: 2026-11-06');
         expect(r.seen).toBe('2026-11-06'); // found = seen: no red freshness row while the screen is current
-        expect(fetchText.mock.calls.map(([u]) => u)).not.toContain('https://insight.factset.com/mon'); // Mon 2 Nov retells 30 Oct
+        expect(fetchText.mock.calls.map(([u]) => u)).toEqual([BLOG_FEED, `https://insight.factset.com/${UPDATE}`]);
         expect(kv.set).toHaveBeenCalledWith(FWD_KV_KEY, expect.objectContaining({ rows: r.rows }));
+    });
+    it('fwdpe_probe: a live test looks again for the last 3 weeks, answers what it found, and writes nothing', async () => {
+        const kv = kvWith({ rows: [], seen: '2026-10-23', checkedAt: NOW - 60e3 }); // fresh: a normal call would not look
+        const lastGood = { load: () => null, save: jest.fn() };
+        const fetchPdf = jest.fn(async () => null);
+        const r = await run({ kv, lastGood, fetchPdf, fetchText, faults: new Set(['fwdpe_probe']) });
+        expect(fetchPdf.mock.calls[fetchPdf.mock.calls.length - 1][0]).toContain('100726A.pdf'); // back to Wed 7 Oct: the reports after 2 Oct, 3 weeks before the bake
+        expect(r.rows.map((x) => [x.date, x.pe])).toEqual([['2026-11-06', 18.4]]);
+        expect(kv.set).not.toHaveBeenCalled();
+        expect(lastGood.save).not.toHaveBeenCalled();
     });
     it('not read when a PDF did, nor behind its gate', async () => {
         await run({ kv: kvWith(null), fetchPdf: async (url) => (url.includes('110626.pdf') ? { text: OCT_2026 } : null), fetchText });

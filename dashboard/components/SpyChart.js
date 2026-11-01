@@ -54,7 +54,7 @@ export default function SpyChart({ chartHistory, recessions = [], current = null
     const [plotRef, plotPx] = useElementWidth(); // real px width → 10px labels spaced honestly
     const [baked, setBaked] = useState(null);
     const [dateRange, setDateRange] = useState(null); // 📅 {from, to} ISO dates, or null = a preset tab
-    const [fwd, setFwd] = useState(null); // FactSet's weekly rows: the view buttons' numbers + the attention pick
+    const [fwd, setFwd] = useState(null); // FactSet's weekly rows (false = failed): the view buttons' numbers + the attention pick
     const [peLong, setPeLong] = useState(null);
     const [attn, setAttn] = useState(null);
     const tapped = useRef(false);
@@ -64,7 +64,7 @@ export default function SpyChart({ chartHistory, recessions = [], current = null
     useEffect(() => {
         if (!v2) return undefined;
         let on = true;
-        loadFwd().then((rows) => { if (on) setFwd(rows); });
+        loadFwd().then((rows) => { if (on) setFwd(rows || false); });
         loadLong('peRatio').then((p) => { if (on) setPeLong(p); });
         return () => { on = false; };
     }, [v2]);
@@ -74,10 +74,11 @@ export default function SpyChart({ chartHistory, recessions = [], current = null
     }, []);
     // The view that needs a look opens first (his 1 Nov 2026 "default view should be the one that should get my
     // immediate attention"); a tap wins for the rest of the visit. Needs the baked years: 14 months can't say "since 2025".
+    // FactSet down (fwd false): SPY's own low still counts.
     useEffect(() => {
-        const spy = fwd && baked && chartHistory?.length > 1 ? joinBaked(baked, chartHistory) : null;
+        const spy = fwd !== null && baked && chartHistory?.length > 1 ? joinBaked(baked, chartHistory) : null;
         if (!spy || spy === chartHistory) return;
-        const a = attention(fwdDaily(fwd, spy), spy);
+        const a = attention(fwd ? fwdDaily(fwd, spy) : [], spy);
         setAttn(a);
         if (a && !tapped.current) setLens(a.lens);
     }, [fwd, baked, chartHistory]);

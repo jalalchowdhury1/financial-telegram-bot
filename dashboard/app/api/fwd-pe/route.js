@@ -7,7 +7,8 @@
  *
  * Never 5xx: with FactSet or KV down it answers with what it has (the bake at worst). Layers, the work and the
  * KV list live in lib/fwdPe.js resolveFwdPe: PDF → FactSet's blog → KV → this instance's /tmp copy → the bake.
- * Fault gates: fwdpe_http, fwdpe_blog, fwdpe_kv.
+ * Fault gates: fwdpe_http, fwdpe_blog, fwdpe_kv; fwdpe_probe looks again for the last 3 weeks' reports (a live test:
+ * ?_fail=fwdpe_probe proves the PDFs, ?_fail=fwdpe_probe,fwdpe_http the blog). Nothing is saved under a fault.
  */
 import { faultsFrom } from '../../../lib/faults';
 import { cacheHeaders } from '../../../lib/cdn';

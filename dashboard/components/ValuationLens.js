@@ -17,6 +17,7 @@ import SignalStudy from './SignalStudy';
 import { useChart } from './MarkProvider';
 import { loadLong, joinLong, longInfo } from '../lib/longHistory';
 import { decodeFwd, joinFwd } from '../lib/fwdPe';
+import { getJson } from '../lib/loadJson';
 import { fwdDaily, extremeSince, timeAvg, decompose, underAvg } from '../lib/valuation';
 
 const TF_KEYS = ['1M', '3M', '6M', '1Y', '5Y', '10Y', '15Y', '20Y', '30Y', 'ALL'];
@@ -31,12 +32,17 @@ const BLUE = '#38bdf8', TEAL = '#2dd4bf', AMBER = '#fbbf24', VIOLET = '#a78bfa';
 const MONO = "'JetBrains Mono', monospace";
 
 let fwdLoad = null;
-/** FactSet's weekly rows: the baked file, then the reports since (/api/fwd-pe). null when the file fails. LeadCombos uses it too. */
+const bake = () => fetch('/history/fwdPE.json').then((r) => (r.ok ? r.json() : null)).then(decodeFwd).catch(() => null);
+/**
+ * FactSet's weekly rows: the baked file (a second try if the first fails), then the reports since (/api/fwd-pe, given
+ * 8 s: the bake alone draws every view, so a route busy at FactSet never holds the card). null when the file fails.
+ * LeadCombos uses it too.
+ */
 export function loadFwd() {
     if (!fwdLoad) {
         fwdLoad = Promise.all([
-            fetch('/history/fwdPE.json').then((r) => (r.ok ? r.json() : null)).then(decodeFwd).catch(() => null),
-            fetch('/api/fwd-pe').then((r) => (r.ok ? r.json() : null)).catch(() => null),
+            bake().then((b) => b || bake()),
+            getJson('/api/fwd-pe', { timeoutMs: 8000, retries: 0 }),
         ]).then(([baked, live]) => (baked ? joinFwd(baked, live?.rows) : null));
         fwdLoad.then((rows) => { if (!rows) fwdLoad = null; }); // the next open tries again
     }
@@ -67,7 +73,8 @@ export default function ValuationLens({ lens, spy, tf, onTf, peNow, chip }) {
     const daily = useMemo(() => (fwd && spy?.length ? fwdDaily(fwd, spy) : []), [fwd, spy]);
     const newest = useMemo(() => (fwd ? [...fwd].reverse().find((r) => r.a5 != null && r.a10 != null) || null : null), [fwd]);
     const series = useMemo(() => {
-        if (lens === 'P/E') return joinLong(peChart?.points, long, longInfo('peRatio')).map((p) => ({ date: p.date, value: p.value }));
+        // no P/E on the page (N/A, or CAPE standing in): no chart, not the history up to the sheet's first day as if current
+        if (lens === 'P/E') return peChart ? joinLong(peChart.points, long, longInfo('peRatio')).map((p) => ({ date: p.date, value: p.value })) : [];
         if (lens === 'Earnings') return newest ? daily.map((d) => ({ date: d.date, value: d.price, line: d.eps * newest.a10, d })) : [];
         return daily.map((d) => ({ date: d.date, value: d.pe, line: d.a5, line2: d.a10 }));
     }, [lens, peChart, long, daily, newest]);
@@ -76,7 +83,7 @@ export default function ValuationLens({ lens, spy, tf, onTf, peNow, chip }) {
         return (
             <div className="mini-chart" style={{ height: '220px', display: 'grid', placeItems: 'center' }}>
                 <span className="chart-note" style={{ fontSize: '0.65rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-                    {fwd === false && lens !== 'P/E' ? 'Forward P/E unavailable right now' : 'Loading…'}
+                    {lens === 'P/E' ? (peNow == null || peNow === '' ? 'P/E unavailable right now' : 'Loading…') : fwd === false ? 'Forward P/E unavailable right now' : 'Loading…'}
                 </span>
             </div>
         );
