@@ -25,14 +25,22 @@ describe('makePillStore.load', () => {
         expect(d.kv.get).not.toHaveBeenCalled();
     });
 
-    test('falls back to KV (JSON string) and re-warms /tmp', async () => {
+    test('falls back to KV (JSON string)', async () => {
         const savedAt = new Date().toISOString();
         const d = deps({ remote: JSON.stringify({ data: { value: 2, asOf: '2026-01-02' }, savedAt }) });
         const s = makePillStore(d);
         const got = await s.load('k', 7 * 864e5);
         expect(d.kv.get).toHaveBeenCalledWith(`${KV_PREFIX}k`);
         expect(got.data.value).toBe(2);
-        expect(d.tmp.save).toHaveBeenCalledWith('k', { value: 2, asOf: '2026-01-02' });
+    });
+
+    test('a 10-day-old KV entry stays 10 days old: rejected again on the next load (audit B7)', async () => {
+        // /tmp re-saves stamp savedAt = now; re-warming /tmp from KV made an old copy look new.
+        const savedAt = new Date(Date.now() - 10 * 864e5).toISOString();
+        const d = deps({ remote: JSON.stringify({ data: { value: 2, asOf: '2026-01-02' }, savedAt }) });
+        const s = makePillStore(d);
+        expect((await s.load('k', 14 * 864e5)).savedAt).toBe(savedAt);
+        expect(await s.load('k', 7 * 864e5)).toBeNull();
     });
 
     test('KV copy older than maxAgeMs is ignored', async () => {

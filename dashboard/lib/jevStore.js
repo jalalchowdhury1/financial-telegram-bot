@@ -45,7 +45,8 @@ export function makePillStore(deps = {}) {
                 const parsed = typeof remote === 'string' ? JSON.parse(remote) : remote;
                 if (!parsed || typeof parsed !== 'object' || !parsed.data) return null;
                 if (tooOld(parsed.savedAt, maxAgeMs)) return null;
-                try { tmp.save(key, parsed.data); } catch { /* best effort */ }
+                // No /tmp re-warm: its save stamps savedAt = now, so a 10-day-old KV copy
+                // came back "fresh" and passed every later age check (audit B7).
                 return parsed;
             } catch { return null; }
         },
