@@ -148,6 +148,25 @@ test('the chip rows never slide up or down: one scroll over them hid the lens bu
     expect(screen.getByRole('button', { name: '1Y' }).parentElement.style.overflowY).toBe('hidden');
 });
 
+test('Earnings view: SPY\'s move drawn as earnings × P/E, bars that add up on a log scale, since the window start or a tapped day', async () => {
+    global.fetch = fwdFetch();
+    const { container } = render(<SpyChart chartHistory={bars(302, 600)} current={630} lenses={{ peNow: null }} />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Earnings' }));
+    const split = await screen.findByRole('img', { name: /^Since / });
+    // SPY 603.4 → 630.1 while the P/E went 22 → 19.0: earnings did more than all of it
+    expect(split.getAttribute('aria-label')).toBe('Since Jan 1, 2026: earnings +21%, P/E −14%, SPY +4%');
+    expect(split.textContent).toBe('Earnings+21%× P/E−14%= SPY+4.4%');
+    const [e, p, spy] = [...split.querySelectorAll('span[style*="border-radius"]')].map((b) => parseFloat(b.style.width));
+    expect(e - p).toBeCloseTo(spy, 1); // the P/E bar runs back from where earnings ended, to SPY's end
+    expect(screen.getByText('Since Jan 1, 2026')).toBeTruthy();
+    const svg = container.querySelector('.chart-plot svg');
+    svg.getBoundingClientRect = () => ({ left: 0, width: 540, top: 0, height: 220 });
+    fireEvent.pointerDown(svg, { clientX: 300, pointerType: 'touch' });
+    const readout = container.querySelector('.chart-readout').textContent;
+    expect(readout).toMatch(/^Since \w{3} \d+, 2026 · SPY \$\d+$/);
+    expect(split.getAttribute('aria-label').startsWith(`${readout.split(' · ')[0]}:`)).toBe(true); // the picture follows the tap
+});
+
 test('Fwd P/E lens: round y ticks, start → end up top, SPY 6 months later on tap, "est." once FactSet goes quiet', async () => {
     global.fetch = fwdFetch();
     const { container, unmount } = render(<SpyChart chartHistory={bars(302, 600)} current={630} lenses={{ peNow: null }} />);

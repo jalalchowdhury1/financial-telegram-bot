@@ -5,11 +5,11 @@
  *             printed at the time, teal where it sits under that 5-yr average, amber over it. "Then what?" =
  *             SPY after each first week under it (SignalStudy), so the study's weeks are the chart's teal.
  *   P/E       the trailing P/E since 1871 (the P/E number's own history: baked file + sheet + live).
- *   Earnings  SPY against forward earnings × the 10-yr average P/E: the gap is the P/E, and the window
- *             splits SPY's move into earnings and P/E.
+ *   Earnings  SPY against forward earnings × the 10-yr average P/E: the gap is the P/E. Above it, SPY's move
+ *             since the window's start (or the tapped day) drawn as earnings × P/E (Split).
  * Same timeframe chips as the price chart (shared pick); chips a lens cannot fill are dimmed.
  */
-import { useState, useEffect, useMemo, useRef, useId } from 'react';
+import { useState, useEffect, useMemo, useRef, useId, Fragment } from 'react';
 import { yearTicks, shortTicks, fmtDay, unitsForPx, gutterFor, clampUnits, LABEL_CHAR_PX } from '../lib/chartAxis';
 import useElementWidth from './useElementWidth';
 import AxisLabels from './AxisLabels';
@@ -47,6 +47,35 @@ export function loadFwd() {
         fwdLoad.then((rows) => { if (!rows) fwdLoad = null; }); // the next open tries again
     }
     return fwdLoad;
+}
+
+/**
+ * The Earnings view's picture of SPY's move (his 1 Nov "be super creative. lets see how it all works"): price =
+ * forward earnings × forward P/E, so on a log scale the earnings bar plus the P/E bar is exactly the SPY bar. The P/E
+ * bar starts where earnings ended and runs back when the P/E fell (teal) or on when it rose (amber).
+ */
+function Split({ parts, since }) {
+    const a = Math.log1p(parts.eps), c = Math.log1p(parts.price);
+    const lo = Math.min(0, a, c), span = Math.max(0, a, c) - lo || 1;
+    const at = (v) => `${(((v - lo) / span) * 100).toFixed(2)}%`;
+    const txt = { fontSize: '0.62rem', fontFamily: MONO, fontWeight: 700, whiteSpace: 'nowrap' };
+    const rows = [['Earnings', 0, a, VIOLET, parts.eps], ['× P/E', a, c, parts.pe <= 0 ? TEAL : AMBER, parts.pe], ['= SPY', 0, c, BLUE, parts.price]];
+    return (
+        <div role="img" aria-label={`Since ${since}: earnings ${pct(parts.eps)}, P/E ${pct(parts.pe)}, SPY ${pct(parts.price)}`}
+            style={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto', gap: '3px 8px', alignItems: 'center', marginBottom: '8px' }}>
+            {rows.map(([name, u, v, color, r]) => (
+                <Fragment key={name}>
+                    <span style={{ ...txt, color: 'var(--text-muted)' }}>{name}</span>
+                    <span style={{ position: 'relative', height: '6px' }}>
+                        <span style={{ position: 'absolute', left: at(0), top: '-2px', bottom: '-2px', width: '1px', background: 'rgba(255,255,255,0.2)' }} />
+                        <span style={{ position: 'absolute', left: at(Math.min(u, v)), width: `${((Math.abs(v - u) / span) * 100).toFixed(2)}%`, top: 0, bottom: 0,
+                            borderRadius: '3px', background: color, transition: 'left 0.2s ease, width 0.2s ease' }} />
+                    </span>
+                    <span style={{ ...txt, color, textAlign: 'right' }}>{signed(r * 100, Math.abs(r) < 0.1 ? 1 : 0)}%</span>
+                </Fragment>
+            ))}
+        </div>
+    );
 }
 
 export default function ValuationLens({ lens, spy, tf, onTf, peNow, chip }) {
@@ -135,10 +164,10 @@ export default function ValuationLens({ lens, spy, tf, onTf, peNow, chip }) {
 
     const first = data[0], end = data[data.length - 1];
     const turns = end.value - first.value;
-    const parts = !isPe && decompose(first.d, end.d);
     const extreme = isPe ? extremeSince(series) : null;
     const si = extreme?.since && extreme.since >= first.date ? data.findIndex((p) => p.date >= extreme.since) : -1; // where "since" starts on screen
     const hi2 = hover != null && hover < data.length ? data[hover] : null;
+    const parts = !isPe && decompose((hi2 || first).d, end.d); // the window, or since the tapped day
     // the time machine: what SPY did in the 6 months after a hovered day (or since, for the last 6 months)
     let then = null;
     if (isPe && hi2 && spy?.length && spy[0].date <= hi2.date) {
@@ -173,18 +202,12 @@ export default function ValuationLens({ lens, spy, tf, onTf, peNow, chip }) {
                 </div>
                 {hi2 ? (
                     <span className="chart-readout" style={{ ...label, color: 'var(--text-primary)' }}>
-                        {fmtDay(hi2.date)} · {isPe ? `${hi2.value.toFixed(1)}x${then ? ` · ${then}` : ''}` : `SPY $${hi2.value.toFixed(0)} · line $${hi2.line.toFixed(0)}`}
+                        {isPe ? `${fmtDay(hi2.date)} · ${hi2.value.toFixed(1)}x${then ? ` · ${then}` : ''}` : `Since ${fmtDay(hi2.date)} · SPY $${hi2.value.toFixed(0)}`}
                     </span>
                 ) : isPe ? (
                     <span style={{ ...label, color: turns <= 0 ? TEAL : AMBER }}>{first.value.toFixed(1)}x → {end.value.toFixed(1)}x</span>
                 ) : (
-                    <span style={label}>
-                        <span style={{ color: VIOLET }}>EPS {pct(parts.eps)}</span>
-                        <span style={{ color: 'var(--text-muted)' }}> · </span>
-                        <span style={{ color: parts.pe <= 0 ? TEAL : AMBER }}>P/E {pct(parts.pe)}</span>
-                        <span style={{ color: 'var(--text-muted)' }}> → </span>
-                        <span style={{ color: BLUE }}>SPY {pct(parts.price)}</span>
-                    </span>
+                    <span style={{ ...label, color: 'var(--text-muted)' }}>Since {fmtDay(first.date)}</span>
                 )}
             </div>
             {isPe && (extreme || lens === 'Fwd P/E') && (
@@ -204,6 +227,7 @@ export default function ValuationLens({ lens, spy, tf, onTf, peNow, chip }) {
                     )}
                 </div>
             )}
+            {!isPe && <Split parts={parts} since={fmtDay((hi2 || first).date)} />}
             <div className="mini-chart" style={{ height: '220px' }}>
                 <div className="chart-plot" ref={plotRef}>
                     <svg ref={svgRef} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none"
