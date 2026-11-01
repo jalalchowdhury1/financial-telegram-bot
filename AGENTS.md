@@ -353,8 +353,8 @@ behave differently, it gets a v2-only prop (`race` on FactorRow, `asCards` on `p
 - **Economy charts** (1 Nov 2026, his "other charts where you can apply your creativity while still being robust"):
   v2-only `MiniChart` props, default off so v1 is unchanged. `nice` = y ticks on round numbers (1/2/5 × 10ⁿ, ≤ 6:
   the zero line reads 0.0, not 0.08). `inverted` = an amber fill between the yield curve and zero wherever it was
-  under zero, labelled "inverted" at the longest stretch's deepest point (only when the word fits: 56 px wide,
-  12 px deep).
+  under zero, with the word "inverted" where the line stays furthest under zero for the word's width (only when
+  it fits: 56 px wide, 12 px deep). The change label never wraps; a tight tab row scrolls sideways.
 - **Not built on purpose**: signal dots on the SPY chart, tap-a-number "ping me at X".
 - Tests: `app/v2/__tests__/page.test.js` (`the top line`), `components/__tests__/LeadCombos.test.js`,
   `components/__tests__/RiskCards.test.js`, `lib/__tests__/pulseVerdicts.test.js` (`asCards`).
