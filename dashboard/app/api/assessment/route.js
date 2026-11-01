@@ -16,6 +16,11 @@ import {
 
 export const dynamic = 'force-dynamic';
 
+// A missing input is "unknown" to the model, never a confident label (null < 0 is false →
+// "Positive (no inversion)") or the string "undefined" (audit B14).
+const known = (v) => typeof v === 'number' && Number.isFinite(v);
+const fx = (v, d, unit = '') => (known(v) ? `${v.toFixed(d)}${unit}` : 'unknown');
+
 export async function POST(request) {
     if (!assessmentAuthorized(request)) {
         return Response.json({ error: 'unauthorized' }, { status: 401 });
@@ -31,9 +36,9 @@ export async function POST(request) {
             return Response.json({ assessment: generateRuleBased(data) });
         }
 
-        const yieldStatus = data.yieldCurve < 0 ? 'Inverted (recession signal)' : 'Positive (no inversion)';
-        const sahmStatus = data.sahmRule >= 0.5 ? 'RECESSION SIGNAL' : 'Safe';
-        const fearStatus = data.fearGreed < 25 ? 'Extreme Fear' : data.fearGreed < 45 ? 'Fear' : data.fearGreed < 55 ? 'Neutral' : data.fearGreed < 75 ? 'Greed' : 'Extreme Greed';
+        const yieldStatus = !known(data.yieldCurve) ? 'unknown' : data.yieldCurve < 0 ? 'Inverted (recession signal)' : 'Positive (no inversion)';
+        const sahmStatus = !known(data.sahmRule) ? 'unknown' : data.sahmRule >= 0.5 ? 'RECESSION SIGNAL' : 'Safe';
+        const fearStatus = !known(data.fearGreed) ? 'unknown' : data.fearGreed < 25 ? 'Extreme Fear' : data.fearGreed < 45 ? 'Fear' : data.fearGreed < 55 ? 'Neutral' : data.fearGreed < 75 ? 'Greed' : 'Extreme Greed';
 
         const prompt = `You are a senior quantitative macroeconomic analyst preparing an executive summary for institutional investors.
 Analyze the following comprehensive economic indicators to provide a nuanced, in-depth macroeconomic assessment.
@@ -41,20 +46,20 @@ Analyze the following comprehensive economic indicators to provide a nuanced, in
 📊 COMPLETE MARKET DATA:
 
 **MACRO & SENTIMENT:**
-- Yield Curve (10Y-2Y): ${data.yieldCurve?.toFixed(2)}% → ${yieldStatus}
-- Fear & Greed Index: ${data.fearGreed?.toFixed(1)}/100 → ${fearStatus}
+- Yield Curve (10Y-2Y): ${fx(data.yieldCurve, 2, '%')} → ${yieldStatus}
+- Fear & Greed Index: ${fx(data.fearGreed, 1, '/100')} → ${fearStatus}
 
 **LABOR & RECESSION SIGNALING:**
-- Sahm Rule Recession Indicator: ${data.sahmRule?.toFixed(2)} → ${sahmStatus}
-- Initial Jobless Claims (4wk avg): ${data.claims?.toFixed(0)}K
+- Sahm Rule Recession Indicator: ${fx(data.sahmRule, 2)} → ${sahmStatus}
+- Initial Jobless Claims (4wk avg): ${fx(data.claims, 0, 'K')}
 
 **CONSUMER HEALTH & FORWARD PATH:**
-- Consumer Sentiment Index: ${data.sentiment?.toFixed(1)}/100
+- Consumer Sentiment Index: ${fx(data.sentiment, 1, '/100')}
 - Copper/Gold Ratio (leading growth/rates gauge): ${(typeof data.copperGold === 'number' ? data.copperGold : data.copperGold?.value)?.toFixed?.(2) ?? 'N/A'}
 
 **CREDIT & MONETARY TIGHTNESS:**
-- BBB Credit Spread: ${data.creditSpread?.toFixed(2)}%
-- Real Yields (10Y TIPS): ${data.realYields?.toFixed(2)}%
+- BBB Credit Spread: ${fx(data.creditSpread, 2, '%')}
+- Real Yields (10Y TIPS): ${fx(data.realYields, 2, '%')}
 
 TASK: Synthesize an intelligent, highly nuanced assessment of the current structural regime. Limit your response to 4-6 sentences.
 
@@ -199,11 +204,14 @@ Output the assessment now:`;
 
 function generateRuleBased(data) {
     const signals = [];
-    if (data.yieldCurve > 0) signals.push('📈 Yield curve positive');
+    if (!known(data.yieldCurve)) signals.push('❔ Yield curve unknown');
+    else if (data.yieldCurve > 0) signals.push('📈 Yield curve positive');
     else signals.push('🔴 Yield curve inverted');
-    if (data.sahmRule < 0.5) signals.push('✅ Sahm Rule safe');
+    if (!known(data.sahmRule)) signals.push('❔ Sahm Rule unknown');
+    else if (data.sahmRule < 0.5) signals.push('✅ Sahm Rule safe');
     else signals.push('🔴 Sahm Rule triggered');
-    if (data.fearGreed > 50) signals.push('📈 Market sentiment positive');
+    if (!known(data.fearGreed)) signals.push('❔ Market sentiment unknown');
+    else if (data.fearGreed > 50) signals.push('📈 Market sentiment positive');
     else signals.push('⚠️ Market fear detected');
     return signals.join(' | ') + '\n\n💡 Rule-based assessment (no AI key configured)';
 }
