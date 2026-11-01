@@ -308,8 +308,12 @@ behave differently, it gets a v2-only prop (`race` on FactorRow, `asCards` on `p
 - **Readout chips** = `pulseVerdicts({…, asCards: true})`: Bull counts the items it could read (the Bull
   board's `good/live`); Dips follows the defensive mode, as the Rubber band headline and badge do (never
   "Dips pay ✓" over "Defensive"). Horsemen = the card's `N of 4 riding`, a grey pip for one with no data.
-- **SPY chart lenses** (1 Nov 2026; v2-only `lenses` prop on `SpyChart` → `components/ValuationLens.js`, the
-  pick saved in `ftb:lens:spy`): Price · Fwd P/E · P/E · Earnings, sharing the TF chips. Fwd P/E = FactSet's weekly
+- **SPY chart lenses** (1 Nov 2026; v2-only `lenses` prop on `SpyChart` → `components/ValuationLens.js`):
+  Price · Fwd P/E · P/E · Earnings, sharing the TF chips. Each view button shows its number now and a 1-year
+  sparkline (his "display all of these more creatively"). The card OPENS on the view that needs a look
+  (`lib/valuation.js attention`: fwd P/E at a 1-year+ low or high, earnings or SPY at a 1-year+ low, the rarest
+  wins; ~11% of days since 2013) with a dot on its button, else Price; a tap wins for the visit. Nothing is saved
+  (`ftb:lens:spy` is gone): his "default view should be the one that should get my immediate attention". Fwd P/E = FactSet's weekly
   Earnings Insight number (`public/history/fwdPE.json`, 2011→, + `/api/fwd-pe` for reports since the bake) made
   daily by `lib/valuation.js fwdDaily` (forward EPS = SPY ÷ P/E on each report's prior close, straight line
   between reports, held after the newest, so the line moves with SPY between reports); dashed lines = FactSet's

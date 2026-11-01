@@ -70,3 +70,18 @@ export function decompose(first, last) {
 export function underAvg(rows) {
     return (rows || []).filter((r) => r.a5 != null).map((r) => ({ date: r.date, value: Math.round((r.a5 - r.pe) * 10) / 10, pe: r.pe, a5: r.a5 }));
 }
+
+/**
+ * The SPY view that needs a look (his 1 Nov 2026 "default view should be the one that should get my immediate
+ * attention"): forward P/E at a 1-year+ low or high, forward earnings or SPY at a 1-year+ low (their highs are
+ * routine). The rarest wins: `{lens, low, since}`, null when none is (the card opens on Price). 2013 → Oct 2026
+ * it fired on ~11% of days: forward P/E 8.7%, earnings 1.5%, SPY 0.8%. `daily` = fwdDaily rows, `spy` = closes.
+ */
+export function attention(daily, spy) {
+    const hits = [['Fwd P/E', daily, 'pe', true], ['Earnings', daily, 'eps', false], ['Price', spy, 'price', false]].flatMap(([lens, pts, key, highs]) => {
+        const e = extremeSince(pts, key, 365);
+        return e && (highs || e.low) ? [{ lens, ...e, from: e.since || pts[0].date }] : [];
+    });
+    const top = hits.sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0))[0];
+    return top ? { lens: top.lens, low: top.low, since: top.since } : null;
+}

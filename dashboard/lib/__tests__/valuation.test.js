@@ -1,4 +1,4 @@
-import { fwdDaily, extremeSince, timeAvg, decompose, underAvg } from '../valuation';
+import { fwdDaily, extremeSince, timeAvg, decompose, underAvg, attention } from '../valuation';
 
 const day = (i) => new Date(Date.UTC(2026, 0, 1 + i)).toISOString().slice(0, 10);
 // a close every day: 100, 101, 102 …
@@ -59,4 +59,32 @@ it('decompose: (1 + price) = (1 + earnings)(1 + P/E)', () => {
 it('underAvg: turns under the 5-yr average, rows without one left out', () => {
     expect(underAvg([{ date: day(0), pe: 18.7, a5: 19.8 }, { date: day(7), pe: 13.1, a5: null }]))
         .toEqual([{ date: day(0), value: 1.1, pe: 18.7, a5: 19.8 }]);
+});
+
+describe('attention: the view that needs a look', () => {
+    // 600 days: SPY and forward earnings climb (new highs are routine), forward P/E waves between 17 and 19
+    const run = (last = {}) => {
+        const rows = Array.from({ length: 600 }, (_, i) => ({ date: day(i), price: 100 + i, eps: 5 + i / 100, pe: 18 + Math.sin(i / 20) }));
+        Object.assign(rows[599], last);
+        return rows;
+    };
+    it('nothing unusual: null, so the card opens on Price', () => {
+        expect(attention(run(), run())).toBeNull();
+    });
+    it('forward P/E at a 1-year+ low or high', () => {
+        expect(attention(run({ pe: 15 }), run())).toEqual({ lens: 'Fwd P/E', low: true, since: null });
+        expect(attention(run({ pe: 21 }), run())).toEqual({ lens: 'Fwd P/E', low: false, since: null });
+    });
+    it('earnings and SPY only on a low', () => {
+        expect(attention(run({ eps: 1 }), run())).toEqual({ lens: 'Earnings', low: true, since: null });
+        expect(attention(run(), run({ price: 50 }))).toEqual({ lens: 'Price', low: true, since: null });
+    });
+    it('the rarest wins', () => {
+        const fwd = run({ pe: 16.5, eps: 1 });
+        fwd[100].pe = 16; // both are 1-year+ lows: the P/E was lower 499 days back, earnings never were
+        expect(attention(fwd, run())).toEqual({ lens: 'Earnings', low: true, since: null });
+        fwd[100].pe = 18;
+        fwd[50].eps = 0.5; // now the P/E is the record and earnings were lower 549 days back
+        expect(attention(fwd, run())).toEqual({ lens: 'Fwd P/E', low: true, since: null });
+    });
 });

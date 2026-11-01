@@ -3,14 +3,28 @@ import { useState, useEffect, useRef } from 'react';
 import { yearTicks, shortTicks, indexFromPointer, tfAvailable, fmtDay, readChoice, saveChoice, unitsForPx, gutterFor, clampUnits, LABEL_CHAR_PX } from '../lib/chartAxis';
 import useElementWidth from './useElementWidth';
 import AxisLabels from './AxisLabels';
-import { decodeLong } from '../lib/longHistory';
-import ValuationLens from './ValuationLens';
+import { decodeLong, loadLong, joinLong, longInfo } from '../lib/longHistory';
+import ValuationLens, { loadFwd } from './ValuationLens';
+import { useChart } from './MarkProvider';
+import { fwdDaily, attention } from '../lib/valuation';
 
 const TF_KEYS = ['1M', '3M', '6M', '1Y', '5Y', '10Y', '15Y', '20Y', '30Y', 'ALL'];
 const STORE_KEY = 'ftb:tf:spy';
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 const LENSES = ['Price', 'Fwd P/E', 'P/E', 'Earnings'];
-const LENS_KEY = 'ftb:lens:spy';
+const BLUE = '#38bdf8', TEAL = '#2dd4bf', AMBER = '#fbbf24', VIOLET = '#a78bfa';
+
+/** A view button's last year: one line, no axes. */
+function Spark({ pts, color }) {
+    if (!(pts?.length > 1)) return null;
+    const lo = Math.min(...pts), hi = Math.max(...pts), n = pts.length - 1;
+    const d = pts.map((v, i) => `${((i / n) * 60).toFixed(1)},${(13 - ((v - lo) / (hi - lo || 1)) * 12).toFixed(1)}`).join(' ');
+    return (
+        <svg viewBox="0 0 60 14" preserveAspectRatio="none" aria-hidden="true" style={{ flex: '1 1 24px', minWidth: '24px', maxWidth: '80px', height: '14px' }}>
+            <polyline points={d} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+        </svg>
+    );
+}
 
 /** Baked closes strictly before the live window, then the live bars; 50/200d MAs over the whole run.
  *  The live bars alone when the two disagree (the backup path charts the S&P INDEX, ~10x SPY). */
@@ -39,14 +53,33 @@ export default function SpyChart({ chartHistory, recessions = [], current = null
     const [plotRef, plotPx] = useElementWidth(); // real px width → 10px labels spaced honestly
     const [baked, setBaked] = useState(null);
     const [dateRange, setDateRange] = useState(null); // 📅 {from, to} ISO dates, or null = a preset tab
+    const [fwd, setFwd] = useState(null); // FactSet's weekly rows: the view buttons' numbers + the attention pick
+    const [peLong, setPeLong] = useState(null);
+    const [attn, setAttn] = useState(null);
+    const tapped = useRef(false);
+    const peChart = useChart('peRatio', lenses?.peNow);
+    const v2 = !!lenses;
     useEffect(() => { const v = readChoice(STORE_KEY); if (v) setTimeframe(v); }, []);
     useEffect(() => {
-        try { const v = window.localStorage.getItem(LENS_KEY); if (LENSES.includes(v)) setLens(v); } catch { /* private mode */ }
-    }, []);
+        if (!v2) return undefined;
+        let on = true;
+        loadFwd().then((rows) => { if (on) setFwd(rows); });
+        loadLong('peRatio').then((p) => { if (on) setPeLong(p); });
+        return () => { on = false; };
+    }, [v2]);
     // /api/spy carries ~14 months; the baked daily file (scripts/bake_spy_daily.py) fills 5Y…30Y/ALL.
     useEffect(() => {
         fetch('/history/spy-daily.json').then((r) => (r.ok ? r.json() : null)).then(decodeLong).then(setBaked).catch(() => {});
     }, []);
+    // The view that needs a look opens first (his 1 Nov 2026 "default view should be the one that should get my
+    // immediate attention"); a tap wins for the rest of the visit. Needs the baked years: 14 months can't say "since 2025".
+    useEffect(() => {
+        const spy = fwd && baked && chartHistory?.length > 1 ? joinBaked(baked, chartHistory) : null;
+        if (!spy || spy === chartHistory) return;
+        const a = attention(fwdDaily(fwd, spy), spy);
+        setAttn(a);
+        if (a && !tapped.current) setLens(a.lens);
+    }, [fwd, baked, chartHistory]);
     if (!chartHistory || chartHistory.length < 2) return null;
 
     const full = joinBaked(baked, chartHistory);
@@ -152,24 +185,62 @@ export default function SpyChart({ chartHistory, recessions = [], current = null
     };
     const onLeave = (e) => { if (e.pointerType === 'mouse') setHover(null); };
     const fmtPx = (v) => (v == null ? '—' : isIndex ? Math.round(v).toLocaleString('en-US') : `$${v.toFixed(2)}`);
-    const pickLens = (l) => { setLens(l); setHover(null); try { window.localStorage.setItem(LENS_KEY, l); } catch { /* not remembered */ } };
+    const pickLens = (l) => { tapped.current = true; setLens(l); setHover(null); };
     // overflowY hidden on the chip rows: each chip's tap band (.tf-btn::before) sits 12px below it, so a sideways row was
     // 12px taller inside than out and one scroll over it slid the chips out of sight (1 Nov 2026, "i can't see the buttons").
+    // Each view's button shows its number now and its last year (his 1 Nov "display all of these more creatively");
+    // a dot marks the one that needs a look.
+    const daily = fwd ? fwdDaily(fwd, full) : [];
+    const now = daily[daily.length - 1], yr = full[Math.max(0, full.length - 252)].date;
+    const epsYr = daily.find((d) => d.date >= yr);
+    const px = current ?? full[full.length - 1].price;
+    const peNow = lenses?.peNow == null || lenses.peNow === '' ? NaN : Number(lenses.peNow);
+    const tiles = lenses ? {
+        Price: { value: isIndex ? Math.round(px).toLocaleString('en-US') : `$${Math.round(px)}`, color: BLUE, pts: full.slice(-252).map((p) => p.price) },
+        'Fwd P/E': now && { value: `${now.pe.toFixed(1)}x`, color: now.a5 != null && now.pe > now.a5 ? AMBER : TEAL, pts: daily.slice(-252).map((d) => d.pe) },
+        'P/E': Number.isFinite(peNow) && { value: `${peNow.toFixed(1)}x`, color: 'var(--text-primary)', pts: joinLong(peChart?.points, peLong, longInfo('peRatio')).filter((p) => p.date >= yr).map((p) => p.value) },
+        Earnings: now && epsYr && { value: `${now.eps >= epsYr.eps ? '+' : '−'}${Math.abs((now.eps / epsYr.eps - 1) * 100).toFixed(0)}%`, color: VIOLET, pts: daily.slice(-252).map((d) => d.eps) },
+    } : {};
+    const hotColor = attn && (attn.lens === 'Fwd P/E' && attn.low ? TEAL : AMBER);
+    const sinceText = attn && fmtDay(attn.since || (attn.lens === 'Price' ? full : daily)[0].date).replace(/ \d+,/, ''); // 'Apr 2025'
     const lensRow = lenses && (
         <div role="tablist" aria-label="Chart" style={{ display: 'flex', flexWrap: 'nowrap', gap: '4px', overflowX: 'auto', overflowY: 'hidden', marginBottom: '8px' }}>
-            {LENSES.map((l) => (
-                <button key={l} role="tab" aria-selected={l === lens} className="tf-btn tf-btn-spy" onClick={() => pickLens(l)} style={chip(l === lens)}>{l}</button>
-            ))}
+            {LENSES.map((l) => {
+                const t = tiles[l], hot = attn?.lens === l;
+                return (
+                    <button key={l} role="tab" aria-selected={l === lens} aria-label={l} className="tf-btn tf-btn-spy" onClick={() => pickLens(l)}
+                        title={hot ? `${attn.low ? 'Lowest' : 'Highest'} since ${sinceText}: worth a look` : undefined}
+                        style={{ ...chip(l === lens), display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px', padding: '5px 7px', flex: '1 0 auto', maxWidth: '160px' }}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            {l}{hot && <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: hotColor }} />}
+                        </span>
+                        {t && (
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '6px', width: '100%' }}>
+                                <span style={{ color: t.color }}>{t.value}</span><Spark pts={t.pts} color={t.color} />
+                            </span>
+                        )}
+                    </button>
+                );
+            })}
+        </div>
+    );
+    // why it opened here: the Fwd P/E view says it with its own chip
+    const why = attn && lens === attn.lens && attn.lens !== 'Fwd P/E' && (
+        <div style={{ marginBottom: '6px' }}>
+            <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '4px 10px', borderRadius: '6px', whiteSpace: 'nowrap', background: 'rgba(251,191,36,0.12)', color: AMBER }}>
+                📉 {attn.lens === 'Price' ? 'SPY' : 'Earnings'} lowest since {sinceText}
+            </span>
         </div>
     );
     // The index backup path has no SPY dollars to anchor forward P/E on: price only.
     if (lensRow && lens !== 'Price' && !isIndex) {
-        return <div>{lensRow}<ValuationLens lens={lens} spy={full} tf={timeframe} onTf={pick} peNow={lenses.peNow} chip={chip} /></div>;
+        return <div>{lensRow}{why}<ValuationLens lens={lens} spy={full} tf={timeframe} onTf={pick} peNow={lenses.peNow} chip={chip} /></div>;
     }
 
     return (
         <div>
             {lensRow}
+            {why}
             {/* Timeframe selector */}
             {/* The chips stay one row (sideways scroll if ever too narrow); the return label drops below on a phone. */}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 8px', marginBottom: '8px', justifyContent: 'space-between', alignItems: 'center' }}>
