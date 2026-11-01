@@ -314,3 +314,19 @@ describe('frozen sources are rejected', () => {
         expect(none.message).toMatch(/frozen/);
     });
 });
+
+describe('CBOE tag is labelled the prior close while the session is open (audit B12)', () => {
+    const closes = Array(49).fill(20).concat([15]);
+    const csvEndingFri = () => cboeCsv(closes, '2026-09-11');   // 50 daily rows → newest 2026-10-30
+    test('Monday 10 AM ET: prior close, not a same-day close', async () => {
+        const r = await resolveVixFearGreedTag({ fetchText: async () => csvEndingFri(), now: new Date('2026-11-02T15:00:00Z') });
+        expect(r).toMatchObject({ tier: 'cboe', closeDate: '2026-10-30', inSession: true });
+        expect(r.message).toMatch(/prior close 2026-10-30/);
+        expect(r.message).not.toMatch(/same-day/);
+    });
+    test('Friday after the close: that session\'s close', async () => {
+        const r = await resolveVixFearGreedTag({ fetchText: async () => csvEndingFri(), now: new Date('2026-10-30T21:30:00Z') });
+        expect(r).toMatchObject({ tier: 'cboe', inSession: false });
+        expect(r.message).toMatch(/\(close 2026-10-30\)/);
+    });
+});

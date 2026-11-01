@@ -57,7 +57,8 @@ export async function GET(request) {
         ]);
 
         if (tag.tag && tag.tag !== 'N/A') {
-            fields.vixFearGreed = { value: tag.tag, source: tag.tier === 'cboe' ? 'CBOE-computed' : 'FRED-computed (lags a trading day)', tier: tag.tier, live: tag.tier === 'cboe', stale: !!tag.stale };
+            // In session the CBOE tag is the prior close: labelled so, and not live (audit B12).
+            fields.vixFearGreed = { value: tag.tag, source: tag.tier === 'cboe' ? (tag.inSession ? `CBOE-computed (prior close ${tag.closeDate})` : 'CBOE-computed') : 'FRED-computed (lags a trading day)', tier: tag.tier, live: tag.tier === 'cboe' && !tag.inSession, stale: !!tag.stale };
         } else {
             fields.vixFearGreed = null;
         }

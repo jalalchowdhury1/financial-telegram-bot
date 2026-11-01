@@ -24,6 +24,7 @@
 import { gate } from './faults';
 import { parseCboeCsv } from './vol';
 import { isStale } from './freshness';
+import { dailyCloseStatus } from './marketClock';
 
 const VIXCLS_LIMIT = 280;
 // A source whose NEWEST close is older than this is frozen, not quiet: a weekend plus a
@@ -128,13 +129,18 @@ export async function computeVixFearGreedTag(apiKey, { fetchJson, limit = VIXCLS
  * `fetchJson` above.
  */
 export async function computeVixFearGreedTagFromCboe({ fetchText, now = new Date() } = {}) {
+    return (await cboeTag({ fetchText, now })).tag;
+}
+
+// The tag plus the session it closes on (the CSV holds COMPLETED sessions only).
+async function cboeTag({ fetchText, now }) {
     const text = await fetchText(CBOE_VIX_URL, { revalidate: 0 });
     const series = parseCboeCsv(text);
     const tag = fearGreedTag(series.map((o) => o.value));
     if (!tag) throw new Error(`Insufficient CBOE VIX data (${series.length} valid closes, need >= 50)`);
     const newest = series[series.length - 1].date;
     if (isStale(newest, CBOE_FRESH_DAYS, now)) throw new Error(`CBOE VIX history frozen (newest ${newest})`);
-    return tag;
+    return { tag, newest };
 }
 
 /**
@@ -155,13 +161,17 @@ export async function computeVixFearGreedTagFromCboe({ fetchText, now = new Date
  * `faults` (optional Set): `?_fail=vix_cboe` forces FRED, `?_fail=vix_cboe,vix_fred`
  * forces 'N/A' (or /api/sheets' last-good tiers).
  */
-export async function resolveVixFearGreedTag({ fredApiKey, fetchJson, fetchText, faults, limit } = {}) {
+export async function resolveVixFearGreedTag({ fredApiKey, fetchJson, fetchText, faults, limit, now = new Date() } = {}) {
     const trail = [];
 
-    // Tier 1: CBOE (same-day, keyless, authoritative).
+    // Tier 1: CBOE (keyless, authoritative). Its newest row is a COMPLETED session, so while
+    // today's session is open the tag is the PRIOR close and says so (`inSession`,
+    // `closeDate`); it was labelled "same-day close" and live all day (audit B12).
     try {
-        const tag = await gate('vix_cboe', faults, () => computeVixFearGreedTagFromCboe({ fetchText }));
-        return { tag, tier: 'cboe', stale: false, message: 'VIX fear/greed: computed from CBOE VIX daily history (same-day close)' };
+        const { tag, newest } = await gate('vix_cboe', faults, () => cboeTag({ fetchText, now }));
+        const { inSession } = dailyCloseStatus(newest, now.getTime());
+        const label = inSession ? `prior close ${newest}; today's session still open` : `close ${newest}`;
+        return { tag, tier: 'cboe', stale: false, closeDate: newest, inSession, message: `VIX fear/greed: computed from CBOE VIX daily history (${label})` };
     } catch (e) {
         trail.push(`CBOE failed (${e.message})`);
     }
