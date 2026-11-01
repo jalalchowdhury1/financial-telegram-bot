@@ -896,7 +896,10 @@ function Signals({ sheets, spy, loading, old, onState }) {
     // older one), and VIX is neither last visit's saved copy nor a value the server marked stale.
     const recent = new Date(Date.now() - 5 * 864e5).toLocaleDateString('en-CA');
     const aaiiRead = Number.isFinite(aaii) && aaiiDays.at(-1)?.date >= recent;
-    const bullUntil = aaiiRead && aaii >= AAII_LINE ? plusMonths(today, AAII_MONTHS) : fired && fired.until >= today ? fired.until : null; // a stuck 20+ is not bullish forever
+    // A 20+ speaks for 6 months from its survey day (AAII.as_of, as v1), so a stuck one runs out; undated, only a reading from the last 5 days.
+    const aaiiFrom = /^\d{4}-\d{2}-\d{2}$/.test(sheets?.AAII?.as_of || '') ? sheets.AAII.as_of : aaiiRead ? today : null;
+    const nowUntil = Number.isFinite(aaii) && aaii >= AAII_LINE && aaiiFrom ? plusMonths(aaiiFrom, AAII_MONTHS) : null;
+    const bullUntil = nowUntil && nowUntil >= today ? nowUntil : fired && fired.until >= today ? fired.until : null;
     const fresh = (fields) => !old && !staleNote(sheets, fields);
     const vixRead = Number.isFinite(vixCur) && vix3m > 0 && fresh(['vixCurrent', 'vixThreeMonth']);
     const dd = nsb?.drawdownPct;

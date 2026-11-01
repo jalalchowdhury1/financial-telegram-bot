@@ -6,6 +6,7 @@
 import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import DashboardV2 from '../page';
 import { writeSnap } from '../../../lib/snapshot';
+import { plusMonthsIso } from '../../../lib/signalStudy';
 
 const spyPayload = {
     current: 612.34,
@@ -132,7 +133,7 @@ it('the AAII tile opens what SPY did after every 20+ reading', async () => {
     const ok = (body) => Promise.resolve({ ok: true, status: 200, json: async () => body });
     mockRoutes({ '/api/sheets': ok({ AAIIDiff: '3.60%' }), '/history/aaiiDiff.json': ok(aaii), '/history/spy-daily.json': ok(spy) });
     render(<DashboardV2 />);
-    await waitFor(() => expect(screen.getByText('AAII', { selector: '.v2-signal-label span' })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('AAII', { selector: '.v2-signal-label span' }).closest('[role="button"]')).not.toBeNull()); // tappable once the sheet lands
     const tile = screen.getByText('AAII', { selector: '.v2-signal-label span' }).closest('[role="button"]');
     fireEvent.click(tile);
     const dialog = await screen.findByRole('dialog', { name: 'AAII fear at 20+' });
@@ -341,6 +342,21 @@ describe('the top line', () => {
         await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
         expect(document.querySelector('.v2-today').textContent).not.toMatch(/AAII bullish/);
         expect(document.querySelector('[data-jump="Indicators"]').textContent).not.toMatch(/Bullish to/);
+    });
+
+    it('a dated AAII 20+ is bullish to 6 months after its survey, even with the sheet history down', async () => {
+        mockRoutes({ '/api/sheets': ok({ ...calm, AAIIDiff: '25.00%', AAII: { as_of: daysAgo(3) } }), ...files });
+        render(<DashboardV2 />);
+        const until = new Date(`${plusMonthsIso(daysAgo(3), 6)}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+        await waitFor(() => expect(document.querySelector('.v2-today button')?.textContent).toBe(`AAII bullish to ${until}`));
+    });
+
+    it('a 20+ survey from 7 months ago is not bullish any more', async () => {
+        mockRoutes({ '/api/sheets': ok({ ...calm, AAIIDiff: '25.00%', AAII: { as_of: daysAgo(214) } }), '/api/history': sheet(), ...files });
+        render(<DashboardV2 />);
+        await waitFor(() => expect(screen.getByText('19.42')).toBeInTheDocument());
+        await combosSettled();
+        expect(document.querySelector('.v2-today').textContent).not.toMatch(/AAII bullish/);
     });
 
     it('VIX level with VIX 3M fires, as in the study and the ping (ratio ≥ 1)', async () => {
