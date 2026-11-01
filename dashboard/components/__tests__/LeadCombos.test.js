@@ -74,6 +74,15 @@ it('a pair with one leg frozen 40 days says N/A, though the other leg runs to to
     expect(onState.mock.calls.at(-1)[0][1]).toBeNull();
 });
 
+it('a pair past both lines for 8+ months is still firing: its fire runs 6 months from today (audit C2)', async () => {
+    const trend = (base, r) => ({ ...FILES.claims, v: FILES.claims.v.map((_, i) => base * Math.exp((r * i) / 91)) });
+    serve({ ...FILES, claims: trend(100, -0.1), usdcad: trend(1.3, 0.05) }); // −9.5% and +5.1% in every 3 months, for 16 months
+    const onState = jest.fn();
+    render(<LeadCombos spy={null} onState={onState} />);
+    await waitFor(() => expect(row('Jobs fine + CAD slump').querySelector('.v2-cb-now').textContent).toMatch(/^Bullish to /));
+    expect(onState.mock.calls.at(-1)[0][1]).toMatchObject({ fire: expect.stringMatching(/^Jobs fine \+ CAD slump bullish to /) });
+});
+
 it('waits (…) while the sheet is on its way, instead of N/A on old files', async () => {
     serve(OLD);
     const { rerender } = render(<LeadCombos spy={null} waiting />);

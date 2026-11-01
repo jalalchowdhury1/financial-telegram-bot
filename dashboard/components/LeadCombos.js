@@ -56,7 +56,7 @@ export default function LeadCombos({ spy, waiting, onState }) {
             const end = pts[pts.length - 1];
             const now = end?.asOf >= recent ? end : null; // an older leg = the sheet stopped (or hasn't landed): no state, N/A
             const last = signalEpisodes(pts, 1).pop();
-            const until = last && plusMonthsIso(last.date, 6);
+            const until = now?.value >= 1 ? plusMonthsIso(today, 6) : last && plusMonthsIso(last.date, 6); // past both lines today: still firing, like AAII
             const { stats, base } = signalStudy(pts, s, 6, 1) || {};
             return { c, pts, now, until: until >= today ? until : null, stats, base };
         });
