@@ -1,4 +1,4 @@
-import { copperGoldRatio, priceAtAgo, ratioChange } from '../finance';
+import { copperGoldRatio, priceAtAgo, ratioChange, calculateRSI } from '../finance';
 
 describe('copperGoldRatio', () => {
     test('computes copper($/lb) / gold($/oz), scaled x1000', () => {
@@ -80,4 +80,10 @@ describe('ratioChange', () => {
         expect(ratioChange(null, 1.44)).toBeNull();
         expect(ratioChange(1.44, 0)).toBeNull();
     });
+});
+
+it('calculateRSI drops a 0 or NaN close instead of returning NaN (audit C11)', () => {
+    const bars = Array.from({ length: 40 }, (_, i) => ({ close: 100 + 10 * Math.sin(i / 3) }));
+    const bad = bars.map((b, i) => (i === 30 ? { close: 0 } : i === 35 ? { close: NaN } : b));
+    expect(calculateRSI(bad, 9)).toBe(calculateRSI(bars.filter((_, i) => i !== 30 && i !== 35), 9));
 });

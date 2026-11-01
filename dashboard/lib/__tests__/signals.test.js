@@ -76,6 +76,12 @@ describe('computeFrontRunner', () => {
         expect(r.asOf).toBe('2026-10-08');
         expect(typeof r.value).toBe('string');
     });
+    test('a NaN or 0 close is dropped, not read as an RSI (audit C11)', () => {
+        const h = Object.fromEntries(FR_INPUTS.map(([t]) => [t, wavy('2026-10-09')]));
+        const bad = { ...h, QQQ: h.QQQ.map((b, i) => (i === 597 ? { ...b, price: 0 } : b)), SPY: [...h.SPY.slice(0, -1), { ...h.SPY.at(-1), price: NaN }] };
+        const clean = { ...h, QQQ: h.QQQ.filter((_, i) => i !== 597), SPY: h.SPY.slice(0, -1) };
+        expect(computeFrontRunner(bad)).toEqual(computeFrontRunner(clean));
+    });
     test('throws when a ticker has too little history', () => {
         const h = Object.fromEntries(FR_INPUTS.map(([t]) => [t, wavy('2026-10-09')]));
         h.VIXY = h.VIXY.slice(-100); // RSI(50) needs 250 bars
@@ -108,6 +114,12 @@ describe('computeNotSoBoring (\'Trading Days\'!I2)', () => {
         const r = computeNotSoBoring([...lowRollsOff.slice(0, -1), { ...lowRollsOff.at(-1), open: 82 }]);
         expect(r.detail.bigMove).toBe('Negative Big Move');
         expect(r.value).toBe('NEG MOVE');
+    });
+    test('a NaN close is dropped, never read as a drawdown past 8.5% (audit C11)', () => {
+        const i = TMF.length - 3;
+        const r = computeNotSoBoring(TMF.map((b, k) => (k === i ? { ...b, price: NaN } : b)));
+        expect(r).toEqual(computeNotSoBoring(TMF.filter((_, k) => k !== i)));
+        expect(Number.isFinite(r.detail.drawdownPct)).toBe(true);
     });
     test('needs 60 bars', () => {
         expect(() => computeNotSoBoring(TMF.slice(-30))).toThrow(/too little/);

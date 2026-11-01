@@ -63,7 +63,7 @@ export function computeFrontRunner(histories) {
     const inputs = {};
     let asOf = null;
     const h = FR_INPUTS.map(([t, n]) => {
-        const bars = histories[t];
+        const bars = histories[t]?.filter((b) => b.price > 0); // a NaN or 0 close is a bad bar, not a price
         if (!bars || bars.length < n * 5) throw new Error(`FrontRunner: too little history for ${t} (${bars?.length || 0} bars)`);
         const v = r2(calculateRSI(bars, n));
         inputs[`${t}${n === 9 ? '' : `_${n}`}`] = v;
@@ -88,6 +88,7 @@ function nsbState(cur, prev, prevState) {
  * opposite starting states, it must land on the same answer or it throws (not converged).
  */
 export function computeNotSoBoring(bars) {
+    bars = bars?.filter((b) => b.price > 0); // a NaN close made the 10-day max NaN: 'ON > 8.5%' with no drawdown
     if (!bars || bars.length < 60) throw new Error(`NotSoBoring: too little TMF history (${bars?.length || 0} bars)`);
     const rows = [];
     for (let i = 9; i < bars.length; i++) {

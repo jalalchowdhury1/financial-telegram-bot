@@ -78,7 +78,7 @@ export function calculateRSI(prices, period = 9) {
     if (!prices || prices.length < period) return 50;
 
     // Extract close prices if objects
-    const values = typeof prices[0] === 'object' ? prices.map(p => p.close || p.price || p.value) : prices;
+    const values = (typeof prices[0] === 'object' ? prices.map(p => p.close ?? p.price ?? p.value) : prices).filter(v => v > 0); // a NaN or 0 close is a bad bar
 
     // Calculate price changes (deltas)
     const deltas = [];
@@ -118,7 +118,7 @@ export function calculateRSI(prices, period = 9) {
 export function calculateMA(prices, period) {
     if (!prices || prices.length < period) return null;
 
-    const values = typeof prices[0] === 'object' ? prices.map(p => p.close || p.price || p.value) : prices;
+    const values = (typeof prices[0] === 'object' ? prices.map(p => p.close ?? p.price ?? p.value) : prices).filter(v => v > 0); // a NaN or 0 close is a bad bar
     const slice = values.slice(-period);
     return slice.reduce((s, v) => s + v, 0) / period;
 }
