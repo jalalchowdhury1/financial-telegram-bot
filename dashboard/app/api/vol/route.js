@@ -220,6 +220,7 @@ export async function GET(request) {
             vixDay: vixDay(indexSeries.VIX, liveQuotes?.VIX),
             // v2's Volatility picture: the 252 VIX closes SPY's rank/percentile use, plus the one before (yesterday's).
             vixYear: (indexSeries.VIX || []).slice(-253).map((p) => p.value),
+            vixYearDates: (indexSeries.VIX || []).slice(-253).map((p) => p.date), // the card's dates (peak day, hover)
             _meta: {
                 source: indexSources.concat(etfSources).join(' · ') || 'none',
                 curveSource: curve.backup

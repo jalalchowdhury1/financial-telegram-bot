@@ -23,6 +23,7 @@ import Delta from '../../components/Delta';
 import SignalStudy from '../../components/SignalStudy';
 import LeadCombos from '../../components/LeadCombos';
 import { plusMonthsIso as plusMonths } from '../../lib/signalStudy';
+import { vixYearGeo, vixZone } from '../../lib/vixYear';
 import MarkChip from '../../components/MarkChip';
 import MarksSheet from '../../components/MarksSheet';
 import { MarkProvider, useMark, useChart, useSeries, collectLiveValues } from '../../components/MarkProvider';
@@ -645,57 +646,60 @@ function MoreButton({ open, onClick, className = 'v2-more' }) {
     );
 }
 
-/**
- * SPY implied vol's year as a path: the 252 VIX closes behind the hero's Rank and %ile, plus today's when live.
- * The band is the year's middle half (25th–75th %ile), so a line above it is a jumpy day for this year.
- */
-function vixYearGeo(year, t) {
-    const vals = (year || []).filter(Number.isFinite);
-    const pts = t.live ? [...vals.slice(-252), t.iv] : vals.slice(-252);
-    const n = pts.length, lo = Math.min(...pts), hi = Math.max(...pts);
-    if (n < 20 || !(hi > lo)) return null;
-    const sorted = [...pts].sort((a, b) => a - b);
-    const y = (v) => 4 + (1 - (v - lo) / (hi - lo)) * 92; // % from the top, with a little air at both ends
-    const line = pts.map((v, i) => `${i ? 'L' : 'M'}${((i / (n - 1)) * 100).toFixed(2)} ${y(v).toFixed(2)}`).join('');
-    return { pts, n, lo, hi, y, line, area: `${line}V100H0Z`, band: [y(sorted[Math.round(0.75 * (n - 1))]), y(sorted[Math.round(0.25 * (n - 1))])] };
-}
-
-/** Trading days back from the last point, said the short way. */
+/** Trading days back from the last point, said the short way (an undated saved copy). */
 const sessionsAgo = (d) => (!d ? 'now' : d < 5 ? `${d}d ago` : d < 63 ? `${Math.round(d / 5)} wk ago` : `${Math.round(d / 21)} mo ago`);
+const ZONE_INK = { good: 'var(--up)', flat: 'var(--ink-2)', caution: 'var(--warn)', bad: 'var(--down)' };
 
-function VixYear({ vol, waiting }) {
+/** VIX's year on its fear zones, the line colored by the zone it is in, with how much SPY really moved dotted beside it. */
+function VixYear({ vol, spy, waiting }) {
     const t = vol?.tickers?.find((x) => x.ticker === 'SPY' && Number.isFinite(x.iv) && Number.isFinite(x.ivPctile1y));
-    const geo = useMemo(() => (t ? vixYearGeo(vol.vixYear, t) : null), [vol, t]);
+    const geo = useMemo(() => (t ? vixYearGeo({ year: vol.vixYear, dates: vol.vixYearDates, t, spyHistory: spy?.chartHistory }) : null), [vol, t, spy]);
     const [at, setAt] = useState(null);
     if (!geo) return waiting ? <Skeleton count={3} /> : <div className="v2-fred-na">Unavailable · source busy, try again shortly</div>;
     const read = (e) => {
-        const r = e.currentTarget.getBoundingClientRect();
-        setAt(Math.round(Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)) * (geo.n - 1)));
+        const r = e.currentTarget.getBoundingClientRect(), f = (e.clientX - r.left) / r.width;
+        if (Number.isFinite(f)) setAt(Math.round(Math.min(1, Math.max(0, f)) * (geo.n - 1))); // a pointer without a position must not blank the card
     };
-    const now = geo.pts[geo.n - 1];
-    const x = (i) => `${(i / (geo.n - 1)) * 100}%`;
+    const last = geo.n - 1, now = geo.vix[last], zone = vixZone(now), realNow = geo.real?.[last];
+    const when = (i) => (geo.rows[i].d ? shortDate(geo.rows[i].d) : sessionsAgo(last - i));
+    const x = (i) => `${geo.x(i)}%`;
+    const first = geo.rows[0].d, mid = geo.rows[Math.round(last / 2)].d;
     return (
         <div className="v2-ivy">
-            <div className={`v2-ivy-plot tone-${ivTone(t.ivPctile1y)}`} onPointerMove={read} onPointerDown={read} onPointerLeave={() => setAt(null)}>
+            <div className="v2-ivy-key">
+                <span><i className={`v2-ivy-sw tone-${zone.tone}`} />VIX <b>{now.toFixed(1)}</b> <em className={`tone-${zone.tone}`}>{zone.name}</em></span>
+                {geo.real && <span><i className="v2-ivy-sw is-real" />SPY moved{Number.isFinite(realNow) && <b> {realNow.toFixed(1)}</b>}</span>}
+            </div>
+            <div className={`v2-ivy-plot tone-${zone.tone}`} role="img" aria-label={`VIX ${now.toFixed(1)}, ${zone.name}`} onPointerMove={read} onPointerDown={read} onPointerLeave={() => setAt(null)}>
                 <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-                    <rect className="v2-ivy-band" x="0" width="100" y={geo.band[0]} height={geo.band[1] - geo.band[0]} />
-                    <path className="v2-ivy-area" d={geo.area} />
-                    <path className="v2-ivy-line" d={geo.line} />
+                    <defs>
+                        <linearGradient id="v2-ivy-ink" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="100">
+                            {[...geo.zones].reverse().flatMap((z) => [z.top, z.bottom].map((o, k) => <stop key={`${z.name}${k}`} offset={o / 100} style={{ stopColor: ZONE_INK[z.tone] }} />))}
+                        </linearGradient>
+                    </defs>
+                    {geo.zones.map((z) => <rect key={z.name} className={`v2-ivy-zone is-${z.tone}`} x="0" width="100" y={z.top} height={z.bottom - z.top} />)}
+                    {geo.realLine && <path className="v2-ivy-real" d={geo.realLine} />}
+                    <path className="v2-ivy-line" d={geo.line} stroke="url(#v2-ivy-ink)" />
                 </svg>
-                {[geo.hi, geo.lo].map((v) => Math.abs(geo.y(v) - geo.y(now)) > 12 && (
-                    <span key={v} className="v2-ivy-tick" style={{ top: `${geo.y(v)}%` }}>{v.toFixed(0)}</span>
-                ))}
+                {geo.zones.map((z) => z.bottom - z.top >= 12 && <span key={z.name} className={`v2-ivy-zname tone-${z.tone}`} style={{ top: `${z.top}%` }}>{z.name}</span>)}
+                {[15, 20, 30].map((v) => v > geo.lo && v < geo.hi && <span key={v} className="v2-ivy-tick" style={{ top: `${geo.y(v)}%` }}>{v}</span>)}
+                {geo.peak < last - 5 && (
+                    <span className={`v2-ivy-flag${geo.x(geo.peak) > 70 ? ' is-left' : ''}`} style={{ left: x(geo.peak), top: `${geo.y(geo.vix[geo.peak])}%` }}>
+                        {geo.vix[geo.peak].toFixed(0)} · {when(geo.peak)}
+                    </span>
+                )}
                 <i className="v2-ivy-dot" style={{ top: `${geo.y(now)}%` }} />
-                <b className="v2-ivy-tick is-now" style={{ top: `${geo.y(now)}%` }}>{now.toFixed(1)}</b>
                 {at != null && (
                     <>
                         <i className="v2-ivy-v" style={{ left: x(at) }} />
-                        <i className="v2-ivy-at" style={{ left: x(at), top: `${geo.y(geo.pts[at])}%` }} />
-                        <span className="v2-ivy-read" style={{ '--x': x(at) }}>VIX {geo.pts[at].toFixed(1)} · {sessionsAgo(geo.n - 1 - at)}</span>
+                        <i className="v2-ivy-at" style={{ left: x(at), top: `${geo.y(geo.vix[at])}%` }} />
+                        <span className="v2-ivy-read" style={{ '--x': x(at) }}>
+                            {when(at)} · VIX {geo.vix[at].toFixed(1)}{Number.isFinite(geo.real?.[at]) ? ` · SPY moved ${geo.real[at].toFixed(1)}` : ''}
+                        </span>
                     </>
                 )}
             </div>
-            <div className="v2-ivy-axis" aria-hidden="true"><span>1Y ago</span><span>6M</span><span>Now</span></div>
+            <div className="v2-ivy-axis" aria-hidden="true"><span>{first ? monYear(first) : '1Y ago'}</span><span>{mid ? monShort(mid) : '6M'}</span><span>Now</span></div>
         </div>
     );
 }
@@ -713,6 +717,7 @@ function Slot({ jump, title, tip, span = 12, saved, more, children }) {
 }
 
 const monYear = (iso) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+const monShort = (iso) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
 
 /**
  * What stands out about today against the WHOLE history (not the chart's range): a badge, lit
@@ -1320,10 +1325,10 @@ export default function DashboardV2() {
                                     </ErrorBoundary>
                                 </div>
                             </Slot>
-                            <Slot jump="Volatility" title="Volatility" tip="VIX over the past year. Band = its usual middle half. More = the full table." span={5} more>
+                            <Slot jump="Volatility" title="Volatility" tip="VIX over the past year on its fear zones: under 15 calm, 20+ nervous, 30+ fear. Dotted = how much SPY really moved (1 month). More = the full table." span={5} more>
                                 <div className="card v2-ivcard" data-cached={saved('vol')}>
                                     <div className="card-header" />
-                                    <ErrorBoundary resetKey={refreshTick}><VixYear vol={vol} waiting={pending.vol} /></ErrorBoundary>
+                                    <ErrorBoundary resetKey={refreshTick}><VixYear vol={vol} spy={spy} waiting={pending.vol} /></ErrorBoundary>
                                     <div className="v2-ivcard-full">
                                         <ErrorBoundary resetKey={refreshTick}><VolMetricsTable data={vol} saved={saved('vol')} waiting={pending.vol} /></ErrorBoundary>
                                     </div>

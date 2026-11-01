@@ -359,6 +359,13 @@ behave differently, it gets a v2-only prop (`race` on FactorRow, `asCards` on `p
 - Tests: `app/v2/__tests__/page.test.js` (`the top line`), `components/__tests__/LeadCombos.test.js`,
   `components/__tests__/RiskCards.test.js`, `lib/__tests__/pulseVerdicts.test.js` (`asCards`).
 
+- **Volatility card (`VixYear` + `lib/vixYear.js`, 1 Nov 2026, his "be more creative with the vol chart"):** VIX's year on
+  its fear zones (under 15 calm, 15–20 normal, 20–30 nervous, 30+ fear; the scale always spans 15–20), the line colored by
+  the zone it is in (SVG gradient with hard stops), the peak flagged with its day, and how much SPY really moved dotted
+  beside it (1-month realized vol from `/api/spy` `chartHistory`, the table's RV21 formula). Days come from `/api/vol`
+  `vixYearDates`; an older saved copy has none → VIX alone, "1Y ago / 6M / Now". CBOE's VIX file also has NYSE holidays:
+  that day keeps SPY's last move (a bar over 4 days older is not that day's). Tests: `lib/__tests__/vixYear.test.js`.
+
 ### ⚡ Loading speed + robustness (`lib/cdn.js`, `lib/loadJson.js`, `app/page.js`) — 2026-09-26
 Before: every route ran cold on every visit (all `no-store`), and the page waited on ONE
 `Promise.all` of 8 feeds, so nothing showed until the slowest (`market-extra`, ~5 s cold)
@@ -875,6 +882,33 @@ Rule: every number has ≥2 independent live sources, then saved copies, then an
   when the Lambda's yfinance, Polygon AND Nasdaq all fail).
 - **Proof:** live fault matrix 2026-10-09 (each route: one tier off, all live off, + /tmp,
   + KV) → every row either a real number with the right label, or "Unavailable".
+
+### 🧱 Robustness audit — 1 Nov 2026 (his "make it more robust: all stats, all calculations, everything")
+Each rule has a tripwire test named in its commit (`audit A1…D11`).
+- **SPY** (`/api/spy` `lambdaDoubt`): a Lambda answer in S&P index points (FRED rows) or with price / 200-day / chart on
+  different scales is never served; a Sheet answer, or a newest bar older than `latestSessionDate`, goes behind the
+  bar-computed tiers. The Lambda never puts a Finnhub SPY spot on FRED rows; Polygon `limit=50000` (1000 + asc kept the
+  OLDEST bars). A spot joins bars only when they reach the session before it. `/api/spy-daily-move` needs a trailing `%`.
+- **market-extra:** per instrument the newest-dated price wins (Lambda `_resolve`, route `withQuote`); FX/gold weekend
+  dates count as Friday, BTC trades 24/7; gold's live quote is gold-api spot, never CNBC `@GC.1`. The Lambda's DXY gives
+  way to CNBC's real `.DXY`; its FRED oil / 10Y / 2Y / mortgage get `staleIfOld` (`FRED_STALE_DAYS`). `cnbcHistory`
+  keeps one bar per date. `/api/breadth`: a pair over one session behind is labelled stale, never saved as last-good.
+- **`/api/fred`:** merge base /tmp → KV → Sheet (none → the live shape, cards unavailable); the series loop is capped at
+  15 s so the Horsemen repair keeps its time; a failed series' cards come from last-good stamped `stale:true`; claims /
+  Sahm are recomputed after a BLS/DOL repair; `findByMonthOffset` ±35 days or none; `housing6moAvg` undefined under 6
+  points; a multpl P/E page over 5 days old is demoted; a cached page that does not parse gets one uncached refetch.
+- **Dateless sources** (sheet cell, scraped page) are cross-checked against a dated one (sheet VIX vs the CBOE close:
+  15% market closed, 25% in session) or their own page date before they count as live. In session the VIX tag says
+  "prior close <date>" and is `live:false`. Sheet LKG `staleDays` = real age; over 30 days → none. A last-good copy is
+  never re-saved to /tmp (that stamps savedAt = now on old data).
+- **Inputs that are proxies or `stale:true`** count as missing in Jev pills; a missing input is "unknown" in the
+  assessment, never a default reading.
+- **Calculations:** a combo's asOf = its oldest leg's date; v2 AAII 20+ is bullish to 6 months after its survey
+  (`AAII.as_of`, as v1), so it fires with `/api/history` down and a stuck one runs out.
+- **Cards:** a failed feed says unavailable (v1 econ lines, Markets "tap ↻"), never an endless shimmer; "Updated" is
+  stamped only when a core feed (SPY, sheets, F&G, FRED) landed live.
+- **Freshness rows:** fred, sheets and fear-greed grade a live answer flagged `hasErrors` / `stale` as unserved; vol and
+  breadth grade by their oldest row date; polymarket by its `timestamp`, 6 h cap (no item when Unavailable).
 
 ### 🧮 Computed signals: NotSoBoring + FrontRunner (`lib/signals.js`) — 2026-10-10
 
