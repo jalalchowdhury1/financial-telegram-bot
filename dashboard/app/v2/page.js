@@ -571,9 +571,9 @@ function Taka({ extra, loading }) {
 }
 
 /** Daily markets ranked by their last move against their own normal day (σ, as What moved); slow prints and once-a-day FX after, quiet. */
-function Markets({ extra, loading }) {
+function Markets({ extra, loading, onRetry }) {
     if (loading) return <div className="card"><Skeleton count={7} /></div>;
-    if (!extra || extra.error) return null;
+    if (!extra || extra.error) return <div className="card"><Unavailable what="Markets" onRetry={onRetry} /></div>;
     const rows = MARKETS.map((r) => {
         const d = r.pick(extra);
         if (!d) return null;
@@ -1376,7 +1376,7 @@ export default function DashboardV2() {
                                 <ErrorBoundary resetKey={refreshTick}><Taka extra={extra} loading={pending.extra && !extra} /></ErrorBoundary>
                             </Slot>
                             <Slot jump="Markets" title="Global markets" span={12} saved={saved('extra')} more>
-                                <ErrorBoundary resetKey={refreshTick}><Markets extra={extra} loading={pending.extra && !extra} /></ErrorBoundary>
+                                <ErrorBoundary resetKey={refreshTick}><Markets extra={extra} loading={pending.extra && !extra} onRetry={refreshNow} /></ErrorBoundary>
                             </Slot>
                         </div>
                     </Section>

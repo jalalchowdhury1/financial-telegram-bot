@@ -485,3 +485,12 @@ describe.each([
         }
     });
 });
+
+it('a market-extra feed that fails outright leaves a tap-to-retry line where Global markets was, not a vanished section (audit D6)', async () => {
+    mockRoutes({ '/api/market-extra': Promise.reject(new TypeError('Failed to fetch')) });
+    jest.useFakeTimers();
+    render(<Dashboard />);
+    await act(async () => { await jest.advanceTimersByTimeAsync(4000); });
+    jest.useRealTimers();
+    expect(document.querySelector('[data-jump="Markets"] .card-unavailable').textContent).toBe('Markets unavailable · tap ↻');
+});

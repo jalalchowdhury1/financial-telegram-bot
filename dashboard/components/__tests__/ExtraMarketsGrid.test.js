@@ -66,7 +66,7 @@ describe('Global Markets: each change says which window it covers', () => {
 
     test('missing payloads render nothing harmful', () => {
         const { container: a } = render(<ExtraMarketsGrid data={null} loading={false} />);
-        expect(a.textContent).toBe('');
+        expect(a.textContent).toBe('Markets unavailable · tap ↻'); // never a vanished section (audit D6)
         const { container: b } = render(<ExtraMarketsGrid data={{}} loading={false} />);
         expect(b.textContent).not.toMatch(/NaN|undefined|Infinity|0\.00%/);
         const { container: c } = render(<ExtraMarketsGrid data={{ rates: { tnx: { current: 5.24 } }, fx: { dxy: {} } }} loading={false} />);

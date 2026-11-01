@@ -118,13 +118,17 @@ function Column({ title, items }) {
     );
 }
 
-export default function ExtraMarketsGrid({ data, loading }) {
+export default function ExtraMarketsGrid({ data, loading, onRetry }) {
     if (loading) return (
         <div style={{ gridColumn: '1 / -1' }}>
             <div className="card"><Skeleton count={7} /></div>
         </div>
     );
-    if (!data || data.error) return null;
+    if (!data || data.error) return (
+        <div style={{ gridColumn: '1 / -1' }}>
+            <div className="card"><button type="button" className="card-unavailable" onClick={onRetry}>Markets unavailable · tap ↻</button></div>
+        </div>
+    );
 
     const { fx, commodities, rates, realEstate } = data;
 

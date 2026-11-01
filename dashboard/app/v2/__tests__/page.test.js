@@ -408,3 +408,12 @@ it('USD/BDT never shows a stale last-good rate as today\'s: it wears the 🕐 ta
     expect(card.textContent).not.toMatch(/All-time high/);
     expect(card.textContent).toMatch(/🕐 Oct 10/);
 });
+
+it('a market-extra feed that fails outright leaves a tap-to-retry line in Global markets, not an empty card (audit D6)', async () => {
+    mockRoutes({ '/api/market-extra': Promise.reject(new TypeError('Failed to fetch')) });
+    jest.useFakeTimers();
+    render(<DashboardV2 />);
+    await act(async () => { await jest.advanceTimersByTimeAsync(4000); });
+    jest.useRealTimers();
+    expect(document.querySelector('[data-jump="Markets"] .card-unavailable').textContent).toBe('Markets unavailable · tap ↻');
+});

@@ -726,7 +726,7 @@ export default function Dashboard() {
                 <div className="saved-wrap" data-jump="Bull checklist" data-cached={saved('fred')} style={{ display: 'contents', ...savedVar('fred') }}><ErrorBoundary resetKey={refreshTick}><BullChecklist fred={fred} loading={pending.fred && !fred} onRetry={refreshNow} /></ErrorBoundary></div>
 
                 {/* EXTRA MARKETS GRID */}
-                <div className="saved-wrap" data-jump="Markets" data-cached={saved('extra')} style={{ display: 'contents', ...savedVar('extra') }}><ErrorBoundary resetKey={refreshTick}><ExtraMarketsGrid data={extraMarkets} loading={pending.extra && !extraMarkets} /></ErrorBoundary></div>
+                <div className="saved-wrap" data-jump="Markets" data-cached={saved('extra')} style={{ display: 'contents', ...savedVar('extra') }}><ErrorBoundary resetKey={refreshTick}><ExtraMarketsGrid data={extraMarkets} loading={pending.extra && !extraMarkets} onRetry={refreshNow} /></ErrorBoundary></div>
 
                 {/* POLYMARKET TABLE - Integrated in grid naturally */}
                 <div style={{ gridColumn: '1 / -1' }} data-jump="Polymarket">
