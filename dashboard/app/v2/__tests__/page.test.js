@@ -394,3 +394,17 @@ it.each([[false, 1], [true, 0]])('Global markets: a row with stale=%s wears %i n
     await waitFor(() => expect(screen.getByLabelText('Refresh all data')).not.toBeDisabled());
     expect(document.querySelectorAll('[data-jump="Markets"] [data-mark]')).toHaveLength(n);
 });
+
+it('USD/BDT never shows a stale last-good rate as today\'s: it wears the 🕐 tag instead (audit D4)', async () => {
+    const ok = (body) => Promise.resolve({ ok: true, status: 200, json: async () => body });
+    const baked = { from: '2016-10-30', t: [0, 1820, 3400, 3653], v: [80, 100, 120, 110] };
+    const extra = { fx: { usdbdt: { current: 130, stale: true, savedAt: '2026-10-10T12:00:00Z' } } };
+    mockRoutes({ '/v2/usdbdt.json': ok(baked), '/api/market-extra': ok(extra) });
+    render(<DashboardV2 />);
+    await waitFor(() => expect(document.querySelector('.v2-taka-now')).not.toBeNull());
+    await waitFor(() => expect(screen.getByLabelText('Refresh all data')).not.toBeDisabled());
+    const card = document.querySelector('[data-jump="USD/BDT"]');
+    expect(card.querySelector('.v2-taka-now').textContent).toBe('110.00');
+    expect(card.textContent).not.toMatch(/All-time high/);
+    expect(card.textContent).toMatch(/🕐 Oct 10/);
+});

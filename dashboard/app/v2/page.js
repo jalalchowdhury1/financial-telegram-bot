@@ -14,6 +14,7 @@ import JevPillModal from '../../components/JevPillModal';
 import { pillWhy } from '../../lib/jevWhy';
 import { FR_OVER, FR_UNDER } from '../../lib/frTriggers';
 import { valuationRow } from '../../components/EconomicIndicatorGrid';
+import { staleLabel } from '../../components/ExtraMarketsGrid';
 import PolymarketTable from '../../components/PolymarketTable';
 import VolMetricsTable from '../../components/VolMetricsTable';
 import { RubberBandCard, RecessionCard } from '../../components/RiskCards';
@@ -475,7 +476,8 @@ const longDate = (iso) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-US
  * history sheet's daily record (lib/longHistory join), then today's live rate. Up = each dollar buys more taka.
  */
 function Taka({ extra, loading }) {
-    const live = extra?.fx?.usdbdt?.current;
+    const fx = extra?.fx?.usdbdt;
+    const live = fx?.current;
     const sheet = useChart('usdbdt', live);
     const [baked, setBaked] = useState(null);
     const [range, setRange] = useState('1Y');
@@ -486,13 +488,13 @@ function Taka({ extra, loading }) {
     }, []);
     const all = useMemo(() => {
         const pts = sheet?.points?.length ? [...joinLong(sheet.points, baked, null)] : [...(baked || [])];
-        if (Number.isFinite(live) && pts.length) {
+        if (Number.isFinite(live) && !fx.stale && pts.length) { // a last-good copy is not today's rate
             const today = new Date().toLocaleDateString('en-CA'); // the local calendar day, as the sheet dates it
             const last = pts[pts.length - 1];
             if (last.date >= today) pts[pts.length - 1] = { ...last, value: live }; else pts.push({ date: today, value: live });
         }
         return pts;
-    }, [sheet, baked, live]);
+    }, [sheet, baked, live, fx?.stale]);
     if (all.length < 2) return loading || !baked ? <Skeleton count={3} /> : <div className="v2-fred-na">Unavailable · source busy, try again shortly</div>;
 
     const last = all[all.length - 1], cur = last.value;
@@ -538,6 +540,7 @@ function Taka({ extra, loading }) {
             <div className="v2-taka-top">
                 <span className="v2-taka-now">{cur.toFixed(2)}</span>
                 <span className={`v2-taka-chg tone-${up ? 'good' : 'bad'}`}>{up ? '▲' : '▼'} {cur / start >= 2 ? `${(cur / start).toFixed(1)}×` : `${signed((cur / start - 1) * 100, 1)}%`} <small>{id === 'All' ? `since ${view[0].date.slice(0, 4)}` : id}</small></span>
+                {fx?.stale && <span className="v2-flag" title="Live sources failed: last good value">🕐 {staleLabel(fx.savedAt)}</span>}
                 {cagr != null && <span className="v2-taka-cagr" title={`The steady yearly rise from ${start.toFixed(2)} to ${cur.toFixed(2)} over ${(T / 31557600000).toFixed(1)} years (dashed line)`}>{signed(cagr * 100, 1)}%/yr</span>}
                 {cur.toFixed(2) === ath.value.toFixed(2) || cur > ath.value
                     ? <span className="v2-taka-ath">All-time high</span>
