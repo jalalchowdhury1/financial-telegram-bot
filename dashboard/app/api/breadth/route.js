@@ -17,6 +17,7 @@ import { polygonDaily, cnbcHistory } from '../../../lib/sources';
 import { serve } from '../../../lib/store';
 import { faultsFrom, gate } from '../../../lib/faults';
 import { PAIRS, ratioSeries, pairStats, legStats } from '../../../lib/breadth';
+import { latestCompletedSessionDate, etWallToMs } from '../../../lib/marketClock';
 
 export const fetchCache = 'default-cache';
 
@@ -97,18 +98,32 @@ export async function GET(request) {
 
         const expectedPairCount = Object.keys(PAIRS).length;
 
+        // Staleness gate: a pair more than one session behind the newest close (both sources
+        // stuck) still shows, but labelled: pair `stale`, and `_meta.stale` + `asOf` (its
+        // oldest day, the shape /api/freshness grades), never saved as last-good.
+        const floor = latestCompletedSessionDate(etWallToMs(latestCompletedSessionDate(), 0));
+        let staleAsOf = null;
+        for (const [key, stats] of Object.entries(pairs)) {
+            if (stats.asOf >= floor) continue;
+            stats.stale = true;
+            messages.push(`${key}: stale (last day ${stats.asOf})`);
+            if (!staleAsOf || stats.asOf < staleAsOf) staleAsOf = stats.asOf;
+        }
+
         return {
             updated_at,
             pairs,
             _meta: {
                 source: tickerSources.length ? tickerSources.join(' · ') : 'none',
-                hasErrors: Object.keys(pairs).length < expectedPairCount,
+                hasErrors: Object.keys(pairs).length < expectedPairCount || !!staleAsOf,
+                ...(staleAsOf ? { stale: true, asOf: staleAsOf } : {}),
                 messages,
             },
         };
     }, {
         faults,
         isGood: (p) => !!p && typeof p === 'object' && Object.keys(p.pairs || {}).length > 0,
+        shouldStore: (p) => !!p && Object.keys(p.pairs || {}).length > 0 && !p._meta?.stale,
         fallback: { pairs: {}, _meta: { source: 'none', hasErrors: true, messages: ['no breadth source'] } },
     });
 }
