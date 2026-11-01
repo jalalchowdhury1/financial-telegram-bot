@@ -1300,7 +1300,7 @@ export default function DashboardV2() {
                                 </Slot>
                             </ErrorBoundary>
                             <ErrorBoundary resetKey={refreshTick}>
-                                {jev && <Slot title="Regime" span={12} saved={saved('jev')}><RegimeRow data={jev} /></Slot>}
+                                {Object.keys(jev?.pills || {}).length > 0 && <Slot title="Regime" span={12} saved={saved('jev')}><RegimeRow data={jev} /></Slot>}
                             </ErrorBoundary>
                         </div>
                     </Section>

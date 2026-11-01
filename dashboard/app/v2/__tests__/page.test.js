@@ -417,3 +417,11 @@ it('a market-extra feed that fails outright leaves a tap-to-retry line in Global
     jest.useRealTimers();
     expect(document.querySelector('[data-jump="Markets"] .card-unavailable').textContent).toBe('Markets unavailable · tap ↻');
 });
+
+it.each([[{ enabled: true, pills: null }], [{ enabled: false }]])('no empty Regime card when jev-pills has no pills: %j (audit D9)', async (jev) => {
+    mockRoutes({ '/api/jev-pills': Promise.resolve({ ok: true, status: 200, json: async () => jev }), '/api/market-extra': Promise.resolve({ ok: true, status: 200, json: async () => ({}) }) });
+    render(<DashboardV2 />);
+    await waitFor(() => expect(global.fetch.mock.calls.some(([u]) => String(u).startsWith('/api/jev-pills'))).toBe(true));
+    await waitFor(() => expect(screen.getByLabelText('Refresh all data')).not.toBeDisabled());
+    expect(document.querySelector('.v2-rg-row')).toBeNull();
+});
