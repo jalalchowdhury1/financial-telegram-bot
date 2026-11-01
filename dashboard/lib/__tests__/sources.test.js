@@ -179,6 +179,14 @@ describe('cnbcHistory', () => {
         expect(out[0]).toEqual({ date: '2026-06-01', price: 6.10 }); // sorted oldest-first
         expect(out[1]).toEqual({ date: '2026-06-05', price: 6.28 });
     });
+    test('one bar per date, the latest tradeTime wins (CNBC 1Y carries several bars a day; audit A9)', async () => {
+        mockFetch({ barData: { priceBars: [
+            { tradeTime: '20261030160000', close: '83.43' },
+            { tradeTime: '20261030000000', close: '83.10' },
+            { tradeTime: '20261029000000', close: '82.90' },
+        ] } });
+        expect(await cnbcHistory('XLP')).toEqual([{ date: '2026-10-29', price: 82.9 }, { date: '2026-10-30', price: 83.43 }]);
+    });
     test('throws on empty bars (after trying every daily range)', async () => {
         mockFetch({ barData: { priceBars: [] } });
         await expect(cnbcHistory('@HG.1')).rejects.toThrow(/empty history.*3M\/1Y\/6M/);

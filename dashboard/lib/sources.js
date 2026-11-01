@@ -209,14 +209,18 @@ export async function cnbcHistory(symbol, { range = '3M', revalidate = 1800, tim
     for (const [i, r] of ranges.entries()) {
         const url = `https://ts-api.cnbc.com/harmony/app/charts/${r}.json?symbol=${encodeURIComponent(symbol)}${i ? `&_=${Date.now()}${i}` : ''}`;
         const data = await withRetry(() => fetchJson(url, { revalidate: i ? 0 : revalidate, timeout }), { tries });
-        const history = [];
+        // CNBC's daily feeds can carry several bars for one date: keep one, the latest tradeTime.
+        const byDate = new Map();
         for (const b of data?.barData?.priceBars || []) {
             const price = parseFloat(b.close);
             const tt = String(b.tradeTime || '');
             if (!Number.isFinite(price) || tt.length < 8) continue;
+            const date = `${tt.slice(0, 4)}-${tt.slice(4, 6)}-${tt.slice(6, 8)}`;
+            if (byDate.has(date) && byDate.get(date).tt > tt) continue;
             const open = parseFloat(b.open);
-            history.push({ date: `${tt.slice(0, 4)}-${tt.slice(4, 6)}-${tt.slice(6, 8)}`, price, ...(Number.isFinite(open) && open > 0 ? { open } : {}) });
+            byDate.set(date, { tt, bar: { date, price, ...(Number.isFinite(open) && open > 0 ? { open } : {}) } });
         }
+        const history = [...byDate.values()].map((x) => x.bar);
         if (history.length) {
             history.sort((a, b) => (a.date < b.date ? -1 : 1)); // ISO 'YYYY-MM-DD' sorts chronologically as strings → oldest -> newest
             return history;
