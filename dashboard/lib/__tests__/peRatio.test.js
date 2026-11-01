@@ -64,3 +64,31 @@ describe('resolvePeRatio', () => {
         expect(r.peSource).toBe('computed');
     });
 });
+
+describe('multpl page date (audit B6)', () => {
+    // multpl's real layout (1 Nov 2026): the timestamp has no year.
+    const dated = (stamp) => `<meta name="description" content="Current S&P 500 PE Ratio is 25.86, a change of -0.48 from previous market close." />\n<div id="current"><b>Current<span class="currentTitle">\nS&P 500 PE Ratio</span>:</b>\n25.86\n<div id="timestamp">\n\n\n${stamp}\n\n</div></div>`;
+    const now = new Date('2026-11-01T15:00:00Z');
+
+    test('the page\'s own date is the as-of (a Sunday load says Friday, not Sunday)', async () => {
+        const r = await resolvePeRatio(fetchers({ multplHtml: async () => dated('4:00 PM EDT, Fri Oct 30') }), new Set(), { now });
+        expect(r).toMatchObject({ peRatio: 25.86, peSource: 'multpl', peAsOf: '2026-10-30' });
+        expect(r.stale).toBeFalsy();
+    });
+
+    test('a page dated 10 days back is demoted to the computed tier', async () => {
+        const r = await resolvePeRatio(fetchers({ multplHtml: async () => dated('4:00 PM EDT, Thu Oct 22') }), new Set(['pe_yahoo']), { now });
+        expect(r.peSource).toBe('computed');
+        expect(r.messages.join(' ')).toMatch(/multpl stale \(2026-10-22\)/);
+    });
+
+    test('...and served last, labelled stale with its own date, only when nothing else answers', async () => {
+        const r = await resolvePeRatio(fetchers({ multplHtml: async () => dated('4:00 PM EDT, Thu Oct 22'), yahooHtml: boom, computed: boom }), new Set(), { now });
+        expect(r).toMatchObject({ peRatio: 25.86, peSource: 'multpl', peAsOf: '2026-10-22', stale: true });
+    });
+
+    test('a December stamp read in January is last year', async () => {
+        const r = await resolvePeRatio(fetchers({ multplHtml: async () => dated('4:00 PM EST, Wed Dec 31') }), new Set(), { now: new Date('2027-01-02T15:00:00Z') });
+        expect(r.peAsOf).toBe('2026-12-31');
+    });
+});

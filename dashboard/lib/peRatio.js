@@ -16,12 +16,27 @@
  * never throws.
  */
 import { gate } from './faults';
+import { isStale } from './freshness';
+
+// multpl's page date past this many days = a frozen page (Fri close → Tue covers a holiday weekend).
+const MULTPL_FRESH_DAYS = 5;
 
 // "Current S&P 500 PE Ratio: 26.66" — the number must follow the label.
 export function parseMultplPe(html) {
     const m = typeof html === 'string' ? html.match(/Current S&P 500 PE Ratio[^\d]*(\d+\.\d+)/) : null;
     const v = m ? parseFloat(m[1]) : NaN;
     return Number.isFinite(v) && v > 0 ? v : null;
+}
+
+// multpl's own as-of: `<div id="timestamp">4:00 PM EDT, Fri Oct 30` (no year) → '2026-10-30'.
+// The as-of used to be the fetch time, so a Sunday load said Sunday (audit B6).
+export function parseMultplAsOf(html, now = new Date()) {
+    const m = typeof html === 'string' ? html.match(/id="timestamp">[^<]*?\w{3}\s+([A-Z][a-z]{2})\s+(\d{1,2})\s*</) : null;
+    const mon = m ? 'JanFebMarAprMayJunJulAugSepOctNovDec'.indexOf(m[1]) : -1;
+    if (mon < 0 || mon % 3) return null;
+    let y = now.getUTCFullYear();
+    if (Date.UTC(y, mon / 3, +m[2]) > now.getTime() + 2 * 864e5) y -= 1;   // a Dec 31 stamp read in January
+    return new Date(Date.UTC(y, mon / 3, +m[2])).toISOString().slice(0, 10);
 }
 
 // Yahoo's SPY P/E runs below the index's; ×1.07 is the long-standing bridge.
@@ -38,14 +53,22 @@ export function parseYahooPe(html) {
  * @returns {Promise<{ peRatio: number|null, peSource: 'multpl'|'yahoo'|'computed'|null,
  *                     peIsCape: boolean, peAsOf: string|null, messages: string[] }>}
  */
-export async function resolvePeRatio(fetchers, faults, { maskKey = (s) => s } = {}) {
+export async function resolvePeRatio(fetchers, faults, { maskKey = (s) => s, now = new Date() } = {}) {
     const messages = [];
     const err = (e) => maskKey(e?.message || String(e));
 
+    // A page whose own date is old is demoted (the next tiers get a go) and served last,
+    // stale:true with its real date, only if nothing else answers.
+    let staleMultpl = null;
     try {
-        const v = await gate('pe_multpl', faults, async () => parseMultplPe(await fetchers.multplHtml()));
-        if (v) return { peRatio: v, peSource: 'multpl', peIsCape: false, peAsOf: null, messages };
-        messages.push('P/E multpl failed: no match');
+        const html = await gate('pe_multpl', faults, () => fetchers.multplHtml());
+        const v = parseMultplPe(html);
+        const asOf = parseMultplAsOf(html, now);
+        if (v && asOf && isStale(asOf, MULTPL_FRESH_DAYS, now)) {
+            staleMultpl = { peRatio: v, peSource: 'multpl', peIsCape: false, peAsOf: asOf, stale: true, messages };
+            messages.push(`P/E multpl stale (${asOf})`);
+        } else if (v) return { peRatio: v, peSource: 'multpl', peIsCape: false, peAsOf: asOf, messages };
+        else messages.push('P/E multpl failed: no match');
     } catch (e) { messages.push(`P/E multpl failed: ${err(e)}`); }
 
     try {
@@ -65,6 +88,7 @@ export async function resolvePeRatio(fetchers, faults, { maskKey = (s) => s } = 
         messages.push(`P/E computed failed: implausible ${v}`);
     } catch (e) { messages.push(`P/E computed failed: ${err(e)}`); }
 
+    if (staleMultpl) return staleMultpl;
     messages.push('P/E unavailable — all layers failed');
     return { peRatio: null, peSource: null, peIsCape: false, peAsOf: null, messages };
 }
