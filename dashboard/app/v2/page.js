@@ -23,7 +23,7 @@ import Delta from '../../components/Delta';
 import SignalStudy from '../../components/SignalStudy';
 import LeadCombos from '../../components/LeadCombos';
 import { plusMonthsIso as plusMonths } from '../../lib/signalStudy';
-import { vixYearGeo, vixZone } from '../../lib/vixYear';
+import { vixYearGeo, vixZone, moveDir } from '../../lib/vixYear';
 import MarkChip from '../../components/MarkChip';
 import MarksSheet from '../../components/MarksSheet';
 import { MarkProvider, useMark, useChart, useSeries, collectLiveValues } from '../../components/MarkProvider';
@@ -649,8 +649,11 @@ function MoreButton({ open, onClick, className = 'v2-more' }) {
 /** Trading days back from the last point, said the short way (an undated saved copy). */
 const sessionsAgo = (d) => (!d ? 'now' : d < 5 ? `${d}d ago` : d < 63 ? `${Math.round(d / 5)} wk ago` : `${Math.round(d / 21)} mo ago`);
 const ZONE_INK = { good: 'var(--up)', flat: 'var(--ink-2)', caution: 'var(--warn)', bad: 'var(--down)' };
+const MOVE_INK = { up: 'var(--up)', down: 'var(--down)', flat: 'var(--ink-3)' };
+const MOVE_TONE = { up: 'tone-good', down: 'tone-bad' }; // a flat month keeps the key's gray
+const fmtMove = (m) => `${m < 0 ? '▼' : '▲'}${Math.abs(m * 100).toFixed(1)}%`;
 
-/** VIX's year on its fear zones, the line colored by the zone it is in, with how much SPY really moved dotted beside it. */
+/** VIX's year on its fear zones, the line colored by the zone it is in, with how much SPY really moved dotted beside it, inked by which way SPY went that month. */
 function VixYear({ vol, spy, waiting }) {
     const t = vol?.tickers?.find((x) => x.ticker === 'SPY' && Number.isFinite(x.iv) && Number.isFinite(x.ivPctile1y));
     const geo = useMemo(() => (t ? vixYearGeo({ year: vol.vixYear, dates: vol.vixYearDates, t, spyHistory: spy?.chartHistory }) : null), [vol, t, spy]);
@@ -660,7 +663,7 @@ function VixYear({ vol, spy, waiting }) {
         const r = e.currentTarget.getBoundingClientRect(), f = (e.clientX - r.left) / r.width;
         if (Number.isFinite(f)) setAt(Math.round(Math.min(1, Math.max(0, f)) * (geo.n - 1))); // a pointer without a position must not blank the card
     };
-    const last = geo.n - 1, now = geo.vix[last], zone = vixZone(now), realNow = geo.real?.[last];
+    const last = geo.n - 1, now = geo.vix[last], zone = vixZone(now), realNow = geo.real?.[last], moveNow = geo.move?.[last];
     const when = (i) => (geo.rows[i].d ? shortDate(geo.rows[i].d) : sessionsAgo(last - i));
     const x = (i) => `${geo.x(i)}%`;
     const first = geo.rows[0].d, mid = geo.rows[Math.round(last / 2)].d;
@@ -668,7 +671,12 @@ function VixYear({ vol, spy, waiting }) {
         <div className="v2-ivy">
             <div className="v2-ivy-key">
                 <span><i className={`v2-ivy-sw tone-${zone.tone}`} />VIX <b>{now.toFixed(1)}</b> <em className={`tone-${zone.tone}`}>{zone.name}</em></span>
-                {geo.real && <span><i className="v2-ivy-sw is-real" />SPY moved{Number.isFinite(realNow) && <b> {realNow.toFixed(1)}</b>}</span>}
+                {geo.real && (
+                    <span>
+                        <i className="v2-ivy-sw is-real" style={{ color: MOVE_INK[moveDir(moveNow)] }} />SPY moved{Number.isFinite(realNow) && <b> {realNow.toFixed(1)}</b>}
+                        {Number.isFinite(moveNow) && <em className={MOVE_TONE[moveDir(moveNow)]}> {fmtMove(moveNow)}</em>}
+                    </span>
+                )}
             </div>
             <div className={`v2-ivy-plot tone-${zone.tone}`} role="img" aria-label={`VIX ${now.toFixed(1)}, ${zone.name}`} onPointerMove={read} onPointerDown={read} onPointerLeave={() => setAt(null)}>
                 <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
@@ -676,9 +684,14 @@ function VixYear({ vol, spy, waiting }) {
                         <linearGradient id="v2-ivy-ink" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="100">
                             {[...geo.zones].reverse().flatMap((z) => [z.top, z.bottom].map((o, k) => <stop key={`${z.name}${k}`} offset={o / 100} style={{ stopColor: ZONE_INK[z.tone] }} />))}
                         </linearGradient>
+                        {geo.ink && (
+                            <linearGradient id="v2-ivy-way" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="100" y2="0">
+                                {geo.ink.flatMap((r, i) => [r.from, r.to].map((o, k) => <stop key={`${i}-${k}`} offset={o / 100} style={{ stopColor: MOVE_INK[r.dir] }} />))}
+                            </linearGradient>
+                        )}
                     </defs>
                     {geo.zones.map((z) => <rect key={z.name} className={`v2-ivy-zone is-${z.tone}`} x="0" width="100" y={z.top} height={z.bottom - z.top} />)}
-                    {geo.realLine && <path className="v2-ivy-real" d={geo.realLine} />}
+                    {geo.realLine && <path className="v2-ivy-real" d={geo.realLine} stroke="url(#v2-ivy-way)" />}
                     <path className="v2-ivy-line" d={geo.line} stroke="url(#v2-ivy-ink)" />
                 </svg>
                 {geo.zones.map((z) => z.bottom - z.top >= 12 && <span key={z.name} className={`v2-ivy-zname tone-${z.tone}`} style={{ top: `${z.top}%` }}>{z.name}</span>)}
@@ -695,6 +708,7 @@ function VixYear({ vol, spy, waiting }) {
                         <i className="v2-ivy-at" style={{ left: x(at), top: `${geo.y(geo.vix[at])}%` }} />
                         <span className="v2-ivy-read" style={{ '--x': x(at) }}>
                             {when(at)} · VIX {geo.vix[at].toFixed(1)}{Number.isFinite(geo.real?.[at]) ? ` · SPY moved ${geo.real[at].toFixed(1)}` : ''}
+                            {Number.isFinite(geo.move?.[at]) && <em className={MOVE_TONE[moveDir(geo.move[at])]}> {fmtMove(geo.move[at])}</em>}
                         </span>
                     </>
                 )}
@@ -1325,7 +1339,7 @@ export default function DashboardV2() {
                                     </ErrorBoundary>
                                 </div>
                             </Slot>
-                            <Slot jump="Volatility" title="Volatility" tip="VIX over the past year on its fear zones: under 15 calm, 20+ nervous, 30+ fear. Dotted = how much SPY really moved (1 month). More = the full table." span={5} more>
+                            <Slot jump="Volatility" title="Volatility" tip="VIX over the past year on its fear zones: under 15 calm, 20+ nervous, 30+ fear. Dotted = how much SPY really moved (1 month): green when SPY rose that month, red when it fell, gray within 1%. More = the full table." span={5} more>
                                 <div className="card v2-ivcard" data-cached={saved('vol')}>
                                     <div className="card-header" />
                                     <ErrorBoundary resetKey={refreshTick}><VixYear vol={vol} spy={spy} waiting={pending.vol} /></ErrorBoundary>

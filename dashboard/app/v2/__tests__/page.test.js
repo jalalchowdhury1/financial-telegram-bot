@@ -458,7 +458,7 @@ it('only a side feed landing live never stamps the header "Updated" (audit D10)'
     expect(document.querySelector('header').textContent).not.toMatch(/Updated|just now|ago/);
 });
 
-it('the Volatility card reads VIX on its fear zones, with the peak day and how much SPY really moved', async () => {
+it('the Volatility card reads VIX on its fear zones, with the peak day and how much SPY really moved, and which way', async () => {
     const days = [];
     for (let d = new Date('2026-10-30T12:00:00Z'); days.length < 300; d = new Date(d - 864e5)) if (d.getUTCDay() % 6) days.unshift(d.toISOString().slice(0, 10));
     const dates = days.slice(-253);
@@ -470,7 +470,10 @@ it('the Volatility card reads VIX on its fear zones, with the peak day and how m
     render(<DashboardV2 />);
     await waitFor(() => expect(document.querySelector('[data-jump="Volatility"] .v2-ivy-key')).not.toBeNull());
     const card = document.querySelector('[data-jump="Volatility"] .v2-ivy');
-    expect(card.querySelector('.v2-ivy-key').textContent).toMatch(/^VIX 19\.4 normalSPY moved \d+\.\d$/);
+    expect(card.querySelector('.v2-ivy-key').textContent).toMatch(/^VIX 19\.4 normalSPY moved \d+\.\d ▲1\.0%$/); // 603 vs 597 21 sessions back
+    expect(card.querySelector('.v2-ivy-key em.tone-good').textContent).toBe(' ▲1.0%');
+    expect(card.querySelector('.v2-ivy-real').getAttribute('stroke')).toBe('url(#v2-ivy-way)'); // inked by SPY's month, day by day
+    expect(card.querySelectorAll('#v2-ivy-way stop').length).toBeGreaterThan(2);
     expect([...card.querySelectorAll('.v2-ivy-zname')].map((e) => e.textContent)).toEqual(expect.arrayContaining(['normal', 'nervous']));
     const peakDay = new Date(`${dates[100]}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
     expect(card.querySelector('.v2-ivy-flag').textContent).toBe(`31 · ${peakDay}`);
@@ -480,5 +483,5 @@ it('the Volatility card reads VIX on its fear zones, with the peak day and how m
     fireEvent.pointerMove(plot); // jsdom has no PointerEvent, so no clientX: the card must survive it
     expect(card.querySelector('.v2-ivy-read')).toBeNull();
     fireEvent(plot, new MouseEvent('pointermove', { bubbles: true, clientX: 100 }));
-    expect(card.querySelector('.v2-ivy-read').textContent).toMatch(/^Oct 30 · VIX 19\.4 · SPY moved \d+\.\d$/);
+    expect(card.querySelector('.v2-ivy-read').textContent).toMatch(/^Oct 30 · VIX 19\.4 · SPY moved \d+\.\d ▲1\.0%$/);
 });

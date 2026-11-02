@@ -778,9 +778,9 @@ body:has(.v2) { background: #0b0c0e; }
 .v2-ivy { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .v2-ivy-key { display: flex; justify-content: space-between; gap: 12px; margin: 0 26px 10px 0; font: 500 12px var(--sans); color: var(--ink-2); white-space: nowrap; }
 .v2-ivy-key b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
-.v2-ivy-key em { font-style: normal; font-weight: 600; }
+.v2-ivy-key em, .v2-ivy-read em { font-style: normal; font-weight: 600; }
 .v2-ivy-sw { display: inline-block; width: 14px; height: 0; margin-right: 6px; vertical-align: middle; border-top: 2px solid currentColor; border-radius: 1px; }
-.v2-ivy-sw.is-real { border-top: 2px dotted var(--ink-3); }
+.v2-ivy-sw.is-real { border-top: 2px dotted currentColor; }
 .v2-ivy-plot { position: relative; flex: 1; min-height: 150px; margin-right: 26px; touch-action: pan-y; cursor: crosshair; }
 .v2-slot.is-open .v2-ivy-plot { flex: none; height: 170px; }
 .v2-ivy-plot svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
@@ -789,7 +789,7 @@ body:has(.v2) { background: #0b0c0e; }
 .v2-ivy-zone.is-caution { fill: var(--warn); opacity: .07; }
 .v2-ivy-zone.is-bad { fill: var(--down); opacity: .09; }
 .v2-ivy-line { fill: none; stroke-width: 1.75; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
-.v2-ivy-real { fill: none; stroke: var(--ink-3); stroke-width: 1.5; stroke-dasharray: 1 3; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.v2-ivy-real { fill: none; stroke-width: 1.5; stroke-dasharray: 1 3; stroke-linecap: round; vector-effect: non-scaling-stroke; }
 .v2-ivy-zname {
   position: absolute; left: 4px; margin-top: 3px; padding: 0 4px; border-radius: 4px; pointer-events: none; white-space: nowrap;
   background: color-mix(in srgb, var(--surface) 82%, transparent); font: 600 10px/16px var(--sans); letter-spacing: .04em; text-transform: uppercase;

@@ -9,12 +9,16 @@ export const VIX_ZONES = [
 ];
 export const vixZone = (v) => VIX_ZONES.find((z) => v < z.to);
 
+// Which way SPY went over a month: within ±1% reads flat (gray), so the dotted line doesn't flicker around zero.
+export const moveDir = (m) => (!Number.isFinite(m) ? 'flat' : m > 0.01 ? 'up' : m < -0.01 ? 'down' : 'flat');
+
 /**
  * The Volatility card's picture: the 252 VIX closes behind SPY's rank and %ile (+ today's when
  * live), each with its day when /api/vol sends `vixYearDates` (an older saved copy has none), and
  * how much SPY really moved on those days (1-month realized vol from the SPY chart's closes,
- * the same formula as the table's RV21). The scale always spans 15–20, so the zones read the
- * same in a calm year and a stormy one. null = too little to draw.
+ * the same formula as the table's RV21), and which way SPY went over those same 21 sessions (`move`,
+ * inked along the dotted line by `ink`: hard color stops halfway between days). The scale always
+ * spans 15–20, so the zones read the same in a calm year and a stormy one. null = too little to draw.
  */
 export function vixYearGeo({ year, dates, t, spyHistory }) {
     const vals = year || [];
@@ -32,12 +36,14 @@ export function vixYearGeo({ year, dates, t, spyHistory }) {
     const hist = (spyHistory || []).filter((p) => /^\d{4}-\d{2}-\d{2}$/.test(p?.date || '') && p.price > 0);
     const px = hist.map((p) => p.price);
     let j = -1;
-    let real = rows.map((r) => {
-        if (!r.d) return null;
+    const bar = rows.map((r) => {
+        if (!r.d) return -1;
         while (j + 1 < hist.length && hist[j + 1].date <= r.d) j++;
-        return j >= 21 && Date.parse(r.d) - Date.parse(hist[j].date) <= 4 * 864e5 ? realizedVol(px.slice(j - 21, j + 1)) : null;
+        return j >= 21 && Date.parse(r.d) - Date.parse(hist[j].date) <= 4 * 864e5 ? j : -1;
     });
+    let real = bar.map((k) => (k < 0 ? null : realizedVol(px.slice(k - 21, k + 1))));
     if (real.filter(Number.isFinite).length < 20) real = null; // SPY's days don't line up with VIX's: no line, not a stub
+    const move = real && bar.map((k) => (k < 0 ? null : px[k] / px[k - 21] - 1));
 
     const vix = rows.map((r) => r.v);
     const all = [...vix, ...(real || []).filter(Number.isFinite), 15, 20];
@@ -48,5 +54,11 @@ export function vixYearGeo({ year, dates, t, spyHistory }) {
     const clampY = (v) => Math.min(100, Math.max(0, y(Math.min(hi, Math.max(lo, v)))));
     const zones = VIX_ZONES.filter((z) => z.to > lo && z.from < hi).map((z) => ({ ...z, top: clampY(z.to), bottom: clampY(z.from) }));
     const peak = vix.indexOf(Math.max(...vix));
-    return { rows, n, vix, real, lo, hi, y, x, line: path(vix), realLine: real && path(real), zones, peak };
+    const ink = move && move.reduce((runs, m, i) => {
+        const dir = moveDir(m), to = Math.min(100, x(i + 0.5));
+        if (runs.at(-1)?.dir === dir) runs.at(-1).to = to;
+        else runs.push({ dir, from: runs.at(-1)?.to ?? 0, to });
+        return runs;
+    }, []);
+    return { rows, n, vix, real, move, lo, hi, y, x, line: path(vix), realLine: real && path(real), ink, zones, peak };
 }

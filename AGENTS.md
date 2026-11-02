@@ -365,6 +365,9 @@ behave differently, it gets a v2-only prop (`race` on FactorRow, `asCards` on `p
   beside it (1-month realized vol from `/api/spy` `chartHistory`, the table's RV21 formula). Days come from `/api/vol`
   `vixYearDates`; an older saved copy has none → VIX alone, "1Y ago / 6M / Now". CBOE's VIX file also has NYSE holidays:
   that day keeps SPY's last move (a bar over 4 days older is not that day's). Tests: `lib/__tests__/vixYear.test.js`.
+  The dotted line is inked by which way SPY went over those same 21 sessions (his "see if SPY moved up or down", 1 Nov):
+  green up, red down, gray within ±1% (`moveDir`, so it doesn't flicker around zero), a horizontal SVG gradient with
+  hard stops halfway between days (`ink`); the key and the tap readout add the month's move (`SPY moved 11.7 ▲2.1%`).
 
 ### ⚡ Loading speed + robustness (`lib/cdn.js`, `lib/loadJson.js`, `app/page.js`) — 2026-09-26
 Before: every route ran cold on every visit (all `no-store`), and the page waited on ONE
