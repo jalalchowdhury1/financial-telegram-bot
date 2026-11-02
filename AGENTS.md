@@ -368,6 +368,14 @@ behave differently, it gets a v2-only prop (`race` on FactorRow, `asCards` on `p
   The dotted line is inked by which way SPY went over those same 21 sessions (his "see if SPY moved up or down", 1 Nov):
   green up, red down, gray within ±1% (`moveDir`, so it doesn't flicker around zero), a horizontal SVG gradient with
   hard stops halfway between days (`ink`); the key and the tap readout add the month's move (`SPY moved 11.7 ▲2.1%`).
+  **After spikes** (button left of More, red while VIX is 30+; his "what happens to SPY after massive vol spikes… a month
+  later or 3m or 6m", 1 Nov): `components/VixSpikes.js` sheet, math in `spikeStudy` (`lib/signalStudy.js`). A spike = VIX's
+  first close at 30+ after 91 calm days (`signalEpisodes`); each row = one spike, newest first (peak = highest close in the
+  3 months after, number + bar), cells = SPY 1M/3M/6M/1Y later (each exactly `signalStudy`'s window; dashed blue = still
+  running), on top the median and how often SPY rose, each vs any day. Tap a row → its year as a line (the newest opens).
+  Data: `public/history/vix-daily.json` (FRED VIXCLS daily since 1990, written by `scripts/bake_vix_ratio.py` with the
+  ratio file, quarterly) + the card's own year (`vol.vixYear`) + `spy.chartHistory` after the files end. SPY starts 1993,
+  so the first spike is Oct 1997 (20 spikes on 1 Nov 2026). Tests: `lib/__tests__/signalStudy.test.js`, page.test.js.
 
 ### ⚡ Loading speed + robustness (`lib/cdn.js`, `lib/loadJson.js`, `app/page.js`) — 2026-09-26
 Before: every route ran cold on every visit (all `no-store`), and the page waited on ONE

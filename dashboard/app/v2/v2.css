@@ -1119,6 +1119,61 @@ body:has(.v2) { background: #0b0c0e; }
   .v2-aa-rank { height: 48px; gap: 1px; }
 }
 
+/* ---------- Volatility: "After spikes", every VIX 30+ spike × SPY 1M/3M/6M/1Y later (components/VixSpikes.js) ---------- */
+.v2-slot-acts { position: absolute; top: 18px; right: 14px; z-index: 3; display: flex; gap: 2px; }
+.v2-slot-acts .v2-more { position: static; }
+.v2-vs { --vs-cols: minmax(0, 1fr) 44px repeat(4, 76px); display: flex; flex-direction: column; gap: 2px; font-variant-numeric: tabular-nums; }
+.v2-vs-head, .v2-vs-sum, .v2-vs-row { display: grid; grid-template-columns: var(--vs-cols); gap: 3px; align-items: center; white-space: nowrap; }
+.v2-vs-head { padding-bottom: 6px; font-size: 11px; color: var(--ink-3); text-align: center; }
+.v2-vs-head span:first-child { padding-left: 8px; text-align: left; overflow: hidden; text-overflow: ellipsis; }
+.v2-vs-head span:nth-child(2) { padding-right: 8px; text-align: right; }
+.v2-vs-sum { height: 24px; text-align: center; }
+.v2-vs-sum span { grid-column: span 2; padding-left: 8px; text-align: left; font-size: 12px; color: var(--ink-2); }
+.v2-vs-sum b { font-size: 13px; font-weight: 600; }
+.v2-vs-sum.is-base { height: 20px; margin-top: -4px; }
+.v2-vs-sum.is-base span, .v2-vs-sum.is-base b { font-size: 11px; font-weight: 500; color: var(--ink-3); }
+.v2-vs-rule { height: 1px; margin: 8px 0 6px; background: var(--line); }
+.v2-vs-row { all: unset; display: grid; grid-template-columns: var(--vs-cols); gap: 3px; align-items: center; padding: 2px 0; border-radius: 8px; cursor: pointer; white-space: nowrap; }
+.v2-vs-row:hover { background: rgb(255 255 255 / .04); }
+.v2-vs-row.is-on { background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line-2); }
+.v2-vs-row:focus-visible { outline: 1px solid var(--line-2); }
+.v2-vs-when { display: flex; align-items: center; gap: 12px; min-width: 0; padding-left: 8px; font-size: 12.5px; color: var(--ink); }
+.v2-vs-when i { flex: 1; min-width: 0; max-width: 180px; height: 4px; border-radius: 2px; background: rgb(255 255 255 / .05); }
+.v2-vs-when b { display: block; height: 100%; border-radius: 2px; background: color-mix(in srgb, var(--down) 55%, transparent); }
+.v2-vs-peak { padding-right: 8px; text-align: right; font-size: 12px; color: var(--ink-2); }
+.v2-vs-cell { display: grid; place-items: center; height: 26px; border-radius: 6px; font-size: 12.5px; font-weight: 600; color: var(--ink); }
+.v2-vs-cell.is-up { background: color-mix(in srgb, var(--up) var(--a), transparent); }
+.v2-vs-cell.is-down { background: color-mix(in srgb, var(--down) var(--a), transparent); }
+.v2-vs-cell.is-live { color: var(--accent); outline: 1px dashed color-mix(in srgb, var(--accent) 60%, transparent); outline-offset: -1px; }
+.v2-vs-year { margin: 2px 0 8px; padding: 14px 10px 8px; border-radius: 8px; background: rgb(255 255 255 / .02); }
+.v2-vs-plot { position: relative; height: 130px; }
+.v2-vs-plot svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.v2-vs-tick { stroke: rgb(255 255 255 / .08); stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+.v2-vs-zero { stroke: rgb(255 255 255 / .2); vector-effect: non-scaling-stroke; }
+.v2-vs-line { fill: none; stroke-width: 2; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.v2-vs-line.is-up { stroke: var(--up); }
+.v2-vs-line.is-down { stroke: var(--down); }
+.v2-vs-line.is-live { stroke: var(--accent); }
+.v2-vs-dot { position: absolute; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 999px; background: var(--ink); box-shadow: 0 0 0 2px var(--surface); pointer-events: none; }
+.v2-vs-low, .v2-vs-end { position: absolute; font: 500 11px var(--sans); white-space: nowrap; pointer-events: none; text-shadow: 0 0 4px var(--surface), 0 0 8px var(--surface); }
+.v2-vs-low { transform: translate(-50%, 7px); color: var(--ink-3); }
+.v2-vs-low.is-left { transform: translate(-100%, 7px); }
+.v2-vs-low.is-right { transform: translate(0, 7px); }
+.v2-vs-end { transform: translate(8px, -50%); font-weight: 600; }
+.v2-vs-end.is-left { transform: translate(calc(-100% - 4px), -140%); }
+.v2-vs-end.is-up { color: var(--up); }
+.v2-vs-end.is-down { color: var(--down); }
+.v2-vs-end.is-live { color: var(--accent); }
+.v2-vs-year .v2-aa-xs { margin-left: 0; }
+@media (max-width: 640px) {
+  .v2-slot-acts { top: 14px; right: 8px; }
+  .v2-vs { --vs-cols: minmax(0, 1fr) 26px repeat(4, 54px); }
+  .v2-vs-when i { display: none; }
+  .v2-vs-cell { height: 24px; font-size: 12px; }
+  .v2-vs-sum b { font-size: 12px; }
+  .v2-vs-plot { height: 110px; }
+}
+
 /* ---------- Risk: rubber band (rk-) + recession watch (rw-), components/RiskCards.js ---------- */
 .rk-na { font-size: 13px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rk-q { display: inline-flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

@@ -21,6 +21,7 @@ import { RubberBandCard, RecessionCard } from '../../components/RiskCards';
 import FactorRow from '../../components/FactorRow';
 import Delta from '../../components/Delta';
 import SignalStudy from '../../components/SignalStudy';
+import VixSpikes, { SPIKE_LINE } from '../../components/VixSpikes';
 import LeadCombos from '../../components/LeadCombos';
 import { plusMonthsIso as plusMonths } from '../../lib/signalStudy';
 import { vixYearGeo, vixZone, moveDir } from '../../lib/vixYear';
@@ -625,6 +626,7 @@ function Section({ id, title, note, children }) {
  * A reused v1 card in a v2 slot: v2 hides the card's own emoji title (CSS) and draws
  * its own, so every panel reads the same. `jump` keeps v1's data-jump label (chips jump here).
  * `more`: the card opens short (CSS hides the detail under .is-calm); "More" opens it, remembered per card.
+ * `action`: a button left of More (the Volatility card's "After spikes").
  */
 /** Open/closed for a "More" card, remembered per card on this device. */
 function useOpen(key) {
@@ -652,6 +654,18 @@ const ZONE_INK = { good: 'var(--up)', flat: 'var(--ink-2)', caution: 'var(--warn
 const MOVE_INK = { up: 'var(--up)', down: 'var(--down)', flat: 'var(--ink-3)' };
 const MOVE_TONE = { up: 'tone-good', down: 'tone-bad' }; // a flat month keeps the key's gray
 const fmtMove = (m) => `${m < 0 ? '▼' : '▲'}${Math.abs(m * 100).toFixed(1)}%`;
+
+/** "After spikes" in the Volatility card's title row: every past VIX 30+ spike and what SPY did next (components/VixSpikes.js). Red while VIX is 30+. */
+function SpikesButton({ vol, spy }) {
+    const [open, setOpen] = useState(false);
+    const now = vol?.vixYear?.[vol.vixYear.length - 1];
+    return (
+        <>
+            <button type="button" className={`v2-more${now >= SPIKE_LINE ? ' tone-bad' : ''}`} aria-haspopup="dialog" onClick={() => setOpen(true)}>After spikes</button>
+            {open && <VixSpikes vol={vol} spy={spy} onClose={() => setOpen(false)} />}
+        </>
+    );
+}
 
 /** VIX's year on its fear zones, the line colored by the zone it is in, with how much SPY really moved dotted beside it, inked by which way SPY went that month. */
 function VixYear({ vol, spy, waiting }) {
@@ -718,14 +732,15 @@ function VixYear({ vol, spy, waiting }) {
     );
 }
 
-function Slot({ jump, title, tip, span = 12, saved, more, children }) {
+function Slot({ jump, title, tip, span = 12, saved, more, action, children }) {
     const [open, toggle] = useOpen(jump);
     const mode = more ? (open ? ' has-more is-open' : ' has-more is-calm') : '';
+    const moreBtn = more && <MoreButton open={open} onClick={toggle} />;
     return (
         <div className={`v2-slot span-${span}${mode}`} data-jump={jump} data-cached={saved}>
             <div className="v2-slot-title">{tip ? <span className="tooltip-trigger" data-tooltip={tip}>{title}</span> : title}</div>
             {typeof children === 'function' ? children(open) : children}
-            {more && <MoreButton open={open} onClick={toggle} />}
+            {action ? <div className="v2-slot-acts">{action}{moreBtn}</div> : moreBtn}
         </div>
     );
 }
@@ -1339,7 +1354,8 @@ export default function DashboardV2() {
                                     </ErrorBoundary>
                                 </div>
                             </Slot>
-                            <Slot jump="Volatility" title="Volatility" tip="VIX over the past year on its fear zones: under 15 calm, 20+ nervous, 30+ fear. Dotted = how much SPY really moved (1 month): green when SPY rose that month, red when it fell, gray within 1%. More = the full table." span={5} more>
+                            <Slot jump="Volatility" title="Volatility" tip="VIX over the past year on its fear zones: under 15 calm, 20+ nervous, 30+ fear. Dotted = how much SPY really moved (1 month): green when SPY rose that month, red when it fell, gray within 1%. After spikes = what SPY did after every VIX 30+. More = the full table." span={5} more
+                                action={<SpikesButton vol={vol} spy={spy} />}>
                                 <div className="card v2-ivcard" data-cached={saved('vol')}>
                                     <div className="card-header" />
                                     <ErrorBoundary resetKey={refreshTick}><VixYear vol={vol} spy={spy} waiting={pending.vol} /></ErrorBoundary>

@@ -173,6 +173,40 @@ it('the VIX / 3M tile opens what SPY did after each day VIX closed over VIX 3M, 
     expect(within(dialog).getByText('VIX/3M 1.050')).toBeInTheDocument();
 });
 
+it('After spikes on the Volatility card opens SPY 1M / 3M / 6M / 1Y after every VIX 30+ spike, the newest open on its year', async () => {
+    const vix = { from: '2020-01-02', t: [0, 8, 60], v: [31, 45, 12] }; // one spike, peak 45 on Jan 10
+    const spy = { from: '2020-01-01', t: Array.from({ length: 500 }, (_, i) => i), v: Array.from({ length: 500 }, (_, i) => 100 + i) };
+    const ok = (body) => Promise.resolve({ ok: true, status: 200, json: async () => body });
+    mockRoutes({ '/api/vol': ok({ vixYear: [20, 31], vixYearDates: ['2026-10-29', '2026-10-30'] }), '/history/vix-daily.json': ok(vix), '/history/spy-daily.json': ok(spy) });
+    render(<DashboardV2 />);
+    // text queries on the page: a role query walks the whole page per poll (5 s timeouts on a busy Mac)
+    await waitFor(() => expect(screen.getByText('After spikes')).toHaveClass('tone-bad')); // VIX 31 now
+    fireEvent.click(screen.getByText('After spikes'));
+    const dialog = (await screen.findByText('After VIX spikes')).closest('[role="dialog"]');
+    expect(dialog).toHaveAttribute('aria-labelledby', 'v2-vs-title');
+    expect(within(dialog).getByText('VIX 31.0 now · a spike is on')).toBeInTheDocument();
+    // Jan 2 (101) → Feb 2 (132), Apr 2 (192), Jul 2 (283), Jan 2 2021 (467)
+    const row = await within(dialog).findByRole('button', { name: 'Jan 2, 2020 · peak 45.0 · 1M +30.7%, 3M +90.1%, 6M +180.2%, 1Y +362.4%' });
+    expect(within(dialog).getAllByText('+30.7%')).toHaveLength(2); // the median row + the spike's cell
+    expect(row).toHaveAttribute('aria-expanded', 'true');
+    expect(within(dialog).getByText('1Y +362.4%')).toBeInTheDocument();
+    expect(dialog.querySelector('.v2-vs-line').getAttribute('d')).not.toMatch(/NaN/);
+    fireEvent.click(row);
+    expect(row).toHaveAttribute('aria-expanded', 'false');
+    expect(dialog.querySelector('.v2-vs-year')).toBeNull();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByText('After VIX spikes')).toBeNull();
+});
+
+it('After spikes says Unavailable when its VIX file fails, never a blank sheet', async () => {
+    mockRoutes({ '/history/vix-daily.json': Promise.resolve({ ok: false, status: 404, json: async () => ({}) }) });
+    render(<DashboardV2 />);
+    fireEvent.click(await screen.findByText('After spikes'));
+    const dialog = (await screen.findByText('After VIX spikes')).closest('[role="dialog"]');
+    expect(await within(dialog).findByText('Unavailable · try again shortly')).toBeInTheDocument();
+    expect(screen.getByText('After spikes')).not.toHaveClass('tone-bad');
+});
+
 it('Risk: each card gives one answer closed, and More opens the proof (loop, fuses, each tell since 2000)', async () => {
     const ok = (body) => Promise.resolve({ ok: true, status: 200, json: async () => body });
     const monthly = (f) => Array.from({ length: 322 }, (_, i) => ({ date: `${2000 + Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, '0')}-01`, value: f(i) }));

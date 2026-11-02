@@ -12,11 +12,11 @@ import useSheetLock, { useSheetFocus } from './useSheetLock';
 import { decodeLong } from '../lib/longHistory';
 import { signalStudy } from '../lib/signalStudy';
 
-const pct = (r, dp = 1) => `${r > 0 ? '+' : r < 0 ? '−' : ''}${Math.abs(r * 100).toFixed(dp)}%`;
-const day = (iso) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
-const load = (src, decode = decodeLong) => fetch(src).then((r) => (r.ok ? r.json() : null)).then(decode);
+export const pct = (r, dp = 1) => `${r > 0 ? '+' : r < 0 ? '−' : ''}${Math.abs(r * 100).toFixed(dp)}%`;
+export const day = (iso) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+export const load = (src, decode = decodeLong) => fetch(src).then((r) => (r.ok ? r.json() : null)).then(decode);
 const XS = { 1: ['Hit', '2W', '1M'], 3: ['Hit', '1M', '2M', '3M'], 6: ['Hit', '2M', '4M', '6M'], 12: ['Hit', '3M', '6M', '9M', '12M'] };
-const tail = (pts, more) => [...pts, ...(more || []).filter((p) => p.date > pts[pts.length - 1].date)];
+export const tail = (pts, more) => [...pts, ...(more || []).filter((p) => p.date > pts[pts.length - 1].date)];
 
 /** r on a path at x (0..1), or null past where it ends (a live signal). */
 function rAt(path, x) {

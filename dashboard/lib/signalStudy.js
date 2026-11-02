@@ -179,3 +179,24 @@ export function signalStudy(points, spy, months, line) {
     }) : [];
     return { episodes, stats: stats(done.map((e) => e.ret)), base: stats(base), avgPath };
 }
+
+export const SPIKE_MONTHS = [1, 3, 6, 12];
+
+/**
+ * VIX spikes, for the v2 Volatility card's "After spikes" (components/VixSpikes.js): each first close at/past
+ * `line` after 3 quiet months, with SPY's move 1, 3, 6 and 12 months on (each exactly signalStudy's window),
+ * the year's path and low, and the spike's peak (its highest reading in the 3 months after). Newest first;
+ * `cols` = each horizon's stats over finished windows, and any day's.
+ */
+export function spikeStudy(points, spy, line) {
+    const runs = SPIKE_MONTHS.map((m) => signalStudy(points, spy, m, line));
+    const year = runs[runs.length - 1];
+    if (!year?.episodes.length) return null;
+    const rows = year.episodes.map((e) => {
+        const end = plusMonthsIso(e.date, 3);
+        let peak = e.value;
+        for (let i = from(points, e.date); i < points.length && points[i].date <= end; i++) peak = Math.max(peak, points[i].value);
+        return { date: e.date, value: e.value, peak, live: e.live, path: e.path, low: e.low, at: runs.map((r) => r.episodes.find((x) => x.date === e.date) || null) };
+    });
+    return { rows: rows.reverse(), cols: runs.map((r) => ({ stats: r.stats, base: r.base })) };
+}

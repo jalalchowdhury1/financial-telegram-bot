@@ -1,4 +1,4 @@
-import { signalEpisodes, signalStudy, plusMonthsIso, comboSeries, signalStates, SIGNALS, COMBOS } from '../signalStudy';
+import { signalEpisodes, signalStudy, spikeStudy, SPIKE_MONTHS, plusMonthsIso, comboSeries, signalStates, SIGNALS, COMBOS } from '../signalStudy';
 
 // SPY: 100 on Jan 1 2020, +1 every day (a trading day every day keeps the math readable)
 const spy = Array.from({ length: 500 }, (_, i) => ({ date: new Date(Date.UTC(2020, 0, 1 + i)).toISOString().slice(0, 10), price: 100 + i }));
@@ -47,6 +47,46 @@ describe('signalStudy', () => {
 
     it('returns null without data', () => {
         expect(signalStudy([], spy, 6, 20)).toBeNull();
+    });
+});
+
+describe('spikeStudy', () => {
+    const vix = [
+        { date: '2019-06-01', value: 40 }, // before SPY starts
+        { date: '2020-01-02', value: 31 }, { date: '2020-01-10', value: 45 }, { date: '2020-03-01', value: 50 },
+        { date: '2020-05-01', value: 60 }, // same spike (61 quiet days), past its 3-month peak window
+        { date: '2021-03-01', value: 33 }, // a new spike, 304 quiet days later; SPY ends 14 May 2021
+    ];
+    const s = spikeStudy(vix, spy, 30);
+
+    it('lists each spike newest first, with its peak in the 3 months after it first hit the line', () => {
+        expect(s.rows.map((r) => [r.date, r.value, r.peak])).toEqual([['2021-03-01', 33, 33], ['2020-01-02', 31, 50]]);
+    });
+
+    it('each cell is exactly signalStudy\'s window for that horizon, live until it ends', () => {
+        SPIKE_MONTHS.forEach((m, k) => {
+            const one = signalStudy(vix, spy, m, 30);
+            for (const row of s.rows) {
+                const e = one.episodes.find((x) => x.date === row.date);
+                expect([row.at[k].ret, row.at[k].live]).toEqual([e.ret, e.live]);
+            }
+            expect(s.cols[k]).toEqual({ stats: one.stats, base: one.base });
+        });
+        expect(s.rows[1].at[0].ret).toBeCloseTo(132 / 101 - 1, 6); // Jan 2 (101) → Feb 2 (132)
+        expect(s.rows[0].at.map((c) => c.live)).toEqual([false, true, true, true]);
+        expect(s.cols.map((c) => c.stats.n)).toEqual([2, 1, 1, 1]);
+    });
+
+    it('carries the year\'s path and low for the tap-open row', () => {
+        const year = signalStudy(vix, spy, 12, 30).episodes[0];
+        expect([s.rows[1].path, s.rows[1].low, s.rows[1].live]).toEqual([year.path, year.low, false]);
+        expect(s.rows[0].live).toBe(true);
+    });
+
+    it('returns null with no spike or no data', () => {
+        expect(spikeStudy([{ date: '2020-01-02', value: 12 }], spy, 30)).toBeNull();
+        expect(spikeStudy([], spy, 30)).toBeNull();
+        expect(spikeStudy(vix, [], 30)).toBeNull();
     });
 });
 
