@@ -121,7 +121,8 @@ export default function VixSpikes({ vol, spy, onClose }) {
                         </Fragment>
                     ))}
                 </div>
-                <p className="v2-aa-foot">A spike = VIX&apos;s first close at 30+ after 3 calm months · dashed = so far · peak = its high in the next 3 · SPY price only</p>
+                <p className="v2-aa-foot">Spike = VIX&apos;s first close at 30+ after 3 calm months · SPY price only</p>
+                <p className="v2-aa-foot">Peak = its high in the next 3 months · dashed = so far</p>
             </>
         );
     }

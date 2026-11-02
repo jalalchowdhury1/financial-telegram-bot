@@ -1122,6 +1122,7 @@ body:has(.v2) { background: #0b0c0e; }
 /* ---------- Volatility: "After spikes", every VIX 30+ spike × SPY 1M/3M/6M/1Y later (components/VixSpikes.js) ---------- */
 .v2-slot-acts { position: absolute; top: 18px; right: 14px; z-index: 3; display: flex; gap: 2px; }
 .v2-slot-acts .v2-more { position: static; }
+.v2-aa-foot + .v2-aa-foot { margin-top: 2px; }
 .v2-vs { --vs-cols: minmax(0, 1fr) 44px repeat(4, 76px); display: flex; flex-direction: column; gap: 2px; font-variant-numeric: tabular-nums; }
 .v2-vs-head, .v2-vs-sum, .v2-vs-row { display: grid; grid-template-columns: var(--vs-cols); gap: 3px; align-items: center; white-space: nowrap; }
 .v2-vs-head { padding-bottom: 6px; font-size: 11px; color: var(--ink-3); text-align: center; }
