@@ -869,6 +869,8 @@ Rule: every number has ≥2 independent live sources, then saved copies, then an
   copper `cg_cnbc → cg_westmetall (LME cash) → cg_fred → …`; P/E `pe_multpl → pe_yahoo`;
   P/E tier 3 = **computed** (`pe_computed`): CNBC `.SPX` (→ FRED SP500) ÷ multpl EPS (→ saved spEps),
   tile says "computed"; the old FRED `PE10` CAPE tier was a phantom (no such series) and is gone.
+  multpl is demoted the moment its page date is behind the newest close ≥ 6 h old (the `pe` freshness
+  rule); never widen that to a day count: a 5-day leeway froze the tile on 2 Nov (tripwire in peRatio.test.js).
   EPS multpl. **sheets** per field: `sheets_main → sheets_alt → sheets_cboe/vix_cboe →
   sheets_fred/vix_fred (stale-flagged) → sheets_cache → sheets_kvlg`. **fear-greed**:
   `cnn → rapidapi → saved CNN index ≤24 h → fg_yahoo/fg_cboe/fg_fred` (VIX proxy, `_meta.proxy`

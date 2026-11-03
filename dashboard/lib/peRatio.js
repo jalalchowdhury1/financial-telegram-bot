@@ -16,10 +16,16 @@
  * never throws.
  */
 import { gate } from './faults';
-import { isStale } from './freshness';
+import { etParts } from './marketClock';
+import { latestCloseMs, SERVED_COPY_GRACE_H } from './servedFreshness';
 
-// multpl's page date past this many days = a frozen page (Fri close → Tue covers a holiday weekend).
-const MULTPL_FRESH_DAYS = 5;
+// multpl's page dated before the newest NYSE close that is ≥ 6 h old = behind: the next tiers
+// get a go. Same rule as /api/freshness's `pe` item. A 5-day leeway let a site-wide multpl
+// freeze (Fri Oct 30 all Mon 2 Nov night) beat a computed tier holding Monday's close.
+function multplBehind(asOf, now) {
+    const c = latestCloseMs(now.getTime() - SERVED_COPY_GRACE_H * 3600e3);
+    return c != null && asOf < etParts(c).date;
+}
 
 // "Current S&P 500 PE Ratio: 26.66" — the number must follow the label.
 export function parseMultplPe(html) {
@@ -64,7 +70,7 @@ export async function resolvePeRatio(fetchers, faults, { maskKey = (s) => s, now
         const html = await gate('pe_multpl', faults, () => fetchers.multplHtml());
         const v = parseMultplPe(html);
         const asOf = parseMultplAsOf(html, now);
-        if (v && asOf && isStale(asOf, MULTPL_FRESH_DAYS, now)) {
+        if (v && asOf && multplBehind(asOf, now)) {
             staleMultpl = { peRatio: v, peSource: 'multpl', peIsCape: false, peAsOf: asOf, stale: true, messages };
             messages.push(`P/E multpl stale (${asOf})`);
         } else if (v) return { peRatio: v, peSource: 'multpl', peIsCape: false, peAsOf: asOf, messages };
