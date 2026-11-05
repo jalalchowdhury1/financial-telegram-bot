@@ -898,9 +898,9 @@ body:has(.v2) { background: #0b0c0e; }
 .v2-trig-tag { position: absolute; left: 0; top: var(--ly); transform: translateY(-120%); font-size: 9.5px; line-height: 1; opacity: .85; font-variant-numeric: tabular-nums; }
 
 /* regime r9: five calls, each with a best → worst scale; yesterday's step outlined */
-.v2 .v2-rg-row { display: flex; flex-direction: row; align-items: center; padding: 0 16px 0 92px; }
+.v2 .v2-rg-row { display: flex; flex-direction: row; align-items: center; padding: 0 12px 0 92px; overflow-x: auto; scrollbar-width: none; }
 .v2-rg {
-  display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; padding: 15px 14px;
+  display: flex; align-items: center; gap: 6px; flex: 1 1 auto; min-width: max-content; padding: 15px 10px;
   border: 0; border-left: 1px solid var(--line); background: none; font: inherit; color: var(--ink); cursor: pointer; white-space: nowrap; text-align: left;
   transition: background .2s;
 }
@@ -910,7 +910,7 @@ body:has(.v2) { background: #0b0c0e; }
 .v2-rg.tone-bad { --tc: var(--down); }
 .v2-rg-k { font-size: 10.5px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); }
 .v2-rg-v { font-size: 13.5px; font-weight: 600; color: var(--tc, var(--ink)); }
-.v2-rg-scale { display: inline-flex; gap: 3px; margin-left: auto; padding-left: 6px; }
+.v2-rg-scale { display: inline-flex; gap: 3px; margin-left: auto; padding-left: 4px; }
 .v2-rg-scale i { width: 9px; height: 3px; border-radius: 2px; background: var(--line-2); }
 .v2-rg-scale i.is-on { background: var(--tc, var(--ink)); }
 .v2-rg-scale i.is-was { background: none; box-shadow: inset 0 0 0 1px var(--ink-3); }
