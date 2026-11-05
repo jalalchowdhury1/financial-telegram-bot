@@ -16,6 +16,8 @@ export const FRED_SERIES = {
     HOUSING_STARTS: 'HOUST',
     INDUSTRIAL_PROD: 'INDPRO',
     JOLTS: 'JTSJOL',
+    QUITS: 'JTSQUL',
+    LAYOFFS: 'JTSLDL',
     DURABLE_GOODS: 'DGORDER',
     SAVINGS_RATE: 'PSAVERT',
     CORP_PROFITS: 'A053RC1Q027SBEA',
@@ -69,6 +71,8 @@ export const FRED_FRESHNESS = {
     PE10: 80,
     // Monthly but heavily lagged
     JTSJOL: 110,   // JOLTS publishes ~2 months behind
+    JTSQUL: 110,
+    JTSLDL: 110,
     // Quarterly (GDP/corp profits — newest quarter is months old by date).
     // 250, NOT 200. FRED dates a quarter at its START and BEA publishes corporate
     // profits with the GDP 2nd estimate ~2 months after the quarter ENDS, so e.g.

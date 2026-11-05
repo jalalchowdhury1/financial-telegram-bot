@@ -1402,6 +1402,10 @@ export default function DashboardV2() {
                                     tip="S&P 500 earnings per share, last 12 months. History in today's dollars."
                                     fmt={(v) => `$${v.toFixed(2)}`} tone={() => 'flat'}
                                     chart={{ color: '#9fb4c7', gradientId: 'v2Eps', cadence: 'monthly', nice: true }} />
+                                <FredTile fred={fred} metric="quitsLayoffs" title="Quits ÷ layoffs" jump="Quits ÷ layoffs" markKey={undefined} refreshTick={refreshTick} waiting={pending.fred} onRetry={refreshNow}
+                                    tip="People quitting ÷ people laid off (JOLTS). High = workers feel safe to leave."
+                                    fmt={(v) => `${v.toFixed(2)}x`} tone={() => 'flat'}
+                                    chart={{ color: '#9fb4c7', gradientId: 'v2Quits', cadence: 'monthly', nice: true }} />
                                 <MoreButton open={trioOpen} onClick={toggleTrio} className="v2-trio-more" />
                             </div>
                         </div>

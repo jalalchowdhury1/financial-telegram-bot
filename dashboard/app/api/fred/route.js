@@ -297,6 +297,25 @@ function spreadSources(now) {
     ];
 }
 
+// Quits ÷ layoffs on the months both series have, in `quits`' order.
+function quitsRatio(quits, layoffs) {
+    const lay = new Map(layoffs.map((p) => [p.date, p.value]));
+    return quits.filter((p) => lay.get(p.date) > 0).map((p) => ({ date: p.date, value: p.value / lay.get(p.date) }));
+}
+
+// BLS publishes JOLTS (FRED republishes it): total nonfarm quits / layoffs & discharges, SA.
+function quitsSources(now, blsKey) {
+    const endYear = now.getUTCFullYear();
+    const bls = (id) => blsSeries(id, { startYear: endYear - (BLS_YEARS - 1), endYear, key: blsKey }).then(parseBlsSeries);
+    const csv = (id) => fredGraphCsv(id).then(parseFredGraphCsv);
+    return [
+        { name: 'bls', freshnessDays: FRED_FRESHNESS.JTSQUL, fetch: async () =>
+            quitsRatio(...await Promise.all([bls('JTS000000000000000QUL'), bls('JTS000000000000000LDL')])) },
+        { name: 'fredcsv', freshnessDays: FRED_FRESHNESS.JTSQUL, fetch: async () =>
+            quitsRatio(...await Promise.all([csv('JTSQUL'), csv('JTSLDL')])) },
+    ];
+}
+
 function unemploymentSources(now, blsKey) {
     const endYear = now.getUTCFullYear();
     return [
@@ -366,6 +385,12 @@ async function repairHorsemen(responseData, { now, faults, blsKey, messages }) {
         return responseData.yieldCurve;
     });
 
+    repair('quits', quitsSources(now, blsKey), responseData.quitsLayoffs, (r) => {
+        const h = buildHorseman(r, FRED_FRESHNESS.JTSQUL, now);
+        responseData.quitsLayoffs = { ...h, value: h.current, date: h.asOf };
+        return responseData.quitsLayoffs;
+    });
+
     if (jobs.length) await Promise.all(jobs);
     return repaired;
 }
@@ -395,6 +420,7 @@ const CARDS_BY_SERIES = {
     NFCI: ['checklist.nfci'], M2SL: ['checklist.m2'], RSXFS: ['checklist.retail'], HOUST: ['checklist.housing'],
     INDPRO: ['checklist.indpro'], JTSJOL: ['checklist.jolts'], DGORDER: ['checklist.durable'], PSAVERT: ['checklist.savings'],
     A053RC1Q027SBEA: ['profitMargin'], GDP: ['profitMargin'], USREC: ['recessions'],
+    JTSQUL: ['quitsLayoffs'], JTSLDL: ['quitsLayoffs'],
 };
 
 function fillFromLastGood(target, lgData, failedIds) {
@@ -423,7 +449,7 @@ function buildResponse(series, peRatio, now, peSource = null, peAsOf = null, peS
         T10Y2Y: t10y2y, UNRATE: unrate, UMCSENT: umcsent, ICSA: icsa, BAMLC0A4CBBB: bbb,
         DFII10: dfii10, NFCI: nfci, M2SL: m2sl, RSXFS: rsxfs,
         HOUST: houst, INDPRO: indpro, JTSJOL: jtsjol, DGORDER: dgorder, PSAVERT: psavert,
-        A053RC1Q027SBEA: corpProfits, GDP: gdpData, USREC: usrec,
+        A053RC1Q027SBEA: corpProfits, GDP: gdpData, USREC: usrec, JTSQUL: quits, JTSLDL: layoffs,
     } = series;
 
     const F = (value, seriesId, asOf, extra = {}) => ({
@@ -463,6 +489,11 @@ function buildResponse(series, peRatio, now, peSource = null, peAsOf = null, peS
     // Same rule as yieldCurve above: spread, never cherry-pick.
     const pm = withFreshness(profitMarginHistory[0]?.value, profitMarginHistory[0]?.date, FRED_FRESHNESS.A053RC1Q027SBEA, now);
     const profitMargin = { ...pm, current: pm.value, date: profitMarginHistory[0]?.date || '', history: [...profitMarginHistory].reverse() };
+
+    // Quits ÷ layoffs (JOLTS): above 1 = more people leave by choice than get let go.
+    const ql = quitsRatio(quits, layoffs);
+    const qf = withFreshness(ql[0]?.value, ql[0]?.date, FRED_FRESHNESS.JTSQUL, now);
+    const quitsLayoffs = { ...qf, current: qf.value, date: ql[0]?.date || '', history: [...ql].reverse() };
 
     // ── Economic indicators ──
     const sentimentCurrent = umcsent[0]?.value;
@@ -510,6 +541,7 @@ function buildResponse(series, peRatio, now, peSource = null, peAsOf = null, peS
     return {
         yieldCurve,
         profitMargin,
+        quitsLayoffs,
         horsemen,
         peRatio,
         // Scraped live each cache cycle — except CAPE, a MONTHLY FRED series whose own
@@ -570,6 +602,8 @@ const FRED_REQUESTS = [
     [FRED_SERIES.CORP_PROFITS, 100000],
     [FRED_SERIES.GDP, 100000],
     [FRED_SERIES.RECESSIONS, 100000],
+    [FRED_SERIES.QUITS, 100000],
+    [FRED_SERIES.LAYOFFS, 100000],
 ];
 
 export async function GET(request) {
@@ -683,7 +717,7 @@ export async function GET(request) {
         // Horsemen repair works on a COPY and is merged only if it finished in budget, so
         // a late repair can never mutate an already-served payload.
         const polyKey = process.env.POLYGON_KEY || '';
-        const horsemenWork = { ...responseData, horsemen: { ...(responseData.horsemen || {}) }, yieldCurve: responseData.yieldCurve };
+        const horsemenWork = { ...responseData, horsemen: { ...(responseData.horsemen || {}) }, yieldCurve: responseData.yieldCurve, quitsLayoffs: responseData.quitsLayoffs };
         const horsemenMsgs = [];
         const horsemenP = budget.race(
             repairHorsemen(horsemenWork, { now, faults, blsKey: process.env.BLS_API_KEY || '', messages: horsemenMsgs })
@@ -706,6 +740,7 @@ export async function GET(request) {
             repairedHorsemen = hz.r;
             responseData.horsemen = horsemenWork.horsemen;
             responseData.yieldCurve = horsemenWork.yieldCurve;
+            responseData.quitsLayoffs = horsemenWork.quitsLayoffs;
             messages.push(...horsemenMsgs);
         }
         const horsemenLive = Object.keys(repairedHorsemen).length;
@@ -790,7 +825,7 @@ export async function GET(request) {
             // FRED card honestly unavailable, the live Horsemen kept, hasErrors set.
             const merged = base && mergeHorsemenOverBase(base, {
                 baseLabel,
-                horsemen: Object.fromEntries(Object.entries(repairedHorsemen).filter(([k]) => k !== 'spread')),
+                horsemen: Object.fromEntries(Object.entries(repairedHorsemen).filter(([k]) => k !== 'spread' && k !== 'quits')),
                 yieldCurve: repairedHorsemen.spread || null,
                 // Keep WHY FRED failed (e.g. its maintenance page: "Unexpected token '<'"),
                 // else a FRED outage looks identical to a code regression (21 Oct 2026).
@@ -798,6 +833,7 @@ export async function GET(request) {
             });
             if (merged) {
                 overlayLiveExtras(merged, responseData);
+                if (repairedHorsemen.quits) merged.quitsLayoffs = repairedHorsemen.quits;
                 // The live lines' indicators too, not the cached base's (audit B5).
                 for (const [line, card] of [['claims', 'claims'], ['unemployment', 'sahmRule']]) {
                     if (repairedHorsemen[line]) merged.indicators = { ...(merged.indicators || {}), [card]: responseData.indicators[card] };

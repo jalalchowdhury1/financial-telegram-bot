@@ -15,8 +15,8 @@ const { GET } = require('../../app/api/fred/route');
 test('only a complete live load becomes the new last-known-good', async () => {
     await GET(new Request('https://x.test/api/fred', { headers: { 'user-agent': 'jest' } }));
     const meta = (loadedCount, horsemenLive = 0) => ({ _meta: { loadedCount, horsemenLive } });
-    expect(opts.shouldStore(meta(17))).toBe(true);
-    expect(opts.shouldStore(meta(5))).toBe(false);          // 12 of 17 failed: served, not stored
+    expect(opts.shouldStore(meta(19))).toBe(true);
+    expect(opts.shouldStore(meta(5))).toBe(false);          // 14 of 19 failed: served, not stored
     expect(opts.isGood(meta(5))).toBe(true);
     expect(opts.shouldStore(meta(0, 4))).toBe(false);       // merged over the cache
 });

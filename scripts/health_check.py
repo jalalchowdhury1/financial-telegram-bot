@@ -204,7 +204,7 @@ KNOWN_DISCONTINUED = {
 
 # Cards that live at the ROOT of /api/fred rather than under `indicators`/`checklist`.
 # Like the horsemen they expose `current`, not `value`.
-TOP_LEVEL_FRED_CARDS = ["yieldCurve", "profitMargin", "spEps"]
+TOP_LEVEL_FRED_CARDS = ["yieldCurve", "profitMargin", "spEps", "quitsLayoffs"]
 
 
 def fred_metrics_for_na_check(fred):

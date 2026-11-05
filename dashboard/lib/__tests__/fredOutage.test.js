@@ -133,3 +133,23 @@ test('B11: a cached 200 maintenance page from multpl is not served for 30 min: o
     expect(b.peRatio).toBe(25.86);
     expect(b.peSource).toBe('multpl');
 });
+
+test('Quits ÷ layoffs: FRED live → the ratio of the two series, oldest first', async () => {
+    fetchJson.mockImplementation(async (url) => (/series_id=JTSQUL/.test(url) ? fredObs(30, 30, () => 3365)
+        : /series_id=JTSLDL/.test(url) ? fredObs(30, 30, () => 1641) : fredObs(30, 30)));
+    const b = await (await get()).json();
+    expect(b.quitsLayoffs.current).toBeCloseTo(2.05, 2);
+    expect(b.quitsLayoffs.history).toHaveLength(30);
+    expect(b.quitsLayoffs.history[0].date < b.quitsLayoffs.history[29].date).toBe(true);
+});
+
+test('Quits ÷ layoffs: FRED down (with or without a cached base) → BLS answers it, never parked under horsemen', async () => {
+    fetchJson.mockRejectedValue(new Error('FRED 503'));
+    const cold = await (await get()).json();
+    expect(cold.quitsLayoffs.source).toBe('bls');
+    expect(cold.quitsLayoffs.current).toBe(1); // the mocked BLS gives both legs 4.1
+    defaultKv.get.mockResolvedValue(JSON.stringify({ data: { quitsLayoffs: { current: 9 }, horsemen: {}, _meta: {} }, savedAt: new Date().toISOString() }));
+    const warm = await (await get()).json();
+    expect(warm.quitsLayoffs.source).toBe('bls');
+    expect(warm.horsemen.quits).toBeUndefined();
+});

@@ -402,7 +402,7 @@ body:has(.v2) { background: #0b0c0e; }
 
 /* own v2 cards (FRED tiles) */
 .v2-card-head { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; margin-bottom: 14px; white-space: nowrap; }
-.v2-trio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.v2-trio { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
 .v2-fred-value { display: flex; align-items: baseline; gap: 12px; margin-bottom: 10px; white-space: nowrap; }
 .v2-num-lg { font: 600 20px var(--sans); letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
 .v2-fred-na { color: var(--ink-3); font-size: 13px; }
@@ -443,6 +443,7 @@ body:has(.v2) { background: #0b0c0e; }
   .v2-readout { grid-auto-flow: row; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
   .v2-read { border-left: 0; border-top: 1px solid var(--line); }
   .v2-top-clock .econ-line { display: none; }
+  .v2-trio { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 860px) {
   .v2-hero { grid-template-columns: minmax(0, 1fr); }

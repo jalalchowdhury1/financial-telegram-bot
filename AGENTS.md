@@ -355,6 +355,10 @@ behave differently, it gets a v2-only prop (`race` on FactorRow, `asCards` on `p
   the zero line reads 0.0, not 0.08). `inverted` = an amber fill between the yield curve and zero wherever it was
   under zero, with the word "inverted" where the line stays furthest under zero for the word's width (only when
   it fits: 56 px wide, 12 px deep). The change label never wraps; a tight tab row scrolls sideways.
+- **Quits ÷ layoffs** (5 Nov 2026, his "graph we should have on our dashboard"): 4th Economy tile, `fred.quitsLayoffs`
+  = FRED JTSQUL ÷ JTSLDL (full history, 2000→). Backups like the spread: BLS (JTS000000000000000QUL/LDL, the publisher)
+  → fredgraph CSV → /tmp/KV last-good (`CARDS_BY_SERIES`); the outage merge keeps it out of `horsemen`. In the
+  health-check N/A sweep (`TOP_LEVEL_FRED_CARDS`). FRED now loads 19 series.
 - **Not built on purpose**: signal dots on the SPY chart, tap-a-number "ping me at X".
 - Tests: `app/v2/__tests__/page.test.js` (`the top line`), `components/__tests__/LeadCombos.test.js`,
   `components/__tests__/RiskCards.test.js`, `lib/__tests__/pulseVerdicts.test.js` (`asCards`).
