@@ -178,6 +178,8 @@ export async function cnbcQuotes(symbols, { revalidate = 1800, timeout = 6000, t
             change: parseFloat(it.change),
             changePct: parseFloat(it.change_pct),
             open: parseFloat(it.open),
+            high: parseFloat(it.high),
+            low: parseFloat(it.low),
             asOf: typeof it.last_time === 'string' ? it.last_time.slice(0, 10) : null,
             lastTime: typeof it.last_time === 'string' ? it.last_time : null,
             settleDate: /^\d{4}-\d{2}-\d{2}/.test(it.settleDate || '') ? it.settleDate.slice(0, 10) : null,

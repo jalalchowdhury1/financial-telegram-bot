@@ -66,9 +66,11 @@ describe('sheet VIX cross-checked against the CBOE close (audit B4)', () => {
     const { resolveLiveFields, CBOE_URLS } = require('../sheetsCascade');
     const { GOOGLE_SHEETS } = require('../constants');
     const cboe = 'DATE,OPEN,HIGH,LOW,CLOSE\n10/29/2026,17.00,18.00,16.50,17.40\n10/30/2026,18.00,21.00,17.90,20.78\n';
-    const run = (vix, now) => resolveLiveFields({
+    const noCnbc = async () => { throw new Error('offline'); };
+    const run = (vix, now, cnbc = noCnbc) => resolveLiveFields({
         faults: new Set(),
         now: new Date(now),
+        cnbc,
         fetchJson: async () => { throw new Error('x'); },
         fetchText: async (u) => {
             if (u === CBOE_URLS.vixCurrent) return cboe;
@@ -96,5 +98,20 @@ describe('sheet VIX cross-checked against the CBOE close (audit B4)', () => {
     test('intraday: 29% off the prior close → the sheet value is kept but flagged stale', async () => {
         const r = await run('14.84', '2026-11-02T15:00:00Z');
         expect(r.fields.vixCurrent).toMatchObject({ value: '14.84', stale: true, live: false });
+    });
+
+    // 5 Nov 2026: VIX really spiked 16.61 → 25+ intraday; the right sheet value was flagged
+    // stale and the dashboard row went red. Today's live range tells a spike from a frozen cell.
+    const quote = (low, high, asOf = '2026-11-02') => async () => ({ '.VIX': { price: 27, low, high, asOf, lastTime: `${asOf}T10:00:00` } });
+    test('intraday spike: 29% off the prior close but inside today\'s live range → sheet stays live', async () => {
+        const r = await run('27.00', '2026-11-02T15:00:00Z', quote(20.5, 28.1));
+        expect(r.fields.vixCurrent).toMatchObject({ value: '27.00', tier: 'main', live: true });
+        expect(r.messages.join(' ')).toMatch(/inside today's live range 20\.5–28\.1/);
+    });
+    test('intraday: outside today\'s range, or the quote is not today\'s, or CNBC is down → still flagged stale', async () => {
+        for (const cnbc of [quote(19, 23), quote(20.5, 28.1, '2026-10-30'), noCnbc]) {
+            const r = await run('27.00', '2026-11-02T15:00:00Z', cnbc);
+            expect(r.fields.vixCurrent).toMatchObject({ value: '27.00', stale: true, live: false });
+        }
     });
 });

@@ -290,3 +290,15 @@ describe('pe item (Market Valuation tile: trailing P/E)', () => {
         expect(buildFreshness({}, now).items.map((i) => i.name)).toContain('pe');
     });
 });
+
+describe('a flagged answer carries its own reason up (5 Nov 2026)', () => {
+    test('sheets flagged stale → item.why names the route message; clean answer has no why', () => {
+        const now = Date.parse('2026-11-05T16:00:00Z');
+        const flagged = { VIX: { current: '25.87' }, _meta: { hasErrors: true, stale: true, messages: [
+            'FrontRunner: SOXL computed', 'sheet VIX 25.87 is 56% off CBOE close 16.61 (2026-11-04): flagged stale'] } };
+        const item = servedCopyItem('sheets', flagged, now);
+        expect(item.servedAgeH).toBeNull();
+        expect(item.why).toBe('sheet VIX 25.87 is 56% off CBOE close 16.61 (2026-11-04): flagged stale');
+        expect(servedCopyItem('sheets', { VIX: { current: '25.87' }, _meta: { hasErrors: false, messages: [] } }, now).why).toBeUndefined();
+    });
+});

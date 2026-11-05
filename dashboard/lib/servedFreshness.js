@@ -190,13 +190,18 @@ export function servedCopyItem(name, payload, now = Date.now()) {
     const newest = latestCloseMs(now);
     const inputAgeH = newest == null ? null : round1((now - newest) / H);
     let s = servedCopyOf(payload);
-    if (s && !s.copy && FLAGGED_IS_UNSERVED.has(name) && (payload._meta?.hasErrors || payload._meta?.stale)) s = null;
+    let why;
+    if (s && !s.copy && FLAGGED_IS_UNSERVED.has(name) && (payload._meta?.hasErrors || payload._meta?.stale)) {
+        s = null;
+        // Carry the route's own reason up to the fleet row (5 Nov 2026: a bare "(none)" hid a sheet VIX check).
+        why = (payload._meta.messages || []).filter((m) => /stale|fail|off |last-good|error/i.test(m)).join('; ').slice(0, 240) || undefined;
+    }
     let servedAgeH = null;
     const own = s && !s.copy ? liveAsOfMs(name, payload) : null;
     if (own != null) servedAgeH = round1(Math.max(0, now - own) / H);
     else if (s && !s.copy) servedAgeH = inputAgeH;
     else if (s && s.savedMs != null) servedAgeH = round1((now - s.savedMs) / H);
-    return { name: `served:${name}`, inputAgeH, servedAgeH, graceH: SERVED_COPY_GRACE_H };
+    return { name: `served:${name}`, inputAgeH, servedAgeH, graceH: SERVED_COPY_GRACE_H, ...(why ? { why } : {}) };
 }
 
 // The Market Valuation tile's trailing P/E rides inside /api/fred, whose served:fred grade counts
