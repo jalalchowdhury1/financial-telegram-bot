@@ -152,6 +152,11 @@ def check(route, faults, expect):
             problems.append(f'Unavailable although a {"saved copy" if expect == "copy" else "tier"} should answer')
         elif expect == 'live' and kind != 'live':
             problems.append(f'expected live, got {kind} "{src[:50]}"')
+            # Carry the route's own reason (which tier failed and how) up into the FAIL line:
+            # 4 Nov 2026's two spy-daily-move FAILs said only "got copy", nothing to chase.
+            why = ' | '.join(map(str, ((d or {}).get('_meta') or {}).get('messages') or []))
+            if why:
+                problems.append(f'why: {why[:300]}')
             # Still a FAIL; just say whether FRED itself is down, so nobody hunts a code regression.
             down = route == 'fred' and fred_upstream_down()
             if down:
@@ -313,6 +318,15 @@ def main():
         results += list(zip(normal, ex.map(lambda c: check(*c), normal)))
     with cf.ThreadPoolExecutor(4) as ex:
         results += list(zip(rest, ex.map(lambda c: check(*c), rest)))
+    # A failed case gets ONE calm re-try, alone, 30 s later: same expectation, no burst beside it.
+    # 4 Nov 2026: two spy-daily-move cases fell to the copy at 21:40 and passed on a re-run;
+    # the 01:40 catch-up came too late (Watch saw red at 21:48). The first try's reason stays printed.
+    if any(not r[0] for _, r in results):
+        time.sleep(30)
+        for i, (c, r) in enumerate(results):
+            if not r[0]:
+                ok, msg, secs = check(*c)
+                results[i] = (c, (ok, f'{msg} (re-try; 1st try: {r[1][:200]})' if ok else f'{msg} (failed twice)', secs))
     ok3, msg3 = spy_3y_agrees()
     sheet_checks = sheets_3y_agree()
     signal_checks = signals_agree()

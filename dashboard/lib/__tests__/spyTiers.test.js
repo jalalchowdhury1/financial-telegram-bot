@@ -266,6 +266,12 @@ describe('fallbackMove (/api/spy-daily-move direct tiers)', () => {
         expect(msgs.join(' ')).toMatch(/Polygon failed: newest bar 2026-10-08 is not the latest session 2026-10-09; skipped/);
     });
 
+    test('all-tiers-failed error names EVERY tier, first one included (4 Nov 2026: only the last two showed)', async () => {
+        src.polygonDaily.mockResolvedValue(poly(bars(250, '2026-10-08')));
+        await expect(fallbackMove([], F('finnhub', 'cnbc', 'nasdaq', 'yahoo'), { env: ENV, now: OPEN }))
+            .rejects.toThrow(/Finnhub failed: .*CNBC failed: .*Nasdaq failed: .*Polygon failed: .*Yahoo failed: /);
+    });
+
     test('Polygon dated the latest session is used (pre-open → yesterday is latest)', async () => {
         src.polygonDaily.mockResolvedValue(poly(bars(250, '2026-10-08', { base: 100, step: 1 })));
         const out = await fallbackMove([], F('finnhub', 'cnbc'), { env: ENV, now: PRE });

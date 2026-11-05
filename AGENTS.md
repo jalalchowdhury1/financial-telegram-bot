@@ -882,6 +882,9 @@ Rule: every number has ≥2 independent live sources, then saved copies, then an
   last line isn't `=== N/N passed ===`, and prints nothing on a skip — keep it silent, or the
   fleet row (which grades that last line) breaks (22 Oct 2026). Every --catchup run appends one line to its OWN
   `~/Library/Logs/ftb-fault-matrix-catchup.log` — the blackout guard's proof it ran; drop it and a clean night reads "01:40 missed" (26 Oct). Its FAIL card goes out quiet (`disable_notification`): 21:40 already rang.
+  In-run re-try (4 Nov 2026): a failed case is re-checked ONCE, alone, 30 s later — same expectation, never loosened;
+  a pass prints `(re-try; 1st try: …)`, a repeat prints `(failed twice)`. A live→copy FAIL carries the route's
+  `_meta.messages` as `why:` — keep `fallbackMove`'s thrown error listing EVERY tier (not `slice(-2)`).
   A `fred … live` FAIL ending "upstream down: FRED serving its maintenance page" = FRED itself is
   down (HTTP 200 HTML, API and fredgraph CSV alike; 21 Oct 2026): the route is right to serve the
   stale copy + live Horsemen. Not a regression; it clears when FRED is back. The reason is in

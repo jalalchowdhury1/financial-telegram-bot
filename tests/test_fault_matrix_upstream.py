@@ -144,3 +144,15 @@ class CatchupAlert(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CopyFailCarriesWhy(unittest.TestCase):
+    """FAKE: 4 Nov 2026 spy-daily-move fell to the copy; the FAIL line must say why, and stays a FAIL."""
+    COPY = {"value": "1.65%", "_meta": {"source": "KV last-good (2026-11-05T02:40:07Z) ← Google Sheets", "stale": True,
+                                        "messages": ["live sources failed (all SPY move tiers failed: Finnhub failed: HTTP 429 | CNBC failed: timeout)"]}}
+
+    def test_fail_line_names_the_tier_errors(self):
+        with mock.patch.object(fault_matrix, "fetch", return_value=(200, self.COPY, 1.0, None)):
+            ok, msg, _ = fault_matrix.check("spy-daily-move", "lambda", "live")
+        self.assertFalse(ok)
+        self.assertIn("why: live sources failed (all SPY move tiers failed: Finnhub failed: HTTP 429", msg)

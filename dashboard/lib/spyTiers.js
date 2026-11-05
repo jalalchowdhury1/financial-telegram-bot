@@ -306,5 +306,7 @@ export async function fallbackMove(messages, faults = new Set(), { env = process
         if (quoteDay < expected) throw new Error(`quote dated ${quoteDay} is not the latest session ${expected}; skipped`);
         return { value: fmtPct(dailyChange(y.current, yahooPrev(y)).pct), source: 'Yahoo Finance (fallback)', asOf: quoteDay };
     } catch (e) { messages.push(`Yahoo failed: ${e.message}`); }
-    throw new Error(`all SPY move tiers failed: ${messages.slice(-2).join(' | ')}`);
+    // Every tier's reason, not the last two: on 4 Nov 2026 the copy said only "Polygon | Yahoo"
+    // and nobody could tell why Finnhub, CNBC and Nasdaq had failed first.
+    throw new Error(`all SPY move tiers failed: ${messages.join(' | ')}`);
 }
