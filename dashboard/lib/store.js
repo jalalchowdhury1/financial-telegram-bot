@@ -186,7 +186,7 @@ export async function serve(key, produce, opts = {}) {
         }
         return (await degraded('live produced empty', payload)) || json(payload ?? fallback);
     } catch (e) {
-        const why = `live sources failed (${String(e?.message).slice(0, 120)})`;
+        const why = `live sources failed (${String(e?.message).slice(0, 400)})`;
         try {
             const res = await degraded(why);
             if (res) return res;
