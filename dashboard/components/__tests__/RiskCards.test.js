@@ -3,7 +3,7 @@
  * mode the tripwires can all be green again while the plan says "Half in cash. Wait."; the badge used to say
  * "All clear" right above that.
  */
-import { render, screen } from '@testing-library/react';
+import { render, screen, cleanup } from '@testing-library/react';
 import { RubberBandCard, RecessionCard } from '../RiskCards';
 
 const RB = require('../../lib/__tests__/fixtures/pulse-rubber-band-2026-10-04.json');
@@ -61,4 +61,7 @@ it('a missing year-ago print (UNRATE skipped Oct 2025) names the gap and keeps t
     const meter = container.querySelectorAll('.rw-meter')[1];
     expect(meter.querySelector('b')).not.toBeNull();
     expect(meter.querySelector('i')).toBeNull();
+    cleanup();
+    const open = render(<RecessionCard fred={fred} loading={false} open />);
+    expect(open.container.querySelectorAll('.rw-panel')[1].querySelector('.rw-word').textContent).toBe("Oct '25 missing");
 });

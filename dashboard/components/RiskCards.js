@@ -361,7 +361,8 @@ function horse(r, fred, now) {
     const median = runupMedian(runups);
     // No year-ago print to compare with (UNRATE skipped Oct 2025): say which instead of a blank row.
     const gap = yoy == null ? yearAgoGap(m?.history) : null;
-    const [c, word] = STATUS[horsemanStatus(yoy, median, true)];
+    const [c, status] = STATUS[horsemanStatus(yoy, median, true)];
+    const word = gap ? `${gap.replace(' 20', " '")} missing` : status;
     const f = chg(r.unit);
     const sahm = fred?.indicators?.sahmRule?.value;
     return {
@@ -407,7 +408,7 @@ export function RecessionCard({ fred, loading, open }) {
                                 <b>{r.cur != null ? r.level(r.cur) : '—'}</b>
                                 {r.key === 'spread' ? <em>{r.word}</em>
                                     : r.yoy != null ? <em className={r.yoy > 0 ? 'is-bad' : 'is-good'}>{r.yoy >= 0 ? '▲' : '▼'} {Math.abs(r.yoy).toFixed(1)}{r.unit} vs 1y</em>
-                                    : r.gap && <em>{r.gap.replace(' 20', " '")} missing</em>}
+                                    : r.gap && <em>{r.word}</em>}
                             </span>
                             <Meter v={r.move} line={r.line} bad={r.bad} />
                         </div>
