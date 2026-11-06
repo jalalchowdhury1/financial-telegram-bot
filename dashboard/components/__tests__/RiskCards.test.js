@@ -57,7 +57,7 @@ it('a missing year-ago print (UNRATE skipped Oct 2025) names the gap and keeps t
         .filter((d) => d !== '2025-10-01').map((date) => ({ date, value: date >= '2008-01-01' && date < '2009-07-01' ? 6 : 4.2 }));
     const fred = { horsemen: { unemployment: { current: 4.2, history: months } }, recessions: [{ start: '2008-01-01', end: '2009-07-01' }] };
     const { container } = render(<RecessionCard fred={fred} loading={false} open={false} />);
-    expect(screen.getByText('no Oct 2025 print')).toBeInTheDocument();
+    expect(screen.getByText("Oct '25 missing")).toBeInTheDocument();
     const meter = container.querySelectorAll('.rw-meter')[1];
     expect(meter.querySelector('b')).not.toBeNull();
     expect(meter.querySelector('i')).toBeNull();

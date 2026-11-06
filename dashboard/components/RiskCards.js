@@ -407,7 +407,7 @@ export function RecessionCard({ fred, loading, open }) {
                                 <b>{r.cur != null ? r.level(r.cur) : '—'}</b>
                                 {r.key === 'spread' ? <em>{r.word}</em>
                                     : r.yoy != null ? <em className={r.yoy > 0 ? 'is-bad' : 'is-good'}>{r.yoy >= 0 ? '▲' : '▼'} {Math.abs(r.yoy).toFixed(1)}{r.unit} vs 1y</em>
-                                    : r.gap && <em>no {r.gap} print</em>}
+                                    : r.gap && <em>{r.gap.replace(' 20', " '")} missing</em>}
                             </span>
                             <Meter v={r.move} line={r.line} bad={r.bad} />
                         </div>
