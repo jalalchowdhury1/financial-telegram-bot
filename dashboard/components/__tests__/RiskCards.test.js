@@ -51,3 +51,14 @@ it('Recession watch with a failed feed (no fred, done loading) says unavailable,
     render(<RecessionCard fred={null} loading={false} open={false} />);
     expect(screen.getByText(/Unavailable — source busy/)).toBeInTheDocument();
 });
+
+it('a missing year-ago print (UNRATE skipped Oct 2025) names the gap and keeps the red zone, not a bare line', () => {
+    const months = Array.from({ length: 322 }, (_, i) => `${2000 + Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, '0')}-01`)
+        .filter((d) => d !== '2025-10-01').map((date) => ({ date, value: date >= '2008-01-01' && date < '2009-07-01' ? 6 : 4.2 }));
+    const fred = { horsemen: { unemployment: { current: 4.2, history: months } }, recessions: [{ start: '2008-01-01', end: '2009-07-01' }] };
+    const { container } = render(<RecessionCard fred={fred} loading={false} open={false} />);
+    expect(screen.getByText('no Oct 2025 print')).toBeInTheDocument();
+    const meter = container.querySelectorAll('.rw-meter')[1];
+    expect(meter.querySelector('b')).not.toBeNull();
+    expect(meter.querySelector('i')).toBeNull();
+});

@@ -7,7 +7,7 @@ import {
     contextOf, legColour, legUsed, tripFuse,
 } from './RubberBandRadar';
 import { kFmt } from './FourHorsemen';
-import { latestYoY, preRecessionRunups, runupMedian, horsemanStatus, lastInversion } from '../lib/horsemenRunup';
+import { latestYoY, yearAgoGap, preRecessionRunups, runupMedian, horsemanStatus, lastInversion } from '../lib/horsemenRunup';
 import { horsemenRiding } from '../lib/pulseVerdicts';
 import { formatAsOf } from '../lib/freshness';
 
@@ -359,28 +359,29 @@ function horse(r, fred, now) {
     const yoy = latestYoY(m?.history, r.mode) ?? (r.key === 'bankruptcies' && Number.isFinite(m?.changePct) ? m.changePct : null);
     const runups = preRecessionRunups(m?.history, fred?.recessions || [], r.mode);
     const median = runupMedian(runups);
+    // No year-ago print to compare with (UNRATE skipped Oct 2025): say which instead of a blank row.
+    const gap = yoy == null ? yearAgoGap(m?.history) : null;
     const [c, word] = STATUS[horsemanStatus(yoy, median, true)];
     const f = chg(r.unit);
     const sahm = fred?.indicators?.sahmRule?.value;
     return {
-        ...r, m, cur, yoy, median, move: yoy, line: median, bad: 'above', c, word, fmt: f,
+        ...r, m, cur, yoy, gap, median, move: yoy, line: median, bad: 'above', c, word, fmt: f,
         sub: <>{cur != null ? r.level(cur) : '—'} now{r.key === 'unemployment' && Number.isFinite(sahm) && <em> · Sahm {sahm.toFixed(2)}</em>}</>,
         tag: median != null ? `${runups.length} recessions began near ${f(median)}` : null,
-        tip: `1-year move ${f(yoy)}.${median != null ? ` ${runups.length} recessions began with a move near ${f(median)} (the red zone).` : ''}${m?.stale ? ` Last data ${formatAsOf(m.asOf)} (stale).` : ''}`,
+        tip: `${gap ? `No ${gap} print to compare with, so no 1-year move yet.` : `1-year move ${f(yoy)}.`}${median != null ? ` ${runups.length} recessions began with a move near ${f(median)} (the red zone).` : ''}${m?.stale ? ` Last data ${formatAsOf(m.asOf)} (stale).` : ''}`,
     };
 }
 
 /** Today's move as a dot; the red stretch is where past recessions began. */
 function Meter({ v, line, bad }) {
-    if (v == null) return <span className="rw-meter" aria-hidden="true" />;
-    const half = Math.max(Math.abs(line ?? 0) * 1.6, Math.abs(v) * 1.15, bad === 'below' ? 0.5 : 1e-9);
+    const half = Math.max(Math.abs(line ?? 0) * 1.6, Math.abs(v ?? 0) * 1.15, bad === 'below' ? 0.5 : 1e-9);
     const pos = (x) => 50 + 50 * clamp(x / half, -1, 1);
     const zone = line == null ? null : bad === 'above' ? { left: `${pos(line)}%`, right: 0 } : { left: 0, right: `${100 - pos(line)}%` };
     return (
         <span className="rw-meter" aria-hidden="true">
             {zone && <b style={zone} />}
             <u />
-            <i style={{ left: `${pos(v)}%` }} />
+            {v != null && <i style={{ left: `${pos(v)}%` }} />}
         </span>
     );
 }
@@ -405,7 +406,8 @@ export function RecessionCard({ fred, loading, open }) {
                             <span className={`rw-val${r.m?.stale ? ' is-stale' : ''}`}>
                                 <b>{r.cur != null ? r.level(r.cur) : '—'}</b>
                                 {r.key === 'spread' ? <em>{r.word}</em>
-                                    : r.yoy != null && <em className={r.yoy > 0 ? 'is-bad' : 'is-good'}>{r.yoy >= 0 ? '▲' : '▼'} {Math.abs(r.yoy).toFixed(1)}{r.unit} vs 1y</em>}
+                                    : r.yoy != null ? <em className={r.yoy > 0 ? 'is-bad' : 'is-good'}>{r.yoy >= 0 ? '▲' : '▼'} {Math.abs(r.yoy).toFixed(1)}{r.unit} vs 1y</em>
+                                    : r.gap && <em>no {r.gap} print</em>}
                             </span>
                             <Meter v={r.move} line={r.line} bad={r.bad} />
                         </div>
