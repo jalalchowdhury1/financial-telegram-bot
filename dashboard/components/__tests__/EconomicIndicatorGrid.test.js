@@ -30,6 +30,17 @@ test('unavailable tile shows N/A', () => {
     expect(screen.queryByText(/🕐/)).toBeNull();              // no clock for unavailable
 });
 
+test('a real 0.00 shows as a number, not N/A (Sahm, real yields)', () => {
+    const fred = fredWith({
+        sahmRule: { value: 0, asOf: '2026-10-01', stale: false, unavailable: false, staleDays: 0, status: 'safe' },
+        realYields: { value: 0, asOf: '2026-06-17', stale: false, unavailable: false, staleDays: 0, status: 'easy' },
+    });
+    render(<EconomicIndicatorGrid fred={fred} loading={false} statusColor={statusColor} />);
+    expect(screen.getByText('0.00')).toBeInTheDocument();
+    expect(screen.getByText('0.00%')).toBeInTheDocument();
+    expect(screen.queryByText('N/A')).toBeNull();
+});
+
 test('all-fresh grid has no clocks and no N/A', () => {
     render(<EconomicIndicatorGrid fred={fredWith({})} loading={false} statusColor={statusColor} />);
     expect(screen.queryByText(/🕐/)).toBeNull();
