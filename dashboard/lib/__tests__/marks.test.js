@@ -78,6 +78,11 @@ describe('parseValue', () => {
         expect(parseValue('0')).toBeNull();
         expect(parseValue('0.00')).toBeNull();
     });
+
+    it('reads a zero as a real value when told the row is new enough', () => {
+        expect(parseValue('0', true)).toBe(0);
+        expect(parseValue('0.00', true)).toBe(0);
+    });
 });
 
 describe('todayET', () => {
@@ -133,6 +138,13 @@ describe('buildSeries', () => {
     it('drops absent values entirely rather than carrying them', () => {
         expect(buildSeries(rows, 2).map(p => [p.date, p.value])).toEqual([
             ['2026-08-23', 1000], ['2026-08-24', 2000],
+        ]);
+    });
+
+    it('keeps a 0 from June 2026 on as a real print (Sahm 0.03 -> 0 on 2026-10-26)', () => {
+        const sahm = [['2026-05-30', '0'], ['2026-10-25', '0.03'], ['2026-10-26', '0'], ['2026-11-07', '0']];
+        expect(buildSeries(sahm, 1).map(p => [p.date, p.value])).toEqual([
+            ['2026-10-25', 0.03], ['2026-10-26', 0], ['2026-11-07', 0],
         ]);
     });
 

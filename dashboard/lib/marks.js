@@ -105,20 +105,22 @@ export function classify(key) {
 /**
  * Tolerant numeric parse for one sheet cell.
  *
- * An exact 0 is treated as ABSENT, not as a value: rows written before 2026-05-08 use a
- * bare 0 as a missing sentinel, and on that date seven metrics jumped 0 → a real number
- * when the scraper was fixed. Suppressing a genuine 0.00 print is a false negative we
- * accept; lighting a false mark on a plumbing event is not.
+ * An exact 0 is treated as ABSENT unless `zeroIsReal`: rows written before June 2026 use a
+ * bare 0 as a missing sentinel (2026-05-08 seven metrics jumped 0 → a real number when the
+ * scraper was fixed; the last stray zeros are 2026-05-30). From ZERO_IS_REAL_FROM on a 0 is
+ * a real print: Sahm read 0.00 from 2026-10-26 and, dropped as absent, froze the baseline
+ * at 0.03 and lit a false "0.03 → 0.00" for two weeks.
  */
-export function parseValue(raw) {
+export function parseValue(raw, zeroIsReal = false) {
     if (raw === undefined || raw === null) return null;
     const s = String(raw).trim();
     if (!s || s.toUpperCase() === 'N/A') return null;
     if (!/^-?[\d,]*\.?\d+$/.test(s.replace(/\s/g, ''))) return null;
     const n = Number(s.replace(/,/g, ''));
     if (!Number.isFinite(n)) return null;
-    return Math.abs(n) < EPS ? null : n;
+    return Math.abs(n) < EPS ? (zeroIsReal ? 0 : null) : n;
 }
+const ZERO_IS_REAL_FROM = '2026-06-01';
 
 /**
  * Today's date in New York as `YYYY-MM-DD`.
@@ -189,7 +191,7 @@ export function buildSeries(rows, col) {
     for (const r of rows) {
         const date = (r[0] || '').trim();
         if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
-        const v = parseValue(r[col]);
+        const v = parseValue(r[col], date >= ZERO_IS_REAL_FROM);
         if (v === null) { byDate.delete(date); continue; }
         byDate.set(date, { value: v, dp: decimalsOf(r[col]) });
     }
