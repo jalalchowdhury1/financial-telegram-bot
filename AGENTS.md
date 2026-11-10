@@ -912,7 +912,7 @@ Each rule has a tripwire test named in its commit (`audit A1…D11`).
 - **market-extra:** per instrument the newest-dated price wins (Lambda `_resolve`, route `withQuote`); FX/gold weekend
   dates count as Friday, BTC trades 24/7; gold's live quote is gold-api spot, never CNBC `@GC.1`. The Lambda's DXY gives
   way to CNBC's real `.DXY`; its FRED oil / 10Y / 2Y / mortgage get `staleIfOld` (`FRED_STALE_DAYS`). `cnbcHistory`
-  keeps one bar per date. `/api/breadth`: a pair over one session behind is labelled stale, never saved as last-good.
+  keeps one bar per date. `/api/breadth`: a ticker behind the newest close gets one uncached CNBC refetch (`bust`); a pair still behind 6 h after the close (`SERVED_COPY_GRACE_H`, the freshness rule) is labelled stale, never saved as last-good. Never widen it back to a session (9 Nov: Friday bars served live for 78 h).
 - **`/api/fred`:** merge base /tmp → KV → Sheet (none → the live shape, cards unavailable); the series loop is capped at
   15 s so the Horsemen repair keeps its time; a failed series' cards come from last-good stamped `stale:true`; claims /
   Sahm are recomputed after a BLS/DOL repair; `findByMonthOffset` ±35 days or none; `housing6moAvg` undefined under 6

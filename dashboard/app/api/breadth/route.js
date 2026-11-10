@@ -18,6 +18,7 @@ import { serve } from '../../../lib/store';
 import { faultsFrom, gate } from '../../../lib/faults';
 import { PAIRS, ratioSeries, pairStats, legStats } from '../../../lib/breadth';
 import { latestCompletedSessionDate, etWallToMs } from '../../../lib/marketClock';
+import { closeMsOf, SERVED_COPY_GRACE_H } from '../../../lib/servedFreshness';
 
 export const fetchCache = 'default-cache';
 
@@ -27,7 +28,7 @@ export const fetchCache = 'default-cache';
  * Returns { history: [{date, price}], source: 'polygon'|'cnbc' } or
  * { history: null, source: 'none' } if both fail.
  */
-async function fetchTickerHistory(ticker, polygonKey, faults) {
+async function fetchTickerHistory(ticker, polygonKey, faults, expected) {
     const tier = (source, fn) => gate(`breadth_${source}`, faults, fn)
         .then((hist) => (Array.isArray(hist) && hist.length > 0 ? { history: hist, source } : null))
         .catch(() => null);
@@ -36,8 +37,14 @@ async function fetchTickerHistory(ticker, polygonKey, faults) {
         tier('cnbc', () => cnbcHistory(ticker, { range: '1Y' })),
     ]);
     const last = (r) => r.history[r.history.length - 1].date;
-    if (poly && cnbc) return last(cnbc) > last(poly) ? cnbc : poly;
-    return poly || cnbc || { history: null, source: 'none' };
+    let best = poly && cnbc ? (last(cnbc) > last(poly) ? cnbc : poly) : (poly || cnbc);
+    // Both behind the newest close: one uncached CNBC refetch (9 Nov 2026: a cached CNBC copy
+    // held XLK/HYG on Friday's bar into Monday night while CNBC itself had Monday's).
+    if (!best || last(best) < expected) {
+        const fresh = await tier('cnbc', () => cnbcHistory(ticker, { range: '1Y', bust: true }));
+        if (fresh && (!best || last(fresh) > last(best))) best = fresh;
+    }
+    return best || { history: null, source: 'none' };
 }
 
 export async function GET(request) {
@@ -55,9 +62,10 @@ export async function GET(request) {
 
         // Fetch histories for every unique ticker across all pairs
         const allTickers = [...new Set(Object.values(PAIRS).flat())];
+        const expected = latestCompletedSessionDate();
         const histResults = {};
         await Promise.all(allTickers.map(async (ticker) => {
-            const result = await fetchTickerHistory(ticker, polygonKey, faults);
+            const result = await fetchTickerHistory(ticker, polygonKey, faults, expected);
             histResults[ticker] = result;
         }));
 
@@ -98,10 +106,12 @@ export async function GET(request) {
 
         const expectedPairCount = Object.keys(PAIRS).length;
 
-        // Staleness gate: a pair more than one session behind the newest close (both sources
-        // stuck) still shows, but labelled: pair `stale`, and `_meta.stale` + `asOf` (its
-        // oldest day, the shape /api/freshness grades), never saved as last-good.
-        const floor = latestCompletedSessionDate(etWallToMs(latestCompletedSessionDate(), 0));
+        // Staleness gate: a pair behind the newest close once that close is past the freshness
+        // grace (SERVED_COPY_GRACE_H, the rule /api/freshness grades; any lag before then, two
+        // sessions always) still shows, but labelled: pair `stale`, and `_meta.stale` + `asOf`
+        // (its oldest day), never saved as last-good. One session of lag was allowed until 9 Nov.
+        const overdue = Date.now() - closeMsOf(expected) > SERVED_COPY_GRACE_H * 3600e3;
+        const floor = overdue ? expected : latestCompletedSessionDate(etWallToMs(expected, 0));
         let staleAsOf = null;
         for (const [key, stats] of Object.entries(pairs)) {
             if (stats.asOf >= floor) continue;

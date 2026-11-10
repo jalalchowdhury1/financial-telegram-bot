@@ -205,12 +205,13 @@ export async function cnbcQuotes(symbols, { revalidate = 1800, timeout = 6000, t
  */
 const CNBC_DAILY_RANGES = ['3M', '1Y', '6M'];
 
-export async function cnbcHistory(symbol, { range = '3M', revalidate = 1800, timeout = 6000, tries = 2 } = {}) {
+export async function cnbcHistory(symbol, { range = '3M', revalidate = 1800, timeout = 6000, tries = 2, bust = false } = {}) {
     const ranges = [range, ...CNBC_DAILY_RANGES.filter((r) => r !== range)];
     let why = 'empty history';
     for (const [i, r] of ranges.entries()) {
-        const url = `https://ts-api.cnbc.com/harmony/app/charts/${r}.json?symbol=${encodeURIComponent(symbol)}${i ? `&_=${Date.now()}${i}` : ''}`;
-        const data = await withRetry(() => fetchJson(url, { revalidate: i ? 0 : revalidate, timeout }), { tries });
+        const fresh = bust || i > 0; // bust: skip the Data Cache and CNBC's CDN copy on every try
+        const url = `https://ts-api.cnbc.com/harmony/app/charts/${r}.json?symbol=${encodeURIComponent(symbol)}${fresh ? `&_=${Date.now()}${i}` : ''}`;
+        const data = await withRetry(() => fetchJson(url, { revalidate: fresh ? 0 : revalidate, timeout }), { tries });
         // CNBC's daily feeds can carry several bars for one date: keep one, the latest tradeTime.
         const byDate = new Map();
         for (const b of data?.barData?.priceBars || []) {
