@@ -4,7 +4,7 @@
 No broker or Composer call. It starts from the two totals Jalal last read off Composer
 (the anchor, kept only on this Mac in ~/.config/split-anchor.json) and rolls each one
 forward with the night shift's own replay curve of that algo. Only percentages leave the
-Mac: {asOf, main, target, band, anchored} goes to a secret gist that /api/split relays.
+Mac: {asOf, main, target, band, anchored, history of main %} goes to a secret gist that /api/split relays.
 
   split.py run                       publish today's split
   split.py set MAIN_USD SHARTINO_USD [YYYY-MM-DD]   new anchor (after he moves money). Read the
@@ -16,6 +16,7 @@ Mac: {asOf, main, target, band, anchored} goes to a secret gist that /api/split 
 import datetime, json, os, subprocess, sys, tempfile, zoneinfo
 
 CFG = os.path.expanduser("~/.config/split-anchor.json")
+HIST = os.path.expanduser("~/.config/split-history.json")
 CURVES = os.path.expanduser("~/PycharmProjects/composer-auto-research/nightshift/state/curve-{}.json")
 GH = "/opt/homebrew/bin/gh"
 DAY0 = datetime.date(1970, 1, 1)
@@ -36,6 +37,24 @@ def snapshot(cfg):
     return {"asOf": d1, "main": round(100 * main / (main + shar), 2), "target": cfg["target"],
             "band": cfg["band"], "anchored": cfg["date"],
             "generatedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")}
+
+
+def with_history(snap, cfg):
+    """snap + history [[day, main %], ...] for the tile's chart. The log (Mac only) gains one day per
+    close and survives a new anchor, so a money move shows as a step. Born with the 3 months before
+    the anchor, rolled BACKWARDS on the curves: true only if no money moved in those months, so
+    `logFrom` tells the chart where the real log starts."""
+    try: log = json.load(open(HIST))
+    except FileNotFoundError:
+        c = {k: {int(d): v for d, v in json.load(open(CURVES.format(cfg[k]["sid"]))).items()} for k in ("main", "shartino")}
+        a = max(d for d in c["main"] if d <= (datetime.date.fromisoformat(cfg["date"]) - DAY0).days)
+        usd = lambda k, d: cfg[k]["usd"] * c[k][d] / c[k][a]
+        log = {"from": str(DAY0 + datetime.timedelta(a)),
+               "days": {str(DAY0 + datetime.timedelta(d)): round(100 * usd("main", d) / (usd("main", d) + usd("shartino", d)), 2)
+                        for d in sorted(c["main"]) if a - 92 <= d < a and d in c["shartino"]}}
+    log["days"][snap["asOf"]] = snap["main"]
+    json.dump(log, open(HIST + ".tmp", "w")); os.replace(HIST + ".tmp", HIST)
+    return {**snap, "logFrom": log["from"], "history": sorted(log["days"].items())[-400:]}
 
 
 def write_cfg(cfg):
@@ -78,6 +97,6 @@ if __name__ == "__main__":
     if sys.argv[1] == "set":
         cfg = new_anchor(cfg, float(sys.argv[2]), float(sys.argv[3]), sys.argv[4] if len(sys.argv) > 4 else None)
         write_cfg(cfg)
-    snap = snapshot(cfg)
+    snap = with_history(snapshot(cfg), cfg)
     publish(snap, cfg)
-    print(f"=== split {json.dumps(snap)} ===")
+    print(f"=== split {json.dumps({**snap, 'history': len(snap['history'])})} ===")

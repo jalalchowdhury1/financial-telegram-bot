@@ -206,6 +206,10 @@ newest close that is already DUE, not the newest close: counted from the newest 
 clock and a split days behind read fine all evening and night (red team 14 Nov; `/api/rubber-band`'s item
 still has that gap). The tile judges the same rule itself (`splitStale`): "Old · <day>", and "Totals Nd old ·
 re-check" past 31 days. The big number, the alert and the meter all use the same rounded percent.
+Tap the tile = its history (`components/SplitHistory.js`): `split.py` keeps `~/.config/split-history.json`
+(one main % per close, kept across re-anchors so a money move shows as a step) and publishes the last 400
+as `history`. The log was born 14 Nov 2026 with the 3 months before the anchor rolled BACKWARDS on the
+curves (true only if no money moved then): `logFrom` marks where the real log starts, drawn dashed before it.
 
 ---
 

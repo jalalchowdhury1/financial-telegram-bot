@@ -4,6 +4,11 @@ import { cacheHeaders } from '../cdn';
 describe('validateSplit', () => {
     const good = { asOf: '2026-11-13', main: 71.1, target: 70, band: 10, anchored: '2026-11-13' };
     it('accepts the Mac snapshot', () => expect(validateSplit(good)).toBe(true));
+    it('accepts a history, refuses a broken one', () => {
+        expect(validateSplit({ ...good, logFrom: '2026-11-13', history: [['2026-11-12', 71.09], ['2026-11-13', 71.12]] })).toBe(true);
+        expect(validateSplit({ ...good, logFrom: '2026-11-13', history: [['2026-11-12', null]] })).toBe(false);
+        expect(validateSplit({ ...good, history: [['2026-11-12', 71.09]] })).toBe(false);
+    });
     it.each([null, {}, { ...good, main: null }, { ...good, main: 140 }, { ...good, asOf: null }, { ...good, band: 'x' }])(
         'rejects %j', (s) => expect(validateSplit(s)).toBe(false));
 });

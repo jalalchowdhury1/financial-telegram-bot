@@ -8,5 +8,8 @@
 /** True for a snapshot whose numbers the tile can draw. */
 export function validateSplit(s) {
     return !!s && typeof s.asOf === 'string' && [s.main, s.target, s.band].every(Number.isFinite)
-        && s.main >= 0 && s.main <= 100;
+        && s.main >= 0 && s.main <= 100
+        // the tile's tap-through chart: optional, but never half-read
+        && (s.history == null || (typeof s.logFrom === 'string' && Array.isArray(s.history)
+            && s.history.every((p) => Array.isArray(p) && typeof p[0] === 'string' && Number.isFinite(p[1]))));
 }

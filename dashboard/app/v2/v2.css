@@ -1363,3 +1363,13 @@ body:has(.v2) { background: #0b0c0e; }
   .v2-cb-name { font-size: 13px; }
   .v2-cb-leg-txt { font-size: 11.5px; }
 }
+
+/* split history (tap the Main / Shartino tile) */
+.v2-sh { position: relative; margin: 14px 0 8px; }
+.v2-sh svg { display: block; width: 100%; height: 150px; overflow: visible; }
+.v2-sh-line { fill: none; stroke: var(--ink); stroke-width: 1.6; stroke-linejoin: round; }
+.v2-sh-line.is-guess { stroke: var(--ink-3); stroke-dasharray: 3 3; }
+.v2-sh-target { stroke: var(--warn); stroke-width: 1; stroke-dasharray: 2 3; }
+.v2-sh-tag { position: absolute; left: 0; transform: translateY(-120%); font-size: 10.5px; color: var(--warn); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.v2-sh-row { display: flex; justify-content: space-between; gap: 12px; font-size: 11.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.v2-sh-row + .v2-sh-row { margin-top: 4px; color: var(--ink-3); }

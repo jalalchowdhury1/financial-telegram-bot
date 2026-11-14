@@ -48,6 +48,7 @@ import { decodeLong, joinLong } from '../../lib/longHistory';
 import useFeeds from './useFeeds';
 import { getJson } from '../../lib/loadJson';
 import { validateSplit } from '../../lib/split';
+import SplitHistory from '../../components/SplitHistory';
 import { splitStale } from '../../lib/servedFreshness';
 
 const SECTIONS = [
@@ -970,8 +971,9 @@ function Signals({ sheets, spy, loading, old, onState }) {
 
     const tiles = [
         {
-            key: 'split', label: 'Main / Shartino', tip: 'Estimate: your last totals, rolled forward each morning with the night shift\'s replay of each algo.',
+            key: 'split', label: 'Main / Shartino', tip: 'Estimate: your last totals, rolled forward each morning with the night shift\'s replay of each algo. Tap for its history.',
             alert: !!split && Math.abs(Math.round(split.main) - split.target) >= split.band, // the number he reads decides
+            open: split?.history?.length > 1 ? () => setStudy('split') : null,
             value: split ? `${Math.round(split.main)} / ${100 - Math.round(split.main)}` : split === undefined ? '…' : 'N/A',
             sub: !split ? null
                 : splitOld ? <span className="tone-caution">Old · {shortDate(split.asOf)}</span>
@@ -1036,6 +1038,7 @@ function Signals({ sheets, spy, loading, old, onState }) {
                         onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); t.open(); } }}>{inner}</div>
                 ) : <div key={t.key} className={cls}>{inner}</div>;
             })}
+            {study === 'split' && split && <SplitHistory split={split} onClose={() => setStudy(false)} />}
             {study === 'aaii' && (
                 <SignalStudy id="aaii" src="/history/aaiiDiff.json" line={AAII_LINE} horizons={[3, 6, 12]} start={6} title={`AAII fear at ${AAII_LINE}+`}
                     sub={`Now ${aaii.toFixed(1)} · ${bullUntil ? `bullish to ${shortDate(bullUntil)}` : `${(AAII_LINE - aaii).toFixed(1)} pts to go`}`}

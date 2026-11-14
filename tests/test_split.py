@@ -10,6 +10,7 @@ DAY = 20770  # 2026-11-13, a Friday
 @pytest.fixture
 def curves(tmp_path, monkeypatch):
     monkeypatch.setattr(split, "CURVES", str(tmp_path / "curve-{}.json"))
+    monkeypatch.setattr(split, "HIST", str(tmp_path / "history.json"))
     def write(sid, curve): json.dump({str(k): v for k, v in curve.items()}, open(tmp_path / f"curve-{sid}.json", "w"))
     return write
 
@@ -64,3 +65,17 @@ def test_a_bad_set_is_refused_before_it_is_saved(curves):
         with pytest.raises((SystemExit, ValueError)): split.new_anchor(cfg(), *bad)
     ok = split.new_anchor(cfg(), 600.0, 400.0, "2026-11-13")
     assert (ok["main"], ok["date"]) == ({"sid": "M", "usd": 600.0}, "2026-11-13") and split.snapshot(ok)["main"] == 60.0
+
+
+def test_history_is_born_with_the_months_before_the_anchor_then_gains_a_day_per_close(curves):
+    m = {DAY - 200: 1.0, DAY - 2: 8.0, DAY - 1: 10.0, DAY: 10.0}; s = {DAY - 200: 4.0, DAY - 2: 4.0, DAY - 1: 4.0, DAY: 4.0}
+    curves("M", m); curves("S", s)
+    one = split.with_history(split.snapshot(cfg()), cfg())
+    assert one["logFrom"] == "2026-11-13"
+    assert one["history"] == [("2026-11-11", round(100 * 560 / 860, 2)), ("2026-11-12", 70.0), ("2026-11-13", 70.0)]   # 200 days back is left out
+    curves("M", {**m, DAY + 3: 12.0}); curves("S", {**s, DAY + 3: 4.0})
+    two = split.with_history(split.snapshot(cfg()), cfg())
+    assert [d for d, _ in two["history"]] == ["2026-11-11", "2026-11-12", "2026-11-13", "2026-11-16"] and two["history"][-1][1] == two["main"]
+    moved = {**cfg("2026-11-16"), "main": {"sid": "M", "usd": 600.0}, "shartino": {"sid": "S", "usd": 400.0}}   # he moved money: the old days stay, the new day steps
+    three = split.with_history(split.snapshot(moved), moved)
+    assert [list(x) for x in three["history"][-2:]] == [["2026-11-13", 70.0], ["2026-11-16", 60.0]]

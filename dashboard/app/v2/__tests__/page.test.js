@@ -378,6 +378,19 @@ describe('the top line', () => {
         it('asks for a re-check once the totals are over a month old', async () => {
             expect((await show({ ...snap, anchored: '2026-01-02' })).textContent).toMatch(/Totals \d+d old · re-check/);
         });
+        it('a tap opens its history against the target; no history = no tap', async () => {
+            const t = await show({ ...snap, logFrom: '2026-11-13', history: [['2026-11-11', 69.5], ['2026-11-12', 71.09], ['2026-11-13', 71.12], ['2026-11-16', 72.4]] });
+            fireEvent.click(t);
+            const d = await screen.findByRole('dialog');
+            expect(d.textContent).toContain('Main 72.4% now · target 70%');
+            expect(d.textContent).toContain('High 72.4% · Nov 16, 2026');
+            expect(d.textContent).toContain('Low 69.5% · Nov 11, 2026');
+            expect(d.textContent).toContain('Dashed = before Nov 13, 2026');
+            expect(d.querySelectorAll('polyline')).toHaveLength(2);
+        });
+        it('without a history the tile is not a button', async () => {
+            expect((await show(snap)).getAttribute('role')).toBeNull();
+        });
         it('an unread or broken answer is N/A, never a number', async () => {
             const t = await show({ asOf: null, main: null, target: null, band: null });
             expect(t.textContent).toContain('N/A');
