@@ -20,8 +20,8 @@ export default function SplitHistory({ split, onClose }) {
     }, [onClose]);
 
     const pts = split.history.map(([date, value]) => ({ date, value }));
-    const vals = pts.map((p) => p.value), T = split.target;
-    const lo = Math.min(...vals, T) - 1, hi = Math.max(...vals, T) + 1;
+    const vals = pts.map((p) => p.value), T = split.target, B = split.band;
+    const lo = Math.min(...vals, T - B) - 1, hi = Math.max(...vals, T + B) + 1; // the whole fine zone is always in view
     const w = 320, h = 120;
     const x = (i) => (i / (pts.length - 1)) * w, y = (v) => h - ((v - lo) / (hi - lo)) * h;
     const path = (a, b) => pts.slice(a, b).map((p, i) => `${x(a + i).toFixed(1)},${y(p.value).toFixed(1)}`).join(' ');
@@ -45,15 +45,19 @@ export default function SplitHistory({ split, onClose }) {
                 <div className="v2-sh">
                     <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" role="img"
                         aria-label={`Main's share from ${day(first.date)} to ${day(last.date)}: ${pc(first.value)} to ${pc(last.value)}, high ${pc(top.value)}, low ${pc(low.value)}`}>
+                        <rect className="v2-sh-zone" x="0" width={w} y={y(T + B)} height={y(T - B) - y(T + B)} />
                         <line className="v2-sh-target" x1="0" x2={w} y1={y(T)} y2={y(T)} vectorEffect="non-scaling-stroke" />
                         {cut > 0 && <polyline className="v2-sh-line is-guess" points={path(0, cut + 1)} vectorEffect="non-scaling-stroke" />}
                         {cut < pts.length - 1 && <polyline className="v2-sh-line" points={path(cut, pts.length)} vectorEffect="non-scaling-stroke" />}
                     </svg>
                     <span className="v2-sh-tag" style={{ top: `${(y(T) / h) * 100}%` }}>{T}%</span>
+                    <span className="v2-sh-tag is-edge" style={{ top: `${(y(T + B) / h) * 100}%` }}>{T + B}%</span>
+                    <span className="v2-sh-tag is-edge is-low" style={{ top: `${(y(T - B) / h) * 100}%` }}>{T - B}%</span>
                 </div>
                 <div className="v2-sh-row"><span>{day(first.date)} · {pc(first.value)}</span><span>{day(last.date)} · {pc(last.value)}</span></div>
                 <div className="v2-sh-row"><span>High {pc(top.value)} · {day(top.date)}</span><span>Low {pc(low.value)} · {day(low.date)}</span></div>
                 {cut > 0 && <p className="v2-aa-foot">Dashed = before {day(split.logFrom)}: estimate, as if no money moved</p>}
+                <p className="v2-aa-foot">Shaded = fine ({T - B}–{T + B}%) · outside it, move money</p>
                 <p className="v2-aa-foot">Estimate from the night shift&apos;s replay · one point a close</p>
             </div>
         </div>,

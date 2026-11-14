@@ -833,7 +833,6 @@ function FredTile({ fred, metric, title, jump, tip, markKey, fmt, tone, chart, r
 }
 
 // ---------- signals: each card also draws how close it is to firing ----------
-const NSB_LINE = 8.5;     // NotSoBoring trips past an 8.5% TMF drop from its 10-day high (lib/signals.js)
 const AAII_LINE = 20;     // bears beat bulls by 20+ pts ...
 const AAII_MONTHS = 6;    // ... and the 6 months after have tended to be good ones
 const shortDate = (iso) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
@@ -903,6 +902,12 @@ function Signals({ sheets, spy, loading, old, onState }) {
     const [split, setSplit] = useState(undefined); // undefined = loading, null = unread
     useEffect(() => { getJson('/api/split').then((j) => setSplit((had) => (validateSplit(j) ? j : had ?? null))); }, [sheets]); // again on each page refresh; a failed one keeps the number it had
     const splitOld = split && splitStale(split); // judged here too: a saved copy of the route goes old without saying so
+    const splitM = split ? Math.round(split.main) : 0, splitOff = split ? splitM - split.target : 0; // the number he reads decides
+    const splitOut = !!split && Math.abs(splitOff) >= split.band;
+    // Out of band: how much of the heavy side to move to be back on target (a share, never dollars).
+    const splitMove = !splitOut ? null : splitOff > 0
+        ? `Move ${Math.round(((split.main - split.target) / split.main) * 100)}% of Main → Shartino`
+        : `Move ${Math.round(((split.target - split.main) / (100 - split.main)) * 100)}% of Shartino → Main`;
     const anchorDays = split ? Math.floor((Date.now() - Date.parse(`${split.anchored}T12:00:00Z`)) / 864e5) : 0;
     const aaii = parseFloat(sheets?.AAIIDiff);
     const vixCur = parseFloat(sheets?.VIX?.current);
@@ -913,10 +918,9 @@ function Signals({ sheets, spy, loading, old, onState }) {
     const aaiiDays = useMemo(() => seriesPoints(series, 'aaiiDiff'), [series]);
     const vixHist = useChart('vixCurrent', vixCur);
     const v3Hist = useChart('vix3m', vix3m);
-    const nsb = sheets?._meta?.fields?.NotSoBoring?.detail;
     const frRsi = sheets?._meta?.fields?.FrontRunner?.detail;
     const fr = String(sheets?.FrontRunner || '');
-    const nsbRead = !!sheets?.NotSoBoring && sheets.NotSoBoring !== 'N/A', frRead = !!fr && fr !== 'N/A'; // the route says N/A when unread
+    const frRead = !!fr && fr !== 'N/A'; // the route says N/A when unread
 
     const aaiiPts = useMemo(() => (Number.isFinite(aaii) ? [...(aaiiHist?.points || []), { value: aaii }] : []), [aaiiHist, aaii]);
     // The latest 20+ reading (daily rows repeat each weekly survey): it fired on the run's first day, and speaks for 6 months after its last survey.
@@ -942,7 +946,6 @@ function Signals({ sheets, spy, loading, old, onState }) {
     const bullUntil = nowUntil && nowUntil >= today ? nowUntil : fired && fired.until >= today ? fired.until : null;
     const fresh = (fields) => !old && !staleNote(sheets, fields);
     const vixRead = Number.isFinite(vixCur) && vix3m > 0 && fresh(['vixCurrent', 'vixThreeMonth']);
-    const dd = nsb?.drawdownPct;
     // FrontRunner's nearest RSI trigger as a share of its line (1 = trips): over ones hedge, under ones buy the dip.
     const [frT, frN, frShare] = [
         ...Object.entries(FR_OVER).map(([t, n]) => [t, n, frRsi?.[t] / n]),
@@ -952,15 +955,16 @@ function Signals({ sheets, spy, loading, old, onState }) {
     useEffect(() => {
         if (loading) return;
         onState([
-            nsbRead && fresh(['NotSoBoring']) ? { jump: 'Indicators', warn: true, fire: sheets.NotSoBoring === 'OFF' && 'NotSoBoring OFF',
-                share: Number.isFinite(dd) ? dd / NSB_LINE : -Infinity, gap: Number.isFinite(dd) && `NotSoBoring ${dd.toFixed(1)} → ${NSB_LINE}%` } : null,
             frRead && fresh(['FrontRunner']) ? { jump: 'Indicators', warn: true, fire: !fr.startsWith('BIL') && `FrontRunner ${FR_MODE(fr).replace(/^[A-Z][a-z]/, (c) => c.toLowerCase())}`,
                 share: frShare, gap: frT && `FrontRunner ${frT} RSI ${frRsi[frT].toFixed(1)} → ${frN}` } : null,
             bullUntil ? { jump: 'Indicators', fire: `AAII bullish to ${shortDate(bullUntil)}` }
                 : aaiiRead ? { jump: 'Indicators', fire: null, share: aaii / AAII_LINE, gap: `AAII ${aaii.toFixed(1)} → ${AAII_LINE}` } : null,
             vixRead ? { jump: 'Indicators', fire: vixCur >= vix3m && 'VIX over 3M', share: vixCur / vix3m, gap: `VIX/3M ${(vixCur / vix3m).toFixed(2)} → 1` } : null,
+            // His own money split is no market signal: it speaks only when read and current, and never blocks "Nothing firing".
+            ...(split && !splitOld ? [{ jump: 'Indicators', warn: true, fire: splitOut && `Split ${splitM} / ${100 - splitM}`,
+                share: Math.abs(splitOff) / split.band, gap: `Split ${splitM} → ${split.target + (splitOff < 0 ? -1 : 1) * split.band}` }] : []),
         ]);
-    }, [loading, old, sheets, aaii, aaiiRead, bullUntil, vixCur, vix3m, vixRead, onState]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [loading, old, sheets, aaii, aaiiRead, bullUntil, vixCur, vix3m, vixRead, split, splitOld, onState]); // eslint-disable-line react-hooks/exhaustive-deps
     useEffect(() => () => onState(null), [onState]); // a crashed or gone card leaves the top line unread, not stuck
 
     const ratioPts = useMemo(() => {
@@ -972,12 +976,13 @@ function Signals({ sheets, spy, loading, old, onState }) {
     const tiles = [
         {
             key: 'split', label: 'Main / Shartino', tip: 'Estimate: your last totals, rolled forward each morning with the night shift\'s replay of each algo. Tap for its history.',
-            alert: !!split && Math.abs(Math.round(split.main) - split.target) >= split.band, // the number he reads decides
+            alert: splitOut,
             open: split?.history?.length > 1 ? () => setStudy('split') : null,
-            value: split ? `${Math.round(split.main)} / ${100 - Math.round(split.main)}` : split === undefined ? '…' : 'N/A',
+            value: split ? `${splitM} / ${100 - splitM}` : split === undefined ? '…' : 'N/A',
             sub: !split ? null
                 : splitOld ? <span className="tone-caution">Old · {shortDate(split.asOf)}</span>
                 : anchorDays > 31 ? <span className="tone-caution">Totals {anchorDays}d old · re-check</span>
+                : splitMove ? <span className="tone-caution">{splitMove}</span>
                 : <span className="v2-muted">Target {split.target} / {100 - split.target} · {shortDate(split.asOf)}</span>,
             viz: split ? <SplitMeter main={split.main} target={split.target} band={split.band} /> : null,
         },

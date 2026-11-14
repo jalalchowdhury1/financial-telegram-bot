@@ -1371,5 +1371,44 @@ body:has(.v2) { background: #0b0c0e; }
 .v2-sh-line.is-guess { stroke: var(--ink-3); stroke-dasharray: 3 3; }
 .v2-sh-target { stroke: var(--warn); stroke-width: 1; stroke-dasharray: 2 3; }
 .v2-sh-tag { position: absolute; left: 0; transform: translateY(-120%); font-size: 10.5px; color: var(--warn); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.v2-sh-zone { fill: var(--ink); opacity: .05; }
+.v2-sh-tag.is-edge { color: var(--ink-3); }
+.v2-sh-tag.is-edge.is-low { transform: translateY(20%); }
 .v2-sh-row { display: flex; justify-content: space-between; gap: 12px; font-size: 11.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .v2-sh-row + .v2-sh-row { margin-top: 4px; color: var(--ink-3); }
+
+/* ---------- look pass (14 Nov 2026): light, depth and a little motion. No new words, no new colours. ---------- */
+/* a faint cool light behind the top of the page */
+.v2 {
+  background:
+    radial-gradient(1100px 620px at 14% -60px, rgba(143, 179, 217, 0.15), transparent 64%),
+    radial-gradient(900px 520px at 96% -80px, rgba(76, 195, 138, 0.07), transparent 62%),
+    var(--bg);
+}
+.v2-top { border-image: linear-gradient(90deg, transparent, var(--line-2) 18%, var(--line-2) 82%, transparent) 1; }
+/* panels are lit from above: a hairline of light on the top edge, fading into the surface */
+.v2-hero-spy, .v2-gauge-block, .v2-readout, .v2-moves-grid, .v2-signals, .v2 .card {
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 110px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 12px 32px -24px rgba(0, 0, 0, 0.9);
+  transition: border-color .2s ease;
+}
+@media (hover: hover) {
+  :is(.v2-hero-spy, .v2-gauge-block, .v2-readout, .v2-moves-grid, .v2-signals, .v2 .card):hover { border-color: var(--line-2); }
+}
+.v2-hero-price {
+  background: linear-gradient(180deg, #ffffff 20%, #aeb4c2);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.v2-section-head h2::before {
+  content: ''; display: inline-block; width: 14px; height: 1px; margin-right: 10px;
+  vertical-align: middle; background: var(--accent); opacity: .8;
+}
+.v2 ::selection { background: rgba(143, 179, 217, 0.28); }
+/* the live dot breathes; sections rise in once on load */
+.v2-today:is(.is-on, .is-warn) .v2-today-dot { animation: v2-breathe 2.6s ease-in-out infinite; }
+@keyframes v2-breathe { 50% { box-shadow: 0 0 0 4px transparent; opacity: .55; } }
+.v2-hero, .v2-section { animation: v2-rise .5s cubic-bezier(.2, .7, .2, 1) both; }
+.v2-section:nth-of-type(2) { animation-delay: .05s; }
+.v2-section:nth-of-type(n+3) { animation-delay: .1s; }
+@keyframes v2-rise { from { opacity: 0; transform: translateY(8px); } }
+@media (prefers-reduced-motion: reduce) { .v2-today-dot, .v2-hero, .v2-section { animation: none !important; } }

@@ -291,7 +291,6 @@ describe('the top line', () => {
         ['the sheet stopped 8 days ago', { '/api/history': sheet({}, 8) }, false],
         ['the sheets feed is a saved copy from the last visit', { '/api/history': sheet(), '/api/sheets': new Promise(() => {}) }, true],
         ['the server marks VIX stale', { '/api/history': sheet(), '/api/sheets': ok({ ...calm, _meta: { staleFields: ['vixCurrent'] } }) }, false],
-        ['the server marks NotSoBoring stale', { '/api/history': sheet(), '/api/sheets': ok({ ...calm, _meta: { staleFields: ['NotSoBoring'] } }) }, false],
         ['FrontRunner could not be read', { '/api/history': sheet(), '/api/sheets': ok({ ...calm, FrontRunner: 'N/A' }) }, false],
     ])('no Nothing firing when %s', async (_, routes, savedCopy) => {
         if (savedCopy) writeSnap('sheets', calm, Date.now() - 3600e3); // an hour-old copy paints first
@@ -306,7 +305,7 @@ describe('the top line', () => {
 
     it.each([
         ['Nothing firing', calm],
-        ['NotSoBoring OFF', { ...calm, NotSoBoring: 'OFF', VIX: { current: 'N/A', threeMonth: 'N/A' } }],
+        ['FrontRunner dip buy', { ...calm, FrontRunner: 'Select bottom 2 RSI assets from (SOXL, TECL, TQQQ, FNGU)', VIX: { current: 'N/A', threeMonth: 'N/A' } }],
     ])('a refresh that fails (the page falls back to its copy) drops "%s"', async (text, first) => {
         const rest = { '/api/history': sheet(), '/api/market-extra': ok({}), ...files };
         mockRoutes({ '/api/sheets': ok(first), ...rest });
@@ -330,10 +329,10 @@ describe('the top line', () => {
         expect(document.querySelector('[data-jump="Indicators"] .tone-good')?.textContent).toMatch(/^Bullish to /); // the tile agrees
     });
 
-    it('NotSoBoring OFF and a FrontRunner trade show first, in the tiles\' amber', async () => {
+    it('a FrontRunner trade shows first, in the tiles\' amber; NotSoBoring OFF is off the line (its tile left 14 Nov 2026)', async () => {
         mockRoutes({ '/api/sheets': ok({ ...calm, NotSoBoring: 'OFF', FrontRunner: 'Select bottom 2 RSI assets from (SOXL, TECL, TQQQ, FNGU)' }), '/api/history': sheet(), ...files });
         render(<DashboardV2 />);
-        await waitFor(() => expect([...document.querySelectorAll('.v2-today button')].map((b) => b.textContent)).toEqual(['NotSoBoring OFF', 'FrontRunner dip buy']));
+        await waitFor(() => expect([...document.querySelectorAll('.v2-today button')].map((b) => b.textContent)).toEqual(['FrontRunner dip buy']));
         expect([...document.querySelectorAll('.v2-today button')].every((b) => b.classList.contains('is-warn'))).toBe(true);
         expect(document.querySelector('.v2-today').className).toMatch(/\bis-warn\b/); // the dot goes amber, not green
     });
@@ -345,7 +344,6 @@ describe('the top line', () => {
     });
 
     it.each([
-        ['NotSoBoring 8.1% under its high', { NotSoBoring: { detail: { drawdownPct: 8.1 } } }, 'closest NotSoBoring 8.1 → 8.5%'],
         ['FrontRunner QQQ RSI 77.5', { FrontRunner: { detail: { QQQ: 77.5, SOXL: 40 } } }, 'closest FrontRunner QQQ RSI 77.5 → 79'],
     ])('a quiet %s can be the closest signal', async (_, fields, text) => {
         mockRoutes({ '/api/sheets': ok({ ...calm, _meta: { fields } }), '/api/history': sheet(), ...files });
@@ -369,8 +367,24 @@ describe('the top line', () => {
             expect(t.textContent).toMatch(/Main \/ Shartino71 \/ 29Target 70 \/ 30 · Jan 2/);
             expect(t.className).not.toContain('is-alert');
         });
-        it('alerts at 10+ points off target', async () => {
-            expect((await show({ ...snap, main: 80 })).className).toContain('is-alert');
+        it('alerts at 10+ points off target, says how much to move, and leads the top line', async () => {
+            const t = await show({ ...snap, main: 82 });
+            expect(t.className).toContain('is-alert');
+            expect(t.textContent).toContain('Move 15% of Main → Shartino'); // 12 of 82
+            await waitFor(() => expect(document.querySelector('.v2-today button')?.textContent).toBe('Split 82 / 18'));
+            expect(document.querySelector('.v2-today button').className).toContain('is-warn');
+        });
+        it('too little Main: the move runs the other way', async () => {
+            expect((await show({ ...snap, main: 58 })).textContent).toContain('Move 29% of Shartino → Main'); // 12 of 42
+        });
+        it('inside the band it stays off the top line: Nothing firing', async () => {
+            await show(snap);
+            await waitFor(() => expect(screen.getByText('Nothing firing')).toBeInTheDocument());
+        });
+        it('an old split never speaks on the top line, however far off', async () => {
+            await show({ ...snap, main: 82, asOf: '2026-01-02' });
+            await waitFor(() => expect(screen.getByText('Nothing firing')).toBeInTheDocument());
+            expect(document.querySelector('.v2-today').textContent).not.toContain('Split');
         });
         it('says Old when the split is not the newest close', async () => {
             expect((await show({ ...snap, asOf: '2026-01-02' })).textContent).toContain('Old · Jan 2');
@@ -387,6 +401,8 @@ describe('the top line', () => {
             expect(d.textContent).toContain('Low 69.5% · Nov 11, 2026');
             expect(d.textContent).toContain('Dashed = before Nov 13, 2026');
             expect(d.querySelectorAll('polyline')).toHaveLength(2);
+            expect(d.textContent).toContain('Shaded = fine (60–80%)');
+            expect(d.querySelector('.v2-sh-zone')).not.toBeNull();
         });
         it('without a history the tile is not a button', async () => {
             expect((await show(snap)).getAttribute('role')).toBeNull();

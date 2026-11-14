@@ -213,6 +213,17 @@ curves (true only if no money moved then): `logFrom` marks where the real log st
 
 ---
 
+**Later the same day (his "All of it. Make it better"):**
+- Out of band (10+ points off): the tile's sub line says how much of the heavy side to move
+  ("Move 15% of Main → Shartino", a share, never dollars) and the split leads the v2 top line
+  ("Split 82 / 18", amber). Unread or old, it stays off the top line and never blocks "Nothing firing".
+- NotSoBoring is off the v2 top line too (its tile left with this one). The route, v1 and the bot keep it.
+- History popup: the fine zone (target ± band) is shaded and always in view.
+- `rubberBandItem` and `splitItem` share `closeItem`: input = the newest close whose grace is up
+  (`latestCloseMs(now - grace)`), so a new 16:00 close no longer hides a missed run.
+- Look pass at the end of `app/v2/v2.css` (top glow, top-lit panels, hover edge, section tick,
+  breathing dot, one rise-in on load; all off under reduced motion). CSS only.
+
 ## 3. The dashboard (`/dashboard`)
 
 Deploys only when a push to `main` changes `dashboard/` (10 Oct 2026). Vercel's git
