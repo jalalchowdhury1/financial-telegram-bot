@@ -47,6 +47,8 @@ present ⇒ HTTP, else EventBridge):
 The **dashboard** is a Next.js app in `/dashboard`, deployed on **Vercel**
 (deploys when a push to `main` changes `dashboard/`, via `.github/workflows/deploy-dashboard.yml`, which runs `npm ci` + `npm test -- --watchAll=false` in `dashboard/` first: red tests = no deploy hook, no deploy): <https://financial-telegram-bot-beryl.vercel.app/>.
 
+Commit EVERY dashboard file a change needs before pushing: CI tests the commit, not your working tree (14 Nov: f887a82 left `servedFreshness.js` uncommitted, tests failed, split tile not deployed). A local `.git/hooks/pre-push` blocks a push that changes `dashboard/` while tracked `dashboard/` files are modified; reinstall it from Watch cef66871 notes if the clone is new.
+
 ### Architecture you MUST get right (this trips people up)
 
 ```
