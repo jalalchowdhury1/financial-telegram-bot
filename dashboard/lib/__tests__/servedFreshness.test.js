@@ -1,5 +1,5 @@
 import {
-    rubberBandItem, splitItem, historyItem, newestRowOf, latestCloseMs, isRed, buildFreshness,
+    rubberBandItem, splitItem, splitStale, historyItem, newestRowOf, latestCloseMs, isRed, buildFreshness,
     servedCopyItem, SERVED_ROUTES, fwdPeItem, polymarketItem, peItem,
 } from '../servedFreshness';
 import { parseRows } from '../../app/api/history/route';
@@ -303,8 +303,22 @@ describe('a flagged answer carries its own reason up (5 Nov 2026)', () => {
     });
 });
 
-test('split: graded like the rubber band, on its own 15 h grace', () => {
-    const it = splitItem({ asOf: '2026-10-02', main: 71.1 }, t('2026-10-03T08:00:00Z'));
-    expect(it).toMatchObject({ name: 'split', graceH: 15, inputAgeH: 12, servedAgeH: 12 });
+test('split: its input is the newest close that is already due (18 h), not the newest close', () => {
+    const fri = { asOf: '2026-10-02', main: 71.1 };
+    expect(splitItem(fri, t('2026-10-03T08:00:00Z'))).toMatchObject({ name: 'split', graceH: 18, inputAgeH: 36, servedAgeH: 12 }); // due: Thursday's
+    expect(splitItem(fri, t('2026-10-03T15:00:00Z'))).toMatchObject({ inputAgeH: 19, servedAgeH: 19 });                              // due: Friday's
     expect(splitItem(null, t('2026-10-03T08:00:00Z')).servedAgeH).toBeNull();
+});
+
+test('splitStale: fine until the next close is 18 h old, then old at every hour (evenings and nights too)', () => {
+    const fri = { asOf: '2026-10-02', main: 71.1 };
+    expect(splitStale(fri, t('2026-10-03T08:00:00Z'))).toBe(false);
+    expect(splitStale(fri, t('2026-10-05T19:00:00Z'))).toBe(false);  // Monday 3 pm ET: Friday is still the newest close
+    expect(splitStale(fri, t('2026-10-06T13:00:00Z'))).toBe(false);  // Tuesday 9 am ET: Monday's close is 17 h old
+    expect(splitStale(fri, t('2026-10-06T15:00:00Z'))).toBe(true);   // Tuesday 11 am ET: Monday's close never arrived
+    expect(splitStale(fri, t('2026-10-07T00:00:00Z'))).toBe(true);   // Tuesday 8 pm ET: a new close does not reset it
+    expect(splitStale(fri, t('2026-10-07T07:00:00Z'))).toBe(true);   // Wednesday 3 am ET
+    expect(splitStale({ asOf: '2026-11-09', main: 71.1 }, t('2026-11-12T01:00:00Z'))).toBe(true); // the reviewer's case: 2 days behind, 8 pm
+    expect(splitStale(null, t('2026-10-03T08:00:00Z'))).toBe(true);  // nothing served is old at any hour
+    expect(splitStale({ asOf: '2026-11-27', main: 71.1 }, t('2026-11-28T09:30:00Z'))).toBe(false); // morning after the 1 pm half day
 });

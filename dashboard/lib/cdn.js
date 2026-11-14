@@ -46,7 +46,7 @@ export const CDN_POLICY = {
     'jev-pills':      [330, 270],   // ≤ 10 min: regime pills, built from sibling routes
     polymarket:       [1800, 1800], // ≤ 1 h: betting odds drift slowly
     'rubber-band':    [3600, 3600], // ≤ 2 h: written nightly by the Mac mini (lib/servedFreshness grace counts it)
-    split:            [3600, 3600], // ≤ 2 h: written each morning by the Mac mini (lib/servedFreshness grace counts it)
+    split:            [300, 300],   // ≤ 10 min: a new anchor after he moves money shows at once
     history:          [3600, 3600], // ≤ 2 h: Sheet1 gets rows at 02:00 + 14:00 UTC (freshness maxAgeH 30 h counts it)
     aaii:             [7200, 3600], // ≤ 3 h: weekly survey (the route also caches 3 h per instance)
     breadth:          [7200, 3600], // ≤ 3 h: daily bars

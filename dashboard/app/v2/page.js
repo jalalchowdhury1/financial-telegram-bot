@@ -48,6 +48,7 @@ import { decodeLong, joinLong } from '../../lib/longHistory';
 import useFeeds from './useFeeds';
 import { getJson } from '../../lib/loadJson';
 import { validateSplit } from '../../lib/split';
+import { splitStale } from '../../lib/servedFreshness';
 
 const SECTIONS = [
     ['now', 'Now'], ['signals', 'Signals'], ['market', 'Market'], ['risk', 'Risk'],
@@ -840,7 +841,7 @@ const FR_MODE = (v) => (/^BIL/.test(v) ? 'Cash' : /VIX/.test(v) ? 'VIX hedge' : 
 /** Main's share of the Main + Shartino money, with the target as the line. */
 function SplitMeter({ main, target, band }) {
     return (
-        <span className={`v2-meter tone-${Math.abs(main - target) >= band ? 'bad' : 'quiet'}`} style={{ '--f': `${main}%`, '--l': `${target}%` }}
+        <span className={`v2-meter tone-${Math.abs(Math.round(main) - target) >= band ? 'bad' : 'quiet'}`} style={{ '--f': `${main}%`, '--l': `${target}%` }}
             title={`Main ${main.toFixed(1)}% · target ${target}% · move money at ${band}+ points off`}>
             <span className="v2-meter-tag">{main.toFixed(1)} / {target}%</span>
             <span className="v2-meter-bar"><i /></span>
@@ -899,7 +900,9 @@ function Signals({ sheets, spy, loading, old, onState }) {
     const na = loading ? '…' : 'N/A';
     const [study, setStudy] = useState(false);
     const [split, setSplit] = useState(undefined); // undefined = loading, null = unread
-    useEffect(() => { getJson('/api/split').then((j) => setSplit(validateSplit(j) ? j : null)); }, []);
+    useEffect(() => { getJson('/api/split').then((j) => setSplit((had) => (validateSplit(j) ? j : had ?? null))); }, [sheets]); // again on each page refresh; a failed one keeps the number it had
+    const splitOld = split && splitStale(split); // judged here too: a saved copy of the route goes old without saying so
+    const anchorDays = split ? Math.floor((Date.now() - Date.parse(`${split.anchored}T12:00:00Z`)) / 864e5) : 0;
     const aaii = parseFloat(sheets?.AAIIDiff);
     const vixCur = parseFloat(sheets?.VIX?.current);
     const vix3m = parseFloat(sheets?.VIX?.threeMonth);
@@ -968,9 +971,12 @@ function Signals({ sheets, spy, loading, old, onState }) {
     const tiles = [
         {
             key: 'split', label: 'Main / Shartino', tip: 'Estimate: your last totals, rolled forward each morning with the night shift\'s replay of each algo.',
-            alert: !!split && Math.abs(split.main - split.target) >= split.band,
+            alert: !!split && Math.abs(Math.round(split.main) - split.target) >= split.band, // the number he reads decides
             value: split ? `${Math.round(split.main)} / ${100 - Math.round(split.main)}` : split === undefined ? '…' : 'N/A',
-            sub: split ? <span className="v2-muted">Target {split.target} / {100 - split.target} · {shortDate(split.asOf)}</span> : null,
+            sub: !split ? null
+                : splitOld ? <span className="tone-caution">Old · {shortDate(split.asOf)}</span>
+                : anchorDays > 31 ? <span className="tone-caution">Totals {anchorDays}d old · re-check</span>
+                : <span className="v2-muted">Target {split.target} / {100 - split.target} · {shortDate(split.asOf)}</span>,
             viz: split ? <SplitMeter main={split.main} target={split.target} band={split.band} /> : null,
         },
         {

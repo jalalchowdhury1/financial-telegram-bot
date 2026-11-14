@@ -195,13 +195,17 @@ Finnhub spot overrides the latest price (gotcha #3). `_meta.source` records the 
 ### Main / Shartino split tile (14 Nov 2026)
 
 The first Indicators tile on /v2 (it replaced the NotSoBoring tile; NotSoBoring still speaks on the
-top line). `scripts/split.py run` (launchd `com.jalal.split`, 04:00 ET daily, log
+top line). `scripts/split.py run` (launchd `com.jalal.split`, 04:00 + 09:00 ET daily, log
 `~/Library/Logs/split.log`) reads the anchor `~/.config/split-anchor.json` (his last two totals +
 date, target, band, gist id: Mac only, never in this public repo), rolls each total forward with the
 night shift's replay curve (`composer-auto-research/nightshift/state/curve-<sid>.json`, read-only, no
 broker or Composer call) and publishes PERCENTAGES ONLY to a secret gist → `/api/split` →
 the tile. It is an estimate: after he moves money, `split.py set MAIN_USD SHARTINO_USD [DATE]`.
-Freshness item `split` (grace 15 h: close → 01:30 night shift → 04:00 publish + 2 h edge cache).
+Re-anchor after any edit of a live tree too. Freshness item `split` (grace 18 h). Its input is the
+newest close that is already DUE, not the newest close: counted from the newest one, each 16:00 reset the
+clock and a split days behind read fine all evening and night (red team 14 Nov; `/api/rubber-band`'s item
+still has that gap). The tile judges the same rule itself (`splitStale`): "Old · <day>", and "Totals Nd old ·
+re-check" past 31 days. The big number, the alert and the meter all use the same rounded percent.
 
 ---
 

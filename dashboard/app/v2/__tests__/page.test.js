@@ -354,6 +354,37 @@ describe('the top line', () => {
         expect(document.querySelector('.v2-today button').textContent).toBe(text);
     });
 
+    describe('the Main / Shartino split tile', () => {
+        const today = new Date().toISOString().slice(0, 10);
+        const snap = { asOf: '2099-01-02', main: 71.1, target: 70, band: 10, anchored: today };
+        const tile = () => document.querySelector('[data-jump="Indicators"] .v2-signal');
+        const show = async (split) => {
+            mockRoutes({ '/api/sheets': ok(calm), '/api/history': sheet(), '/api/split': ok(split), ...files });
+            render(<DashboardV2 />);
+            await waitFor(() => expect(tile().textContent).not.toContain('…'));
+            return tile();
+        };
+        it('shows the split, the target and the day, quiet inside the band', async () => {
+            const t = await show(snap);
+            expect(t.textContent).toMatch(/Main \/ Shartino71 \/ 29Target 70 \/ 30 · Jan 2/);
+            expect(t.className).not.toContain('is-alert');
+        });
+        it('alerts at 10+ points off target', async () => {
+            expect((await show({ ...snap, main: 80 })).className).toContain('is-alert');
+        });
+        it('says Old when the split is not the newest close', async () => {
+            expect((await show({ ...snap, asOf: '2026-01-02' })).textContent).toContain('Old · Jan 2');
+        });
+        it('asks for a re-check once the totals are over a month old', async () => {
+            expect((await show({ ...snap, anchored: '2026-01-02' })).textContent).toMatch(/Totals \d+d old · re-check/);
+        });
+        it('an unread or broken answer is N/A, never a number', async () => {
+            const t = await show({ asOf: null, main: null, target: null, band: null });
+            expect(t.textContent).toContain('N/A');
+            expect(t.textContent).not.toMatch(/\d+ \/ \d+/);
+        });
+    });
+
     it('an unread NotSoBoring or FrontRunner (N/A) is no alert on its tile, and no "Dip buy"', async () => {
         mockRoutes({ '/api/sheets': ok({ ...calm, NotSoBoring: 'N/A', FrontRunner: 'N/A' }), '/api/history': sheet(), ...files });
         render(<DashboardV2 />);

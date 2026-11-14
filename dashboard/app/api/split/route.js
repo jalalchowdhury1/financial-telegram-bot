@@ -2,6 +2,7 @@ import { EXTERNAL_URLS } from '../../../lib/constants';
 import { serve } from '../../../lib/store';
 import { faultsFrom, trip } from '../../../lib/faults';
 import { validateSplit } from '../../../lib/split';
+import { splitStale } from '../../../lib/servedFreshness';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,7 +19,8 @@ export async function GET(request) {
         if (!res.ok) throw new Error(`gist returned ${res.status}`);
         const snap = await res.json();
         if (!validateSplit(snap)) throw new Error('snapshot failed validation');
-        return { ...snap, _meta: { source: 'gist', hasErrors: false, messages: [] } };
+        const stale = splitStale(snap);
+        return { ...snap, _meta: { source: 'gist', hasErrors: stale, stale, messages: stale ? [`split is as of ${snap.asOf}: the morning run may have missed`] : [] } };
     }, {
         isGood: (x) => validateSplit(x),
         fallback: { asOf: null, main: null, target: null, band: null },

@@ -62,13 +62,21 @@ export function rubberBandItem(payload, now = Date.now()) {
     };
 }
 
-// Split: the night shift replays the close at 01:30 ET, scripts/split.py publishes at 04:00 ET
-// (12 h after the close) + 2 h edge cache.
-export const SPLIT_GRACE_H = 15;
-/** Main / Shartino split: payload = the /api/split JSON (producer: scripts/split.py). */
+// Split: the night shift replays the close at 01:30 ET, scripts/split.py publishes at 04:00 ET and
+// again at 09:00 (17 h after a 16:00 close; 18 h also covers the morning after a 13:00 half day).
+export const SPLIT_GRACE_H = 18;
+/**
+ * Main / Shartino split: payload = the /api/split JSON (producer: scripts/split.py).
+ * The input is the newest close whose 18 h are already up, not the newest close: counted from the
+ * newest one, every 16:00 reset the clock and a split days behind read as fine all evening and
+ * night (red team 14 Nov 2026). So it is red whenever the served day is older than a close that is due.
+ */
 export function splitItem(payload, now = Date.now()) {
-    return { ...rubberBandItem(payload, now), name: 'split', graceH: SPLIT_GRACE_H };
+    const due = latestCloseMs(now - SPLIT_GRACE_H * H);
+    return { ...rubberBandItem(payload, now), name: 'split', graceH: SPLIT_GRACE_H, inputAgeH: due == null ? null : round1((now - due) / H) };
 }
+/** True when the split is not the newest close's any more (the tile says so). */
+export const splitStale = (payload, now = Date.now()) => isRed(splitItem(payload, now));
 
 /**
  * Newest Sheet1 row: its UTC date and how many rows carry it (1 = only the 02:00 run so
