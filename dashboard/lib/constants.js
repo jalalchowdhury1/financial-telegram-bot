@@ -97,6 +97,8 @@ export const EXTERNAL_URLS = {
     // Rubber Band Radar snapshot: computed nightly on the Mac mini (scripts/rubber_band.py),
     // published to a secret gist so the dashboard never needs yfinance or Composer creds.
     RUBBER_BAND_GIST: 'https://gist.githubusercontent.com/jalalchowdhury1/9dfca7e5fe9617b7bb1b85ec4e70413c/raw/rubber-band.json',
+    // Main / Shartino split, percentages only (scripts/split.py on the Mac mini, each morning).
+    SPLIT_GIST: 'https://gist.githubusercontent.com/jalalchowdhury1/878a60935c72699bc37d4bc8e998a037/raw/split.json',
     YAHOO_PE: 'https://finance.yahoo.com/quote/SPY/key-statistics',
     CNN_FEAR_GREED: 'https://production.dataviz.cnn.io/index/fearandgreed/graphdata',
     RAPIDAPI_FEAR_GREED: 'https://fear-and-greed-index.p.rapidapi.com/v1/fgi',

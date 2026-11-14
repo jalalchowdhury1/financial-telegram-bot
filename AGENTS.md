@@ -190,6 +190,17 @@ Whichever wins, the result is normalized to the `/api/spy` shape and **chart his
 MA50/MA200 are computed from FRED `SP500`** when only pre-computed indicators are available.
 Finnhub spot overrides the latest price (gotcha #3). `_meta.source` records the winning tier.
 
+### Main / Shartino split tile (14 Nov 2026)
+
+The first Indicators tile on /v2 (it replaced the NotSoBoring tile; NotSoBoring still speaks on the
+top line). `scripts/split.py run` (launchd `com.jalal.split`, 04:00 ET daily, log
+`~/Library/Logs/split.log`) reads the anchor `~/.config/split-anchor.json` (his last two totals +
+date, target, band, gist id: Mac only, never in this public repo), rolls each total forward with the
+night shift's replay curve (`composer-auto-research/nightshift/state/curve-<sid>.json`, read-only, no
+broker or Composer call) and publishes PERCENTAGES ONLY to a secret gist → `/api/split` →
+the tile. It is an estimate: after he moves money, `split.py set MAIN_USD SHARTINO_USD [DATE]`.
+Freshness item `split` (grace 15 h: close → 01:30 night shift → 04:00 publish + 2 h edge cache).
+
 ---
 
 ## 3. The dashboard (`/dashboard`)

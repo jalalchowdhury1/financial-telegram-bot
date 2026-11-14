@@ -316,7 +316,7 @@ describe('the top line', () => {
         await waitFor(() => expect(screen.getByLabelText('Refresh all data')).not.toBeDisabled());
         fireEvent.click(screen.getByLabelText('Refresh all data'));
         await waitFor(() => expect(document.querySelector('[data-jump="Indicators"]').getAttribute('data-cached')).toBeTruthy(), { timeout: 4000 }); // after getJson's one retry
-        expect(screen.getAllByText(first.NotSoBoring).length).toBeGreaterThan(0); // the copy still shows on its tile, tagged as a copy
+        expect(screen.getAllByText(first.FrontRunner).length).toBeGreaterThan(0); // the copy still shows on its tile, tagged as a copy
         await waitFor(() => expect(document.querySelector('.v2-today').textContent).not.toContain(text));
     }, 10000);
 

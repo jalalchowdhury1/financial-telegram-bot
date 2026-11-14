@@ -1,5 +1,5 @@
 import {
-    rubberBandItem, historyItem, newestRowOf, latestCloseMs, isRed, buildFreshness,
+    rubberBandItem, splitItem, historyItem, newestRowOf, latestCloseMs, isRed, buildFreshness,
     servedCopyItem, SERVED_ROUTES, fwdPeItem, polymarketItem, peItem,
 } from '../servedFreshness';
 import { parseRows } from '../../app/api/history/route';
@@ -98,7 +98,7 @@ test('buildFreshness emits only names + hour counts', () => {
     const out = buildFreshness({ rubberBand: snap('2026-10-02'), history: { _meta: { newestRow: { date: '2026-10-03', rows: 1 } } } }, t('2026-10-03T02:48:00Z'));
     expect(out.app).toBe('financial-telegram-bot');
     expect(out.v).toBe(1);
-    expect(out.items.map((i) => i.name)).toEqual(['rubber-band', 'history-sheet', ...SERVED_ROUTES.map((r) => `served:${r}`), 'pe']);
+    expect(out.items.map((i) => i.name)).toEqual(['rubber-band', 'split', 'history-sheet', ...SERVED_ROUTES.map((r) => `served:${r}`), 'pe']);
     expect(JSON.stringify(out)).not.toMatch(/\d{4}-\d{2}-\d{2}/);
 });
 
@@ -301,4 +301,10 @@ describe('a flagged answer carries its own reason up (5 Nov 2026)', () => {
         expect(item.why).toBe('sheet VIX 25.87 is 56% off CBOE close 16.61 (2026-11-04): flagged stale');
         expect(servedCopyItem('sheets', { VIX: { current: '25.87' }, _meta: { hasErrors: false, messages: [] } }, now).why).toBeUndefined();
     });
+});
+
+test('split: graded like the rubber band, on its own 15 h grace', () => {
+    const it = splitItem({ asOf: '2026-10-02', main: 71.1 }, t('2026-10-03T08:00:00Z'));
+    expect(it).toMatchObject({ name: 'split', graceH: 15, inputAgeH: 12, servedAgeH: 12 });
+    expect(splitItem(null, t('2026-10-03T08:00:00Z')).servedAgeH).toBeNull();
 });

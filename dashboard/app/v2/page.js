@@ -46,6 +46,8 @@ import { marketWindow } from '../../lib/marketWindow';
 import { pulseVerdicts, horsemenRiding } from '../../lib/pulseVerdicts';
 import { decodeLong, joinLong } from '../../lib/longHistory';
 import useFeeds from './useFeeds';
+import { getJson } from '../../lib/loadJson';
+import { validateSplit } from '../../lib/split';
 
 const SECTIONS = [
     ['now', 'Now'], ['signals', 'Signals'], ['market', 'Market'], ['risk', 'Risk'],
@@ -835,14 +837,12 @@ const AAII_MONTHS = 6;    // ... and the 6 months after have tended to be good o
 const shortDate = (iso) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 const FR_MODE = (v) => (/^BIL/.test(v) ? 'Cash' : /VIX/.test(v) ? 'VIX hedge' : v === 'LABD' ? 'Biotech short' : 'Dip buy');
 
-/** NotSoBoring: TMF's drop from its 10-day high, filling toward the 8.5% line. */
-function DropMeter({ pct }) {
-    const max = Math.max(10, pct + 1);
-    const tone = pct > NSB_LINE ? 'bad' : pct >= NSB_LINE * 0.9 ? 'caution' : 'quiet';
+/** Main's share of the Main + Shartino money, with the target as the line. */
+function SplitMeter({ main, target, band }) {
     return (
-        <span className={`v2-meter tone-${tone}`} style={{ '--f': `${(pct / max) * 100}%`, '--l': `${(NSB_LINE / max) * 100}%` }}
-            title={`TMF ${pct.toFixed(2)}% under its 10-day high · trips past ${NSB_LINE}%`}>
-            <span className="v2-meter-tag">{pct.toFixed(1)} / {NSB_LINE}%</span>
+        <span className={`v2-meter tone-${Math.abs(main - target) >= band ? 'bad' : 'quiet'}`} style={{ '--f': `${main}%`, '--l': `${target}%` }}
+            title={`Main ${main.toFixed(1)}% · target ${target}% · move money at ${band}+ points off`}>
+            <span className="v2-meter-tag">{main.toFixed(1)} / {target}%</span>
             <span className="v2-meter-bar"><i /></span>
         </span>
     );
@@ -898,6 +898,8 @@ function TriggerLine({ points, line, tag, tone }) {
 function Signals({ sheets, spy, loading, old, onState }) {
     const na = loading ? '…' : 'N/A';
     const [study, setStudy] = useState(false);
+    const [split, setSplit] = useState(undefined); // undefined = loading, null = unread
+    useEffect(() => { getJson('/api/split').then((j) => setSplit(validateSplit(j) ? j : null)); }, []);
     const aaii = parseFloat(sheets?.AAIIDiff);
     const vixCur = parseFloat(sheets?.VIX?.current);
     const vix3m = parseFloat(sheets?.VIX?.threeMonth);
@@ -965,12 +967,11 @@ function Signals({ sheets, spy, loading, old, onState }) {
 
     const tiles = [
         {
-            key: 'nsb', label: 'NotSoBoring', tip: `Goes defensive when TMF drops ${NSB_LINE}%+ from its 10-day high.`,
-            alert: !loading && sheets?.NotSoBoring === 'OFF',
-            value: sheets?.NotSoBoring || na,
-            sub: staleNote(sheets, ['NotSoBoring'])
-                || (Number.isFinite(nsb?.watchOutAt) ? <span className="v2-muted">Watch out at ${nsb.watchOutAt.toFixed(2)}</span> : null),
-            viz: Number.isFinite(nsb?.drawdownPct) ? <DropMeter pct={nsb.drawdownPct} /> : null,
+            key: 'split', label: 'Main / Shartino', tip: 'Estimate: your last totals, rolled forward each morning with the night shift\'s replay of each algo.',
+            alert: !!split && Math.abs(split.main - split.target) >= split.band,
+            value: split ? `${Math.round(split.main)} / ${100 - Math.round(split.main)}` : split === undefined ? '…' : 'N/A',
+            sub: split ? <span className="v2-muted">Target {split.target} / {100 - split.target} · {shortDate(split.asOf)}</span> : null,
+            viz: split ? <SplitMeter main={split.main} target={split.target} band={split.band} /> : null,
         },
         {
             key: 'fr', label: 'FrontRunner', tip: 'Hedges with VIX when RSIs run hot; buys deep tech dips. Tap for the NUTS radar (a different algo).',
