@@ -62,6 +62,14 @@ export function rubberBandItem(payload, now = Date.now()) {
     };
 }
 
+// Split: the night shift replays the close at 01:30 ET, scripts/split.py publishes at 04:00 ET
+// (12 h after the close) + 2 h edge cache.
+export const SPLIT_GRACE_H = 15;
+/** Main / Shartino split: payload = the /api/split JSON (producer: scripts/split.py). */
+export function splitItem(payload, now = Date.now()) {
+    return { ...rubberBandItem(payload, now), name: 'split', graceH: SPLIT_GRACE_H };
+}
+
 /**
  * Newest Sheet1 row: its UTC date and how many rows carry it (1 = only the 02:00 run so
  * far, ≥2 = the 14:00 run too). Rows are raw CSV cells; non-date first cells are skipped.
@@ -235,7 +243,7 @@ export function buildFreshness(raw, now = Date.now()) {
         app: 'financial-telegram-bot',
         v: 1,
         items: [
-            rubberBandItem(raw.rubberBand, now), historyItem(raw.history, now),
+            rubberBandItem(raw.rubberBand, now), splitItem(raw.split, now), historyItem(raw.history, now),
             ...SERVED_ROUTES.map((r) => servedCopyItem(r, raw.served?.[r], now)), peItem(raw.served?.fred, now),
             fwdPeItem(raw.fwdPe, now), polymarketItem(raw.polymarket, now),
         ].filter(Boolean),
