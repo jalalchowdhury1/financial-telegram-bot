@@ -49,7 +49,9 @@ import useFeeds from './useFeeds';
 import { getJson } from '../../lib/loadJson';
 import { validateSplit } from '../../lib/split';
 import SplitHistory from '../../components/SplitHistory';
-import { splitStale } from '../../lib/servedFreshness';
+import { splitStale, centredStale } from '../../lib/servedFreshness';
+import { validateCentred } from '../../lib/centred';
+import CentredDetails from '../../components/CentredDetails';
 
 const SECTIONS = [
     ['now', 'Now'], ['signals', 'Signals'], ['market', 'Market'], ['risk', 'Risk'],
@@ -849,6 +851,27 @@ function SplitMeter({ main, target, band }) {
     );
 }
 
+/**
+ * Centred: one slim strip under the signal tiles, built like the read's strips ("Dips pay"). Calm green when every
+ * setting is in the middle, amber only when one is off; unknown / old stay quiet. The whole strip opens the details.
+ */
+function CentredStrip({ centred: c, old, onOpen }) {
+    const state = c === undefined ? '…' : !c ? 'no feed' : old ? `Old · ${shortDate(c.generated_at.slice(0, 10))}`
+        : c.state === 'unknown' ? 'not checked' : c.off > 0 ? `Off centre · ${c.off} of ${c.checked}` : `all ${c.checked} in the middle`;
+    const tone = !c ? (c === null ? ' tone-caution' : '') : old || c.state === 'unknown' ? '' : c.off > 0 ? ' tone-caution' : ' tone-good';
+    return (
+        <div className="v2-readout v2-cstrip">
+            <button type="button" className={`v2-read${tone}`} onClick={c ? onOpen : undefined} disabled={!c} aria-haspopup="dialog"
+                title={c?.note || 'Each night: is every setting of the live algo in the middle of a flat zone? Tap for details.'}>
+                <span className="v2-cstrip-left"><i className="v2-cstrip-dot" /><span className="v2-read-text">Centred</span><span className="v2-cstrip-state">{state}</span></span>
+                {c?.checked > 0 && !old && (
+                    <span className="v2-cbar-row" aria-hidden="true">{Array.from({ length: c.checked }, (_, i) => <i key={i} className={i < c.off ? 'is-off' : undefined} />)}</span>
+                )}
+            </button>
+        </div>
+    );
+}
+
 /** FrontRunner: the 15 RSIs it watches. Top row hedges past its amber zone, bottom row buys dips under its green one. */
 function RsiStrip({ rsi, pick }) {
     const row = (map, side) => Object.entries(map).filter(([t]) => Number.isFinite(rsi?.[t])).map(([t, n]) => {
@@ -908,6 +931,10 @@ function Signals({ sheets, spy, loading, old, onState }) {
     const splitMove = !splitOut ? null : splitOff > 0
         ? `Move ${Math.round(((split.main - split.target) / split.main) * 100)}% of Main → Shartino`
         : `Move ${Math.round(((split.target - split.main) / (100 - split.main)) * 100)}% of Shartino → Main`;
+    const [centred, setCentred] = useState(undefined); // same as the split: undefined = loading, null = unread
+    useEffect(() => { getJson('/api/centred').then((j) => setCentred((had) => (validateCentred(j) ? j : had ?? null))); }, [sheets]);
+    const centredOld = centred && centredStale(centred);
+    const centredOff = !!centred && !centredOld && centred.state === 'off' && centred.off > 0;
     const anchorDays = split ? Math.floor((Date.now() - Date.parse(`${split.anchored}T12:00:00Z`)) / 864e5) : 0;
     const aaii = parseFloat(sheets?.AAIIDiff);
     const vixCur = parseFloat(sheets?.VIX?.current);
@@ -963,8 +990,10 @@ function Signals({ sheets, spy, loading, old, onState }) {
             // His own money split is no market signal: it speaks only when read and current, and never blocks "Nothing firing".
             ...(split && !splitOld ? [{ jump: 'Indicators', warn: true, fire: splitOut && `Split ${splitM} / ${100 - splitM}`,
                 share: Math.abs(splitOff) / split.band, gap: `Split ${splitM} → ${split.target + (splitOff < 0 ? -1 : 1) * split.band}` }] : []),
+            // Centred speaks only when off centre; unread, unknown or old it stays off the line, like the split.
+            ...(centredOff ? [{ jump: 'Indicators', warn: true, fire: `Off centre ${centred.off}`, share: 1, gap: '' }] : []),
         ]);
-    }, [loading, old, sheets, aaii, aaiiRead, bullUntil, vixCur, vix3m, vixRead, split, splitOld, onState]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [loading, old, sheets, aaii, aaiiRead, bullUntil, vixCur, vix3m, vixRead, split, splitOld, centred, centredOff, onState]); // eslint-disable-line react-hooks/exhaustive-deps
     useEffect(() => () => onState(null), [onState]); // a crashed or gone card leaves the top line unread, not stuck
 
     const ratioPts = useMemo(() => {
@@ -1024,6 +1053,7 @@ function Signals({ sheets, spy, loading, old, onState }) {
         },
     ];
     return (
+        <>
         <div className="v2-signals">
             {tiles.map((t) => {
                 const inner = (
@@ -1057,6 +1087,9 @@ function Signals({ sheets, spy, loading, old, onState }) {
                     now={vixCur / vix3m} sheet={ratioPts.filter((p) => p.date)} spyLive={spy} onClose={() => setStudy(false)} />
             )}
         </div>
+        <CentredStrip centred={centred} old={centredOld} onOpen={() => setStudy('centred')} />
+        {study === 'centred' && centred && <CentredDetails centred={centred} onClose={() => setStudy(false)} />}
+        </>
     );
 }
 

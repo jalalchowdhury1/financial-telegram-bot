@@ -78,6 +78,16 @@ export const splitItem = (payload, now = Date.now()) => closeItem('split', paylo
 /** True when the split is not the newest close's any more (the tile says so). */
 export const splitStale = (payload, now = Date.now()) => isRed(splitItem(payload, now));
 
+// Centred: the Mac publishes once a night (~04:10 ET); 30 h = one missed night + slack. Nothing served = red.
+export const CENTRED_GRACE_H = 30;
+/** Centred: payload = the /api/centred JSON (producer: ~/.local/bin/centred-publish.py). */
+export function centredItem(payload, now = Date.now()) {
+    const ms = Date.parse(payload?.generated_at ?? '');
+    return { name: 'centred', inputAgeH: null, servedAgeH: Number.isFinite(ms) ? round1((now - ms) / H) : null, graceH: CENTRED_GRACE_H, maxAgeH: CENTRED_GRACE_H };
+}
+/** True when the feed is older than 30 h (the tile says "Old"). */
+export const centredStale = (payload, now = Date.now()) => isRed(centredItem(payload, now));
+
 /**
  * Newest Sheet1 row: its UTC date and how many rows carry it (1 = only the 02:00 run so
  * far, ≥2 = the 14:00 run too). Rows are raw CSV cells; non-date first cells are skipped.
@@ -251,7 +261,7 @@ export function buildFreshness(raw, now = Date.now()) {
         app: 'financial-telegram-bot',
         v: 1,
         items: [
-            rubberBandItem(raw.rubberBand, now), splitItem(raw.split, now), historyItem(raw.history, now),
+            rubberBandItem(raw.rubberBand, now), splitItem(raw.split, now), centredItem(raw.centred, now), historyItem(raw.history, now),
             ...SERVED_ROUTES.map((r) => servedCopyItem(r, raw.served?.[r], now)), peItem(raw.served?.fred, now),
             fwdPeItem(raw.fwdPe, now), polymarketItem(raw.polymarket, now),
         ].filter(Boolean),
