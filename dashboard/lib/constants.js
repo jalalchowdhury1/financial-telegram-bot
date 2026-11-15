@@ -99,6 +99,8 @@ export const EXTERNAL_URLS = {
     RUBBER_BAND_GIST: 'https://gist.githubusercontent.com/jalalchowdhury1/9dfca7e5fe9617b7bb1b85ec4e70413c/raw/rubber-band.json',
     // Main / Shartino split, percentages only (scripts/split.py on the Mac mini, each morning).
     SPLIT_GIST: 'https://gist.githubusercontent.com/jalalchowdhury1/878a60935c72699bc37d4bc8e998a037/raw/split.json',
+    // Centred tile: counts + whole-algo deltas only (~/.local/bin/centred-publish.py, nightly).
+    CENTRED_GIST: 'https://gist.githubusercontent.com/jalalchowdhury1/76dadc7e2d99c5dd22cfbf897a3dec22/raw/centred-public.json',
     YAHOO_PE: 'https://finance.yahoo.com/quote/SPY/key-statistics',
     CNN_FEAR_GREED: 'https://production.dataviz.cnn.io/index/fearandgreed/graphdata',
     RAPIDAPI_FEAR_GREED: 'https://fear-and-greed-index.p.rapidapi.com/v1/fgi',
