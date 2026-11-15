@@ -1167,24 +1167,22 @@ function ReadGlyph({ k, fred, vol, rubberBand }) {
     return <span className={`v2-pips is-${k}`} aria-hidden="true">{pips.map((p, i) => <i key={i} className={`is-${p}`} />)}</span>;
 }
 
-/** Desktop only: the panel under the mouse gets --mx / --my, which its background reads as a soft light (one listener, one write a frame). */
-const LIT = '.v2-hero-spy, .v2-gauge-block, .v2-readout, .v2-moves-grid, .v2-signals, .v2 .card';
-function useCursorLight() {
+/** Charts sketch themselves in each time they scroll into view: on at 35% showing, off only once fully gone (so no flicker at the edge). */
+const DRAWN = '.v2-spark svg, .v2-fgt-plot svg, .v2-mk-spark, .v2-mv-spark svg, .v2-trig svg, .v2-sh svg, .v2 .mini-chart svg';
+function useDrawOnView() {
     useEffect(() => {
-        if (!window.matchMedia?.('(hover: hover) and (pointer: fine)').matches) return undefined;
-        let el = null, raf = 0, ev = null;
-        const paint = () => {
-            raf = 0;
-            const hit = ev.target.closest?.(LIT) || null;
-            if (hit !== el) { el?.style.removeProperty('--mx'); el?.style.removeProperty('--my'); el = hit; }
-            if (!el) return;
-            const r = el.getBoundingClientRect();
-            el.style.setProperty('--mx', `${ev.clientX - r.left}px`);
-            el.style.setProperty('--my', `${ev.clientY - r.top}px`);
-        };
-        const move = (e) => { ev = e; if (!raf) raf = requestAnimationFrame(paint); };
-        document.addEventListener('pointermove', move, { passive: true });
-        return () => { document.removeEventListener('pointermove', move); cancelAnimationFrame(raf); };
+        const root = document.querySelector('.v2');
+        if (!root || typeof IntersectionObserver === 'undefined' || typeof MutationObserver === 'undefined') return undefined;
+        const io = new IntersectionObserver((es) => es.forEach((e) => {
+            if (!e.isIntersecting) e.target.classList.remove('is-drawn');
+            else if (e.intersectionRatio >= 0.35) e.target.classList.add('is-drawn');
+        }), { threshold: [0, 0.35] });
+        let raf = 0;
+        const scan = () => { raf = 0; root.querySelectorAll(DRAWN).forEach((el) => io.observe(el)); };
+        const mo = new MutationObserver(() => { if (!raf) raf = requestAnimationFrame(scan); }); // charts arrive with their data
+        mo.observe(root, { childList: true, subtree: true });
+        scan();
+        return () => { io.disconnect(); mo.disconnect(); cancelAnimationFrame(raf); };
     }, []);
 }
 
@@ -1249,7 +1247,7 @@ export default function DashboardV2() {
 
     const spyOk = isLiveAnswer('spy', spy);
     const fgOk = isLiveAnswer('fg', fg);
-    useCursorLight();
+    useDrawOnView();
     const ivSpy = vol?.tickers?.find((t) => t.ticker === 'SPY' && Number.isFinite(t.ivRank1y) && Number.isFinite(t.ivPctile1y));
     const moveOk = isLiveAnswer('spyDailyMove', spyDailyMove);
     const spyStale = spyOk ? staleOf(spy)?.label : undefined;
