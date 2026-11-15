@@ -1167,8 +1167,12 @@ function ReadGlyph({ k, fred, vol, rubberBand }) {
     return <span className={`v2-pips is-${k}`} aria-hidden="true">{pips.map((p, i) => <i key={i} className={`is-${p}`} />)}</span>;
 }
 
-/** Charts sketch themselves in each time they scroll into view: on at 35% showing, off only once fully gone (so no flicker at the edge). */
-const DRAWN = '.v2-spark svg, .v2-fgt-plot svg, .v2-mk-spark, .v2-mv-spark svg, .v2-trig svg, .v2-sh svg, .v2 .mini-chart svg';
+/**
+ * Charts sketch themselves in each time they scroll into view: on at 35% showing, off only once fully gone (no flicker at the
+ * edge). It watches each chart's BOX, not its svg: mid-draw the svg is clipped to nothing, the observer read that as "gone"
+ * and switched the draw off and on in a loop (14 Nov 2026).
+ */
+const DRAWN = '.v2-spark, .v2-fgt-plot, .v2-mv-spark, .v2-trig, .v2-sh, .v2 .mini-chart .chart-plot';
 function useDrawOnView() {
     useEffect(() => {
         const root = document.querySelector('.v2');

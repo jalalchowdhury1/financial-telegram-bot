@@ -1423,10 +1423,10 @@ body:has(.v2) { background: #0b0c0e; }
   position: absolute; left: 0; top: 0; border-radius: 999px; background: rgba(255, 255, 255, 0.07); pointer-events: none;
   transition: transform .3s cubic-bezier(.3, .7, .2, 1), width .3s cubic-bezier(.3, .7, .2, 1);
 }
-/* charts sketch themselves in from the left each time they scroll into view (.is-drawn: useDrawOnView) */
-:is(.v2-spark svg, .v2-fgt-plot svg, .v2-mk-spark, .v2-mv-spark svg, .v2-trig svg, .v2-sh svg, .v2 .mini-chart svg).is-drawn { animation: v2-draw .9s cubic-bezier(.4, 0, .2, 1) backwards; }
+/* charts sketch themselves in from the left each time they scroll into view (.is-drawn on the chart's box: useDrawOnView) */
+:is(.v2-spark, .v2-fgt-plot, .v2-mv-spark, .v2-trig, .v2-sh, .v2 .mini-chart .chart-plot).is-drawn > svg { animation: v2-draw .9s cubic-bezier(.4, 0, .2, 1) backwards; }
 @keyframes v2-draw { from { clip-path: inset(-20% 100% -20% -2%); } to { clip-path: inset(-20% -2% -20% -2%); } }
 @media (prefers-reduced-motion: reduce) {
-  .v2-today-dot, .v2-hero, .v2-section, .v2-spark svg, .v2-fgt-plot svg, .v2-mk-spark, .v2-mv-spark svg, .v2-trig svg, .v2-sh svg, .v2 .mini-chart svg { animation: none !important; }
+  .v2-today-dot, .v2-hero, .v2-section, .is-drawn > svg { animation: none !important; }
   .v2-tab-pill { transition: none; }
 }

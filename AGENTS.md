@@ -224,7 +224,7 @@ curves (true only if no money moved then): `logFrom` marks where the real log st
 - Look pass at the end of `app/v2/v2.css` (top glow, top-lit panels, hover edge, section tick,
   breathing dot, one rise-in on load; all off under reduced motion). CSS only.
 - Cool pass (his picks, 14 Nov): charts sketch in from the left EACH time they scroll into view
-  (`useDrawOnView`: one IntersectionObserver adds `.is-drawn` at 35% showing, drops it once fully gone;
+  (`useDrawOnView`: one IntersectionObserver adds `.is-drawn` to the chart's BOX at 35% showing, drops it once fully gone; never watch the svg itself, it is clipped to nothing mid-draw and the observer loops;
   CSS clip-path); the top glow is a fixed layer (`.v2::before`), so it stays as he scrolls, and turns
   amber while Fear & Greed is live and under 45 (`data-mood="fear"` on `.v2`); one pill slides between
   the section tabs (`.v2-tab-pill`, measured in `SectionNav`). No new library, no new fetch.
