@@ -439,6 +439,12 @@ describe('the top line', () => {
             expect(document.querySelectorAll('[data-jump="Indicators"] .v2-signal')).toHaveLength(4); // the tile grid is untouched
             await waitFor(() => expect(screen.getByText('Nothing firing')).toBeInTheDocument());
         });
+        it('none off but some at an edge: says how many are in the middle, never "all"', async () => {
+            const t = await show({ ...feed, edge: 2 });
+            expect(t.textContent).toBe('Centred3 of 5 in the middle');
+            expect(t.className).not.toContain('tone-good');
+            expect(t.className).not.toContain('tone-caution');
+        });
         it('off centre: amber, and it leads the top line', async () => {
             const t = await show({ ...feed, state: 'off', off: 2 });
             expect(t.textContent).toContain('Off centre · 2 of 5');

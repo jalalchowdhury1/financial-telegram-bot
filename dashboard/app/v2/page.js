@@ -857,8 +857,8 @@ function SplitMeter({ main, target, band }) {
  */
 function CentredStrip({ centred: c, old, onOpen }) {
     const state = c === undefined ? '…' : !c ? 'no feed' : old ? `Old · ${shortDate(c.generated_at.slice(0, 10))}`
-        : c.state === 'unknown' ? 'not checked' : c.off > 0 ? `Off centre · ${c.off} of ${c.checked}` : `all ${c.checked} in the middle`;
-    const tone = !c ? (c === null ? ' tone-caution' : '') : old || c.state === 'unknown' ? '' : c.off > 0 ? ' tone-caution' : ' tone-good';
+        : c.state === 'unknown' ? 'not checked' : c.off > 0 ? `Off centre · ${c.off} of ${c.checked}` : c.edge > 0 ? `${c.checked - c.edge} of ${c.checked} in the middle` : `all ${c.checked} in the middle`;
+    const tone = !c ? (c === null ? ' tone-caution' : '') : old || c.state === 'unknown' ? '' : c.off > 0 ? ' tone-caution' : c.edge > 0 ? '' : ' tone-good';
     return (
         <div className="v2-readout v2-cstrip">
             <button type="button" className={`v2-read${tone}`} onClick={c ? onOpen : undefined} disabled={!c} aria-haspopup="dialog"
