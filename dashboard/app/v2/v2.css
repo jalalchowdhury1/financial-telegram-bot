@@ -1055,6 +1055,7 @@ body:has(.v2) { background: #0b0c0e; }
 .v2-aa-tfs button.is-on { color: var(--ink); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line-2); }
 .v2-aa-close { all: unset; position: relative; flex: none; cursor: pointer; width: 28px; height: 28px; display: grid; place-items: center; border-radius: 8px; color: var(--ink-3); font-size: 18px; }
 .v2-aa-close:hover { color: var(--ink); background: var(--surface-2); }
+.v2-aa-close:focus-visible { outline: 1px solid var(--line-2); }   /* all: unset took the ring away; a keyboard user lands here when a sheet opens */
 .v2-aa-wait { height: 360px; border-radius: 10px; background: linear-gradient(90deg, var(--surface-2), rgb(255 255 255 / .04), var(--surface-2)); background-size: 200% 100%; animation: v2-aa-shine 1.2s linear infinite; }
 @keyframes v2-aa-shine { to { background-position: -200% 0; } }
 
