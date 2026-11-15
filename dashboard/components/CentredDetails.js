@@ -22,7 +22,7 @@ export function compareLines(delta) {
 /** One line for the tile and the popup head. */
 export function centredHeadline(c) {
     if (c.state === 'unknown') return 'Centred · not checked';
-    return c.off > 0 ? `Off centre · ${c.off} of ${c.checked}` : `Centred · all ${c.checked} in the middle`;
+    return c.off > 0 ? `Off centre · ${c.off} of ${c.checked}` : c.edge > 0 ? `Centred · ${c.checked - c.edge} of ${c.checked} in the middle` : `Centred · all ${c.checked} in the middle`;
 }
 
 export default function CentredDetails({ centred: c, onClose }) {

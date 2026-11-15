@@ -19,7 +19,9 @@ describe('validateCentred', () => {
     it('accepts the public feed shape', () => expect(validateCentred(good)).toBe(true));
     it('accepts a first-night feed (unknown, nothing judged yet)', () => expect(validateCentred({ v: 1, generated_at: '2026-11-14T21:40:00-05:00', prices_to: null,
         state: 'unknown', note: 'first check runs tonight', checked: 0, off: 0, since: null, verdict: 'not judged', delta: null, history: [] })).toBe(true));
+    it('accepts an edge count (at an edge: not off, not in the middle)', () => expect(validateCentred({ ...good, edge: 3 })).toBe(true));
     it.each([
+        { ...good, edge: 4 }, { ...good, edge: -1 },
         null, {}, { ...good, v: 2 }, { ...good, state: 'odd' }, { ...good, off: 6 }, { ...good, checked: -1 }, { ...good, off: 1.5 },
         { ...good, generated_at: 'soon' }, { ...good, generated_at: null }, { ...good, verdict: 'great' }, { ...good, delta: { cagr: 1 } },
         { ...good, history: [{ date: 'x', off: 1, checked: 5 }] }, { ...good, history: 'no' },
