@@ -918,7 +918,7 @@ Rule: every number has ≥2 independent live sources, then saved copies, then an
   `cnn → rapidapi → saved CNN index ≤24 h → fg_yahoo/fg_cboe/fg_fred` (VIX proxy, `_meta.proxy`
   + UI label; it read 81 vs CNN 45 on 2026-10-09) → saved index ≤3 days. **jev-pills**: missing inputs → verdict `unknown`, never a calm default.
 - **Nightly guard:** `scripts/fault_matrix.py` (launchd `com.jalal.ftb-fault-matrix`, 21:40 daily,
-  log `~/Library/Logs/ftb-fault-matrix.log`) runs 53 checks on prod and pings 📡 only on a FAIL.
+  log `~/Library/Logs/ftb-fault-matrix.log`) runs 75 checks on prod (72 + the split relay, 14 Nov 2026) and pings 📡 only on a FAIL.
   Add a case there whenever you add a tier.
   Catch-up: `com.jalal.ftb-fault-matrix-catchup` (01:40, `--catchup`) re-runs ONLY when the log's
   last line isn't `=== N/N passed ===`, and prints nothing on a skip — keep it silent, or the
