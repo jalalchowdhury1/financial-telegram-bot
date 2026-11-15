@@ -10,7 +10,7 @@ import useSheetLock, { useSheetFocus } from './useSheetLock';
 import { day } from './SignalStudy';
 
 export const CENTRED_TAB = 'https://nuts-radar.vercel.app/#centred';
-const WHY = { mid: 'Small changes to these move nothing', edge: 'A cliff sits right beside these', off: 'A steadier spot was proven nearby' };   // tap a count
+const WHY = { mid: 'Small changes to these move nothing', edge: 'No steadier spot is proven for these', off: 'A steadier spot was proven nearby' };   // tap a count
 const NIGHTS = 30;                                  // the nights strip: one cell per night, newest last
 
 const signed = (v, d = 1) => `${v < 0 ? '−' : v > 0 ? '+' : ''}${Math.abs(v).toFixed(d)}`;
