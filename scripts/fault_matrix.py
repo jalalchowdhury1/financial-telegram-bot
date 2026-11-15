@@ -66,6 +66,7 @@ CASES = [
     ('polymarket', '', 'live'), ('polymarket', 'lambda,gamma', 'copy'), ('polymarket', 'lambda,gamma,lastgood', 'none'),
     ('rubber-band', '', 'live'), ('rubber-band', 'gist', 'copy'), ('rubber-band', 'gist,lastgood', 'none'),
     ('split', '', 'live'), ('split', 'gist', 'copy'), ('split', 'gist,lastgood', 'none'),
+    ('centred', '', 'live'), ('centred', 'gist', 'copy'), ('centred', 'gist,lastgood', 'none'),
     ('history', '', 'live'), ('history', 'history_sheet', 'copy'), ('history', 'history_sheet,lastgood', 'none'),
     ('aaii', '', 'live'), ('aaii', 'aaii_http', 'live'), ('aaii', 'aaii_http,aaii_substack,aaii_rss,aaii_lastgood', 'none'),
 ]
@@ -75,7 +76,7 @@ NONE_RE = re.compile(r'^(Unavailable|Failed|Static Defaults|none)$', re.I)
 # A number the card would print. Excludes years/ids by only looking at known value keys.
 VALUE_KEYS = {
     'spy': ['current', 'return3y'], 'spy-daily-move': ['value'], 'fear-greed': ['score'],
-    'sheets': ['NotSoBoring', 'FrontRunner'], 'market-extra': [], 'fred': [], 'split': ['main'],
+    'sheets': ['NotSoBoring', 'FrontRunner'], 'market-extra': [], 'fred': [], 'split': ['main'], 'centred': ['prices_to'],
 }
 
 
