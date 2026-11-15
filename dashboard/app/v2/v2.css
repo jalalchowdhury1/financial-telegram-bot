@@ -1452,9 +1452,46 @@ body:has(.v2) { background: #0b0c0e; }
 .v2-cd-chip { flex: none; padding: 2px 8px; border-radius: 999px; font-size: 11px; white-space: nowrap; color: var(--ink-3); box-shadow: inset 0 0 0 1px var(--line-2); }
 .v2-cd-chip.is-no-harm { color: var(--up); }
 .v2-cd-chip.is-harm { color: var(--warn); }
-.v2-cd-chart svg { height: 60px; }
-.v2-cd-bar { fill: var(--warn); opacity: .85; }
-.v2-cd-base { stroke: var(--line-2); stroke-width: 1; }
+.v2-cd-worlds { margin-left: auto; flex: none; font-size: 11px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.v2-cd-table { display: block; width: 100%; height: auto; margin-top: 10px; overflow: visible; }
+.v2-cd-fall { stroke: var(--warn); stroke-width: 1; stroke-dasharray: 1 3.5; stroke-linecap: round; opacity: .6; }
+.v2-cd-table[class*='sel-'] .v2-cd-ball { opacity: .16; }
+.v2-cd-table.sel-mid .is-mid, .v2-cd-table.sel-edge .is-edge, .v2-cd-table.sel-off .is-off { opacity: 1; }
+.v2-cd-why { margin: 6px 0 0; text-align: center; font-size: 11.5px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.v2-cd-mesa { fill: var(--surface-2); stroke: var(--line-2); stroke-width: 1; }
+.v2-cd-flat { stroke: var(--up); stroke-width: 1.5; stroke-linecap: round; opacity: .55; }
+.v2-cd-zone { font: 500 6.5px var(--sans); letter-spacing: .14em; fill: var(--ink-3); }
+.v2-cd-ball { transition: opacity .2s; animation: v2-cd-drop .5s cubic-bezier(.3, 1.4, .5, 1) backwards; }
+.v2-cd-ball.is-mid { fill: var(--up); }
+.v2-cd-ball.is-edge { fill: var(--surface); stroke: var(--warn); stroke-width: 1.2; opacity: .8; }
+.v2-cd-ball.is-off { fill: var(--warn); filter: drop-shadow(0 0 3px rgb(227 168 87 / .7)); animation: v2-cd-drop .5s cubic-bezier(.3, 1.4, .5, 1) backwards, v2-cd-teeter 2.6s ease-in-out .7s infinite; }
+.v2-cd-ball.is-off.is-right { animation-name: v2-cd-drop, v2-cd-teeter-r; }
+@keyframes v2-cd-drop { from { opacity: 0; translate: 0 -22px; } }
+@keyframes v2-cd-teeter { 0%, 100% { rotate: 0deg; } 50% { rotate: -16deg; } }
+@keyframes v2-cd-teeter-r { 0%, 100% { rotate: 0deg; } 50% { rotate: 16deg; } }
+.v2-cd-three { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 8px; font-size: 11.5px; color: var(--ink-3); white-space: nowrap; }
+.v2-cd-three > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; text-align: center; }
+.v2-cd-three > button { padding: 4px 0; border: 0; border-radius: 8px; background: none; font: inherit; color: inherit; cursor: pointer; }
+.v2-cd-three > button:hover, .v2-cd-three > button.is-sel { background: var(--surface-2); color: var(--ink-2); }
+.v2-cd-three b { margin-right: 5px; font-size: 14px; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+.v2-cd-three .is-mid b { color: var(--up); }
+.v2-cd-three .is-edge b, .v2-cd-three .is-off b { color: var(--warn); }
+.v2-cd-three .is-edge b { opacity: .75; }
+.v2-cd-levels { margin-top: 10px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.v2-cd-levels em { display: block; margin: 6px 0 1px; font-style: normal; font-size: 10.5px; color: var(--ink-3); }
+.v2-cd-vial {
+  display: block; position: relative; height: 12px; border-radius: 999px; background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line-2);
+  background-image: linear-gradient(var(--line-2), var(--line-2)), linear-gradient(var(--line-2), var(--line-2));
+  background-size: 1px 100%; background-repeat: no-repeat; background-position: calc(50% - 9px) 0, calc(50% + 9px) 0;
+}
+.v2-cd-vial i { position: absolute; top: 2px; width: 14px; height: 8px; margin-left: -7px; border-radius: 999px; background: var(--ink-2); transition: left .6s cubic-bezier(.3, 1.4, .5, 1); }
+.v2-cd-levels .is-good .v2-cd-vial i { background: var(--up); }
+.v2-cd-levels .is-bad .v2-cd-vial i { background: var(--warn); }
+.v2-cd-nights { display: grid; grid-template-columns: repeat(30, 1fr); gap: 3px; margin: 16px 0 6px; }
+.v2-cd-nights i { height: 8px; border-radius: 2px; box-shadow: inset 0 0 0 1px var(--line); }
+.v2-cd-nights i.is-ok { background: var(--up); opacity: .5; box-shadow: none; }
+.v2-cd-nights i.is-off { background: var(--warn); box-shadow: none; }
+@media (prefers-reduced-motion: reduce) { .v2-cd-ball, .v2-cd-ball.is-off { animation: none; } .v2-cd-vial i { transition: none; } }
 .v2-cd-link {
   display: inline-block; margin-top: 14px; padding: 7px 14px; border-radius: 999px; white-space: nowrap;
   font: 500 12.5px var(--sans); color: var(--ink); text-decoration: none; box-shadow: inset 0 0 0 1px var(--line-2);

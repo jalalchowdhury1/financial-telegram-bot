@@ -8,7 +8,7 @@ import fs from 'fs';
 import { validateCentred } from '../centred';
 import { centredItem, centredStale } from '../servedFreshness';
 import { saveLastGood } from '../store';
-import { compareLines } from '../../components/CentredDetails';
+import { levels, marbles } from '../../components/CentredDetails';
 import { GET } from '../../app/api/centred/route';
 
 const NOW = Date.parse('2026-11-15T12:00:00Z');
@@ -21,7 +21,7 @@ describe('validateCentred', () => {
         state: 'unknown', note: 'first check runs tonight', checked: 0, off: 0, since: null, verdict: 'not judged', delta: null, history: [] })).toBe(true));
     it('accepts an edge count (at an edge: not off, not in the middle)', () => expect(validateCentred({ ...good, edge: 3 })).toBe(true));
     it.each([
-        { ...good, edge: 4 }, { ...good, edge: -1 },
+        { ...good, edge: 4 }, { ...good, edge: -1 }, { ...good, worlds: 'many' },
         null, {}, { ...good, v: 2 }, { ...good, state: 'odd' }, { ...good, off: 6 }, { ...good, checked: -1 }, { ...good, off: 1.5 },
         { ...good, generated_at: 'soon' }, { ...good, generated_at: null }, { ...good, verdict: 'great' }, { ...good, delta: { cagr: 1 } },
         { ...good, history: [{ date: 'x', off: 1, checked: 5 }] }, { ...good, history: 'no' },
@@ -39,10 +39,23 @@ describe('stale rule + freshness item', () => {
     });
 });
 
-test('compare lines: plain words, short enough for a phone', () => {
-    expect(compareLines({ cagr: -0.4, maxdd: 0.9, sharpe: 0.01 })).toEqual(['Moving them: gain −0.4 %/yr', 'Worst fall 0.9 pts smaller']);
-    expect(compareLines({ cagr: 1.25, maxdd: -2, sharpe: 0 })).toEqual(['Moving them: gain +1.3 %/yr', 'Worst fall 2.0 pts bigger']);
-    expect(compareLines(null)).toEqual(['Moving them: not judged yet', null]);
+test('spirit levels: bubble dead centre when nothing changes, right = better, left = worse, never past the vial', () => {
+    expect(levels({ cagr: -0.4, maxdd: 0.9, sharpe: 0.01 })).toEqual([
+        { label: 'Gain', text: '−0.4 %/yr', x: -0.08, tone: 'is-bad' }, { label: 'Worst fall', text: '0.9 pts smaller', x: 0.18, tone: 'is-good' },
+        { label: 'Sharpe', text: '+0.01', x: 0.04, tone: 'is-good' }]);
+    expect(levels({ cagr: 40, maxdd: -0.04, sharpe: 0 }).map((l) => [l.text, l.x, l.tone])).toEqual([['+40.0 %/yr', 1, 'is-good'], ['same', 0, ''], ['same', 0, '']]);
+    expect(levels(null)).toBe(null);
+});
+
+test('the table: every setting is one marble; edges sit at both rims, off ones hang over the lips', () => {
+    const m = marbles({ checked: 31, off: 2, edge: 11 });
+    expect([m.mid, m.edge, m.off, m.list.length]).toEqual([18, 11, 2, 31]);
+    const on = m.list.filter((b) => b.kind !== 'off');
+    expect(on.map((b) => b.kind).join('')).toBe('edge'.repeat(6) + 'mid'.repeat(18) + 'edge'.repeat(5));
+    expect(on.every((b, i) => b.x > 22 && b.x < 298 && (i === 0 || b.x - on[i - 1].x >= 2 * b.r))).toBe(true);   // on the top, never overlapping
+    expect(m.list.filter((b) => b.kind === 'off').map((b) => b.side)).toEqual([-1, 1]);
+    expect(marbles({ checked: 5, off: 0 })).toMatchObject({ mid: 5, edge: 0, off: 0 });           // an older feed has no edge count
+    expect(marbles({ checked: 200, off: 3, edge: 500 }).list).toHaveLength(200);                    // odd counts never draw extra marbles
 });
 
 describe('/api/centred', () => {
