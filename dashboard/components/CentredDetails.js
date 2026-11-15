@@ -34,22 +34,23 @@ export function levels(delta) {
  */
 export function marbles(c) {
     const off = Math.min(c.off, c.checked), on = c.checked - off, edge = Math.min(c.edge || 0, on);
+    const perLip = Math.ceil(off / 2), step = Math.min(8.5, 24 / Math.max(1, perLip)), ro = Math.max(1, Math.min(4, step / 2 - 0.25));   // many off: smaller, never out of the picture
     const L = 22, W = 276, slot = on ? W / on : W, r = Math.max(1.5, Math.min(4, slot / 2 - 0.6)), left = Math.ceil(edge / 2);
     const out = Array.from({ length: on }, (_, i) => ({ x: L + (i + 0.5) * slot, y: 58 - r, r, kind: i < left || i >= on - (edge - left) ? 'edge' : 'mid' }));
     for (let i = 0; i < off; i++) {                                        // alternate lips; a second one on a lip rides on the first
         const side = i % 2 ? 1 : -1, k = Math.floor(i / 2);
-        out.push({ x: (side < 0 ? 14 : 306) + side * (1 + k * 1.5), y: 58 - 4 - k * 8.5, r: 4, kind: 'off', side });
+        out.push({ x: (side < 0 ? 14 : 306) + side * (1 + (k % 3) * 1.5), y: 58 - ro - k * step, r: ro, kind: 'off', side });
     }
-    return { list: out, mid: on - edge, edge, off };
+    return { list: out, mid: on - edge, edge: c.edge == null ? null : edge, off };   // an older feed has no edge count: shown as unknown, never as 0
 }
 
-/** One line for the tile and the popup head. */
-export function centredHeadline(c) {
+/** One line for the tile and the popup head. An old feed says so first: last night's count is not tonight's. */
+export function centredHeadline(c, old = false) {
     if (c.state === 'unknown') return 'Centred · not checked';
-    return c.off > 0 ? `Off centre · ${c.off} of ${c.checked}` : c.edge > 0 ? `Centred · ${c.checked - c.edge} of ${c.checked} in the middle` : `Centred · all ${c.checked} in the middle`;
+    return (old ? `Old · ${day(c.generated_at.slice(0, 10))} · ` : '') + (c.off > 0 ? `Off centre · ${c.off} of ${c.checked}` : c.edge > 0 ? `Centred · ${c.checked - c.edge} of ${c.checked} in the middle` : `Centred · all ${c.checked} in the middle`);
 }
 
-export default function CentredDetails({ centred: c, onClose }) {
+export default function CentredDetails({ centred: c, old = false, onClose }) {
     const sheetRef = useRef(null), backRef = useRef(null);
     const [sel, setSel] = useState(null);                                  // the count tapped: its marbles light, one line says what it means
     useSheetLock(true);
@@ -73,11 +74,12 @@ export default function CentredDetails({ centred: c, onClose }) {
                 <div className="v2-aa-head">
                     <div className="v2-aa-title">
                         <h2 id="v2-cd-title">Centred</h2>
-                        <p>{centredHeadline(c)}</p>
+                        <p>{centredHeadline(c, old)}</p>
                     </div>
                     <button type="button" className="v2-aa-close sheet-x" onClick={onClose} aria-label="Close">×</button>
                 </div>
                 {c.note && <p className="v2-aa-foot v2-cd-note">{c.note}</p>}
+                {c.base === 'champion' && <p className="v2-aa-foot v2-cd-note">Measured on the lane’s best version, not the live one</p>}
                 {(c.since || c.prices_to) && (
                     <div className="v2-sh-row">
                         <span>{c.since ? `Since ${day(c.since)}` : ''}</span>
@@ -87,7 +89,7 @@ export default function CentredDetails({ centred: c, onClose }) {
                 {m && (
                     <>
                         <svg className={`v2-cd-table${sel ? ` sel-${sel}` : ''}`} viewBox="0 30 320 62" role="img"
-                            aria-label={`${m.mid} settings in the middle, ${m.edge} at an edge, ${m.off} off centre`}>
+                            aria-label={`${m.mid} settings in the middle, ${m.edge ?? 'unknown'} at an edge, ${m.off} off centre`}>
                             <path className="v2-cd-mesa" d="M14 92V62q0-4 4-4h284q4 0 4 4v30" />
                             {m.off > 0 && <line className="v2-cd-fall" x1="8" x2="8" y1="66" y2="90" />}
                             {m.off > 1 && <line className="v2-cd-fall" x1="312" x2="312" y1="66" y2="90" />}
@@ -102,7 +104,7 @@ export default function CentredDetails({ centred: c, onClose }) {
                         </svg>
                         <div className="v2-cd-three">
                             {[['mid', m.mid, 'in the middle'], ['edge', m.edge, 'at an edge'], ['off', m.off, 'off centre']].map(([k, n, t]) => (
-                                <button key={k} type="button" className={`is-${k}${sel === k ? ' is-sel' : ''}`} aria-pressed={sel === k} onClick={() => setSel(sel === k ? null : k)}><b>{n}</b>{t}</button>
+                                <button key={k} type="button" className={`is-${k}${sel === k ? ' is-sel' : ''}`} aria-pressed={sel === k} onClick={() => setSel(sel === k ? null : k)}><b>{n ?? '—'}</b>{t}</button>
                             ))}
                         </div>
                         {sel && <p className="v2-cd-why">{WHY[sel]}</p>}
@@ -128,12 +130,12 @@ export default function CentredDetails({ centred: c, onClose }) {
                         <div className="v2-cd-nights" role="img"
                             aria-label={`Off centre per night, ${day(hist[0].date)} to ${day(hist.at(-1).date)}: most ${worst.off} on ${day(worst.date)}`}>
                             {Array.from({ length: NIGHTS }, (_, i) => hist[i]).map((r, i) => (
-                                <i key={i} className={!r ? undefined : r.off > 0 ? 'is-off' : 'is-ok'} style={r?.off > 0 ? { opacity: 0.45 + 0.55 * (r.off / Math.max(1, worst.off)) } : undefined} />
+                                <i key={i} className={!r || !r.checked ? undefined : r.off > 0 ? 'is-off' : 'is-ok'} style={r?.off > 0 ? { opacity: 0.45 + 0.55 * (r.off / Math.max(1, worst.off)) } : undefined} />
                             ))}
                         </div>
                         <div className="v2-sh-row">
-                            <span>{hist.length} {hist.length === 1 ? 'night' : 'nights'} checked</span>
-                            <span>{worst.off > 0 ? `Most off ${worst.off} · ${day(worst.date)}` : 'Never off centre'}</span>
+                            <span>Last {hist.length} {hist.length === 1 ? 'night' : 'nights'}</span>
+                            <span>{worst.off > 0 ? `Most off ${worst.off} · ${day(worst.date)}` : 'None off centre'}</span>
                         </div>
                     </>
                 )}

@@ -5,10 +5,10 @@
  * (good, bad, gist down → last good, nothing at all → a visible "no feed"). Synthetic feeds only.
  */
 import fs from 'fs';
-import { validateCentred } from '../centred';
+import { validateCentred, publicCentred, cbar } from '../centred';
 import { centredItem, centredStale } from '../servedFreshness';
 import { saveLastGood } from '../store';
-import { levels, marbles } from '../../components/CentredDetails';
+import { levels, marbles, centredHeadline } from '../../components/CentredDetails';
 import { GET } from '../../app/api/centred/route';
 
 const NOW = Date.parse('2026-11-15T12:00:00Z');
@@ -25,7 +25,35 @@ describe('validateCentred', () => {
         null, {}, { ...good, v: 2 }, { ...good, state: 'odd' }, { ...good, off: 6 }, { ...good, checked: -1 }, { ...good, off: 1.5 },
         { ...good, generated_at: 'soon' }, { ...good, generated_at: null }, { ...good, verdict: 'great' }, { ...good, delta: { cagr: 1 } },
         { ...good, history: [{ date: 'x', off: 1, checked: 5 }] }, { ...good, history: 'no' },
-    ])('rejects %j', (s) => expect(validateCentred(s)).toBe(false));
+        // red team 15 Nov: a judged night has settings, and its state agrees with its off count
+        { ...good, state: 'centred', checked: 0, off: 0 }, { ...good, state: 'off', off: 0 }, { ...good, state: 'centred', off: 3 },
+        { ...good, generated_at: '2026-11-15T14:00:00Z' },                       // two hours ahead of now: a broken clock never goes stale
+        { ...good, history: [{ date: '2026-11-14', off: 6, checked: 5 }] }, { ...good, base: 7 },
+    ])('rejects %j', (s) => expect(validateCentred(s, NOW)).toBe(false));
+    it('a stamp a few minutes ahead (clock drift) is fine', () => expect(validateCentred({ ...good, generated_at: '2026-11-15T12:20:00Z' }, NOW)).toBe(true));
+});
+
+describe('publicCentred: only the known fields are relayed', () => {
+    it('drops anything extra and a note that looks like a condition', () => {
+        const out = publicCentred({ ...good, edge: 1, base: 'champion', items: [{ where: 'AAA RSI(10) < 30' }], secret: 'x',
+            note: 'a cliff beside a moved question: AAA RSI(12) < 31 window +2', history: [{ date: '2026-11-14', off: 2, checked: 5, where: 'AAA' }] });
+        expect(Object.keys(out).sort()).toEqual(['base', 'checked', 'delta', 'edge', 'generated_at', 'history', 'note', 'off', 'prices_to', 'since', 'state', 'v', 'verdict', 'worlds']);
+        expect(JSON.stringify(out)).not.toMatch(/AAA|secret/);
+        expect([out.note, out.base, out.history]).toEqual(['', 'champion', [{ date: '2026-11-14', off: 2, checked: 5 }]]);
+    });
+    it('keeps a plain fixed note', () => expect(publicCentred({ ...good, note: 'no robust passes yet' }).note).toBe('no robust passes yet'));
+});
+
+test('the strip bar: a tick per setting, capped at 40, an off one never lost', () => {
+    expect(cbar({ checked: 31, off: 2 }).filter(Boolean)).toHaveLength(2);
+    expect(cbar({ checked: 31, off: 2 })).toHaveLength(31);
+    expect([cbar({ checked: 300, off: 1 }).length, cbar({ checked: 300, off: 1 }).filter(Boolean).length]).toEqual([40, 1]);
+    expect(cbar({ checked: 300, off: 0 }).some(Boolean)).toBe(false);
+});
+
+test('headline: an old feed says so first', () => {
+    expect(centredHeadline({ ...good, edge: 0 })).toBe('Off centre · 2 of 5');
+    expect(centredHeadline({ ...good, edge: 0 }, true)).toBe('Old · Nov 15, 2026 · Off centre · 2 of 5');
 });
 
 describe('stale rule + freshness item', () => {
@@ -54,7 +82,12 @@ test('the table: every setting is one marble; edges sit at both rims, off ones h
     expect(on.map((b) => b.kind).join('')).toBe('edge'.repeat(6) + 'mid'.repeat(18) + 'edge'.repeat(5));
     expect(on.every((b, i) => b.x > 22 && b.x < 298 && (i === 0 || b.x - on[i - 1].x >= 2 * b.r))).toBe(true);   // on the top, never overlapping
     expect(m.list.filter((b) => b.kind === 'off').map((b) => b.side)).toEqual([-1, 1]);
-    expect(marbles({ checked: 5, off: 0 })).toMatchObject({ mid: 5, edge: 0, off: 0 });           // an older feed has no edge count
+    expect(marbles({ checked: 5, off: 0 })).toMatchObject({ mid: 5, edge: null, off: 0 });        // an older feed has no edge count: unknown, never "0 at an edge"
+    for (const off of [7, 12, 31]) {                                                                // many off: every marble still inside the picture (viewBox 0 30 320 62)
+        const all = marbles({ checked: 31, off, edge: 0 }).list;
+        expect(all).toHaveLength(31);
+        expect(all.every((b) => b.x - b.r >= 0 && b.x + b.r <= 320 && b.y - b.r >= 30 && b.y + b.r <= 92)).toBe(true);
+    }
     expect(marbles({ checked: 200, off: 3, edge: 500 }).list).toHaveLength(200);                    // odd counts never draw extra marbles
 });
 
@@ -72,6 +105,12 @@ describe('/api/centred', () => {
         const b = await call('?_fail=none,tmplg');
         expect(global.fetch.mock.calls[0][0]).toMatch(/^https:\/\/gist\.githubusercontent\.com\/.+\/centred-public\.json\?t=\d+$/);
         expect(b).toMatchObject({ state: 'off', off: 2, checked: 5, _meta: { source: 'gist', stale: false } });
+    });
+    it('relays only the known fields: nothing extra in the gist rides along', async () => {
+        answer(200, { ...fresh, items: [{ where: 'AAA RSI(10) < 30' }], note: 'removes AAA/BBB (1): fails' });
+        const b = await call('?_fail=none,tmplg');
+        expect(JSON.stringify(b)).not.toMatch(/AAA|items/);
+        expect(b.note).toBe('');
     });
     it('a bad feed is never relayed: the "no feed" fallback instead', async () => {
         answer(200, { ...fresh, off: 9 });

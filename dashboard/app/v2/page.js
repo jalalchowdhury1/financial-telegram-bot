@@ -50,7 +50,7 @@ import { getJson } from '../../lib/loadJson';
 import { validateSplit } from '../../lib/split';
 import SplitHistory from '../../components/SplitHistory';
 import { splitStale, centredStale } from '../../lib/servedFreshness';
-import { validateCentred } from '../../lib/centred';
+import { validateCentred, cbar } from '../../lib/centred';
 import CentredDetails from '../../components/CentredDetails';
 
 const SECTIONS = [
@@ -865,7 +865,7 @@ function CentredStrip({ centred: c, old, onOpen }) {
                 title={c?.note || 'Each night: is every setting of the live algo in the middle of a flat zone? Tap for details.'}>
                 <span className="v2-cstrip-left"><i className="v2-cstrip-dot" /><span className="v2-read-text">Centred</span><span className="v2-cstrip-state">{state}</span></span>
                 {c?.checked > 0 && !old && (
-                    <span className="v2-cbar-row" aria-hidden="true">{Array.from({ length: c.checked }, (_, i) => <i key={i} className={i < c.off ? 'is-off' : undefined} />)}</span>
+                    <span className="v2-cbar-row" aria-hidden="true">{cbar(c).map((off, i) => <i key={i} className={off ? 'is-off' : undefined} />)}</span>
                 )}
             </button>
         </div>
@@ -1088,7 +1088,7 @@ function Signals({ sheets, spy, loading, old, onState }) {
             )}
         </div>
         <CentredStrip centred={centred} old={centredOld} onOpen={() => setStudy('centred')} />
-        {study === 'centred' && centred && <CentredDetails centred={centred} onClose={() => setStudy(false)} />}
+        {study === 'centred' && centred && <CentredDetails centred={centred} old={centredOld} onClose={() => setStudy(false)} />}
         </>
     );
 }
