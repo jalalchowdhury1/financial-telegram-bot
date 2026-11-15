@@ -490,7 +490,7 @@ describe('the top line', () => {
             expect(d.querySelectorAll('.v2-cd-nights i')).toHaveLength(30);            // the nights strip: 2 checked, 1 of them off
             expect(d.querySelectorAll('.v2-cd-nights i.is-off')).toHaveLength(1);
             expect(d.querySelectorAll('.v2-cd-nights i.is-ok')).toHaveLength(1);
-            expect(d.textContent).toContain('2 nights checked');
+            expect(d.textContent).toContain('Last 2 nights');
             expect(d.textContent).toContain('The conditions are on the Centred tab');
             const links = d.querySelectorAll('a');
             expect(links).toHaveLength(1);
