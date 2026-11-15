@@ -223,6 +223,10 @@ curves (true only if no money moved then): `logFrom` marks where the real log st
   (`latestCloseMs(now - grace)`), so a new 16:00 close no longer hides a missed run.
 - Look pass at the end of `app/v2/v2.css` (top glow, top-lit panels, hover edge, section tick,
   breathing dot, one rise-in on load; all off under reduced motion). CSS only.
+- Cool pass (his picks 2, 3, 4, 5): charts sketch in from the left once (CSS clip-path); the panel under
+  the mouse gets a soft light (`useCursorLight`: one pointermove listener, one write a frame, desktop
+  only); the top glow turns amber while Fear & Greed is live and under 45 (`data-mood="fear"` on `.v2`);
+  one pill slides between the section tabs (`.v2-tab-pill`, measured in `SectionNav`). No new library, no new fetch.
 
 ## 3. The dashboard (`/dashboard`)
 

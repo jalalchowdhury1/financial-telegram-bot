@@ -1167,9 +1167,42 @@ function ReadGlyph({ k, fred, vol, rubberBand }) {
     return <span className={`v2-pips is-${k}`} aria-hidden="true">{pips.map((p, i) => <i key={i} className={`is-${p}`} />)}</span>;
 }
 
+/** Desktop only: the panel under the mouse gets --mx / --my, which its background reads as a soft light (one listener, one write a frame). */
+const LIT = '.v2-hero-spy, .v2-gauge-block, .v2-readout, .v2-moves-grid, .v2-signals, .v2 .card';
+function useCursorLight() {
+    useEffect(() => {
+        if (!window.matchMedia?.('(hover: hover) and (pointer: fine)').matches) return undefined;
+        let el = null, raf = 0, ev = null;
+        const paint = () => {
+            raf = 0;
+            const hit = ev.target.closest?.(LIT) || null;
+            if (hit !== el) { el?.style.removeProperty('--mx'); el?.style.removeProperty('--my'); el = hit; }
+            if (!el) return;
+            const r = el.getBoundingClientRect();
+            el.style.setProperty('--mx', `${ev.clientX - r.left}px`);
+            el.style.setProperty('--my', `${ev.clientY - r.top}px`);
+        };
+        const move = (e) => { ev = e; if (!raf) raf = requestAnimationFrame(paint); };
+        document.addEventListener('pointermove', move, { passive: true });
+        return () => { document.removeEventListener('pointermove', move); cancelAnimationFrame(raf); };
+    }, []);
+}
+
 /** Sticky section tabs; the one in view is lit (IntersectionObserver, no scroll listener). */
 function SectionNav({ glance }) {
     const [active, setActive] = useState('now');
+    const rowRef = useRef(null);
+    const [pill, setPill] = useState(null); // the lit tab's box: one pill slides between tabs
+    useEffect(() => {
+        const place = () => {
+            const b = rowRef.current?.querySelector('.is-active');
+            if (b?.offsetWidth) setPill({ x: b.offsetLeft, y: b.offsetTop, w: b.offsetWidth, h: b.offsetHeight });
+        };
+        place();
+        document.fonts?.ready?.then(place);
+        window.addEventListener('resize', place);
+        return () => window.removeEventListener('resize', place);
+    }, [active]);
     useEffect(() => {
         if (typeof IntersectionObserver === 'undefined') return undefined;
         const els = SECTIONS.map(([id]) => document.getElementById(id)).filter(Boolean);
@@ -1186,7 +1219,8 @@ function SectionNav({ glance }) {
     };
     return (
         <nav className="v2-tabs" aria-label="Sections">
-            <div className="v2-tabs-row">
+            <div className={`v2-tabs-row${pill ? ' has-pill' : ''}`} ref={rowRef}>
+                {pill && <i className="v2-tab-pill" aria-hidden="true" style={{ width: pill.w, height: pill.h, transform: `translate(${pill.x}px, ${pill.y}px)` }} />}
                 {SECTIONS.map(([id, label]) => (
                     <button key={id} type="button" className={`v2-tab${active === id ? ' is-active' : ''}`} onClick={() => go(id)}>{label}</button>
                 ))}
@@ -1215,6 +1249,7 @@ export default function DashboardV2() {
 
     const spyOk = isLiveAnswer('spy', spy);
     const fgOk = isLiveAnswer('fg', fg);
+    useCursorLight();
     const ivSpy = vol?.tickers?.find((t) => t.ticker === 'SPY' && Number.isFinite(t.ivRank1y) && Number.isFinite(t.ivPctile1y));
     const moveOk = isLiveAnswer('spyDailyMove', spyDailyMove);
     const spyStale = spyOk ? staleOf(spy)?.label : undefined;
@@ -1235,7 +1270,7 @@ export default function DashboardV2() {
         <MarkProvider history={f.marksOff ? null : history} series={history?.series || null}>
             <OfflineBanner onBack={refreshNow} since={f.anySaved} />
             <PullToRefresh onRefresh={refreshNow} busy={f.refreshing} />
-            <div className="v2">
+            <div className="v2" data-mood={fgOk && fg.score < 45 ? 'fear' : undefined}>
                 <header className="v2-top">
                     <div className="v2-top-row">
                         <a className="v2-brand" href="/v2">Markets</a>

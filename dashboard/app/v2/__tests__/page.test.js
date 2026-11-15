@@ -127,6 +127,13 @@ it('Fear & Greed draws its Prev / 1W / 1M / 1Y readings as one trail, each with 
     expect(document.querySelector('.v2-fgt-pt.is-now').className).toMatch(/tone-caution/);
 });
 
+it.each([[26.2, 'fear'], [61, null]])('the page glow follows Fear & Greed: %s → mood %s', async (score, mood) => {
+    mockRoutes({ '/api/fear-greed': Promise.resolve({ status: 200, json: async () => ({ score, rating: 'X', previousClose: 34.6, asOf: '2026-10-30T23:59:48+00:00', _meta: { source: 'CNN' } }) }) });
+    render(<DashboardV2 />);
+    await waitFor(() => expect(document.querySelector('.v2-fgt')).not.toBeNull());
+    expect(document.querySelector('.v2').getAttribute('data-mood')).toBe(mood);
+});
+
 it('the AAII tile opens what SPY did after every 20+ reading', async () => {
     const aaii = { from: '2020-01-02', t: [0, 7], v: [21, 5] };
     const spy = { from: '2020-01-01', t: Array.from({ length: 500 }, (_, i) => i), v: Array.from({ length: 500 }, (_, i) => 100 + i) };
