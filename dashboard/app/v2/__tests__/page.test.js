@@ -15,7 +15,7 @@ const spyPayload = {
     return3y: 81.05,
     rsi: 55.2,
     dailyChange: { value: 1.2, pct: 0.2 },
-    chartHistory: [{ date: '2026-01-02', price: 600, ma200: 578.4 }, { date: '2026-01-05', price: 612.34, ma200: 580.1 }],
+    chartHistory: [{ date: '2026-01-02', price: 600, ma50: 594.5, ma200: 578.4 }, { date: '2026-01-05', price: 612.34, ma50: 596.2, ma200: 580.1 }],
     _meta: { source: 'Polygon', hasErrors: false },
 };
 
@@ -155,7 +155,7 @@ it('the AAII tile opens what SPY did after every 20+ reading', async () => {
 
 it('What moved draws each move as its last month against a normal day (30 Oct: a stray USD/BDT line crashed the strip)', async () => {
     const day = (i) => new Date(Date.now() - (30 - i) * 86400000).toISOString().slice(0, 10);
-    const chartHistory = Array.from({ length: 30 }, (_, i) => ({ date: day(i), price: i % 2 ? 101 : 100 }));
+    const chartHistory = Array.from({ length: 30 }, (_, i) => ({ date: day(i), price: i % 2 ? 101 : 100, ma50: 100.5, ma200: 100.5 }));
     const spy = { ...spyPayload, current: 102, dailyChange: { value: 2, pct: 2 }, chartHistory };
     mockRoutes({ '/api/spy': Promise.resolve({ status: 200, json: async () => spy }) });
     render(<DashboardV2 />);
@@ -651,7 +651,7 @@ it('the Volatility card reads VIX on its fear zones, with the peak day and how m
     for (let d = new Date('2026-10-30T12:00:00Z'); days.length < 300; d = new Date(d - 864e5)) if (d.getUTCDay() % 6) days.unshift(d.toISOString().slice(0, 10));
     const dates = days.slice(-253);
     const year = dates.map((_, i) => (i === 100 ? 31.2 : i === 252 ? 19.42 : 14 + (i % 10) / 2));
-    const chartHistory = days.map((date, i) => ({ date, price: 600 + (i % 2 ? 3 : -3) }));
+    const chartHistory = days.map((date, i) => ({ date, price: 600 + (i % 2 ? 3 : -3), ma50: 600, ma200: 600 }));
     const ok = (body) => Promise.resolve({ ok: true, status: 200, json: async () => body });
     const spy = { ticker: 'SPY', iv: 19.42, ivRank1y: 33.8, ivPctile1y: 77.8, rv21: 11.7, vrp: 7.7, live: false, asOf: '2026-10-30' };
     mockRoutes({ '/api/vol': ok({ tickers: [spy], vixYear: year, vixYearDates: dates }), '/api/spy': ok({ ...spyPayload, chartHistory }) });
