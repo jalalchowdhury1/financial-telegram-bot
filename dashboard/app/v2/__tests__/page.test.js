@@ -496,6 +496,7 @@ describe('the top line', () => {
             expect(d.querySelectorAll('.v2-cd-nights i.is-off')).toHaveLength(1);
             expect(d.querySelectorAll('.v2-cd-nights i.is-ok')).toHaveLength(1);
             expect([...d.querySelectorAll('.v2-cd-nights i')].map((i) => (i.className ? 1 : 0)).join('')).toBe('0'.repeat(28) + '11');   // newest night at the right end
+            expect([...d.querySelectorAll('.v2-cd-nights i')].slice(-2).map((i) => i.title)).toEqual(['Nov 12, 2026 · 0 off centre', 'Nov 13, 2026 · 2 off centre']);   // each night says its count in words, not colour alone
             expect(d.textContent).toContain('Last 2 nights');
             expect(d.textContent).toContain('The conditions are on the Centred tab');
             const links = d.querySelectorAll('a');

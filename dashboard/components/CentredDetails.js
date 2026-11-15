@@ -130,7 +130,7 @@ export default function CentredDetails({ centred: c, old = false, onClose }) {
                         <div className="v2-cd-nights" role="img"
                             aria-label={`Off centre per night, ${day(hist[0].date)} to ${day(hist.at(-1).date)}: most ${worst.off} on ${day(worst.date)}`}>
                             {Array.from({ length: NIGHTS }, (_, i) => hist[i - (NIGHTS - hist.length)]).map((r, i) => (
-                                <i key={i} className={!r || !r.checked ? undefined : r.off > 0 ? 'is-off' : 'is-ok'} style={r?.off > 0 ? { opacity: 0.45 + 0.55 * (r.off / Math.max(1, worst.off)) } : undefined} />
+                                <i key={i} title={r?.checked ? `${day(r.date)} · ${r.off} off centre` : undefined} className={!r || !r.checked ? undefined : r.off > 0 ? 'is-off' : 'is-ok'} style={r?.off > 0 ? { opacity: 0.45 + 0.55 * (r.off / Math.max(1, worst.off)) } : undefined} />
                             ))}
                         </div>
                         <div className="v2-sh-row">
