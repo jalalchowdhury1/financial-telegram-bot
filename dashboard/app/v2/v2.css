@@ -1411,7 +1411,9 @@ body:has(.v2) { background: #0b0c0e; }
 /* the live dot breathes; sections rise in once on load */
 .v2-today:is(.is-on, .is-warn) .v2-today-dot { animation: v2-breathe 2.6s ease-in-out infinite; }
 @keyframes v2-breathe { 50% { box-shadow: 0 0 0 4px transparent; opacity: .55; } }
-.v2-hero, .v2-section { animation: v2-rise .5s cubic-bezier(.2, .7, .2, 1) both; }
+/* `backwards`, never `both`: a kept animation keeps its own layer, and the hero's then sat on top of the top line's
+   links (desktop, 14 Nov 2026: they could not be clicked). */
+.v2-hero, .v2-section { animation: v2-rise .5s cubic-bezier(.2, .7, .2, 1) backwards; }
 .v2-section:nth-of-type(2) { animation-delay: .05s; }
 .v2-section:nth-of-type(n+3) { animation-delay: .1s; }
 @keyframes v2-rise { from { opacity: 0; transform: translateY(8px); } }
