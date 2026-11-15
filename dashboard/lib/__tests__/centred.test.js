@@ -12,7 +12,7 @@ import { levels, marbles, centredHeadline } from '../../components/CentredDetail
 import { GET } from '../../app/api/centred/route';
 
 const NOW = Date.parse('2026-11-15T12:00:00Z');
-const good = { v: 1, generated_at: '2026-11-15T04:10:00-05:00', prices_to: '2026-11-13', state: 'off', note: '', checked: 5, off: 2,
+const good = { v: 1, generated_at: '2026-11-15T04:10:00-05:00', prices_to: '2026-11-13', state: 'off', note: '', checked: 5, off: 2, edge: 0,
     since: '2026-11-08', verdict: 'no harm', delta: { cagr: -0.4, maxdd: 0.9, sharpe: 0.01 }, history: [{ date: '2026-11-14', off: 2, checked: 5 }] };
 
 describe('validateCentred', () => {
@@ -29,6 +29,8 @@ describe('validateCentred', () => {
         { ...good, state: 'centred', checked: 0, off: 0 }, { ...good, state: 'off', off: 0 }, { ...good, state: 'centred', off: 3 },
         { ...good, generated_at: '2026-11-15T14:00:00Z' },                       // two hours ahead of now: a broken clock never goes stale
         { ...good, history: [{ date: '2026-11-14', off: 6, checked: 5 }] }, { ...good, base: 7 },
+        // red team 15 Nov (2): a judged night says how many sit at an edge, and the stamp is a real timestamp
+        { ...good, edge: undefined }, { ...good, generated_at: 'AAA<5' }, { ...good, generated_at: '2026' },
     ])('rejects %j', (s) => expect(validateCentred(s, NOW)).toBe(false));
     it('a stamp a few minutes ahead (clock drift) is fine', () => expect(validateCentred({ ...good, generated_at: '2026-11-15T12:20:00Z' }, NOW)).toBe(true));
 });
@@ -41,6 +43,8 @@ describe('publicCentred: only the known fields are relayed', () => {
         expect(JSON.stringify(out)).not.toMatch(/AAA|secret/);
         expect([out.note, out.base, out.history]).toEqual(['', 'champion', [{ date: '2026-11-14', off: 2, checked: 5 }]]);
     });
+    it('drops a note that names something in capitals', () => expect(publicCentred({ ...good, note: 'AAA rsi cross' }).note).toBe(''));
+    it('keeps a fixed note that says Centred', () => expect(publicCentred({ ...good, note: 'the Centred step crashed tonight' }).note).toBe('the Centred step crashed tonight'));
     it('keeps a plain fixed note', () => expect(publicCentred({ ...good, note: 'no robust passes yet' }).note).toBe('no robust passes yet'));
 });
 

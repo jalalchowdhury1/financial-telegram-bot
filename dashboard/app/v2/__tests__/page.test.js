@@ -423,7 +423,7 @@ describe('the top line', () => {
 
     describe('the Centred strip (synthetic feed)', () => {
         const now = new Date().toISOString();
-        const feed = { v: 1, generated_at: now, prices_to: '2026-11-13', state: 'centred', note: '', checked: 5, off: 0, since: '2026-11-08',
+        const feed = { v: 1, generated_at: now, prices_to: '2026-11-13', state: 'centred', note: '', checked: 5, off: 0, edge: 0, since: '2026-11-08',
             verdict: 'not judged', delta: null, history: [{ date: '2026-11-12', off: 0, checked: 5 }, { date: '2026-11-13', off: 0, checked: 5 }] };
         const tile = () => document.querySelector('[data-jump="Indicators"] .v2-cstrip button');
         const show = async (c) => {
@@ -459,6 +459,11 @@ describe('the top line', () => {
             expect(t.className).not.toMatch(/tone-/); // quiet
             await waitFor(() => expect(screen.getByText('Nothing firing')).toBeInTheDocument());
         });
+        it('not checked with a stray off count: no ticks drawn', async () => {
+            const t = await show({ ...feed, state: 'unknown', off: 2 });
+            expect(t.textContent).toBe('Centrednot checked');
+            expect(t.querySelector('.v2-cbar-row')).toBeNull();
+        });
         it('older than 30 h: Old, and off the top line even when off', async () => {
             const t = await show({ ...feed, state: 'off', off: 2, generated_at: '2026-01-02T04:10:00-05:00' });
             expect(t.textContent).toContain('Old · Jan 2');
@@ -479,7 +484,7 @@ describe('the top line', () => {
             expect(d.textContent).toContain('Since Nov 8, 2026');
             expect(d.querySelectorAll('.v2-cd-ball')).toHaveLength(5);                 // the table: one marble per setting
             expect(d.querySelectorAll('.v2-cd-ball.is-off')).toHaveLength(2);
-            expect(d.querySelector('.v2-cd-three').textContent).toBe('3in the middle—at an edge2off centre');   // this feed has no edge count: unknown, never "0"
+            expect(d.querySelector('.v2-cd-three').textContent).toBe('3in the middle0at an edge2off centre');
             fireEvent.click(within(d).getByRole('button', { name: /off centre/ }));      // a count taps: its marbles light, one line says why
             expect(d.querySelector('.v2-cd-table').getAttribute('class')).toContain('sel-off');
             expect(d.querySelector('.v2-cd-why').textContent).toBe('A steadier spot was proven nearby');
@@ -490,6 +495,7 @@ describe('the top line', () => {
             expect(d.querySelectorAll('.v2-cd-nights i')).toHaveLength(30);            // the nights strip: 2 checked, 1 of them off
             expect(d.querySelectorAll('.v2-cd-nights i.is-off')).toHaveLength(1);
             expect(d.querySelectorAll('.v2-cd-nights i.is-ok')).toHaveLength(1);
+            expect([...d.querySelectorAll('.v2-cd-nights i')].map((i) => (i.className ? 1 : 0)).join('')).toBe('0'.repeat(28) + '11');   // newest night at the right end
             expect(d.textContent).toContain('Last 2 nights');
             expect(d.textContent).toContain('The conditions are on the Centred tab');
             const links = d.querySelectorAll('a');

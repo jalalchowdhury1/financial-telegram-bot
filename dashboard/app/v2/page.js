@@ -864,7 +864,7 @@ function CentredStrip({ centred: c, old, onOpen }) {
             <button type="button" className={`v2-read${tone}`} onClick={c ? onOpen : undefined} disabled={!c} aria-haspopup="dialog"
                 title={c?.note || 'Each night: is every setting of the live algo in the middle of a flat zone? Tap for details.'}>
                 <span className="v2-cstrip-left"><i className="v2-cstrip-dot" /><span className="v2-read-text">Centred</span><span className="v2-cstrip-state">{state}</span></span>
-                {c?.checked > 0 && !old && (
+                {c?.checked > 0 && !old && c.state !== 'unknown' && (
                     <span className="v2-cbar-row" aria-hidden="true">{cbar(c).map((off, i) => <i key={i} className={off ? 'is-off' : undefined} />)}</span>
                 )}
             </button>
