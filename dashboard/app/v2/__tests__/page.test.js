@@ -479,7 +479,7 @@ describe('the top line', () => {
             expect(d.textContent).toContain('Since Nov 8, 2026');
             expect(d.querySelectorAll('.v2-cd-ball')).toHaveLength(5);                 // the table: one marble per setting
             expect(d.querySelectorAll('.v2-cd-ball.is-off')).toHaveLength(2);
-            expect(d.querySelector('.v2-cd-three').textContent).toBe('3in the middle0at an edge2off centre');
+            expect(d.querySelector('.v2-cd-three').textContent).toBe('3in the middle—at an edge2off centre');   // this feed has no edge count: unknown, never "0"
             fireEvent.click(within(d).getByRole('button', { name: /off centre/ }));      // a count taps: its marbles light, one line says why
             expect(d.querySelector('.v2-cd-table').getAttribute('class')).toContain('sel-off');
             expect(d.querySelector('.v2-cd-why').textContent).toBe('A steadier spot was proven nearby');
@@ -490,7 +490,7 @@ describe('the top line', () => {
             expect(d.querySelectorAll('.v2-cd-nights i')).toHaveLength(30);            // the nights strip: 2 checked, 1 of them off
             expect(d.querySelectorAll('.v2-cd-nights i.is-off')).toHaveLength(1);
             expect(d.querySelectorAll('.v2-cd-nights i.is-ok')).toHaveLength(1);
-            expect(d.textContent).toContain('2 nights checked');
+            expect(d.textContent).toContain('Last 2 nights');
             expect(d.textContent).toContain('The conditions are on the Centred tab');
             const links = d.querySelectorAll('a');
             expect(links).toHaveLength(1);
