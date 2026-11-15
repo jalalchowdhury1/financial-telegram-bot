@@ -421,36 +421,36 @@ describe('the top line', () => {
         });
     });
 
-    describe('the Centred tile (synthetic feed)', () => {
+    describe('the Centred strip (synthetic feed)', () => {
         const now = new Date().toISOString();
         const feed = { v: 1, generated_at: now, prices_to: '2026-11-13', state: 'centred', note: '', checked: 5, off: 0, since: '2026-11-08',
             verdict: 'not judged', delta: null, history: [{ date: '2026-11-12', off: 0, checked: 5 }, { date: '2026-11-13', off: 0, checked: 5 }] };
-        const tile = () => [...document.querySelectorAll('[data-jump="Indicators"] .v2-signal')].find((t) => t.textContent.startsWith('Centred'));
+        const tile = () => document.querySelector('[data-jump="Indicators"] .v2-cstrip button');
         const show = async (c) => {
             mockRoutes({ '/api/sheets': ok(calm), '/api/history': sheet(), '/api/centred': ok(c), ...files });
             render(<DashboardV2 />);
             await waitFor(() => expect(tile().textContent).not.toContain('…'));
             return tile();
         };
-        it('all centred: calm, off the top line', async () => {
+        it('all centred: calm green, off the top line, and the 4-tile grid is untouched', async () => {
             const t = await show(feed);
-            expect(t.textContent).toContain('Centred · all 5 in the middle');
-            expect(t.className).not.toContain('is-alert');
+            expect(t.textContent).toBe('Centredall 5 in the middle');
+            expect(t.className).toContain('tone-good');
+            expect(document.querySelectorAll('[data-jump="Indicators"] .v2-signal')).toHaveLength(4); // the tile grid is untouched
             await waitFor(() => expect(screen.getByText('Nothing firing')).toBeInTheDocument());
         });
         it('off centre: amber, and it leads the top line', async () => {
             const t = await show({ ...feed, state: 'off', off: 2 });
             expect(t.textContent).toContain('Off centre · 2 of 5');
-            expect(t.className).toContain('is-alert');
+            expect(t.className).toContain('tone-caution');
             expect(t.querySelectorAll('.v2-cbar-row i.is-off')).toHaveLength(2);
             await waitFor(() => expect(document.querySelector('.v2-today button')?.textContent).toBe('Off centre 2'));
             expect(document.querySelector('.v2-today button').className).toContain('is-warn');
         });
-        it('not checked: amber words, no alert, never blocks Nothing firing', async () => {
+        it('not checked: quiet, never blocks Nothing firing', async () => {
             const t = await show({ ...feed, state: 'unknown', checked: 0, history: [] });
-            expect(t.textContent).toContain('Centred · not checked');
-            expect(t.querySelector('.tone-caution')).not.toBeNull();
-            expect(t.className).not.toContain('is-alert');
+            expect(t.textContent).toBe('Centrednot checked');
+            expect(t.className).not.toMatch(/tone-/); // quiet
             await waitFor(() => expect(screen.getByText('Nothing firing')).toBeInTheDocument());
         });
         it('older than 30 h: Old, and off the top line even when off', async () => {
@@ -460,8 +460,9 @@ describe('the top line', () => {
         });
         it('a broken feed says so, never a calm day', async () => {
             const t = await show({ v: 1, state: 'off' });
-            expect(t.textContent).toContain('N/A');
-            expect(t.textContent).toContain('Centred · no feed');
+            expect(t.textContent).toBe('Centredno feed');
+            expect(t.className).toContain('tone-caution');
+            expect(t.disabled).toBe(true);
         });
         it('a tap opens the details: compare line, verdict, chart and ONE link to the Centred tab', async () => {
             const t = await show({ ...feed, state: 'off', off: 2, verdict: 'no harm', delta: { cagr: -0.4, maxdd: 0.9, sharpe: 0.01 },

@@ -211,17 +211,19 @@ Tap the tile = its history (`components/SplitHistory.js`): `split.py` keeps `~/.
 as `history`. The log was born 14 Nov 2026 with the 3 months before the anchor rolled BACKWARDS on the
 curves (true only if no money moved then): `logFrom` marks where the real log starts, drawn dashed before it.
 
-### Centred tile (14 Nov 2026)
+### Centred strip (14 Nov 2026)
 
-The second Indicators tile on /v2, beside the split. Each night `~/.local/bin/centred-publish.py` (Mac mini,
+One slim full-width strip on /v2 directly under the Indicators tiles (the 4-tile grid stays as it was: he wants
+it even and on one line), styled as the read's strips ("Dips pay"). Each night `~/.local/bin/centred-publish.py` (Mac mini,
 written outside this repo) checks whether every setting of the live algo sits in the middle of a flat zone, and
 publishes a PUBLIC feed `centred-public.json` to its own secret gist (`EXTERNAL_URLS.CENTRED_GIST`) →
 `/api/centred` (relay as `/api/split`: `validateCentred` in `lib/centred.js`, `serve('centred')`, last good, else
 `state "unknown"`, note "no feed"). **The public feed carries counts, state, dates and whole-algo deltas only:
 never condition text, tickers, thresholds, algo ids or dollar amounts, here or in tests** (the conditions are in
-the locked feed, read only by the nuts-radar Centred tab). Tile: "Centred · all 5 in the middle" (calm), "Off
-centre · 2 of 5" (amber, leads the top line as "Off centre 2"), "Centred · not checked" / the feed's note (amber
-words, no alert), "Old · <day>" past 30 h (`centredStale`), "Centred · no feed" when unreadable. Unknown/old
+the locked feed, read only by the nuts-radar Centred tab). Strip: dot + "Centred" + "all 5 in the middle" (green),
+"Off centre · 2 of 5" (amber, leads the top line as "Off centre 2"), "not checked" (quiet; the feed's note on
+hover and in the popup), "Old · <day>" past 30 h (`centredStale`, quiet), "no feed" (amber) when unreadable;
+the segmented bar on the right. Unknown/old
 never speak on the top line nor block "Nothing firing". Tap = `components/CentredDetails.js`: since when, the
 compare line from `delta` (centred minus live) + verdict chip, off count per night from `history`, and one link
 `https://nuts-radar.vercel.app/#centred`. It reports; it never suggests a trade. Freshness item `centred`:

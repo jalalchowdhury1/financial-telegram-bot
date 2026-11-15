@@ -51,7 +51,7 @@ import { validateSplit } from '../../lib/split';
 import SplitHistory from '../../components/SplitHistory';
 import { splitStale, centredStale } from '../../lib/servedFreshness';
 import { validateCentred } from '../../lib/centred';
-import CentredDetails, { centredHeadline } from '../../components/CentredDetails';
+import CentredDetails from '../../components/CentredDetails';
 
 const SECTIONS = [
     ['now', 'Now'], ['signals', 'Signals'], ['market', 'Market'], ['risk', 'Risk'],
@@ -851,13 +851,24 @@ function SplitMeter({ main, target, band }) {
     );
 }
 
-/** One segment per setting checked; the off-centre ones lit amber. */
-function CentredBar({ checked, off }) {
+/**
+ * Centred: one slim strip under the signal tiles, built like the read's strips ("Dips pay"). Calm green when every
+ * setting is in the middle, amber only when one is off; unknown / old stay quiet. The whole strip opens the details.
+ */
+function CentredStrip({ centred: c, old, onOpen }) {
+    const state = c === undefined ? '…' : !c ? 'no feed' : old ? `Old · ${shortDate(c.generated_at.slice(0, 10))}`
+        : c.state === 'unknown' ? 'not checked' : c.off > 0 ? `Off centre · ${c.off} of ${c.checked}` : `all ${c.checked} in the middle`;
+    const tone = !c ? (c === null ? ' tone-caution' : '') : old || c.state === 'unknown' ? '' : c.off > 0 ? ' tone-caution' : ' tone-good';
     return (
-        <span className="v2-meter v2-cbar" title={`${off} of ${checked} off centre`}>
-            <span className={`v2-meter-tag${off ? ' tone-caution' : ''}`}>{off ? `${off} off` : 'all in'}</span>
-            <span className="v2-cbar-row">{Array.from({ length: checked }, (_, i) => <i key={i} className={i < off ? 'is-off' : undefined} />)}</span>
-        </span>
+        <div className="v2-readout v2-cstrip">
+            <button type="button" className={`v2-read${tone}`} onClick={c ? onOpen : undefined} disabled={!c} aria-haspopup="dialog"
+                title={c?.note || 'Each night: is every setting of the live algo in the middle of a flat zone? Tap for details.'}>
+                <span className="v2-cstrip-left"><i className="v2-cstrip-dot" /><span className="v2-read-text">Centred</span><span className="v2-cstrip-state">{state}</span></span>
+                {c?.checked > 0 && !old && (
+                    <span className="v2-cbar-row" aria-hidden="true">{Array.from({ length: c.checked }, (_, i) => <i key={i} className={i < c.off ? 'is-off' : undefined} />)}</span>
+                )}
+            </button>
+        </div>
     );
 }
 
@@ -1005,16 +1016,6 @@ function Signals({ sheets, spy, loading, old, onState }) {
             viz: split ? <SplitMeter main={split.main} target={split.target} band={split.band} /> : null,
         },
         {
-            key: 'centred', label: 'Centred', tip: 'Each night: is every setting of the live algo in the middle of a flat zone? Tap for details.',
-            alert: centredOff,
-            open: centred ? () => setStudy('centred') : null,
-            value: !centred ? (centred === undefined ? '…' : 'N/A') : centred.state === 'unknown' ? '—' : `${centred.checked - centred.off} / ${centred.checked}`,
-            sub: !centred ? (centred === null ? <span className="tone-caution">Centred · no feed</span> : null)
-                : centredOld ? <span className="tone-caution">Old · {shortDate(centred.generated_at.slice(0, 10))}</span>
-                : <span className={centred.state === 'centred' ? 'v2-muted' : 'tone-caution'} title={centred.note || undefined}>{centredHeadline(centred)}</span>,
-            viz: centred && centred.checked > 0 ? <CentredBar checked={centred.checked} off={centred.off} /> : null,
-        },
-        {
             key: 'fr', label: 'FrontRunner', tip: 'Hedges with VIX when RSIs run hot; buys deep tech dips. Tap for the NUTS radar (a different algo).',
             href: 'https://nuts-radar.vercel.app',
             alert: !loading && frRead && !fr.startsWith('BIL'),
@@ -1052,6 +1053,7 @@ function Signals({ sheets, spy, loading, old, onState }) {
         },
     ];
     return (
+        <>
         <div className="v2-signals">
             {tiles.map((t) => {
                 const inner = (
@@ -1072,7 +1074,6 @@ function Signals({ sheets, spy, loading, old, onState }) {
                 ) : <div key={t.key} className={cls}>{inner}</div>;
             })}
             {study === 'split' && split && <SplitHistory split={split} onClose={() => setStudy(false)} />}
-            {study === 'centred' && centred && <CentredDetails centred={centred} onClose={() => setStudy(false)} />}
             {study === 'aaii' && (
                 <SignalStudy id="aaii" src="/history/aaiiDiff.json" line={AAII_LINE} horizons={[3, 6, 12]} start={6} title={`AAII fear at ${AAII_LINE}+`}
                     sub={`Now ${aaii.toFixed(1)} · ${bullUntil ? `bullish to ${shortDate(bullUntil)}` : `${(AAII_LINE - aaii).toFixed(1)} pts to go`}`}
@@ -1086,6 +1087,9 @@ function Signals({ sheets, spy, loading, old, onState }) {
                     now={vixCur / vix3m} sheet={ratioPts.filter((p) => p.date)} spyLive={spy} onClose={() => setStudy(false)} />
             )}
         </div>
+        <CentredStrip centred={centred} old={centredOld} onOpen={() => setStudy('centred')} />
+        {study === 'centred' && centred && <CentredDetails centred={centred} onClose={() => setStudy(false)} />}
+        </>
     );
 }
 
