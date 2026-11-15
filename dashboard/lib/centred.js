@@ -13,6 +13,7 @@ const isDate = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
 /** True for a feed the tile can draw (the route's no-feed fallback has no stamp, so it is not one). */
 export function validateCentred(s) {
     return !!s && s.v === 1 && STATES.includes(s.state) && count(s.checked) && count(s.off) && s.off <= s.checked
+        && (s.worlds == null || count(s.worlds))
         && (s.edge == null || (count(s.edge) && s.off + s.edge <= s.checked)) // at an edge: not off, not in the middle either
         && typeof s.generated_at === 'string' && Number.isFinite(Date.parse(s.generated_at))
         && (s.verdict == null || VERDICTS.includes(s.verdict))

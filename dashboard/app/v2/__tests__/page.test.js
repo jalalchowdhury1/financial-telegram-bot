@@ -470,18 +470,28 @@ describe('the top line', () => {
             expect(t.className).toContain('tone-caution');
             expect(t.disabled).toBe(true);
         });
-        it('a tap opens the details: compare line, verdict, chart and ONE link to the Centred tab', async () => {
+        it('a tap opens the details: the table, the levels, verdict, nights and ONE link to the Centred tab', async () => {
             const t = await show({ ...feed, state: 'off', off: 2, verdict: 'no harm', delta: { cagr: -0.4, maxdd: 0.9, sharpe: 0.01 },
                 history: [{ date: '2026-11-12', off: 0, checked: 5 }, { date: '2026-11-13', off: 2, checked: 5 }] });
             fireEvent.click(t);
             const d = await screen.findByRole('dialog');
             expect(d.textContent).toContain('Off centre · 2 of 5');
             expect(d.textContent).toContain('Since Nov 8, 2026');
-            expect(d.textContent).toContain('Moving them: gain −0.4 %/yr');
-            expect(d.textContent).toContain('Worst fall 0.9 pts smaller');
+            expect(d.querySelectorAll('.v2-cd-ball')).toHaveLength(5);                 // the table: one marble per setting
+            expect(d.querySelectorAll('.v2-cd-ball.is-off')).toHaveLength(2);
+            expect(d.querySelector('.v2-cd-three').textContent).toBe('3in the middle0at an edge2off centre');
+            fireEvent.click(within(d).getByRole('button', { name: /off centre/ }));      // a count taps: its marbles light, one line says why
+            expect(d.querySelector('.v2-cd-table').getAttribute('class')).toContain('sel-off');
+            expect(d.querySelector('.v2-cd-why').textContent).toBe('A steadier spot was proven nearby');
+            fireEvent.click(within(d).getByRole('button', { name: /off centre/ }));
+            expect(d.querySelector('.v2-cd-why')).toBeNull();
+            expect(d.querySelector('.v2-cd-levels').textContent).toBe('Gain−0.4 %/yrWorst fall0.9 pts smallerSharpe+0.01');
             expect(d.querySelector('.v2-cd-chip').textContent).toBe('no harm');
-            expect(d.querySelectorAll('rect.v2-cd-bar')).toHaveLength(1);
-            expect(d.textContent).toContain('the conditions are on the Centred tab');
+            expect(d.querySelectorAll('.v2-cd-nights i')).toHaveLength(30);            // the nights strip: 2 checked, 1 of them off
+            expect(d.querySelectorAll('.v2-cd-nights i.is-off')).toHaveLength(1);
+            expect(d.querySelectorAll('.v2-cd-nights i.is-ok')).toHaveLength(1);
+            expect(d.textContent).toContain('2 nights checked');
+            expect(d.textContent).toContain('The conditions are on the Centred tab');
             const links = d.querySelectorAll('a');
             expect(links).toHaveLength(1);
             expect(links[0].textContent).toBe('Open Centred tab ↗');
