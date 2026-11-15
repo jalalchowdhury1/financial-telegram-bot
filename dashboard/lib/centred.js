@@ -10,6 +10,7 @@ const VERDICTS = ['no harm', 'harm', 'not judged'];
 const count = (n) => Number.isInteger(n) && n >= 0;
 const isDate = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
 
+const STAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;   // the stamp is relayed as is: a real timestamp only, never free text Date.parse happens to read
 const AHEAD_MS = 3600e3;                             // a stamp further ahead than this is a broken clock: it would never go stale
 
 /**
@@ -22,8 +23,8 @@ export function validateCentred(s, now = Date.now()) {
         && (s.state === 'unknown' || (s.checked > 0 && (s.state === 'off') === (s.off > 0)))
         && (s.base == null || typeof s.base === 'string')
         && (s.worlds == null || count(s.worlds))
-        && (s.edge == null || (count(s.edge) && s.off + s.edge <= s.checked)) // at an edge: not off, not in the middle either
-        && typeof s.generated_at === 'string' && Number.isFinite(Date.parse(s.generated_at)) && Date.parse(s.generated_at) <= now + AHEAD_MS
+        && (s.edge == null ? s.state === 'unknown' : count(s.edge) && s.off + s.edge <= s.checked) // at an edge: not off, not in the middle either; a judged night without it would count edges as "in the middle"
+        && typeof s.generated_at === 'string' && STAMP.test(s.generated_at) && Number.isFinite(Date.parse(s.generated_at)) && Date.parse(s.generated_at) <= now + AHEAD_MS
         && (s.verdict == null || VERDICTS.includes(s.verdict))
         && (s.delta == null || ['cagr', 'maxdd', 'sharpe'].every((k) => Number.isFinite(s.delta[k])))
         && (s.history == null || (Array.isArray(s.history) && s.history.every((r) => r && isDate(r.date) && count(r.off) && count(r.checked) && r.off <= r.checked)));
@@ -31,10 +32,10 @@ export function validateCentred(s, now = Date.now()) {
 
 /**
  * What /api/centred relays: the known fields only, rebuilt one by one, so nothing extra in the gist can ride along.
- * The note is a fixed line from the publisher; one that looks like a condition (a digit, a bracket, < or >) is dropped.
+ * The note is a fixed line from the publisher; one that looks like a condition (a digit, a bracket, < or >, a word in capitals) is dropped.
  */
 export function publicCentred(s) {
-    const note = typeof s.note === 'string' && s.note.length <= 80 && !/[\d()<>]/.test(s.note) ? s.note : '';
+    const note = typeof s.note === 'string' && s.note.length <= 80 && !/[\d()<>]|[A-Z]{2}/.test(s.note) ? s.note : '';
     return {
         v: 1, generated_at: s.generated_at, prices_to: isDate(s.prices_to) ? s.prices_to : null, state: s.state, note,
         checked: s.checked, off: s.off, edge: s.edge ?? null, base: s.base === 'champion' ? 'champion' : 'live',
