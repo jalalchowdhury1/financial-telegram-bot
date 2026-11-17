@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import useSheetLock, { useSheetFocus } from './useSheetLock';
 import { PILL_EXPLAIN, INPUT_EXPLAIN, INPUT_NAMES, PILL_FEEDS } from './jevExplain';
+import SplitMap from './SplitMap';
 
 const FRIENDLY = {
     'risk-on': 'Risk-on',
@@ -191,6 +192,16 @@ export default function JevPillModal({ pillKey, data, onClose }) {
                                                 <span className={`jev-hit-mark ${tone}`}>{row.effect === 'divergence' ? 'splits' : friendly(row.effect)}</span>
                                             )}
                                         </summary>
+                                        {row.plot ? (
+                                            // conflict pair: one sentence, the map, the answer
+                                            <div className="jev-input-more">
+                                                <div>{INPUT_EXPLAIN[row.label]}</div>
+                                                <SplitMap plot={row.plot} hit={row.hit} />
+                                                <div className={row.hit ? 'sm-verdict sm-verdict-hit' : 'sm-verdict'}>
+                                                    {row.plot.x == null || row.plot.y == null ? 'No data today' : row.hit ? 'Dot in a red box → they split' : 'Dot outside the red → they agree'}
+                                                </div>
+                                            </div>
+                                        ) : (
                                         <div className="jev-input-more">
                                             {/* the ticker/code label only; plain-word labels just repeat the name */}
                                             {INPUT_NAMES[row.label] && /[A-Z]{2,}|\d/.test(row.label) && <div className="jev-input-note">{row.label}</div>}
@@ -199,6 +210,7 @@ export default function JevPillModal({ pillKey, data, onClose }) {
                                             {row.note && <div className="jev-input-note">{row.note}</div>}
                                             {String(row.test).split(' · ').map((part, j) => <div key={j}>{part}</div>)}
                                         </div>
+                                        )}
                                     </details>
                                 );
                             })}

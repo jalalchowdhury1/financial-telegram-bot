@@ -936,21 +936,26 @@ export function pillFactors(data) {
                 label: 'sentiment vs price',
                 value: `F&G ${fmtInt(fgScore)} · SPY ${fmtPct(ma200Pct)} vs 200d`,
                 test: 'Fear (under 35), SPY over 3% above 200d · Greed (over 65), SPY over 3% below 200d',
+                // the picture in the popup: one dot, red boxes = this rule's split zones
+                plot: { x: fgScore, y: ma200Pct, xName: 'Fear & Greed', yName: 'SPY vs 200d %', xr: [0, 100], yr: [-10, 10], zones: [[null, 35, 3, null], [65, null, null, -3]] },
             },
             {
                 label: '2s10s vs 3m10y',
                 value: `2s10s ${fmtNum(yieldCurve)} · 3m10y ${fmtNum(t10y3m)}`,
                 test: 'Splits if one is below 0, one above',
+                plot: { x: yieldCurve, y: t10y3m, xName: '2s10s %', yName: '3m10y %', xr: [-1.5, 1.5], yr: [-1.5, 1.5], zones: [[0, null, null, 0], [null, 0, 0, null]] },
             },
             {
                 label: 'credit vs equities',
                 value: `SPY ${fmtPct(ma200Pct)} vs 200d · junk spread ${fmtBp(oasChg20)}`,
                 test: `Splits if SPY is above 200d · and the junk spread is ${OAS_WIDE_BP}bp+ wider`,
+                plot: { x: ma200Pct, y: oasChg20, xName: 'SPY vs 200d %', yName: 'Junk spread 20d bp', xr: [-10, 10], yr: [-75, 75], zones: [[0, null, OAS_WIDE_BP, null]] },
             },
             {
                 label: 'breadth vs index',
                 value: `SPY ${fmtPct(high52Pct)} from 52w high · RSP/SPY ${fmtPct(rspChg20)}`,
                 test: 'Splits if SPY is within 2% of high · and RSP/SPY is under −1.5%',
+                plot: { x: high52Pct, y: rspChg20, xName: 'SPY from 52w high %', yName: 'RSP/SPY 20d %', xr: [-15, 0], yr: [-5, 5], zones: [[-2, null, null, -1.5]] },
             },
         ];
 
@@ -960,6 +965,7 @@ export function pillFactors(data) {
                 label: def.label,
                 value: def.value,
                 test: def.test,
+                plot: def.plot,
                 hit: !!firing,
                 effect: firing ? 'divergence' : '',
             };

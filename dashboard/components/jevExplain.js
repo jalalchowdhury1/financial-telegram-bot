@@ -45,10 +45,10 @@ export const INPUT_EXPLAIN = {
     'IWM/SPY 20d': 'Russell 2000 vs S&P, 20 days.',
     'IV percentile (1y)': 'vs the past year, 0–100.',
     'VRP': 'Expected minus actual moves.',
-    'sentiment vs price': 'Mood fighting the trend.',
-    '2s10s vs 3m10y': 'One inverted, one not.',
-    'credit vs equities': 'S&P up, junk spreads widening.',
-    'breadth vs index': 'Index near high, avg stock lagging.',
+    'sentiment vs price': 'Crowd mood and price trend disagree.',
+    '2s10s vs 3m10y': 'One curve says recession, one says fine.',
+    'credit vs equities': 'Stocks calm, bond lenders getting nervous.',
+    'breadth vs index': 'S&P near its high, avg stock falling behind.',
 };
 
 // Every feed a pill's rule actually reads (keep in sync with ruleVerdicts / conflictPairs).

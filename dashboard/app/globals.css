@@ -3141,3 +3141,23 @@ html:not(:has(.jump-fab)) .back-pill {
 
 /* SPY chart: 1M … 30Y · ALL · 📅 fit a phone's card on one line (the chips' padding is inline, hence !important) */
 @media (max-width: 560px) { .tf-btn-spy { padding-left: 4px !important; padding-right: 4px !important; } }
+
+/* Conflict pair map (components/SplitMap.js): dot = today, red box = split zone */
+.split-map {
+  display: block;
+  width: 100%;
+  max-width: 420px;
+  margin: 6px 0 4px;
+}
+.split-map .sm-bg { fill: rgba(255, 255, 255, 0.02); stroke: rgba(255, 255, 255, 0.12); }
+.split-map .sm-zone { fill: rgba(239, 68, 68, 0.16); stroke: rgba(239, 68, 68, 0.55); stroke-dasharray: 3 3; }
+.split-map .sm-zone-lbl { fill: var(--red); font-size: 10px; font-weight: 600; }
+.split-map .sm-zero { stroke: rgba(255, 255, 255, 0.18); }
+.split-map .sm-tick { fill: var(--text-muted); font-size: 9px; font-family: 'JetBrains Mono', monospace; }
+.split-map .sm-axis { fill: var(--text-secondary); font-size: 10px; }
+.split-map .sm-dot circle { fill: var(--green); stroke: var(--bg-primary, #0b1220); stroke-width: 2; }
+.split-map .sm-dot text { fill: var(--green); font-size: 10px; font-weight: 600; }
+.split-map .sm-dot-hit circle { fill: var(--red); }
+.split-map .sm-dot-hit text { fill: var(--red); }
+.sm-verdict { font-weight: 600; color: var(--green); }
+.sm-verdict-hit { color: var(--red); }
