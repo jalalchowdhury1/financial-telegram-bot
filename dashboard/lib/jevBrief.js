@@ -723,6 +723,7 @@ export function pillFactors(data) {
             label: 'SPY vs 200-day avg',
             value: fmtPct(ma200Pct),
             test: '+1 if above 0 · −1 if below',
+            line: { v: ma200Pct, r: [-10, 10], zones: [[null, 0, 'red', '−1'], [0, null, 'green', '+1']] },
             hit: ma200Hit,
             effect: ma200Effect,
         });
@@ -739,6 +740,7 @@ export function pillFactors(data) {
             label: 'Fear & Greed',
             value: fmtInt(fgScore),
             test: '+1 if 50 or more · −1 if under 30',
+            line: { v: fgScore, r: [0, 100], zones: [[null, 30, 'red', '−1'], [30, 50, 'gray', '0'], [50, null, 'green', '+1']] },
             hit: fgHit,
             effect: fgEffect,
         });
@@ -750,6 +752,7 @@ export function pillFactors(data) {
             label: 'Junk spread 20d',
             value: fmtBp(oasChg20),
             test: `+1 if narrower · −1 if ${OAS_WIDE_BP}bp+ wider`,
+            line: { v: oasChg20, r: [-75, 75], zones: [[null, 0, 'green', '+1'], [0, OAS_WIDE_BP, 'gray', '0'], [OAS_WIDE_BP, null, 'red', '−1']] },
             hit: cv !== 0,
             effect: cv > 0 ? '+1' : cv < 0 ? '−1' : '0',
         });
@@ -779,6 +782,7 @@ export function pillFactors(data) {
             label: 'Sahm rule',
             value: fmtNum(sahmRule),
             test: 'Rising if 0.2 or more · High if 0.5 or more',
+            line: { v: sahmRule, r: [0, 1], zones: [[null, 0.2, 'green', 'OK'], [0.2, 0.5, 'yellow', 'Rising'], [0.5, null, 'red', 'High']] },
             hit: sahmEffect !== '',
             effect: sahmEffect,
         });
@@ -788,6 +792,7 @@ export function pillFactors(data) {
             label: 'Yield curve (2s10s)',
             value: fmtNum(yieldCurve),
             test: 'Rising if below 0 · High if claims are 260k+ too',
+            line: { v: yieldCurve, r: [-1.5, 1.5], zones: [[null, 0, 'yellow', 'Rising*'], [0, null, 'green', 'OK']], note: '* High if claims are 260k+ too' },
             hit: ycEffect !== '',
             effect: ycEffect,
         });
@@ -797,6 +802,7 @@ export function pillFactors(data) {
             label: 'Jobless claims',
             value: claims != null ? `${Math.round(claims)}k` : 'n/a',
             test: 'Rising if 260k or more · High if the curve is below 0 too',
+            line: { v: claims, r: [150, 350], zones: [[null, 260, 'green', 'OK'], [260, null, 'yellow', 'Rising*']], note: '* High if the curve is below 0 too' },
             hit: claimsEffect !== '',
             effect: claimsEffect,
         });
@@ -806,6 +812,7 @@ export function pillFactors(data) {
             label: 'NFCI',
             value: fmtNum(nfci),
             test: 'Rising if above 0',
+            line: { v: nfci, r: [-1, 1], zones: [[null, 0, 'green', 'OK'], [0, null, 'yellow', 'Rising']] },
             hit: nfciHit,
             effect: nfciHit ? 'rising' : '',
         });
@@ -843,6 +850,7 @@ export function pillFactors(data) {
             label: 'RSP/SPY 20d',
             value: fmtPct(rspChg20),
             test: 'Broad if above 0 (IWM too) · Rolling over if under −1.5% (50d too)',
+            line: { v: rspChg20, r: [-6, 6], zones: [[null, -1.5, 'red', 'Rolling*'], [-1.5, 0, 'gray', '—'], [0, null, 'green', 'Broad*']], note: '* Broad: IWM above 0 too · Rolling: 50d below 0 too' },
             hit: rsp20Hit,
             effect: rsp20Effect,
         });
@@ -853,6 +861,7 @@ export function pillFactors(data) {
             label: 'RSP/SPY vs 50d avg',
             value: fmtPct(rspVs50d),
             test: 'Rolling over if below 0 (20d too)',
+            line: { v: rspVs50d, r: [-6, 6], zones: [[null, 0, 'red', 'Rolling*'], [0, null, 'gray', '—']], note: '* only with RSP/SPY 20d under −1.5%' },
             hit: vs50dHit,
             effect: vs50dHit ? 'rolling-over' : '',
         });
@@ -863,6 +872,7 @@ export function pillFactors(data) {
             label: 'IWM/SPY 20d',
             value: fmtPct(iwmChg20),
             test: 'Broad if above 0 (RSP too)',
+            line: { v: iwmChg20, r: [-6, 6], zones: [[null, 0, 'gray', '—'], [0, null, 'green', 'Broad*']], note: '* only with RSP/SPY 20d above 0' },
             hit: iwmHit,
             effect: iwmHit ? 'broad' : '',
         });
@@ -902,6 +912,7 @@ export function pillFactors(data) {
             label: 'IV percentile (1y)',
             value: fmtInt(ivPctile),
             test: 'Expensive if over 70 · Cheap if under 20 (VRP under 6 too)',
+            line: { v: ivPctile, r: [0, 100], zones: [[null, 20, 'green', 'Cheap*'], [20, 70, 'yellow', 'Fair'], [70, null, 'red', 'Expensive']], note: '* only with markup under 6' },
             hit: ivHit,
             effect: ivEffect,
         });
@@ -917,6 +928,7 @@ export function pillFactors(data) {
             label: 'VRP',
             value: fmtNum(vrp),
             test: 'Expensive if over 10 · Cheap if under 6 (IV under 20 too)',
+            line: { v: vrp, r: [-5, 15], zones: [[null, 6, 'green', 'Cheap*'], [6, 10, 'yellow', 'Fair'], [10, null, 'red', 'Expensive']], note: '* only with %ile under 20' },
             hit: vrpHit,
             effect: vrpEffect,
         });

@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import useSheetLock, { useSheetFocus } from './useSheetLock';
 import { PILL_EXPLAIN, INPUT_EXPLAIN, INPUT_NAMES, PILL_FEEDS } from './jevExplain';
 import SplitMap from './SplitMap';
+import NumberLine from './NumberLine';
 
 const FRIENDLY = {
     'risk-on': 'Risk-on',
@@ -199,6 +200,16 @@ export default function JevPillModal({ pillKey, data, onClose }) {
                                                 <SplitMap plot={row.plot} hit={row.hit} />
                                                 <div className={row.hit ? 'sm-verdict sm-verdict-hit' : 'sm-verdict'}>
                                                     {row.plot.x == null || row.plot.y == null ? 'No data today' : row.hit ? 'Dot in a red box → they split' : 'Dot outside the red → they agree'}
+                                                </div>
+                                            </div>
+                                        ) : row.line ? (
+                                            // one number: one sentence, the ruler, what it does today
+                                            <div className="jev-input-more">
+                                                <div>{INPUT_EXPLAIN[row.label]}</div>
+                                                <NumberLine line={row.line} />
+                                                {row.line.note && <div>{row.line.note}</div>}
+                                                <div className={`nl-verdict ${row.hit ? tone : ''}`}>
+                                                    {row.line.v == null ? 'No data today' : `Today ${row.value} → ${row.hit ? (pillKey === 'regime' ? `adds ${row.effect}` : friendly(row.effect)) : pillKey === 'regime' ? 'adds 0' : pillKey === 'recession' ? 'no warning' : 'no effect'}`}
                                                 </div>
                                             </div>
                                         ) : (

@@ -3161,3 +3161,23 @@ html:not(:has(.jump-fab)) .back-pill {
 .split-map .sm-dot-hit text { fill: var(--red); }
 .sm-verdict { font-weight: 600; color: var(--green); }
 .sm-verdict-hit { color: var(--red); }
+
+/* Pill input ruler (components/NumberLine.js): bands = the rule's ranges, tick = today */
+.num-line { display: block; width: 100%; max-width: 420px; margin: 4px 0 2px; }
+.num-line .nl-zone rect { fill-opacity: 0.18; stroke-opacity: 0.5; }
+.num-line .nl-zone text { font-size: 10px; font-weight: 600; }
+.num-line .nl-green rect { fill: var(--green); stroke: var(--green); }
+.num-line .nl-yellow rect { fill: var(--yellow); stroke: var(--yellow); }
+.num-line .nl-red rect { fill: var(--red); stroke: var(--red); }
+.num-line .nl-gray rect { fill: var(--text-muted); stroke: var(--text-muted); }
+.num-line .nl-green text { fill: var(--green); }
+.num-line .nl-yellow text { fill: var(--yellow); }
+.num-line .nl-red text { fill: var(--red); }
+.num-line .nl-gray text { fill: var(--text-secondary); }
+.num-line .sm-tick { fill: var(--text-muted); font-size: 9px; font-family: 'JetBrains Mono', monospace; }
+.num-line .nl-dot line { stroke: var(--text-primary); stroke-width: 2.5; }
+.num-line .nl-dot text { fill: var(--text-primary); font-size: 10px; font-weight: 700; }
+.nl-verdict { font-weight: 600; color: var(--text-primary); background: none !important; padding: 0 !important; }
+.nl-verdict.badge-green { color: var(--green); }
+.nl-verdict.badge-yellow { color: var(--yellow); }
+.nl-verdict.badge-red { color: var(--red); }
