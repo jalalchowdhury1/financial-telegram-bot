@@ -165,6 +165,7 @@ export default function JevPillModal({ pillKey, data, onClose }) {
                 {explain && (
                     <section className="jev-modal-section">
                         <p className="jev-modal-ask">{explain.ask}</p>
+                        {explain.weak && <p className="jev-modal-weak">⚠ {explain.weak}</p>}
                         <ul className="jev-key">
                             {Object.entries(explain.key).map(([v, rule]) => (
                                 <li key={v} className={v === pill.verdict ? 'jev-key-on' : ''}>

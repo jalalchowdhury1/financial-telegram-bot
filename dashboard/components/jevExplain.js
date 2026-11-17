@@ -9,9 +9,9 @@
 export const PILL_EXPLAIN = {
     regime: { ask: 'Is the market in a go mood?', key: { 'risk-on': 'score 2+', 'neutral': 'score 0 or 1', 'risk-off': 'score −1 or less' } },
     recession: { ask: 'How close is a recession?', key: { 'low': 'no warning', 'rising': 'any warning', 'high': 'Sahm 0.5+, or curve + claims' } },
-    breadth: { ask: 'Most stocks rising, or just giants?', key: { 'broad': 'avg stock + small caps ahead', 'narrow': 'in between', 'rolling-over': 'avg over 1.5% behind, under 50d' } },
-    hedging: { ask: 'How pricey are hedges?', key: { 'cheap': '%ile under 20, markup under 6', 'fair': 'in between', 'expensive': '%ile over 70 or markup over 10' } },
-    conflict: { ask: 'Do the signals agree?', key: { 'aligned': 'no splits', 'mild-divergence': 'one split', 'major-divergence': '2+ splits' } },
+    breadth: { ask: 'Most stocks rising, or just giants?', key: { 'broad': 'avg stock + small caps ahead', 'narrow': 'in between', 'rolling-over': 'avg over 1.5% behind, under 50d' }, weak: 'Weak signal: no edge on SPY since 2003' },
+    hedging: { ask: 'How pricey are hedges?', key: { 'cheap': '%ile under 20, markup under 6', 'fair': 'in between', 'expensive': '%ile over 70 or markup over 10' }, weak: 'Weak signal: no edge on SPY since 2000' },
+    conflict: { ask: 'Do the signals agree?', key: { 'aligned': 'no splits', 'mild-divergence': 'one split', 'major-divergence': '2+ splits' }, weak: 'Weak signal: unproven, data only since 2023' },
 };
 
 // Row names on screen (the label is the data key; tap a row to see it).

@@ -3193,3 +3193,5 @@ html:not(:has(.jump-fab)) .back-pill {
 .jev-record-all td { border-top: 1px solid rgba(255, 255, 255, 0.08); color: var(--text-muted); }
 .jev-record-note { font-size: 0.8rem; color: var(--text-primary); margin: 8px 0 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .jev-record-note::first-letter { text-transform: uppercase; }
+
+.jev-modal-weak { margin: 0 0 8px; font-size: 12px; color: var(--yellow, #e0b040); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
