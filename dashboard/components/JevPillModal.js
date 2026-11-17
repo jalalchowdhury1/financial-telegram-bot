@@ -6,6 +6,7 @@ import useSheetLock, { useSheetFocus } from './useSheetLock';
 import { PILL_EXPLAIN, INPUT_EXPLAIN, INPUT_NAMES, PILL_FEEDS } from './jevExplain';
 import SplitMap from './SplitMap';
 import NumberLine from './NumberLine';
+import RECORD from '../lib/data/pillRecord.json';
 
 const FRIENDLY = {
     'risk-on': 'Risk-on',
@@ -174,6 +175,33 @@ export default function JevPillModal({ pillKey, data, onClose }) {
                         </ul>
                     </section>
                 )}
+
+                {/* Report card: what SPY did next after each colour (scripts/bake-pill-record.mjs) */}
+                {explain && RECORD.pills[pillKey] && (() => {
+                    const rec = RECORD.pills[pillKey];
+                    const pc = (x) => `${x > 0 ? '+' : ''}${x.toFixed(1)}%`.replace('-', '−');
+                    return (
+                        <section className="jev-modal-section">
+                            <p className="jev-record-title">Track record · SPY next 3 months</p>
+                            <table className="jev-record">
+                                <thead><tr><th></th><th>times</th><th>avg</th><th>worst dip</th></tr></thead>
+                                <tbody>
+                                    {Object.keys(explain.key).filter((v) => rec.verdicts[v]).map((v) => (
+                                        <tr key={v} className={v === pill.verdict ? 'jev-key-on' : ''}>
+                                            <td><span className={`badge ${SEVERITY[v]}`}>{friendly(v)}</span></td>
+                                            <td>{rec.verdicts[v].runs}</td>
+                                            <td>{pc(rec.verdicts[v].avg3m)}</td>
+                                            <td>{pc(rec.verdicts[v].worst3m)}</td>
+                                        </tr>
+                                    ))}
+                                    <tr className="jev-record-all"><td>All days</td><td></td><td>{pc(rec.all.avg3m)}</td><td>{pc(rec.all.worst3m)}</td></tr>
+                                </tbody>
+                            </table>
+                            <p className="jev-record-note">{rec.note.replace(/-(\d)/g, '−$1')}</p>
+                            <p className="jev-modal-foot">{rec.from.slice(0, 4)}–{rec.to.slice(0, 4)} · {rec.days.toLocaleString('en-US')} days</p>
+                        </section>
+                    );
+                })()}
 
                 {/* One line per number; tap a row for its meaning and rule */}
                 <section className="jev-modal-section">

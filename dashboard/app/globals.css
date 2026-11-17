@@ -3181,3 +3181,15 @@ html:not(:has(.jump-fab)) .back-pill {
 .nl-verdict.badge-green { color: var(--green); }
 .nl-verdict.badge-yellow { color: var(--yellow); }
 .nl-verdict.badge-red { color: var(--red); }
+
+/* Pill report card (lib/data/pillRecord.json) */
+.jev-record-title { font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); margin: 0 0 6px; white-space: nowrap; }
+.jev-record { border-collapse: collapse; font-size: 0.78rem; }
+.jev-record th, .jev-record td { white-space: nowrap; padding: 3px 14px 3px 0; text-align: right; color: var(--text-secondary); font-weight: 500; }
+.jev-record th:first-child, .jev-record td:first-child { text-align: left; }
+.jev-record th { font-size: 0.7rem; color: var(--text-muted); }
+.jev-record td:not(:first-child) { font-family: 'JetBrains Mono', monospace; }
+.jev-record tr.jev-key-on td { color: var(--text-primary); }
+.jev-record-all td { border-top: 1px solid rgba(255, 255, 255, 0.08); color: var(--text-muted); }
+.jev-record-note { font-size: 0.8rem; color: var(--text-primary); margin: 8px 0 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.jev-record-note::first-letter { text-transform: uppercase; }

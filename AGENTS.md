@@ -1261,6 +1261,7 @@ so `isGood` rejects an empty digest rather than letting it claim "nothing change
   shown as `rule`. Jev has NOT been calibrated on market regimes (its proven strengths are
   page-state and yes/no facts) — the daily log + `scripts/jev-score.mjs` exist to score it
   after ~30 days; until then treat `Jev` pills as an experiment running beside the rules.
+- **Pill report card (17 Nov 2026):** `node dashboard/scripts/bake-pill-record.mjs` replays every day since 2000 through the real `ruleVerdicts` → `lib/data/pillRecord.json` (bundled; the popup's "Track record" table). A day counts only when ALL of that pill's inputs exist (junk spread = FRED from Nov 2023, F&G from 2021, so Regime/Conflict say "too short"). Re-run after any threshold change.
 - **17 Nov 2026: Jev CUT from the pills (Jalal's call).** Production env `JEV_PILLS=rules`: rules decide every pill, no Jev call, headers read "Rule · <date>". Jev disagreed on 3 of 5 pills at 49–64% and was never calibrated. Do not set it back to `on`.
 - **Kill switch:** Vercel env `JEV_PILLS=off` → route answers `{ enabled: false }`, the
   component renders nothing, the page is exactly the pre-feature site. `rules` = no Jev
