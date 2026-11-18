@@ -174,7 +174,10 @@ def spy_3y_agrees():
     _, b, _, _ = fetch('spy', 'lambda')
     ra, rb = (a or {}).get('return3y'), (b or {}).get('return3y')
     if not isinstance(ra, (int, float)) or not isinstance(rb, (int, float)):
-        return False, f'3Y missing (main {ra}, backup {rb})'
+        # Carry the route's reason up (17 Nov 2026: 'backup None' said nothing; the cause was
+        # Nasdaq's daily table lagging Polygon by a session, 'bars do not line up').
+        why = ' | '.join(str(m) for x in (a, b) for m in (((x or {}).get('_meta') or {}).get('messages') or []))
+        return False, f'3Y missing (main {ra}, backup {rb})' + (f'; why: {why[:300]}' if why else '')
     return abs(ra - rb) <= 0.6, f'3Y main {ra:.2f}% vs backup {rb:.2f}%'
 
 

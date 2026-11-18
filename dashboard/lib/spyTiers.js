@@ -194,12 +194,16 @@ async function fromBars(label, history, ctx, extra = {}) {
 }
 
 /** 3Y return for a short (Polygon ~2y) series, from Nasdaq bars that line up with it. null if they don't. */
-async function nasdaq3y(current, lastBar, ctx, asOf) {
+async function nasdaq3y(current, history, ctx, asOf) {
+    const lastBar = history[history.length - 1];
     try {
         const h = await gate('nasdaq', ctx.faults, () => nasdaqHistory('SPY', NASDAQ_OPTS));
         const upto = h.filter((b) => b.date <= lastBar.date);
         const tail = upto[upto.length - 1];
-        if (!tail || tail.date !== lastBar.date || Math.abs(tail.price / lastBar.price - 1) > 0.005) {
+        // Nasdaq's daily table lags a session in the evening (17 Nov 2026, 21:50 ET: newest 11/16 while
+        // Polygon had 11/17), so line up on Nasdaq's newest bar against Polygon's bar of that same date.
+        const twin = tail && history.slice(-2).find((b) => b.date === tail.date);
+        if (!twin || Math.abs(tail.price / twin.price - 1) > 0.005) {
             throw new Error(`bars do not line up (${tail?.date} ${tail?.price} vs ${lastBar.date} ${lastBar.price})`);
         }
         const r = return3yFrom(upto, current, asOf);
@@ -234,7 +238,7 @@ export async function fallbackSpy(messages, faults = new Set(), { env = process.
             if (return3yFrom(p.history, lastBar.price) == null) {
                 const spot = await spotOnce(ctx);
                 const live = spot && plausible(spot.current, lastBar.price);
-                extra.return3y = await nasdaq3y(live ? spot.current : lastBar.price, lastBar, ctx, live ? ctx.expected : lastBar.date);
+                extra.return3y = await nasdaq3y(live ? spot.current : lastBar.price, p.history, ctx, live ? ctx.expected : lastBar.date);
             }
             const out = keep(await fromBars('Polygon', p.history, ctx, extra));
             if (out) return out;

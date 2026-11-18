@@ -156,3 +156,15 @@ class CopyFailCarriesWhy(unittest.TestCase):
             ok, msg, _ = fault_matrix.check("spy-daily-move", "lambda", "live")
         self.assertFalse(ok)
         self.assertIn("why: live sources failed (all SPY move tiers failed: Finnhub failed: HTTP 429", msg)
+
+
+class Spy3yMissingCarriesWhy(unittest.TestCase):
+    """FAKE: 17 Nov 2026 'backup None' named nothing; the FAIL must carry the route's reason and stay a FAIL."""
+    MAIN = {"return3y": 62.48}
+    BACKUP = {"return3y": None, "_meta": {"messages": ["3Y from Nasdaq unavailable: bars do not line up (2026-11-16 739.95 vs 2026-11-17 745.1)"]}}
+
+    def test_missing_backup_3y_names_the_cause(self):
+        with mock.patch.object(fault_matrix, "fetch", side_effect=[(200, self.MAIN, 1.0, None), (200, self.BACKUP, 1.0, None)]):
+            ok, msg = fault_matrix.spy_3y_agrees()
+        self.assertFalse(ok)
+        self.assertIn("why: 3Y from Nasdaq unavailable: bars do not line up", msg)

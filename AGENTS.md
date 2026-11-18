@@ -919,6 +919,8 @@ Rule: every number has ≥2 independent live sources, then saved copies, then an
 - **Serve faults:** `tmplg` (/tmp only), `kvlg` (KV only), `lastgood` (both), `sheetlkg`.
 - **SPY** (`lib/spyTiers.js`): Lambda → Polygon+Finnhub spot (3Y from Nasdaq bars) →
   Nasdaq+CNBC → Nasdaq → Yahoo → saved. Faults `lambda,polygon,finnhub,nasdaq,cnbc,yahoo`.
+  The Nasdaq 3Y top-up lines up on Nasdaq's newest bar (its daily table lags Polygon a session in the
+  evening); never require the two newest bars to match again (17 Nov 2026: 3Y N/A, fault matrix 77/78).
   Daily move: Lambda → Finnhub → CNBC → **Nasdaq quote** (`nasdaq`, dated) → Polygon → Yahoo → saved.
   (Polygon free never has today's bar and Yahoo 429s Vercel, so they rarely answer.)
 - **market-extra** (`lib/marketExtraTiers.js`, per metric): fresher origin first — oil

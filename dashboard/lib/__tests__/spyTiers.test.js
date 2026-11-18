@@ -122,6 +122,19 @@ describe('fallbackSpy (/api/spy direct tiers)', () => {
         expect(out._meta.stale).toBeUndefined();
     });
 
+    test('Nasdaq one session behind Polygon (evening lag) still fills the 3Y', async () => {
+        // 17 Nov 2026, 21:40 ET: Polygon had today's bar, Nasdaq's table ended yesterday → 3Y was N/A.
+        const p = bars(500, '2026-10-09');
+        const nq = bars(1000, '2026-10-08', { base: 400 - 501 * 0.5 }); // same price on the same dates
+        src.polygonDaily.mockResolvedValue(poly(p));
+        src.nasdaqHistory.mockResolvedValue(nq);
+        const msgs = [];
+        const out = await fallbackSpy(msgs, F(), { env: ENV, now: OPEN });
+        const base = nq.filter((b) => b.date <= '2023-10-09').pop().price;
+        expect(out.return3y).toBeCloseTo(((p[p.length - 1].price - base) / base) * 100, 6);
+        expect(msgs.join(' ')).not.toMatch(/3Y from Nasdaq unavailable/);
+    });
+
     test('Nasdaq bars that do NOT line up leave 3Y null (honest N/A)', async () => {
         const p = bars(500, '2026-10-08');
         src.polygonDaily.mockResolvedValue(poly(p));
