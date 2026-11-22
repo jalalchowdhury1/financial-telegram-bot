@@ -401,6 +401,15 @@ behave differently, it gets a v2-only prop (`race` on FactorRow, `asCards` on `p
     "Forward P/E unavailable right now" and the card's attention pick still runs on SPY. The P/E view and button
     show nothing old as today's: `peNow` null (multpl missing, or `peIsCape`, where `peRatio` holds CAPE) →
     "P/E unavailable right now".
+  - **Bands view** (22 Nov 2026, his "S&P 500 Forward P/E Valuation Bands" tweet chart; `components/ValuationBands.js`,
+    third button): SPY on a ladder of rungs, each = forward earnings (`fwdDaily`'s `eps`) × a whole P/E
+    (`lib/valuation.js bandRungs`: the ones the window touches, 2 apart past 10 rungs), log scale. SPY's line and
+    the ribbons share one colour scale (teal = low P/E → amber = high). Right of today the rungs run on dashed at
+    the earnings growth analysts expect: `g` = the "For CY 20XX, analysts are projecting earnings growth of X%"
+    line for the furthest year in the report (`parseFactSet`; optional `g` array in `fwdPE.json`, on route rows
+    too). It looks ahead 60% of the window, at most a year; labels on the right = each rung's price there. No `g`
+    in the last 45 days → no projection, labels = today's. It assumes that one growth rate holds (FactSet prints
+    no year past the next): the legend says whose number it is. Motion (`.vb-*` in v2.css) is off under reduced motion.
 - **Young Lead combo** (1 Nov 2026, his "add it as young"): `pf` Fwd selloff + rates = `pt` with FactSet's forward
   P/E, a leg LeadCombos builds itself (`loadFwd` rows → `fwdDaily` with SPY; no /history file). 7 for 7 up 6M later
   since 2011, but chance-level (p ≈ 0.2), so `young`: a tag on the card, its proof, the top line only while it fires,

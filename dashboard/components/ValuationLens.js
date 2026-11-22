@@ -20,8 +20,8 @@ import { decodeFwd, joinFwd } from '../lib/fwdPe';
 import { getJson } from '../lib/loadJson';
 import { fwdDaily, extremeSince, timeAvg, decompose, underAvg } from '../lib/valuation';
 
-const TF_KEYS = ['1M', '3M', '6M', '1Y', '5Y', '10Y', '15Y', '20Y', '30Y', 'ALL'];
-const TF_DAYS = { '1M': 31, '3M': 92, '6M': 183, '1Y': 366, '5Y': 1827, '10Y': 3653, '15Y': 5479, '20Y': 7305, '30Y': 10958 };
+export const TF_KEYS = ['1M', '3M', '6M', '1Y', '5Y', '10Y', '15Y', '20Y', '30Y', 'ALL'];
+export const TF_DAYS = { '1M': 31, '3M': 92, '6M': 183, '1Y': 366, '5Y': 1827, '10Y': 3653, '15Y': 5479, '20Y': 7305, '30Y': 10958 };
 const DAY = 864e5;
 const ms = (iso) => Date.parse(`${iso}T00:00:00Z`);
 const back = (iso, days) => new Date(ms(iso) - days * DAY).toISOString().slice(0, 10);

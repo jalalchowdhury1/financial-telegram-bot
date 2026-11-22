@@ -67,6 +67,19 @@ export function decompose(first, last) {
     return { eps: last.eps / first.eps - 1, pe: last.pe / first.pe - 1, price: last.price / first.price - 1 };
 }
 
+/**
+ * The Bands view's rungs: the whole P/Es from under `lo` to over `hi` (the window's lowest and highest forward P/E),
+ * 1 apart, or 2 / 5 / 10 apart when that would be more than `max` rungs. Always at least two.
+ */
+export function bandRungs(lo, hi, max = 10) {
+    if (!(lo > 0) || !(hi >= lo)) return [];
+    for (const step of [1, 2, 5, 10]) {
+        const a = Math.max(step, Math.floor(lo / step) * step), b = Math.max(a + step, Math.ceil(hi / step) * step);
+        if ((b - a) / step < max) return Array.from({ length: (b - a) / step + 1 }, (_, i) => a + i * step);
+    }
+    return [];
+}
+
 /** The "Then what?" study's points: how many turns the forward P/E sits under FactSet's 5-yr average then. */
 export function underAvg(rows) {
     return (rows || []).filter((r) => r.a5 != null).map((r) => ({ date: r.date, value: Math.round((r.a5 - r.pe) * 10) / 10, pe: r.pe, a5: r.a5 }));

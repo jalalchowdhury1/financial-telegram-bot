@@ -5,13 +5,14 @@ import useElementWidth from './useElementWidth';
 import AxisLabels from './AxisLabels';
 import { decodeLong, loadLong, joinLong, longInfo } from '../lib/longHistory';
 import ValuationLens, { loadFwd } from './ValuationLens';
+import ValuationBands from './ValuationBands';
 import { useChart } from './MarkProvider';
 import { fwdDaily, attention } from '../lib/valuation';
 
 const TF_KEYS = ['1M', '3M', '6M', '1Y', '5Y', '10Y', '15Y', '20Y', '30Y', 'ALL'];
 const STORE_KEY = 'ftb:tf:spy';
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
-const LENSES = ['Price', 'Fwd P/E', 'P/E', 'Earnings'];
+const LENSES = ['Price', 'Fwd P/E', 'Bands', 'P/E', 'Earnings'];
 const BLUE = '#38bdf8', TEAL = '#2dd4bf', AMBER = '#fbbf24', VIOLET = '#a78bfa';
 
 /** A view button's last year, `[{date, value}]`: one line, no axes, spaced by date (the P/E's older points are monthly). */
@@ -45,7 +46,7 @@ export function joinBaked(baked, live) {
     });
 }
 
-/** `lenses` (v2 only, `{peNow}`): a Price · Fwd P/E · P/E · Earnings row above the chart (components/ValuationLens.js). */
+/** `lenses` (v2 only, `{peNow}`): a Price · Fwd P/E · Bands · P/E · Earnings row above the chart (components/ValuationLens.js, ValuationBands.js). */
 export default function SpyChart({ chartHistory, recessions = [], current = null, lenses = null }) {
     const [timeframe, setTimeframe] = useState('5Y');
     const [lens, setLens] = useState('Price');
@@ -200,6 +201,7 @@ export default function SpyChart({ chartHistory, recessions = [], current = null
     const tiles = lenses ? {
         Price: { value: isIndex ? Math.round(px).toLocaleString('en-US') : `$${Math.round(px)}`, color: BLUE, pts: full.slice(-252).map((p) => ({ date: p.date, value: p.price })) },
         'Fwd P/E': now && { value: `${now.pe.toFixed(1)}x`, color: now.a5 != null && now.pe > now.a5 ? AMBER : TEAL, pts: daily.slice(-252).map((d) => ({ date: d.date, value: d.pe })) },
+        Bands: now && { value: `${Math.floor(now.pe)}–${Math.floor(now.pe) + 1}x`, color: VIOLET },
         'P/E': Number.isFinite(peNow) && { value: `${peNow.toFixed(1)}x`, color: 'var(--text-primary)', pts: joinLong(peChart?.points, peLong, longInfo('peRatio')).filter((p) => p.date >= yr) },
         Earnings: now && epsYr && { value: `${now.eps >= epsYr.eps ? '+' : '−'}${Math.abs((now.eps / epsYr.eps - 1) * 100).toFixed(0)}%`, color: VIOLET, pts: daily.slice(-252).map((d) => ({ date: d.date, value: d.eps })) },
     } : {};
@@ -212,7 +214,7 @@ export default function SpyChart({ chartHistory, recessions = [], current = null
                 return (
                     <button key={l} role="tab" aria-selected={l === lens} aria-label={l} className="tf-btn tf-btn-spy" onClick={() => pickLens(l)}
                         title={hot ? `${attn.low ? 'Lowest' : 'Highest'} since ${sinceText}: worth a look` : undefined}
-                        style={{ ...chip(l === lens), display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px', padding: '5px 7px', flex: '1 0 auto', maxWidth: '160px' }}>
+                        style={{ ...chip(l === lens), display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px', padding: '5px 6px', flex: '1 0 auto', maxWidth: '160px' }}>
                         <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                             {l}{hot && <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: hotColor }} />}
                         </span>
@@ -236,7 +238,13 @@ export default function SpyChart({ chartHistory, recessions = [], current = null
     );
     // The index backup path has no SPY dollars to anchor forward P/E on: price only.
     if (lensRow && lens !== 'Price' && !isIndex) {
-        return <div>{lensRow}{why}<ValuationLens lens={lens} spy={full} tf={timeframe} onTf={pick} peNow={lenses.peNow} chip={chip} /></div>;
+        return (
+            <div>
+                {lensRow}{why}
+                {lens === 'Bands' ? <ValuationBands daily={daily} fwd={fwd} tf={timeframe} onTf={pick} chip={chip} />
+                    : <ValuationLens lens={lens} spy={full} tf={timeframe} onTf={pick} peNow={lenses.peNow} chip={chip} />}
+            </div>
+        );
     }
 
     return (

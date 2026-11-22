@@ -1,4 +1,4 @@
-import { fwdDaily, extremeSince, timeAvg, decompose, underAvg, attention } from '../valuation';
+import { fwdDaily, extremeSince, timeAvg, decompose, underAvg, attention, bandRungs } from '../valuation';
 
 const day = (i) => new Date(Date.UTC(2026, 0, 1 + i)).toISOString().slice(0, 10);
 // a close every day: 100, 101, 102 …
@@ -90,5 +90,19 @@ describe('attention: the view that needs a look', () => {
         fwd[100].pe = 18;
         fwd[50].eps = 0.5; // now the P/E is the record and earnings were lower 549 days back
         expect(attention(fwd, run())).toEqual({ lens: 'Fwd P/E', low: true, since: null });
+    });
+});
+
+describe('bandRungs: the Bands view\'s whole P/Es', () => {
+    it('covers the window, one apart', () => {
+        expect(bandRungs(16.5, 22.9)).toEqual([16, 17, 18, 19, 20, 21, 22, 23]);
+        expect(bandRungs(17.2, 17.8)).toEqual([17, 18]);
+        expect(bandRungs(17, 17)).toEqual([17, 18]);
+    });
+    it('steps by 2 when one apart would be more than 10 rungs', () => {
+        expect(bandRungs(10.4, 23.5)).toEqual([10, 12, 14, 16, 18, 20, 22, 24]);
+    });
+    it('is empty without a P/E', () => {
+        expect(bandRungs(NaN, 20)).toEqual([]);
     });
 });

@@ -23,11 +23,16 @@ const inBand = (v, lo, hi) => (Number.isFinite(v) && v >= lo && v <= hi ? v : nu
 // 2013–2016 often name the averages only on the sector page: "The P/E ratio of 15.7 for the index as a whole is above
 // the prior 5-year average forward 12-month P/E ratio of 13.3, and above the prior 10-year average … of 13.8."
 const WHOLE = /for the index as a whole is (.{0,240}?\d\.\d)\./i;
+// "For CY 2027, analysts are projecting earnings growth of 16.4% and revenue growth of 10.0%" (also "predicting
+// (year-over-year) earnings growth of", "an earnings decline of")
+const CY_RE = /For CY (20\d\d), analysts are \w+(?: for)? (?:\(year-over-year\) )?(?:an )?earnings (growth|decline) of (\d{1,2}\.\d)%/gi;
 
 /**
- * `{pe, a5, a10}` from a report's text, or null when it has no forward P/E. The averages come from the
+ * `{pe, a5, a10, g}` from a report's text, or null when it has no forward P/E. The averages come from the
  * first statement of the ratio that names them (page 1 since 2016; the valuation page before that), else
  * the sector page's index-as-a-whole sentence. 2011–2012 and most of 2013 print no 5-year average.
+ * g = the earnings growth (%) analysts expect for the furthest calendar year the report names (the Bands view's
+ * projection), left out when it names none.
  */
 export function parseFactSet(text) {
     const flat = typeof text === 'string' ? text.replace(/\s+/g, ' ') : '';
@@ -43,7 +48,11 @@ export function parseFactSet(text) {
     const whole = flat.match(WHOLE)?.[1] || '';
     a5 ??= inBand(Number(whole.match(A5)?.[1]), 8, 30);
     a10 ??= inBand(Number(whole.match(A10)?.[1]), 8, 30);
-    return pe == null ? null : { pe, a5, a10 };
+    let g = null, year = 0;
+    for (const m of flat.matchAll(CY_RE)) {
+        if (Number(m[1]) > year) { year = Number(m[1]); g = Number(m[3]) * (m[2].toLowerCase() === 'decline' ? -1 : 1); }
+    }
+    return pe == null ? null : { pe, a5, a10, ...(g != null && { g }) };
 }
 
 /** The report PDF for a date (YYYY-MM-DD → …EarningsInsight_MMDDYY.pdf; some weeks carry an 'A': …MMDDYYA.pdf). */
@@ -67,7 +76,7 @@ export function reportCandidates(today, after) {
 const DAY = 864e5;
 const ms = (iso) => Date.parse(`${iso}T00:00:00Z`);
 
-/** The baked file → ascending `[{date, pe, a5, a10}]` (date = the report's), or null when malformed. */
+/** The baked file → ascending `[{date, pe, a5, a10, g?}]` (date = the report's), or null when malformed. */
 export function decodeFwd(body) {
     if (!body || !/^\d{4}-\d{2}-\d{2}$/.test(body.from) || !Array.isArray(body.t) || !Array.isArray(body.v) || body.t.length !== body.v.length) return null;
     const t0 = ms(body.from), out = [];
@@ -75,7 +84,7 @@ export function decodeFwd(body) {
         const pe = body.v[i];
         if (!Number.isInteger(d) || !Number.isFinite(pe)) return;
         const n = (a) => (Number.isFinite(a?.[i]) ? a[i] : null);
-        out.push({ date: new Date(t0 + d * DAY).toISOString().slice(0, 10), pe, a5: n(body.a5), a10: n(body.a10) });
+        out.push({ date: new Date(t0 + d * DAY).toISOString().slice(0, 10), pe, a5: n(body.a5), a10: n(body.a10), ...(n(body.g) != null && { g: n(body.g) }) });
     });
     return out.length ? out : null;
 }
@@ -87,6 +96,7 @@ export function encodeFwd(rows, meta = {}) {
         ...meta, from, to: rows[rows.length - 1].date,
         t: rows.map((r) => Math.round((ms(r.date) - t0) / DAY)),
         v: rows.map((r) => r.pe), a5: rows.map((r) => r.a5 ?? null), a10: rows.map((r) => r.a10 ?? null),
+        ...(rows.some((r) => r.g != null) && { g: rows.map((r) => r.g ?? null) }),
     };
 }
 

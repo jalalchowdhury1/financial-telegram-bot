@@ -55,5 +55,5 @@ test('nothing unusual: Price, no dot', async () => {
     render(<SpyChart chartHistory={live(630.1)} current={630.1} lenses={{ peNow: null }} />);
     await waitFor(() => expect(screen.getByRole('tab', { name: 'Fwd P/E' }).textContent).toMatch(/x$/)); // FactSet loaded
     expect(selected('Price')).toBe('true');
-    expect(screen.getAllByRole('tab').map((t) => t.title)).toEqual(['', '', '', '']);
+    expect(screen.getAllByRole('tab').map((t) => t.title)).toEqual(['', '', '', '', '']);
 });

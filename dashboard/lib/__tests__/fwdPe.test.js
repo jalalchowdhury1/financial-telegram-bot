@@ -176,3 +176,17 @@ describe('FactSet blog (the second layer)', () => {
         expect(lastGood.save).toHaveBeenCalledWith(copy);
     });
 });
+
+describe('analysts\' earnings growth (the Bands view\'s projection)', () => {
+    const NOV_2026 = 'For CY 2026, analysts are predicting (year-over-year) earnings growth of 33.7%. The forward 12-month P/E ratio is 17.1, which is below the 5-year average (19.8) and below the 10-year average (19.1). For Q2 2027, analysts are projecting earnings growth of 3.6% and revenue growth of 8.6%. For CY 2027, analysts are projecting earnings growth of 16.4% and revenue growth of 10.0%.';
+    it('reads the furthest calendar year the report names; a decline is negative', () => {
+        expect(parseFactSet(NOV_2026)).toEqual({ pe: 17.1, a5: 19.8, a10: 19.1, g: 16.4 });
+        expect(parseFactSet(NOV_2026.replace('earnings growth of 16.4%', 'an earnings decline of 2.5%')).g).toBe(-2.5);
+    });
+    it('survives the baked file', () => {
+        const rows = [{ date: '2026-11-13', pe: 18.3, a5: 19.8, a10: 19.1 }, { date: '2026-11-20', pe: 17.1, a5: 19.8, a10: 19.1, g: 16.4 }];
+        expect(encodeFwd(rows).g).toEqual([null, 16.4]);
+        expect(decodeFwd(JSON.parse(JSON.stringify(encodeFwd(rows))))).toEqual(rows);
+        expect(encodeFwd(rows.slice(0, 1))).not.toHaveProperty('g');
+    });
+});
