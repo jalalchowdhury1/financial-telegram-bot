@@ -6,6 +6,10 @@
  * grey hairlines, brighter near SPY; one band is lit, the one SPY is in today, teal under FactSet's 5-yr average
  * P/E and amber over it (the Fwd P/E view's colours); SPY is the card's blue. Right of today the rungs run on at the earnings growth analysts expect (`g` on the newest
  * FactSet report, lib/fwdPe.js): what SPY would cost at each P/E by then. No `g` in the last 45 days: no projection.
+ * 🔭 (his 22 Nov "i would like to see till 2030. but not on the default screen"): a tap runs the rungs out to the end
+ * of the 4th year ahead, a second tap comes back; the chart glides between the two. Analysts name no year past the
+ * next, so after the first 12 months the rungs grow at forward earnings' own pace over the last 10 years (measured
+ * from this chart's data, needs 5+ years of it) and are drawn fainter.
  * Log scale: rungs keep their distance and steady growth is a straight line. The labels on the right give each
  * rung's price at the right edge; a tap reads a day (ahead of today: SPY at today's P/E and at the 5-yr average).
  */
@@ -20,12 +24,15 @@ const DAY = 864e5;
 const ms = (iso) => Date.parse(`${iso}T00:00:00Z`);
 const back = (iso, days) => new Date(ms(iso) - days * DAY).toISOString().slice(0, 10);
 const monthYear = (iso) => fmtDay(iso).replace(/ \d+,/, ''); // 'Apr 7, 2025' → 'Apr 2025'
+const signedPct = (x) => `${x >= 0 ? '+' : '−'}${Math.abs(x).toFixed(1)}%`;
 const usd = (v) => `$${Math.round(v).toLocaleString('en-US')}`;
 const MONO = "'JetBrains Mono', monospace";
 const BLUE = '#38bdf8', TEAL = '#2dd4bf', AMBER = '#fbbf24';
 
 export default function ValuationBands({ daily, fwd, tf, onTf, chip }) {
     const [hover, setHover] = useState(null);
+    const [far, setFar] = useState(false); // 🔭 on
+    const [glide, setGlide] = useState(null); // days ahead on screen while the chart moves between the two views
     const svgRef = useRef(null);
     const [plotRef, plotPx] = useElementWidth();
     const uid = useId().replace(/[^\w-]/g, '');
@@ -50,12 +57,31 @@ export default function ValuationBands({ daily, fwd, tf, onTf, chip }) {
     // right of today: forward earnings growing at the analysts' rate, a point a week
     const grow = [...fwd].reverse().find((r) => r.g != null);
     const g = grow && ms(last.date) - ms(grow.date) <= 45 * DAY ? grow.g / 100 : null;
-    const ahead = g == null ? 0 : Math.min(365, Math.round(((ms(last.date) - ms(data[0].date)) / DAY) * 0.6));
+    const near = g == null ? 0 : Math.min(365, Math.round(((ms(last.date) - ms(data[0].date)) / DAY) * 0.6));
+    // past the analysts' year: forward earnings' own yearly pace over the last 10 years (5+ on file, else no 🔭)
+    const old = daily.find((p) => p.date >= back(last.date, 3653)), oldYears = (ms(last.date) - ms(old.date)) / DAY / 365.25;
+    const pace = oldYears >= 5 && old.eps > 0 ? (last.eps / old.eps) ** (1 / oldYears) - 1 : null;
+    const farYear = Number(last.date.slice(0, 4)) + 4;
+    const farDays = near && pace != null ? Math.round((ms(`${farYear}-12-31`) - ms(last.date)) / DAY) : 0;
+    const ahead = glide ?? (far && farDays ? farDays : near);
+    const epsIn = (days) => last.eps * (1 + g) ** (Math.min(days, 365) / 365) * (1 + (pace ?? 0)) ** (Math.max(0, days - 365) / 365);
     const future = [];
     for (let d = 7; d < ahead + 7 && ahead; d += 7) {
         const days = Math.min(d, ahead);
-        future.push({ date: back(last.date, -days), eps: last.eps * (1 + g) ** (days / 365) });
+        future.push({ date: back(last.date, -days), eps: epsIn(days), days });
     }
+    const year1 = future.filter((p) => p.days <= 365), later = future.filter((p) => p.days >= 365 || p === year1[year1.length - 1]);
+    const look = () => {
+        const from = ahead, to = far ? near : farDays, t0 = Date.now();
+        setFar(!far); setHover(null);
+        if (typeof window === 'undefined' || !window.requestAnimationFrame || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+        const tick = () => {
+            const k = Math.min(1, (Date.now() - t0) / 700), e = k < 0.5 ? 2 * k * k : 1 - (2 - 2 * k) ** 2 / 2;
+            setGlide(k < 1 ? Math.round(from + (to - from) * e) : null);
+            if (k < 1) window.requestAnimationFrame(tick);
+        };
+        tick();
+    };
     const pts = [...data, ...future], end = pts[pts.length - 1];
 
     const pes = data.map((p) => p.pe), eps = pts.map((p) => p.eps);
@@ -140,10 +166,14 @@ export default function ValuationBands({ daily, fwd, tf, onTf, chip }) {
                     </span>
                 )}
             </div>
-            <div style={{ display: 'flex', flexWrap: 'nowrap', marginBottom: '6px' }}>
+            <div style={{ display: 'flex', flexWrap: 'nowrap', gap: '8px', alignItems: 'center', marginBottom: '6px' }}>
                 <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '4px 10px', borderRadius: '6px', whiteSpace: 'nowrap', background: lit === TEAL ? 'rgba(45,212,191,0.12)' : 'rgba(251,191,36,0.12)', color: lit }}>
                     Between {rungs[cur]}x and {rungs[cur + 1]}x{last.a5 != null ? ` · 5-yr avg ${last.a5.toFixed(1)}x = ${usd(last.eps * last.a5)}` : ''}
                 </span>
+                {farDays > 0 && (
+                    <button type="button" onClick={look} aria-pressed={far} aria-label={`Look ahead to ${farYear}`} title={far ? 'Back to the year ahead' : `Run the bands out to the end of ${farYear}`}
+                        style={{ ...chip(far), marginLeft: 'auto' }}>🔭 {farYear}</button>
+                )}
             </div>
             <div className="mini-chart" style={{ height: '260px' }}>
                 <div className="chart-plot" ref={plotRef}>
@@ -165,7 +195,10 @@ export default function ValuationBands({ daily, fwd, tf, onTf, chip }) {
                                 <g className="vb-ahead">
                                     <line x1={xNow} x2={xNow} y1={padT - 2} y2={h - padB} stroke="rgba(255,255,255,0.16)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
                                     {rungs.map((m, i) => (
-                                        <polyline key={m} points={lineOf(m, [last, ...future]).join(' ')} fill="none" stroke={ink(i)} strokeWidth="1" strokeDasharray="2 4" vectorEffect="non-scaling-stroke" />
+                                        <g key={m} fill="none" stroke={ink(i)} strokeWidth="1">
+                                            <polyline points={lineOf(m, [last, ...year1]).join(' ')} strokeDasharray="2 4" vectorEffect="non-scaling-stroke" />
+                                            {later.length > 1 && <polyline points={lineOf(m, later).join(' ')} strokeOpacity="0.55" strokeDasharray="1 5" vectorEffect="non-scaling-stroke" />}
+                                        </g>
                                     ))}
                                 </g>
                             )}
@@ -193,8 +226,10 @@ export default function ValuationBands({ daily, fwd, tf, onTf, chip }) {
             <div style={{ display: 'flex', justifyContent: 'center', gap: '14px', marginTop: '6px', flexWrap: 'nowrap', overflowX: 'auto' }}>
                 <span style={{ ...legend, color: est ? AMBER : BLUE }} title={`Each line = the next 12 months of expected earnings (FactSet, weekly) × a P/E. The lit band is the one SPY sits in. Newest report: ${fmtDay(asOf)}.`}>━ SPY{est}</span>
                 {ahead > 0 && (
-                    <span style={{ ...legend, color: 'var(--text-muted)' }} title={`The bands carried forward as if earnings grow ${grow.g.toFixed(1)}% a year, the growth analysts expect for the furthest year in FactSet's ${fmtDay(grow.date)} report. Prices on the right = each P/E at ${monthYear(end.date)}.`}>
-                        ┄ analysts&apos; earnings {grow.g >= 0 ? '+' : '−'}{Math.abs(grow.g).toFixed(1)}%/yr → {monthYear(end.date)}
+                    <span style={{ ...legend, color: 'var(--text-muted)' }} title={`The bands carried forward as if earnings grow ${grow.g.toFixed(1)}% a year, the growth analysts expect for the furthest year in FactSet's ${fmtDay(grow.date)} report. ${later.length > 1 ? ` After 12 months: ${signedPct(pace * 100)} a year, the pace forward earnings grew over the last ${Math.round(oldYears)} years (no analyst number that far out).` : ''} Prices on the right = each P/E at ${monthYear(end.date)}.`}>
+                        {later.length > 1
+                            ? `┄ ${signedPct(grow.g)} a year, then ${signedPct(pace * 100)} (10-yr pace)`
+                            : `┄ analysts' earnings ${signedPct(grow.g)}/yr → ${monthYear(end.date)}`}
                     </span>
                 )}
             </div>

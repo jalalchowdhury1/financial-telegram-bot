@@ -418,6 +418,11 @@ behave differently, it gets a v2-only prop (`race` on FactorRow, `asCards` on `p
     too). It looks ahead 60% of the window, at most a year; labels on the right = each rung's price there. No `g`
     in the last 45 days → no projection, labels = today's. It assumes that one growth rate holds (FactSet prints
     no year past the next): the legend says whose number it is. Motion (`.vb-*` in v2.css) is off under reduced motion.
+    **🔭 look ahead** (22 Nov 2026, his "see till 2030, but not on the default screen"): a chip beside the band
+    line runs the rungs to the end of the 4th year ahead (the chart glides out over 0.7 s; second tap = back; never
+    saved). After the analysts' 12 months the rungs grow at forward earnings' own pace over the last 10 years
+    (`eps` then vs now, 12.3%/yr on 22 Nov; needs 5+ years on file, else no chip), drawn fainter; the legend
+    names both rates. A rule of thumb, not a forecast: say so if he asks what it means.
 - **Young Lead combo** (1 Nov 2026, his "add it as young"): `pf` Fwd selloff + rates = `pt` with FactSet's forward
   P/E, a leg LeadCombos builds itself (`loadFwd` rows → `fwdDaily` with SPY; no /history file). 7 for 7 up 6M later
   since 2011, but chance-level (p ≈ 0.2), so `young`: a tag on the card, its proof, the top line only while it fires,

@@ -2,7 +2,7 @@
  * The SPY card's Bands view (his 22 Nov 2026 "S&P 500 Forward P/E Valuation Bands" chart): SPY on rungs of forward
  * earnings × a whole P/E, carried forward at the earnings growth analysts expect.
  */
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import ValuationBands from '../ValuationBands';
 
 const iso = (t) => new Date(t).toISOString().slice(0, 10);
@@ -36,4 +36,27 @@ test('no growth number in the last 45 days: the bands stop at today', () => {
 test('FactSet unavailable says so', () => {
     render(<ValuationBands daily={[]} fwd={false} tf="ALL" onTf={() => {}} chip={() => ({})} />);
     expect(text()).toBe('Forward P/E unavailable right now');
+});
+
+test('🔭 runs the rungs out to the end of 2030: the analysts\' year, then forward earnings\' own 10-year pace', async () => {
+    // 6 years of days: forward earnings double (12.2% a year), the P/E flat at 18.4
+    const n = 2192, long = Array.from({ length: n }, (_, i) => {
+        const eps = 20 * 2 ** (i / (n - 1));
+        return { date: iso(Date.UTC(2026, 10, 20) - (n - 1 - i) * 864e5), price: eps * 18.4, eps, pe: 18.4, a5: 19.8, a10: 19.1 };
+    });
+    render(<ValuationBands daily={long} fwd={[row('2026-11-20', 10)]} tf="ALL" onTf={() => {}} chip={() => ({})} />);
+    expect(text()).toContain('analysts\' earnings +10.0%/yr → Nov 2027'); // the default view: a year ahead
+    const scope = screen.getByRole('button', { name: 'Look ahead to 2030' });
+    expect(scope.getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(scope);
+    await waitFor(() => expect(text()).toContain('+10.0% a year, then +12.2% (10-yr pace)'));
+    const pace = 2 ** (365.25 / (n - 1)) - 1, days = Math.round((Date.UTC(2030, 11, 31) - Date.UTC(2026, 10, 20)) / 864e5);
+    await waitFor(() => expect(text()).toContain(`18x $${Math.round(40 * 1.1 * (1 + pace) ** ((days - 365) / 365) * 18).toLocaleString('en-US')}`), { timeout: 3000 });
+    fireEvent.click(scope);
+    await waitFor(() => expect(text()).toContain('→ Nov 2027'));
+});
+
+test('under 5 years of forward earnings on file: no 🔭', () => {
+    show([row('2026-11-20', 10)]);
+    expect(screen.queryByRole('button', { name: /Look ahead/ })).toBeNull();
 });
