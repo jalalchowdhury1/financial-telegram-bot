@@ -951,13 +951,13 @@ body:has(.v2) { background: #0b0c0e; }
 @media (prefers-reduced-motion: reduce) { .fr-line.is-spot, .fr-area { animation: none; } }
 
 /* SPY card, Bands view (components/ValuationBands.js): the line draws in, then the projection */
-.vb-glow { stroke-dasharray: 1; animation: fr-draw .9s ease-out both; }
-.vb-spy { animation: fr-fade .9s ease both; }
-.vb-ahead { animation: fr-fade .6s ease .5s both; }
+.vb-spy { stroke-dasharray: 1; animation: fr-draw .9s ease-out both; }
+.vb-glow, .vb-lit { animation: fr-fade .9s ease .3s both; }
+.vb-ahead { animation: fr-fade .6s ease .6s both; }
 .vb-now { position: absolute; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 50%; background: currentColor; pointer-events: none;
-  box-shadow: 0 0 0 2px #0a0e17, 0 0 10px currentColor; animation: vb-pulse 2.4s ease-in-out infinite; }
-@keyframes vb-pulse { 50% { box-shadow: 0 0 0 2px #0a0e17, 0 0 0 7px rgb(255 255 255 / 0), 0 0 18px currentColor; transform: scale(1.25); } }
-@media (prefers-reduced-motion: reduce) { .vb-glow, .vb-spy, .vb-ahead, .vb-now { animation: none; } }
+  box-shadow: 0 0 0 2px #0a0e17, 0 0 8px currentColor; animation: vb-pulse 2.4s ease-in-out infinite; }
+@keyframes vb-pulse { 50% { box-shadow: 0 0 0 2px #0a0e17, 0 0 16px currentColor; } }
+@media (prefers-reduced-motion: reduce) { .vb-glow, .vb-lit, .vb-spy, .vb-ahead, .vb-now { animation: none; } }
 .fr-area { fill: var(--fc); fill-opacity: .08; }
 .fr-zero-tag { position: absolute; left: 0; transform: translateY(-130%); font-size: 10.5px; text-shadow: 0 0 3px var(--surface), 0 0 3px var(--surface), 0 0 6px var(--surface); color: var(--ink-3); white-space: nowrap; }
 .fr-end {

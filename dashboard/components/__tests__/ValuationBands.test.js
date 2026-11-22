@@ -18,7 +18,7 @@ const text = () => document.body.textContent;
 test('names the rungs SPY sits between and prices each rung where the analysts\' growth takes it', () => {
     show([row('2026-11-13'), row('2026-11-20', 10)]);
     expect(text()).toContain('$736 = 18.4x earnings');
-    expect(text()).toContain('🪜 Between 18x and 19x · 5-yr avg 19.8x = $792');
+    expect(text()).toContain('Between 18x and 19x · 5-yr avg 19.8x = $792');
     // 299 days on screen → 179 days ahead, earnings 10% a year higher
     const eps = 40 * 1.1 ** (179 / 365);
     expect(text()).toContain(`19x $${Math.round(eps * 19)}`);

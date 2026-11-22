@@ -403,8 +403,10 @@ behave differently, it gets a v2-only prop (`race` on FactorRow, `asCards` on `p
     "P/E unavailable right now".
   - **Bands view** (22 Nov 2026, his "S&P 500 Forward P/E Valuation Bands" tweet chart; `components/ValuationBands.js`,
     third button): SPY on a ladder of rungs, each = forward earnings (`fwdDaily`'s `eps`) × a whole P/E
-    (`lib/valuation.js bandRungs`: the ones the window touches, 2 apart past 10 rungs), log scale. SPY's line and
-    the ribbons share one colour scale (teal = low P/E → amber = high). Right of today the rungs run on dashed at
+    (`lib/valuation.js bandRungs`: the ones the window touches, 2 apart past 10 rungs), log scale. Quiet on
+    purpose (a rainbow of bands shipped first; his "don't look too minimalistic"): grey hairline rungs, brighter
+    near SPY, SPY in the card's blue, and ONE lit band, the one SPY is in today (teal under FactSet's 5-yr average
+    P/E, amber over: the Fwd P/E view's colours). Never colour every band. Right of today the rungs run on dashed at
     the earnings growth analysts expect: `g` = the "For CY 20XX, analysts are projecting earnings growth of X%"
     line for the furthest year in the report (`parseFactSet`; optional `g` array in `fwdPE.json`, on route rows
     too). It looks ahead 60% of the window, at most a year; labels on the right = each rung's price there. No `g`

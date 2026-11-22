@@ -201,7 +201,7 @@ export default function SpyChart({ chartHistory, recessions = [], current = null
     const tiles = lenses ? {
         Price: { value: isIndex ? Math.round(px).toLocaleString('en-US') : `$${Math.round(px)}`, color: BLUE, pts: full.slice(-252).map((p) => ({ date: p.date, value: p.price })) },
         'Fwd P/E': now && { value: `${now.pe.toFixed(1)}x`, color: now.a5 != null && now.pe > now.a5 ? AMBER : TEAL, pts: daily.slice(-252).map((d) => ({ date: d.date, value: d.pe })) },
-        Bands: now && { value: `${Math.floor(now.pe)}–${Math.floor(now.pe) + 1}x`, color: VIOLET },
+        Bands: now && { value: `${Math.floor(now.pe)}–${Math.floor(now.pe) + 1}x`, color: 'var(--text-primary)' },
         'P/E': Number.isFinite(peNow) && { value: `${peNow.toFixed(1)}x`, color: 'var(--text-primary)', pts: joinLong(peChart?.points, peLong, longInfo('peRatio')).filter((p) => p.date >= yr) },
         Earnings: now && epsYr && { value: `${now.eps >= epsYr.eps ? '+' : '−'}${Math.abs((now.eps / epsYr.eps - 1) * 100).toFixed(0)}%`, color: VIOLET, pts: daily.slice(-252).map((d) => ({ date: d.date, value: d.eps })) },
     } : {};
