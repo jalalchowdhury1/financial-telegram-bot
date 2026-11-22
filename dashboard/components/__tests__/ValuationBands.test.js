@@ -11,7 +11,7 @@ const daily = Array.from({ length: 300 }, (_, i) => {
     const pe = 16.2 + (i / 299) * 2.2;
     return { date: iso(Date.UTC(2026, 10, 20) - (299 - i) * 864e5), price: 40 * pe, eps: 40, pe, a5: 19.8, a10: 19.1 };
 });
-const row = (date, g) => ({ date, pe: 18.4, a5: 19.8, a10: 19.1, ...(g != null && { g }) });
+const row = (date, g, gy = 2027) => ({ date, pe: 18.4, a5: 19.8, a10: 19.1, ...(g != null && { g, gy }) });
 const show = (fwd) => render(<ValuationBands daily={daily} fwd={fwd} tf="ALL" onTf={() => {}} chip={() => ({})} />);
 const text = () => document.body.textContent;
 
@@ -23,7 +23,7 @@ test('names the rungs SPY sits between and prices each rung where the analysts\'
     const eps = 40 * 1.1 ** (179 / 365);
     expect(text()).toContain(`19x $${Math.round(eps * 19)}`);
     expect(text()).toContain(`16x $${Math.round(eps * 16)}`);
-    expect(text()).toContain('analysts\' earnings +10.0%/yr → May 2027');
+    expect(text()).toContain('if earnings +10.0% (analysts\' 2027) → May 2027');
     expect(screen.getByRole('img').getAttribute('aria-label')).toBe('SPY at 18.4 times forward earnings, between the 18x and 19x bands');
 });
 
@@ -31,6 +31,19 @@ test('no growth number in the last 45 days: the bands stop at today', () => {
     show([row('2026-09-25', 10), row('2026-11-20')]);
     expect(text()).not.toContain('analysts');
     expect(text()).toContain('19x $760');
+});
+
+test('a blog-read week naming only this year never replaces the report that names next year', () => {
+    show([row('2026-11-13', 10), row('2026-11-20', 33.3, 2026)]);
+    expect(text()).toContain('if earnings +10.0% (analysts\' 2027)');
+});
+
+test('on a window whose rungs step by 2 the lit band is still one P/E wide, the one the tile names', () => {
+    const wide = daily.map((p, i) => ({ ...p, pe: 6 + (i / 299) * 12.4, price: 40 * (6 + (i / 299) * 12.4) }));
+    render(<ValuationBands daily={wide} fwd={[row('2026-11-20', 10)]} tf="ALL" onTf={() => {}} chip={() => ({})} />);
+    expect(text()).toContain('Between 18x and 19x');
+    expect(text()).toContain('20x $');
+    expect(text()).not.toContain('19x $');
 });
 
 test('FactSet unavailable says so', () => {
@@ -45,15 +58,15 @@ test('🔭 runs the rungs out to the end of 2030: the analysts\' year, then forw
         return { date: iso(Date.UTC(2026, 10, 20) - (n - 1 - i) * 864e5), price: eps * 18.4, eps, pe: 18.4, a5: 19.8, a10: 19.1 };
     });
     render(<ValuationBands daily={long} fwd={[row('2026-11-20', 10)]} tf="ALL" onTf={() => {}} chip={() => ({})} />);
-    expect(text()).toContain('analysts\' earnings +10.0%/yr → Nov 2027'); // the default view: a year ahead
+    expect(text()).toContain('(analysts\' 2027) → Nov 2027'); // the default view: a year ahead
     const scope = screen.getByRole('button', { name: 'Look ahead to 2030' });
     expect(scope.getAttribute('aria-pressed')).toBe('false');
     fireEvent.click(scope);
-    await waitFor(() => expect(text()).toContain('+10.0% a year, then +12.2% (10-yr pace)'));
+    await waitFor(() => expect(text()).toContain('if +10.0% (analysts\' 2027), then +12.2%/yr (10-yr pace)'));
     const pace = 2 ** (365.25 / (n - 1)) - 1, days = Math.round((Date.UTC(2030, 11, 31) - Date.UTC(2026, 10, 20)) / 864e5);
     await waitFor(() => expect(text()).toContain(`18x $${Math.round(40 * 1.1 * (1 + pace) ** ((days - 365) / 365) * 18).toLocaleString('en-US')}`), { timeout: 3000 });
     fireEvent.click(scope);
-    await waitFor(() => expect(text()).toContain('→ Nov 2027'));
+    await waitFor(() => expect(text()).toContain('→ Nov 2027'), { timeout: 3000 });
 });
 
 test('under 5 years of forward earnings on file: no 🔭', () => {

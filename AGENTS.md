@@ -423,6 +423,12 @@ behave differently, it gets a v2-only prop (`race` on FactorRow, `asCards` on `p
     saved). After the analysts' 12 months the rungs grow at forward earnings' own pace over the last 10 years
     (`eps` then vs now, 12.3%/yr on 22 Nov; needs 5+ years on file, else no chip), drawn fainter; the legend
     names both rates. A rule of thumb, not a forecast: say so if he asks what it means.
+    **Red team 22 Nov 2026** (10 findings, all fixed): `g` travels with `gy`, its calendar year, and the legend
+    names it ("if earnings +16.4% (analysts' 2027)"); the view takes the newest `g` of the furthest year in the
+    last 45 days (the blog-read backup names only this year: +33% beside the PDF's +16%, never mix them). `CY_RE`
+    reads FactSet's real wordings (decline printed "-12.6%", no comma after the year): test new wordings against a
+    real PDF, never a made-up sentence. `/api/freshness` fwd-pe goes red 6 h after a report is read without `g`.
+    The lit band is always one P/E wide (floor of SPY's P/E), also where the rungs step by 2.
 - **Young Lead combo** (1 Nov 2026, his "add it as young"): `pf` Fwd selloff + rates = `pt` with FactSet's forward
   P/E, a leg LeadCombos builds itself (`loadFwd` rows → `fwdDaily` with SPY; no /history file). 7 for 7 up 6M later
   since 2011, but chance-level (p ≈ 0.2), so `young`: a tag on the card, its proof, the top line only while it fires,

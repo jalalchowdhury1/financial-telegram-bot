@@ -124,12 +124,14 @@ export function historyItem(payload, now = Date.now()) {
 // FactSet's forward P/E report (/api/fwd-pe) lands Fridays ~1:30 pm ET and skips up to 3 weeks around
 // holidays and in late August. A report found but not read for 6 h = the parser broke; nothing new for
 // 30 days = the url moved or the route is down. No answer at all = the item is missing (fleet: red).
+// The newest report read without its growth number (g, the Bands view's projection) counts as not read: FactSet
+// reworded the "For CY 20XX, analysts are projecting…" sentence and lib/fwdPe.js CY_RE needs the new wording.
 export const FWD_PE_GRACE_H = 6;
 export const FWD_PE_MAX_AGE_H = 30 * 24;
 export function fwdPeItem(payload, now = Date.now()) {
     if (!payload) return null;
     const age = (date) => (isDate(date) ? round1((now - etWallToMs(date, 13 * 60 + 30)) / H) : null);
-    return { name: 'fwd-pe', inputAgeH: age(payload.seen), servedAgeH: age(payload.latest?.date), graceH: FWD_PE_GRACE_H, maxAgeH: FWD_PE_MAX_AGE_H };
+    return { name: 'fwd-pe', inputAgeH: age(payload.seen), servedAgeH: payload.latest?.g == null ? null : age(payload.latest.date), graceH: FWD_PE_GRACE_H, maxAgeH: FWD_PE_MAX_AGE_H };
 }
 
 export function isRed(item) {

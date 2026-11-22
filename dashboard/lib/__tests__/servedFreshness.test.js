@@ -251,7 +251,7 @@ describe('polymarket item', () => {
 
 // Writer shape: app/api/fwd-pe/route.js body (rows/latest/seen from lib/fwdPe.js resolveFwdPe).
 describe('fwd-pe item (FactSet forward P/E)', () => {
-    const body = (latest, seen) => ({ rows: [], latest: { date: latest, pe: 18.7, a5: 19.8, a10: 19.1 }, seen, checkedAt: '2026-10-30T19:00:00.000Z', _meta: { bakedTo: '2026-10-23', messages: [] } });
+    const body = (latest, seen) => ({ rows: [], latest: { date: latest, pe: 18.7, a5: 19.8, a10: 19.1, g: 16.4, gy: 2027 }, seen, checkedAt: '2026-10-30T19:00:00.000Z', _meta: { bakedTo: '2026-10-23', messages: [] } });
     test('the newest report served = fresh, through a skipped holiday week', () => {
         const it = fwdPeItem(body('2026-10-30', '2026-10-30'), t('2026-11-12T15:00:00Z'));
         expect(it).toMatchObject({ name: 'fwd-pe', graceH: 6, maxAgeH: 720 });
@@ -261,6 +261,12 @@ describe('fwd-pe item (FactSet forward P/E)', () => {
     test('a newer report it could not read = red after 6 h', () => {
         expect(isRed(fwdPeItem(body('2026-10-30', '2026-11-06'), t('2026-11-06T22:00:00Z')))).toBe(false);
         expect(isRed(fwdPeItem(body('2026-10-30', '2026-11-06'), t('2026-11-07T01:00:00Z')))).toBe(true);
+    });
+    test('the newest report read without its growth number (FactSet reworded the sentence) = red after 6 h', () => {
+        const noG = body('2026-11-06', '2026-11-06');
+        delete noG.latest.g;
+        expect(isRed(fwdPeItem(noG, t('2026-11-06T22:00:00Z')))).toBe(false);
+        expect(isRed(fwdPeItem(noG, t('2026-11-07T01:00:00Z')))).toBe(true);
     });
     test('nothing new for 30 days = red; no answer = item missing (fleet expect_items: red)', () => {
         expect(isRed(fwdPeItem(body('2026-10-30', '2026-10-30'), t('2026-12-01T00:00:00Z')))).toBe(true);

@@ -25,14 +25,16 @@ const inBand = (v, lo, hi) => (Number.isFinite(v) && v >= lo && v <= hi ? v : nu
 const WHOLE = /for the index as a whole is (.{0,240}?\d\.\d)\./i;
 // "For CY 2027, analysts are projecting earnings growth of 16.4% and revenue growth of 10.0%" (also "predicting
 // (year-over-year) earnings growth of", "an earnings decline of")
-const CY_RE = /For CY (20\d\d), analysts are \w+(?: for)? (?:\(year-over-year\) )?(?:an )?earnings (growth|decline) of (\d{1,2}\.\d)%/gi;
+// real wording varies: "For CY 2026 analysts are…" (no comma, Jan 2026), "an earnings decline of -12.6%" (Apr 2020)
+const CY_RE = /For CY (20\d\d),? analysts are \w+(?: for)? (?:\(year-over-year\) )?(?:an )?earnings (growth|decline) of -?(\d{1,2}\.\d)%/gi;
 
 /**
  * `{pe, a5, a10, g}` from a report's text, or null when it has no forward P/E. The averages come from the
  * first statement of the ratio that names them (page 1 since 2016; the valuation page before that), else
  * the sector page's index-as-a-whole sentence. 2011–2012 and most of 2013 print no 5-year average.
  * g = the earnings growth (%) analysts expect for the furthest calendar year the report names (the Bands view's
- * projection), left out when it names none.
+ * projection) and gy = that year, both left out when it names none. The PDF names next year from the autumn; the
+ * blog post often names only this year, so the same week can give two different g: always read g with its gy.
  */
 export function parseFactSet(text) {
     const flat = typeof text === 'string' ? text.replace(/\s+/g, ' ') : '';
@@ -52,7 +54,7 @@ export function parseFactSet(text) {
     for (const m of flat.matchAll(CY_RE)) {
         if (Number(m[1]) > year) { year = Number(m[1]); g = Number(m[3]) * (m[2].toLowerCase() === 'decline' ? -1 : 1); }
     }
-    return pe == null ? null : { pe, a5, a10, ...(g != null && { g }) };
+    return pe == null ? null : { pe, a5, a10, ...(g != null && { g, gy: year }) };
 }
 
 /** The report PDF for a date (YYYY-MM-DD → …EarningsInsight_MMDDYY.pdf; some weeks carry an 'A': …MMDDYYA.pdf). */
@@ -84,7 +86,7 @@ export function decodeFwd(body) {
         const pe = body.v[i];
         if (!Number.isInteger(d) || !Number.isFinite(pe)) return;
         const n = (a) => (Number.isFinite(a?.[i]) ? a[i] : null);
-        out.push({ date: new Date(t0 + d * DAY).toISOString().slice(0, 10), pe, a5: n(body.a5), a10: n(body.a10), ...(n(body.g) != null && { g: n(body.g) }) });
+        out.push({ date: new Date(t0 + d * DAY).toISOString().slice(0, 10), pe, a5: n(body.a5), a10: n(body.a10), ...(n(body.g) != null && { g: n(body.g), ...(n(body.gy) != null && { gy: n(body.gy) }) }) });
     });
     return out.length ? out : null;
 }
@@ -96,7 +98,7 @@ export function encodeFwd(rows, meta = {}) {
         ...meta, from, to: rows[rows.length - 1].date,
         t: rows.map((r) => Math.round((ms(r.date) - t0) / DAY)),
         v: rows.map((r) => r.pe), a5: rows.map((r) => r.a5 ?? null), a10: rows.map((r) => r.a10 ?? null),
-        ...(rows.some((r) => r.g != null) && { g: rows.map((r) => r.g ?? null) }),
+        ...(rows.some((r) => r.g != null) && { g: rows.map((r) => r.g ?? null), gy: rows.map((r) => (r.g != null ? r.gy ?? null : null)) }),
     };
 }
 
