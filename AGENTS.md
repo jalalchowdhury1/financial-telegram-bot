@@ -201,7 +201,13 @@ date, target, band, gist id: Mac only, never in this public repo), rolls each to
 night shift's replay curve (`composer-auto-research/nightshift/state/curve-<sid>.json`, read-only, no
 broker or Composer call) and publishes PERCENTAGES ONLY to a secret gist → `/api/split` →
 the tile. It is an estimate: after he moves money, `split.py set MAIN_USD SHARTINO_USD [DATE]`.
-Re-anchor after any edit of a live tree too. Freshness item `split` (grace 18 h). Its input is the
+Re-anchor after any edit of a live tree too.
+**Another ballast algo (22 Nov 2026, his swap of Shartino for Opposite 3):** the anchor's `shartino` block may
+carry `name` (the tile's label, published as `other`), `curve` (a Mac-only file) and `start`; then every run first
+replays that algo on the night shift's own engine and prices (`refresh`: one read-only GET of its tree) into that
+file, because the night shift measures Main and Shartino only. Anchor key `topup` `{next, every}` = his top-up
+reminder: on that day, from 09:00, one Now-page card + doorbell with the share to move (silent under 1 point off),
+then `next` moves on by `every` days. Freshness item `split` (grace 18 h). Its input is the
 newest close that is already DUE, not the newest close: counted from the newest one, each 16:00 reset the
 clock and a split days behind read fine all evening and night (red team 14 Nov; `/api/rubber-band`'s item
 still has that gap). The tile judges the same rule itself (`splitStale`): "Old · <day>", and "Totals Nd old ·

@@ -384,6 +384,9 @@ describe('the top line', () => {
         it('too little Main: the move runs the other way', async () => {
             expect((await show({ ...snap, main: 58 })).textContent).toContain('Move 29% of Shartino → Main'); // 12 of 42
         });
+        it('names the ballast seat from the data (22 Nov: he swaps Shartino for Opposite 3)', async () => {
+            expect((await show({ ...snap, main: 82, other: 'Opposite 3' })).textContent).toMatch(/Main \/ Opposite 3.*Move 15% of Main → Opposite 3/);
+        });
         it('inside the band it stays off the top line: Nothing firing', async () => {
             await show(snap);
             await waitFor(() => expect(screen.getByText('Nothing firing')).toBeInTheDocument());

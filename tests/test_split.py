@@ -79,3 +79,14 @@ def test_history_is_born_with_the_months_before_the_anchor_then_gains_a_day_per_
     moved = {**cfg("2026-11-16"), "main": {"sid": "M", "usd": 600.0}, "shartino": {"sid": "S", "usd": 400.0}}   # he moved money: the old days stay, the new day steps
     three = split.with_history(split.snapshot(moved), moved)
     assert [list(x) for x in three["history"][-2:]] == [["2026-11-13", 70.0], ["2026-11-16", 60.0]]
+
+
+def test_ballast_swap_and_topup(curves, tmp_path):
+    """22 Nov: the ballast seat can be another algo with its own curve file and name; the top-up card is due on its day."""
+    curves("M", {DAY: 10.0, DAY + 3: 12.0}); curves("S", {DAY: 4.0, DAY + 3: 4.2}); own = tmp_path / "own.json"; own.write_text(json.dumps({str(DAY): 4.0, str(DAY + 3): 4.2}))
+    c = {**cfg(), "shartino": {"sid": "X", "usd": 300.0, "name": "Opposite 3", "curve": str(own), "start": "2019-11-26"}, "topup": {"next": "2027-02-22", "every": 91}}
+    s = split.snapshot(c)
+    assert s["other"] == "Opposite 3" and s["main"] == round(100 * 840 / 1155, 2) and split.snapshot(cfg())["other"] == "Shartino"
+    assert split.topup_due(s, c, "2027-02-21") is None and split.topup_due(s, cfg(), "2027-02-22") is None
+    assert split.topup_due(s, c, "2027-02-22") == "<b>⚖️ Top-up day · Main 73 / Opposite 3 27</b>\nMove 4% of Main → Opposite 3 to be back at 70 / 30."
+    assert split.topup_due({**s, "main": 70.4}, c, "2027-02-22") == ""
