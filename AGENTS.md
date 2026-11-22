@@ -429,6 +429,10 @@ behave differently, it gets a v2-only prop (`race` on FactorRow, `asCards` on `p
     reads FactSet's real wordings (decline printed "-12.6%", no comma after the year): test new wordings against a
     real PDF, never a made-up sentence. `/api/freshness` fwd-pe goes red 6 h after a report is read without `g`.
     The lit band is always one P/E wide (floor of SPY's P/E), also where the rungs step by 2.
+    **Write-in year** (22 Nov 2026, his "if I want 2035, I can write that in"): the chip is 🔭 + a 4-digit box. It
+    opens on the next year ending in 0 or 5 that is 2+ years out (2030 now, 2035 from 2029); a whole year typed in
+    runs the rungs to the end of it (pulled into this year +2 … +30; never saved). The box is 16px scaled down so
+    iOS does not zoom the page.
 - **Young Lead combo** (1 Nov 2026, his "add it as young"): `pf` Fwd selloff + rates = `pt` with FactSet's forward
   P/E, a leg LeadCombos builds itself (`loadFwd` rows → `fwdDaily` with SPY; no /history file). 7 for 7 up 6M later
   since 2011, but chance-level (p ≈ 0.2), so `young`: a tag on the card, its proof, the top line only while it fires,

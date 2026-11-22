@@ -67,6 +67,19 @@ test('🔭 runs the rungs out to the end of 2030: the analysts\' year, then forw
     await waitFor(() => expect(text()).toContain(`18x $${Math.round(40 * 1.1 * (1 + pace) ** ((days - 365) / 365) * 18).toLocaleString('en-US')}`), { timeout: 3000 });
     fireEvent.click(scope);
     await waitFor(() => expect(text()).toContain('→ Nov 2027'), { timeout: 3000 });
+    // he writes his own year: the rungs run to the end of it; a year out of range is pulled to the nearest allowed
+    const box = screen.getByRole('textbox', { name: 'Look ahead to year' });
+    expect(box.value).toBe('2030'); // the next year ending in 0 or 5
+    fireEvent.change(box, { target: { value: '203' } });
+    expect(text()).toContain('→ Nov 2027'); // nothing moves until the year is whole
+    fireEvent.change(box, { target: { value: '2035' } });
+    const to2035 = Math.round((Date.UTC(2035, 11, 31) - Date.UTC(2026, 10, 20)) / 864e5);
+    await waitFor(() => expect(text()).toContain(`18x $${Math.round(40 * 1.1 * (1 + pace) ** ((to2035 - 365) / 365) * 18).toLocaleString('en-US')}`), { timeout: 3000 });
+    expect(screen.getByRole('button', { name: 'Look ahead to 2035' }).getAttribute('aria-pressed')).toBe('true');
+    fireEvent.change(box, { target: { value: '2099' } });
+    expect(box.value).toBe('2056');
+    fireEvent.change(box, { target: { value: '2020' } });
+    expect(box.value).toBe('2028');
 });
 
 test('under 5 years of forward earnings on file: no 🔭', () => {

@@ -32,6 +32,8 @@ const BLUE = '#38bdf8', TEAL = '#2dd4bf', AMBER = '#fbbf24';
 export default function ValuationBands({ daily, fwd, tf, onTf, chip }) {
     const [hover, setHover] = useState(null);
     const [far, setFar] = useState(false); // 🔭 on
+    const [typed, setTyped] = useState(null); // the year he wrote in the 🔭 chip (never saved)
+    const [draft, setDraft] = useState(null); // what is in the box while he types
     const [glide, setGlide] = useState(null); // days ahead on screen while the chart moves between the two views
     const svgRef = useRef(null);
     const frame = useRef(0);
@@ -68,8 +70,11 @@ export default function ValuationBands({ daily, fwd, tf, onTf, chip }) {
     // past the analysts' year: forward earnings' own yearly pace over the last 10 years (5+ on file, else no 🔭)
     const old = daily.find((p) => p.date >= back(last.date, 3653)), oldYears = (ms(last.date) - ms(old.date)) / DAY / 365.25;
     const pace = oldYears >= 5 && old.eps > 0 ? (last.eps / old.eps) ** (1 / oldYears) - 1 : null;
-    const farYear = Number(last.date.slice(0, 4)) + 4;
-    const farDays = near && pace != null ? Math.round((ms(`${farYear}-12-31`) - ms(last.date)) / DAY) : 0;
+    // 🔭 opens on the next year ending in 0 or 5 (2+ years out); he can write any year up to 30 ahead in the chip
+    const thisYear = Number(last.date.slice(0, 4)), minYear = thisYear + 2, maxYear = thisYear + 30;
+    const farYear = typed ?? Math.ceil(minYear / 5) * 5;
+    const daysTo = (y) => Math.round((ms(`${y}-12-31`) - ms(last.date)) / DAY);
+    const farDays = near && pace != null ? daysTo(farYear) : 0;
     const ahead = glide ?? (far && farDays ? farDays : near);
     const epsIn = (days) => last.eps * (1 + g) ** (Math.min(days, 365) / 365) * (1 + (pace ?? 0)) ** (Math.max(0, days - 365) / 365);
     const future = [];
@@ -78,9 +83,10 @@ export default function ValuationBands({ daily, fwd, tf, onTf, chip }) {
         future.push({ date: back(last.date, -days), eps: epsIn(days), days });
     }
     const year1 = future.filter((p) => p.days <= 365), later = future.filter((p) => p.days >= 365 || p === year1[year1.length - 1]);
-    const look = () => {
-        const from = ahead, to = far ? near : farDays, t0 = Date.now();
-        setFar(!far); setHover(null);
+    const look = (on = !far, to = on ? farDays : near) => {
+        const from = ahead, t0 = Date.now();
+        if (typeof window !== 'undefined') window.cancelAnimationFrame?.(frame.current);
+        setFar(on); setHover(null);
         if (typeof window === 'undefined' || !window.requestAnimationFrame || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
         const tick = () => {
             const k = Math.min(1, (Date.now() - t0) / 700), e = k < 0.5 ? 2 * k * k : 1 - (2 - 2 * k) ** 2 / 2;
@@ -180,8 +186,24 @@ export default function ValuationBands({ daily, fwd, tf, onTf, chip }) {
                     Between {lo}x and {lo + 1}x{last.a5 != null ? ` · 5-yr avg ${last.a5.toFixed(1)}x = ${usd(last.eps * last.a5)}` : ''}
                 </span>
                 {farDays > 0 && (
-                    <button type="button" onClick={look} aria-pressed={far} aria-label={`Look ahead to ${farYear}`} title={far ? 'Back to the year ahead' : `Run the bands out to the end of ${farYear}`}
-                        style={{ ...chip(far), marginLeft: 'auto', flexShrink: 0 }}>🔭 {farYear}</button>
+                    <span style={{ ...chip(far), marginLeft: 'auto', flexShrink: 0, display: 'inline-flex', alignItems: 'center', padding: 0 }}>
+                        <button type="button" onClick={() => look()} aria-pressed={far} aria-label={`Look ahead to ${farYear}`} title={far ? 'Back to the year ahead' : `Run the bands out to the end of ${farYear}`}
+                            style={{ all: 'unset', cursor: 'pointer', padding: '4px 0 4px 8px' }}>🔭</button>
+                        {/* 16px so iOS does not zoom the page on focus, drawn at the chip's size */}
+                        <input type="text" inputMode="numeric" maxLength={4} aria-label="Look ahead to year" title={`Write any year from ${minYear} to ${maxYear}`}
+                            value={draft ?? farYear}
+                            onFocus={(e) => e.target.select()}
+                            onChange={(e) => {
+                                const v = e.target.value.replace(/\D/g, '');
+                                setDraft(v);
+                                if (v.length < 4) return;
+                                const y = Math.max(minYear, Math.min(maxYear, Number(v)));
+                                setTyped(y); setDraft(null); look(true, daysTo(y));
+                            }}
+                            onBlur={() => setDraft(null)}
+                            onKeyDown={(e) => e.key === 'Enter' && e.target.blur()}
+                            style={{ all: 'unset', font: 'inherit', fontSize: '16px', width: '4ch', textAlign: 'center', cursor: 'text', transform: 'scale(0.68)', margin: '-4px -3px -4px -4px', borderBottom: '1px dotted currentColor' }} />
+                    </span>
                 )}
             </div>
             <div className="mini-chart" style={{ height: '260px' }}>
