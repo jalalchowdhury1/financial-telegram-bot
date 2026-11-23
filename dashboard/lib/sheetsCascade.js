@@ -197,6 +197,9 @@ export async function resolveLiveFields({ faults, fetchText, fetchJson, fredApiK
     // tops that vs the prior close on ~1% of days) and a miss only flags it stale (audit B4).
     // A real spike day (5 Nov 2026: 16.61 → 25+, sheet right, row red) is told apart by
     // today's live CNBC range: a sheet value inside today's low–high was traded today.
+    // The range is checked with NYSE closed too: Cboe also computes VIX overnight (Global
+    // Trading Hours, evenings and pre-dawn), so a weekend after a spike leaves a right sheet
+    // far off the last close (23 Nov 2026 05:30 ET: sheet 30.17, Friday close 35.89, row red).
     const sv = fields.vixCurrent;
     if (sv && (sv.tier === 'main' || sv.tier === 'alt') && !faults?.has?.('sheets_cboe')) {
         try {
@@ -205,13 +208,11 @@ export async function resolveLiveFields({ faults, fetchText, fetchJson, fredApiK
             const off = Math.abs(parseFloat(sv.value) / last.value - 1);
             if (off > (st.current ? 0.15 : 0.25)) {
                 const msg = `sheet VIX ${sv.value} is ${Math.round(off * 100)}% off CBOE close ${last.value.toFixed(2)} (${last.date})`;
-                if (st.current) { fields.vixCurrent = null; messages.push(`${msg}: serving CBOE`); }
-                else {
-                    const q = await cnbc(['.VIX'], { revalidate: 60, timeout: 4000, tries: 1 }).then((m) => m['.VIX']).catch(() => null);
-                    const v = parseFloat(sv.value);
-                    if (q && q.asOf > last.date && v >= q.low && v <= q.high) messages.push(`${msg}, but inside today's live range ${q.low}–${q.high} (CNBC ${q.lastTime}): sheet stands`);
-                    else { fields.vixCurrent = { ...sv, source: `${sv.source} (${msg})`, live: false, stale: true }; messages.push(`${msg}: flagged stale`); }
-                }
+                const q = await cnbc(['.VIX'], { revalidate: 60, timeout: 4000, tries: 1 }).then((m) => m['.VIX']).catch(() => null);
+                const v = parseFloat(sv.value);
+                if (q && q.asOf > last.date && v >= q.low && v <= q.high) messages.push(`${msg}, but inside today's live range ${q.low}–${q.high} (CNBC ${q.lastTime}): sheet stands`);
+                else if (st.current) { fields.vixCurrent = null; messages.push(`${msg}: serving CBOE`); }
+                else { fields.vixCurrent = { ...sv, source: `${sv.source} (${msg})`, live: false, stale: true }; messages.push(`${msg}: flagged stale`); }
             }
         } catch { /* no CBOE reference: the sheet value stands, as before */ }
     }

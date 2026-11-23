@@ -1010,7 +1010,8 @@ Each rule has a tripwire test named in its commit (`audit A1…D11`).
   live-over-cache merge too, and the tile wears 🕐); a cached page that does not parse gets one uncached refetch.
 - **Dateless sources** (sheet cell, scraped page) are cross-checked against a dated one (sheet VIX vs the CBOE close:
   15% market closed, 25% in session; a 25% in-session miss still stands live when the value sits inside today's
-  CNBC .VIX low–high, a real spike day, 5 Nov 2026) or their own page date before they count as live. In session the VIX tag says
+  CNBC .VIX low–high, a real spike day, 5 Nov 2026; that range check runs with NYSE closed too, since Cboe
+  computes VIX overnight: 23 Nov 2026 a right Monday-dawn sheet was thrown out after a Friday spike) or their own page date before they count as live. In session the VIX tag says
   "prior close <date>" and is `live:false`. Sheet LKG `staleDays` = real age; over 30 days → none. A last-good copy is
   never re-saved to /tmp (that stamps savedAt = now on old data).
 - **Inputs that are proxies or `stale:true`** count as missing in Jev pills; a missing input is "unknown" in the

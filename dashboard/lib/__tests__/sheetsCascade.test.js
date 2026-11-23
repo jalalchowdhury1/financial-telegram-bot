@@ -114,4 +114,29 @@ describe('sheet VIX cross-checked against the CBOE close (audit B4)', () => {
             expect(r.fields.vixCurrent).toMatchObject({ value: '27.00', stale: true, live: false });
         }
     });
+
+    // 23 Nov 2026 replay: Friday close 35.89 (a spike), Monday 05:30 ET Cboe's overnight VIX
+    // traded 29.88–31.48 and the sheet said 30.17. NYSE closed → the 15% rule threw the right
+    // value away and the row went red all weekend-into-Monday.
+    test('market closed, Cboe overnight session: 16% off Friday but inside today\'s range → sheet stays live', async () => {
+        const cboe23 = 'DATE,OPEN,HIGH,LOW,CLOSE\n11/19/2026,22.06,29.13,21.84,28.44\n11/20/2026,28.63,40.03,26.94,35.89\n';
+        const r = await resolveLiveFields({
+            faults: new Set(), now: new Date('2026-11-23T10:30:00Z'),
+            cnbc: async () => ({ '.VIX': { price: 29.89, low: 29.88, high: 31.48, asOf: '2026-11-23', lastTime: '2026-11-23T05:48:01.000-0500' } }),
+            fetchJson: async () => { throw new Error('x'); },
+            fetchText: async (u) => {
+                if (u === CBOE_URLS.vixCurrent) return cboe23;
+                if (u.startsWith(GOOGLE_SHEETS.VIX)) return 'VIX,VIX 3M\n30.17,30.94\n';
+                throw new Error('x');
+            },
+        });
+        expect(r.fields.vixCurrent).toMatchObject({ value: '30.17', tier: 'main', live: true });
+        expect(r.messages.join(' ')).toMatch(/16% off CBOE close 35\.89.*inside today's live range 29\.88–31\.48/);
+    });
+    test('market closed: a frozen sheet outside today\'s range, or a quote still on Friday → CBOE serves', async () => {
+        for (const cnbc of [quote(20.5, 28.1), quote(13, 15, '2026-10-30')]) {
+            const r = await run('14.84', '2026-11-01T21:00:00Z', cnbc);
+            expect(r.fields.vixCurrent).toMatchObject({ value: '20.78', tier: 'cboe' });
+        }
+    });
 });
