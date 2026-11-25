@@ -218,7 +218,8 @@ export function servedCopyItem(name, payload, now = Date.now()) {
     const newest = latestCloseMs(now);
     const inputAgeH = newest == null ? null : round1((now - newest) / H);
     let s = servedCopyOf(payload);
-    let why;
+    // The probe's own fetch failed (app/api/freshness servedSibling): name it, never a bare "(none)".
+    let why = typeof payload?.error === 'string' ? payload.error.slice(0, 240) : undefined;
     if (s && !s.copy && FLAGGED_IS_UNSERVED.has(name) && (payload._meta?.hasErrors || payload._meta?.stale)) {
         s = null;
         // Carry the route's own reason up to the fleet row (5 Nov 2026: a bare "(none)" hid a sheet VIX check).

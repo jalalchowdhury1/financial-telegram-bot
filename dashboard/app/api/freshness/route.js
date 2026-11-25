@@ -29,6 +29,20 @@ async function sibling(origin, path) {
 }
 
 /**
+ * A served route the probe could not read (25 Nov 2026: served:sheets red "(none)" while
+ * /api/sheets answered clean for everyone else; the fetch error was thrown away). One retry
+ * when a full TIMEOUT_MS still fits in maxDuration, else `{ error }` so the row's `why` names it.
+ */
+export async function servedSibling(get, path, started, now = () => Date.now()) {
+    let err;
+    for (let i = 0; i < 2; i++) {
+        if (i && now() - started + TIMEOUT_MS > maxDuration * 1000 - 2000) break;
+        try { return await get(path); } catch (e) { err = e; }
+    }
+    return { error: `probe fetch failed: ${String(err?.name === 'AbortError' ? `${path} no answer in ${TIMEOUT_MS / 1000} s` : err?.message || err).slice(0, 160)}` };
+}
+
+/**
  * Edge-cache the reply (≤ 1 h, lib/cdn.js `freshness`) only when every item would still
  * be green an hour from now with nothing changing; anything red or close to it is
  * re-measured by the very next probe. The 24/7 30-min fleet probe re-ran every market
@@ -48,9 +62,10 @@ export async function GET(request) {
         const origin = new URL(request.url).origin;
         // A market route that errors is graded (null → red), it does not 500 the whole probe.
         const soft = (p) => sibling(origin, p).catch(() => null);
+        const started = Date.now();
         const [rubberBand, history, fwdPe, polymarket, split, centred, ...served] = await Promise.all([
             sibling(origin, '/api/rubber-band'), sibling(origin, '/api/history'), soft('/api/fwd-pe'), soft('/api/polymarket'), soft('/api/split'), soft('/api/centred'),
-            ...SERVED_ROUTES.map((r) => soft(`/api/${r}`)),
+            ...SERVED_ROUTES.map((r) => servedSibling((p) => sibling(origin, p), `/api/${r}`, started)),
         ]);
         const servedMap = Object.fromEntries(SERVED_ROUTES.map((r, i) => [r, served[i]]));
         const body = buildFreshness({ rubberBand, history, served: servedMap, fwdPe, polymarket, split, centred });

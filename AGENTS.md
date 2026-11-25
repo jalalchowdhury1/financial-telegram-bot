@@ -1443,7 +1443,8 @@ ages in hours — `{"app","v":1,"items":[{name,inputAgeH,servedAgeH,graceH,maxAg
 fetches the SAME public routes the page reads (edge cache + last-good included), so it
 measures what is SERVED, not whether a writer ran. The fleet monitor (github-notion-sync
 `fleet_health.py`) judges red: `inputAgeH > graceH` and served older than input + 0.25 h, or
-`servedAgeH > maxAgeH`. Sibling fetch failure → 500 `{"error"}`.
+`servedAgeH > maxAgeH`. Sibling fetch failure → 500 `{"error"}` (rubber-band/history); a served:* route the probe
+  can't read is retried once (`servedSibling`) then graded null WITH `why: "probe fetch failed: …"` — never swallow that error again (25 Nov: bare "(none)").
 - `rubber-band` — Mac launchd (weekdays 18:30 ET) → gist → `/api/rubber-band`. input = newest
   NYSE close (`lib/marketClock.js` calendar, early closes); served = close of the snapshot's
   `asOf`; `graceH` 8 (early close waits 5.5 h for the run, + the 2 h edge cache).
