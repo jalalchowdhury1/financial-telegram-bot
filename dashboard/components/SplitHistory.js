@@ -37,7 +37,7 @@ export default function SplitHistory({ split, onClose }) {
             <div className="v2-aa" ref={sheetRef} data-sheet-scroll="">
                 <div className="v2-aa-head">
                     <div className="v2-aa-title">
-                        <h2 id="v2-sh-title">Main / {split.other || 'Shartino'} split</h2>
+                        <h2 id="v2-sh-title">Main / {split.other || 'Opposite 3'} split</h2>
                         <p>Main {pc(last.value)} now · target {T}%</p>
                     </div>
                     <button type="button" className="v2-aa-close sheet-x" onClick={onClose} aria-label="Close">×</button>

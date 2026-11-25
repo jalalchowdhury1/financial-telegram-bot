@@ -81,7 +81,7 @@ def snapshot(cfg):
     shar, d2 = rolled(cfg["shartino"]["usd"], cfg["shartino"]["sid"], cfg["date"], own_curve(cfg))
     if d1 != d2: raise SystemExit(f"curves end on different days: {d1} / {d2}")
     return {"asOf": d1, "main": round(100 * main / (main + shar), 2), "target": cfg["target"],
-            "band": cfg["band"], "anchored": cfg["date"], "other": cfg["shartino"].get("name", "Shartino"),
+            "band": cfg["band"], "anchored": cfg["date"], "other": cfg["shartino"].get("name", "Opposite 3"),
             "generatedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")}
 
 

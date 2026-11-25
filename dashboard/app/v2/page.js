@@ -929,8 +929,8 @@ function Signals({ sheets, spy, loading, old, onState }) {
     const splitOut = !!split && Math.abs(splitOff) >= split.band;
     // Out of band: how much of the heavy side to move to be back on target (a share, never dollars).
     const splitMove = !splitOut ? null : splitOff > 0
-        ? `Move ${Math.round(((split.main - split.target) / split.main) * 100)}% of Main → ${split.other || 'Shartino'}`
-        : `Move ${Math.round(((split.target - split.main) / (100 - split.main)) * 100)}% of ${split.other || 'Shartino'} → Main`;
+        ? `Move ${Math.round(((split.main - split.target) / split.main) * 100)}% of Main → ${split.other || 'Opposite 3'}`
+        : `Move ${Math.round(((split.target - split.main) / (100 - split.main)) * 100)}% of ${split.other || 'Opposite 3'} → Main`;
     const [centred, setCentred] = useState(undefined); // same as the split: undefined = loading, null = unread
     useEffect(() => { getJson('/api/centred').then((j) => setCentred((had) => (validateCentred(j) ? j : had ?? null))); }, [sheets]);
     const centredOld = centred && centredStale(centred);
@@ -1004,7 +1004,7 @@ function Signals({ sheets, spy, loading, old, onState }) {
 
     const tiles = [
         {
-            key: 'split', label: `Main / ${split?.other || 'Shartino'}`, tip: 'Estimate: your last totals, rolled forward each morning with the night shift\'s replay of each algo. Tap for its history.',
+            key: 'split', label: `Main / ${split?.other || 'Opposite 3'}`, tip: 'Estimate: your last totals, rolled forward each morning with the night shift\'s replay of each algo. Tap for its history.',
             alert: splitOut,
             open: split?.history?.length > 1 ? () => setStudy('split') : null,
             value: split ? `${splitM} / ${100 - splitM}` : split === undefined ? '…' : 'N/A',

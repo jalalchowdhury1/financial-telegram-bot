@@ -371,18 +371,18 @@ describe('the top line', () => {
         };
         it('shows the split, the target and the day, quiet inside the band', async () => {
             const t = await show(snap);
-            expect(t.textContent).toMatch(/Main \/ Shartino71 \/ 29Target 70 \/ 30 · Jan 2/);
+            expect(t.textContent).toMatch(/Main \/ Opposite 371 \/ 29Target 70 \/ 30 · Jan 2/);
             expect(t.className).not.toContain('is-alert');
         });
         it('alerts at 10+ points off target, says how much to move, and leads the top line', async () => {
             const t = await show({ ...snap, main: 82 });
             expect(t.className).toContain('is-alert');
-            expect(t.textContent).toContain('Move 15% of Main → Shartino'); // 12 of 82
+            expect(t.textContent).toContain('Move 15% of Main → Opposite 3'); // 12 of 82
             await waitFor(() => expect(document.querySelector('.v2-today button')?.textContent).toBe('Split 82 / 18'));
             expect(document.querySelector('.v2-today button').className).toContain('is-warn');
         });
         it('too little Main: the move runs the other way', async () => {
-            expect((await show({ ...snap, main: 58 })).textContent).toContain('Move 29% of Shartino → Main'); // 12 of 42
+            expect((await show({ ...snap, main: 58 })).textContent).toContain('Move 29% of Opposite 3 → Main'); // 12 of 42
         });
         it('names the ballast seat from the data (22 Nov: he swaps Shartino for Opposite 3)', async () => {
             expect((await show({ ...snap, main: 82, other: 'Opposite 3' })).textContent).toMatch(/Main \/ Opposite 3.*Move 15% of Main → Opposite 3/);
