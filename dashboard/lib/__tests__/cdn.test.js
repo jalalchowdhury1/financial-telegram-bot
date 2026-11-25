@@ -6,6 +6,7 @@
 import fs from 'fs';
 import { cacheHeaders, isDegraded, CDN_POLICY, DEGRADED_MAX_AGE, OFF_HOURS_MAX_AGE } from '../cdn';
 import { serve } from '../store';
+import { SERVED_COPY_GRACE_H } from '../servedFreshness';
 
 // serve('spy', …) writes a real /tmp last-good copy on this machine — remove it.
 afterAll(() => { try { fs.unlinkSync('/tmp/lg-spy.json'); } catch { /* not written */ } });
@@ -52,6 +53,20 @@ describe('cacheHeaders', () => {
                 expect(maxAge).toBeGreaterThan(300); // the next 5-min refresh is an edge HIT
             }
         }
+    });
+    it('an edge copy expires by the newest close + grace (pe replay, Tue 24 Nov 2026)', () => {
+        // Built 21:10 ET with multpl still on Monday (not yet "behind"); /api/freshness went red at 22:00 ET
+        // and the 3 h fred copy kept serving it until ~00:10. Grace ends 03:00Z: 2987 s left, no swr.
+        const built = Date.parse('2026-11-25T02:10:13Z');
+        expect(cacheHeaders('fred', { payload: {}, now: built })['vercel-cdn-cache-control']).toBe('max-age=2987, stale-while-revalidate=0');
+        expect(cacheHeaders('fwd-pe', { payload: {}, now: Date.parse('2026-11-25T01:30:00Z') })['vercel-cdn-cache-control'])
+            .toBe('max-age=5400, stale-while-revalidate=0');
+        // after the grace: the full policy again
+        expect(cacheHeaders('fred', { payload: {}, now: Date.parse('2026-11-25T03:00:01Z') })['vercel-cdn-cache-control'])
+            .toBe('max-age=7200, stale-while-revalidate=3600');
+    });
+    it('every policy stays under the served-copy grace (the close + grace cap looks only at the close already past)', () => {
+        for (const [maxAge, swr] of Object.values(CDN_POLICY)) expect(maxAge + swr).toBeLessThan(SERVED_COPY_GRACE_H * 3600);
     });
     it('isDegraded tolerates anything', () => {
         expect(isDegraded(null)).toBe(false);

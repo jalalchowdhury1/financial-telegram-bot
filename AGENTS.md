@@ -329,6 +329,8 @@ The repo is **public** — keys NEVER go in code; they live in **Vercel env vars
 - **Edge cache = one row in `lib/cdn.js`.** A route served through `serve(key, …)` is
   edge-cached only if `key` has a row in `CDN_POLICY`; no row → `no-store` as before. Only a
   healthy live answer gets the full policy; a degraded one gets 2 min (see "⚡ Loading speed" below).
+  Every edge copy expires by the newest close + `SERVED_COPY_GRACE_H` (24 Nov 2026: a fred copy built at
+  21:10 ET kept a behind multpl P/E red until midnight); keep every policy under 6 h or that cap stops being exact.
 - **CPU budget (24 Oct 2026):** the free Vercel team has 4 h Active CPU per rolling 30 days for ALL
   his sites (over = every site pauses) and this project was #1. Every polled route needs an edge
   row, price rows stretch to ≤ 2 h off-hours (never past the open), degraded answers sit 2 min,

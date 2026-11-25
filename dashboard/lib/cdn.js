@@ -31,6 +31,7 @@
  *   refresh button, scripts/health_check.py) always reaches the live route.
  */
 import { marketStatus, etParts, sessionOf } from './marketClock';
+import { latestCloseMs, SERVED_COPY_GRACE_H } from './servedFreshness';
 
 // [max-age, stale-while-revalidate] in seconds. Prices move → short; daily data → long.
 // Live rows: max-age just over the page's 5-min market-hours refresh (app/page.js,
@@ -100,7 +101,18 @@ export function cacheHeaders(key, { payload, testMode = false, degraded = false,
     const today = sessionOf(date);
     const settling = !!today && min >= today.close && min < today.close + CLOSE_SETTLE_MIN;
     const offHours = base + swr <= 600 && st.state !== 'open' && !settling;
-    const maxAge = offHours ? Math.max(base, Math.min(OFF_HOURS_MAX_AGE, Math.floor(st.ms / 1000) - swr)) : base;
-    headers['vercel-cdn-cache-control'] = `max-age=${maxAge}, stale-while-revalidate=${swr}`;
+    let maxAge = offHours ? Math.max(base, Math.min(OFF_HOURS_MAX_AGE, Math.floor(st.ms / 1000) - swr)) : base;
+    let swrAge = swr;
+    // An edge copy never outlives the newest close's grace (close + SERVED_COPY_GRACE_H): from then
+    // /api/freshness wants that close served and routes switch tiers (multpl behind → next tier), so a
+    // copy built a minute earlier sat red for up to 3 h (pe, 24 Nov 2026). Every policy is ≤ 3 h < the
+    // 6 h grace, so only the close already past matters.
+    const close = latestCloseMs(now);
+    const left = close == null ? Infinity : Math.floor((close + SERVED_COPY_GRACE_H * 3600e3 - now) / 1000);
+    if (left > 0 && left < maxAge + swrAge) {
+        maxAge = Math.max(1, Math.min(maxAge, left));
+        swrAge = Math.max(0, left - maxAge);
+    }
+    headers['vercel-cdn-cache-control'] = `max-age=${maxAge}, stale-while-revalidate=${swrAge}`;
     return headers;
 }
