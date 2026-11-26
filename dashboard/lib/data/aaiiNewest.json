@@ -1,12 +1,12 @@
 {
   "data": {
-    "bull": 33.3,
-    "neutral": 24.4,
-    "bear": 42.2,
-    "diff": "8.90%",
-    "as_of": "2026-11-18",
+    "bull": 37.1,
+    "neutral": 17.5,
+    "bear": 45.4,
+    "diff": "8.30%",
+    "as_of": "2026-11-25",
     "source": "aaii.com",
     "stale": false
   },
-  "savedAt": "2026-11-19T18:30:06.523Z"
+  "savedAt": "2026-11-26T18:30:04.603Z"
 }
