@@ -512,7 +512,7 @@ describe('the top line', () => {
     });
 
     describe('the Today card (synthetic feeds)', () => {
-        const ownFeed = { v: 1, made: new Date().toISOString(), asof: '2026-11-27', alarms: [
+        const ownFeed = { v: 1, made: new Date().toISOString(), asof: '2026-11-27', near: { gap: 11.1, side: 'hot' }, alarms: [
             { id: 'ballast1', name: 'Ballast slide', state: 'ok', note: '6 months −1%' }, { id: 'ballast2', name: 'Ballast in falls', state: 'ok', note: '0 of 2 strikes' },
             { id: 'ballast3', name: 'Book v old ballast', state: 'ok', note: '0 of 2 strikes' }, { id: 'dip', name: 'Dip engine', state: 'ok', note: 'last 40 dip days +165' }],
             race: { start: '2026-11-27', day: 1, rows: [{ id: 'r1', name: 'Faster dip', vs: 1.2, fall: -0.4 }, { id: 'r2', name: 'Guard off', vs: -0.3, fall: 0 },
@@ -532,7 +532,7 @@ describe('the top line', () => {
             const c = await show();
             await waitFor(() => expect(verdict()).toBe('Nothing to do'));
             expect(c.className).toContain('is-quiet');
-            expect([...c.querySelectorAll('.v2-tc-cell')].map((b) => b.textContent)).toEqual(['HoldsBIL · Cash', 'NearestVIX/3M 0.93 → 1', 'Split71 / 29', 'Alarms4 quiet', 'Raceday 1 · 2 of 4 ahead']);
+            expect([...c.querySelectorAll('.v2-tc-cell')].map((b) => b.textContent)).toEqual(['HoldsBIL · Cash', 'Nearest11.1 pts · hot side', 'Split71 / 29', 'Alarms4 quiet', 'Raceday 1 · 2 of 4 ahead']);
             expect([...c.querySelectorAll('.v2-tc-links a')].map((a) => [a.textContent, a.getAttribute('href'), a.getAttribute('target'), a.getAttribute('rel')])).toEqual([
                 ['NUTS ↗', 'https://nuts-sooty.vercel.app', '_blank', 'noopener noreferrer'], ['Radar ↗', 'https://nuts-radar.vercel.app', '_blank', 'noopener noreferrer'],
                 ['Night Shift ↗', 'https://nightshift-jalal.vercel.app', '_blank', 'noopener noreferrer'], ['Wayback ↗', 'https://wayback-backtester.vercel.app', '_blank', 'noopener noreferrer']]);
@@ -564,6 +564,18 @@ describe('the top line', () => {
             await show({ '/api/split': ok({ ...splitSnap, main: 82 }) }, { ...calm, FrontRunner: 'Select bottom 2 RSI assets from (SOXL, TECL, TQQQ, FNGU)' });
             await waitFor(() => expect(verdict()).toBe('Split 82 / 18Dip day')); // the · between is CSS
             expect(card().querySelector('.is-holds').textContent).toBe('HoldsDip buy');
+        });
+        it.each([
+            [{ gap: 0, side: 'dip' }, 'Nearest' + 'on · dip side', true], [null, 'NearestN/A', false],
+        ])('Main\'s nearest rule %j reads its own words, never the top line\'s signal', async (near, text, lit) => {
+            const c = await show({ '/api/own': ok({ ...ownFeed, near }) });
+            await waitFor(() => expect(verdict()).toBe('Nothing to do'));                   // near never adds a verdict item
+            expect(c.querySelector('.is-near').textContent).toBe(text);
+            expect(c.querySelector('.is-near').classList.contains('is-warn')).toBe(lit);
+            fireEvent.click(c.querySelector('.is-near'));
+            const d = await screen.findByRole('dialog');
+            expect(d.textContent).toContain("Main's closest rule, at the last close.");
+            expect(d.textContent).toContain('Live readings are on NUTS.');
         });
         it('the race sheet: each runner v Main in points, and one line that it is a watch', async () => {
             const c = await show();

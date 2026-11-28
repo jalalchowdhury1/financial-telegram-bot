@@ -26,16 +26,22 @@ function race(r) {
     return rows.every(Boolean) ? { start: r.start, day: r.day, rows } : null;
 }
 
+/** Main's nearest rule at the last close: points from its line (0 = on) and which side; anything else is null. */
+function near(n) {
+    if (!n || !Number.isFinite(n.gap) || n.gap < 0 || n.gap > 100 || !['dip', 'hot'].includes(n.side)) return null;
+    return { gap: Math.round(n.gap * 10) / 10, side: n.side };
+}
+
 /**
- * What /api/own relays, rebuilt from the allow-list (v, made, asof, alarms[id,name,state,note], race{start,day,rows[id,name,vs,fall]}),
- * or null when the feed is not one the card can trust. A race that fails its checks is dropped alone (null); a bad alarm fails the feed.
+ * What /api/own relays, rebuilt from the allow-list (v, made, asof, near{gap,side}, alarms[id,name,state,note], race{start,day,rows[id,name,vs,fall]}),
+ * or null when the feed is not one the card can trust. A race or near that fails its checks is dropped alone (null); a bad alarm fails the feed.
  */
 export function publicOwn(s, now = Date.now()) {
     if (!s || s.v !== 1 || typeof s.made !== 'string' || !STAMP.test(s.made) || !(Date.parse(s.made) <= now + AHEAD_MS)) return null;
     if (!isDate(s.asof) || !Array.isArray(s.alarms) || !s.alarms.length || s.alarms.length > 8) return null;
     const alarms = s.alarms.map(alarm);
     if (!alarms.every(Boolean)) return null;
-    return { v: 1, made: s.made, asof: s.asof, alarms, race: race(s.race) };
+    return { v: 1, made: s.made, asof: s.asof, near: near(s.near), alarms, race: race(s.race) };
 }
 
 export const validateOwn = (s, now = Date.now()) => publicOwn(s, now) !== null;

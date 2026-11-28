@@ -23,7 +23,7 @@ export async function GET(request) {
         return { ...snap, _meta: { source: 'gist', hasErrors: stale, stale, messages: stale ? [`own is as of ${snap.made}: the morning run may have missed`] : [] } };
     }, {
         isGood: (x) => validateOwn(x),
-        fallback: { v: 1, made: null, asof: null, alarms: [], race: null },
+        fallback: { v: 1, made: null, asof: null, near: null, alarms: [], race: null },
         faults,
     });
 }

@@ -3,8 +3,8 @@
  * Today: one slim card under the /v2 top line that answers "do I need to do anything today?". A verdict, five
  * one-line cells (each taps to a plain-words sheet) and four links out. It reports; it never advises.
  *
- * It reads what the page already knows (the Signals card's FrontRunner, split and Centred states, the top line's
- * items) plus one small relay, /api/own (the morning alarms + race). "Nothing to do" only when every source was read.
+ * It reads what the page already knows (the Signals card's FrontRunner, split and Centred states) plus one small
+ * relay, /api/own (the morning alarms, race and Main's nearest rule). "Nothing to do" only when every source was read.
  */
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -50,11 +50,8 @@ export function todayVerdict(sig, own) {
     return { quiet: !parts.length && !loading, parts };
 }
 
-/** The top line's "closest": the read, not-firing signal nearest its line. */
-export function nearest(items) {
-    const known = (items || []).filter((s) => s && !s.fire && s.gap);
-    return known.length ? known.reduce((a, b) => (b.share > a.share ? b : a)) : null;
-}
+/** Main's nearest rule as the cell says it: "11.1 pts · hot side", "on · dip side" at 0; null = not read. */
+export const nearText = (n) => (n ? `${n.gap === 0 ? 'on' : `${n.gap.toFixed(1)} pts`} · ${n.side} side` : null);
 
 function Sheet({ title, head, onClose, children }) {
     const sheetRef = useRef(null), backRef = useRef(null);
@@ -83,14 +80,14 @@ function Sheet({ title, head, onClose, children }) {
 
 const Say = ({ lines }) => lines.filter(Boolean).map((l) => <p key={l} className="v2-aa-foot">{l}</p>);
 
-export default function TodayCard({ items, sig, tick }) {
+export default function TodayCard({ sig, tick }) {
     const [raw, setRaw] = useState(undefined);
     useEffect(() => { getJson('/api/own').then((j) => setRaw((had) => publicOwn(j) || (had ?? null))); }, [tick]); // a failed refresh keeps what it had
     const own = ownRead(raw);
     const [open, setOpen] = useState(null);
     const close = () => setOpen(null);
     const v = todayVerdict(sig, own);
-    const s = sig || {}, near = nearest(items);
+    const s = sig || {}, near = nearText(own?.near);
     const tripped = own ? own.alarms.filter((a) => a.state === 'tripped').length : 0;
     const unreadN = own ? own.alarms.filter((a) => a.state === 'unread').length : 0;
     const ahead = own?.race ? own.race.rows.filter((r) => r.vs > 0).length : 0;
@@ -98,7 +95,7 @@ export default function TodayCard({ items, sig, tick }) {
 
     const cells = [
         { k: 'holds', label: 'Holds', value: s.fr ? (ticker(s.fr) ? `${ticker(s.fr)} · ${s.frMode}` : s.frMode) : wait(s.fr), tone: s.fr && s.frMode !== 'Cash' ? 'warn' : '' },
-        { k: 'near', label: 'Nearest', value: near ? near.gap : items ? 'N/A' : '…' },
+        { k: 'near', label: 'Nearest', value: near || (own === undefined ? '…' : 'N/A'), tone: own?.near?.gap === 0 ? 'warn' : '' },
         { k: 'split', label: 'Split', value: s.split ? `${s.split.main} / ${100 - s.split.main}` : wait(s.split), tone: s.split?.out ? 'warn' : '' },
         { k: 'alarms', label: 'Alarms', value: own ? (tripped ? `${tripped} tripped` : unreadN ? `${unreadN} unread` : `${own.alarms.length} quiet`) : own === undefined ? '…' : 'unread', tone: tripped ? 'warn' : '' },
         { k: 'race', label: 'Race', value: own?.race ? `day ${own.race.day} · ${ahead} of ${own.race.rows.length} ahead` : own === undefined ? '…' : 'N/A' },
@@ -135,8 +132,8 @@ export default function TodayCard({ items, sig, tick }) {
                 </Sheet>
             )}
             {open === 'near' && (
-                <Sheet title="Nearest rule" head={near ? near.gap : 'Not read today'} onClose={close}>
-                    <Say lines={['The quiet signal closest to its line.', 'Nothing fires until it crosses.', 'Same reading as the top line.']} />
+                <Sheet title="Nearest rule" head={near || 'Not read today'} onClose={close}>
+                    <Say lines={["Main's closest rule, at the last close.", 'Dip side: a buy-the-dip rule.', 'Hot side: a step-aside rule.', 'Live readings are on NUTS.']} />
                 </Sheet>
             )}
             {open === 'split' && (

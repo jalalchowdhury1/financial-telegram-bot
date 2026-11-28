@@ -8,7 +8,7 @@ import fs from 'fs';
 import { publicOwn, validateOwn } from '../own';
 import { ownItem, ownStale } from '../servedFreshness';
 import { saveLastGood } from '../store';
-import { todayVerdict, ownRead, nearest } from '../../components/TodayCard';
+import { todayVerdict, ownRead, nearText } from '../../components/TodayCard';
 import { GET } from '../../app/api/own/route';
 import fixture from './own.fixture.json';
 
@@ -22,7 +22,7 @@ describe('publicOwn: the allow-list', () => {
             race: { ...fixture.race, symphony: 'xyz', rows: fixture.race.rows.map((r) => ({ ...r, sid: 'abc', usd: 99 })) } };
         const out = publicOwn(junk, NOW);
         expect(out).toEqual(fixture);
-        expect(JSON.stringify(out)).not.toMatch(/sid|dollars|conditions|threshold|ticker|symphony|usd|AAA|ABCDEF/);
+        expect(JSON.stringify(out)).not.toMatch(/"sid"|dollars|conditions|threshold|ticker|symphony|usd|AAA|ABCDEF/);
     });
     it.each([
         ['v != 1', { ...fixture, v: 2 }],
@@ -42,6 +42,15 @@ describe('publicOwn: the allow-list', () => {
             expect(publicOwn({ ...fixture, alarms: [{ ...fixture.alarms[0], note }] }, NOW).alarms[0].note).toBe('');
         }
     });
+    it('near: gap 0..100 rounded to 1 decimal, side dip or hot; anything else (or missing) is null, the feed still reads', () => {
+        expect(publicOwn({ ...fixture, near: { gap: 11.14, side: 'hot', ticker: 'AAA', level: 30 } }, NOW).near).toEqual({ gap: 11.1, side: 'hot' });
+        const { near: _, ...without } = fixture;
+        for (const n of [undefined, null, { gap: -1, side: 'dip' }, { gap: 101, side: 'dip' }, { gap: '4', side: 'dip' }, { gap: NaN, side: 'dip' }, { gap: 4, side: 'DIP' }, { gap: 4 }]) {
+            const out = publicOwn(n === undefined ? without : { ...fixture, near: n }, NOW);
+            expect(out.near).toBeNull();
+            expect(out.alarms).toHaveLength(4);
+        }
+    });
     it('a broken race is dropped alone; the alarms still read', () => {
         for (const race of [null, { ...fixture.race, rows: [] }, { ...fixture.race, rows: [{ ...fixture.race.rows[0], vs: 'up' }] }, { ...fixture.race, day: -1 }]) {
             const out = publicOwn({ ...fixture, race }, NOW);
@@ -58,7 +67,7 @@ describe('30 h unread rule + freshness item', () => {
         expect(ownStale(fixture, NOW + 30 * 3600e3)).toBe(true);
     });
     it('nothing served (the route\'s fallback): no age, the cap stays, and it reads as unread', () => {
-        const none = { v: 1, made: null, asof: null, alarms: [], race: null };
+        const none = { v: 1, made: null, asof: null, near: null, alarms: [], race: null };
         expect(ownItem(none, NOW)).toMatchObject({ servedAgeH: null, maxAgeH: 30 });
         expect(ownStale(none, NOW)).toBe(true);
         expect(ownRead(none, NOW)).toBeNull();
@@ -93,9 +102,14 @@ describe('the Today verdict', () => {
         expect(todayVerdict(undefined, fixture)).toBeNull();
         expect(todayVerdict(calm, undefined)).toBeNull();
     });
-    it('nearest = the top line\'s closest: read, not firing, highest share', () => {
-        expect(nearest([null, { fire: 'X', share: 9, gap: 'a' }, { fire: null, share: 0.5, gap: 'b' }, { fire: false, share: 0.9, gap: 'c' }]).gap).toBe('c');
-        expect(nearest(null)).toBeNull();
+    it('the Nearest cell: points and side, "on" at 0, null when not read', () => {
+        expect(nearText({ gap: 11.1, side: 'hot' })).toBe('11.1 pts · hot side');
+        expect(nearText({ gap: 3, side: 'dip' })).toBe('3.0 pts · dip side');
+        expect(nearText({ gap: 0, side: 'dip' })).toBe('on · dip side');
+        expect(nearText(null)).toBeNull();
+    });
+    it('near never adds a verdict item', () => {
+        expect(todayVerdict({ fr: 'BIL', frMode: 'Cash', split: { main: 71 }, centred: { off: 0 } }, { ...fixture, near: { gap: 0, side: 'dip' } })).toEqual({ quiet: true, parts: [] });
     });
 });
 
@@ -129,7 +143,7 @@ describe('/api/own', () => {
     it.each([['v != 1', { ...fresh, v: 2 }], ['missing (404)', null]])('a feed %s is never relayed: the unread fallback', async (_, body) => {
         answer(body ? 200 : 404, body);
         const b = await call('?_fail=lastgood');
-        expect(b).toMatchObject({ made: null, alarms: [], race: null, _meta: { source: 'Unavailable', hasErrors: true } });
+        expect(b).toMatchObject({ made: null, near: null, alarms: [], race: null, _meta: { source: 'Unavailable', hasErrors: true } });
         expect(ownRead(publicOwn(b))).toBeNull();
     });
     it('gist down → the last good copy, flagged stale', async () => {

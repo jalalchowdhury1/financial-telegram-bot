@@ -242,12 +242,14 @@ His yes to "one screen that answers 'do I need to do anything today?'". One slim
 verdict; then five one-line cells that each tap to a plain-words sheet (Holds, Nearest, Split, Alarms, Race); right: four links
 out (NUTS, Radar, Night Shift bare URL, Wayback). It reports, never advises. It reads the Signals card's own states through a
 v2-only `onToday` prop (FrontRunner as the top line reads it, the split tile's rounded split / band / old rule, the Centred
-strip's off count; `undefined` = loading, `null` = unread), the top line's items for "Nearest" (same `closest`), and ONE relay:
+strip's off count; `undefined` = loading, `null` = unread), and ONE relay:
 `/api/own` (relay as `/api/centred`, `serve('own')`, cdn `[1800, 1800]`). The Mac's `~/.local/bin/own-watch.py` (06:25 daily)
 writes `own.json` to the SPLIT's gist (`EXTERNAL_URLS.OWN_GIST`); `lib/own.js publicOwn` REBUILDS it from an allow-list
-(v, made, asof, alarms[id,name,state,note], race{start,day,rows[id,name,vs,fall]}) with type and length checks; a name or note
+(v, made, asof, near{gap,side}, alarms[id,name,state,note], race{start,day,rows[id,name,vs,fall]}) with type and length checks; a name or note
 with a ticker-like capital pair, a bracket, < > or $ never passes (a bad name fails the feed, a bad note is blanked, a bad
-race is dropped alone). Never add tickers, thresholds, conditions, dollars or ids to it, here or in tests.
+race or `near` is dropped alone). "Nearest" = Main's nearest rule at the last close from `own.near` (gap 0–100 points,
+side `dip` = a buy-the-dip rule, `hot` = a step-aside rule; no ticker, no level): "11.1 pts · hot side", "on · dip side"
+(amber) at 0, N/A when null or unread. It is NOT the top line's closest signal, and it never adds a verdict item. Never add tickers, thresholds, conditions, dollars or ids to it, here or in tests.
 Verdict (`todayVerdict`), amber first in this order: split out of band (`Split 82 / 18`), each tripped alarm by its name, a
 FrontRunner trade (`Dip day`, else its mode), `N off centre`, `Split totals old`; then grey: `Alarms unread` (feed missing,
 broken, v != 1 or `made` over 30 h: `ownStale`), `N alarm unread`, `Split unread`, `FrontRunner unread`, `Centred unread`.

@@ -1342,7 +1342,7 @@ export default function DashboardV2() {
                     <section id="now" className="v2-now" aria-label="The market now">
                         <div className="v2-phone-clock"><ErrorBoundary><MarketClock /></ErrorBoundary></div>
                         <ErrorBoundary resetKey={refreshTick}><TodayLine items={(sigState || comboState) && [...(sigState || [null]), ...(comboState || [null])]} /></ErrorBoundary>
-                        <ErrorBoundary resetKey={refreshTick}><TodayCard items={(sigState || comboState) && [...(sigState || [null]), ...(comboState || [null])]} sig={todaySig} tick={sheets} /></ErrorBoundary>
+                        <ErrorBoundary resetKey={refreshTick}><TodayCard sig={todaySig} tick={sheets} /></ErrorBoundary>
                         <div className="v2-hero" ref={heroRef}>
                             <div className="v2-hero-spy" data-jump="SPY overview" data-cached={saved('spy', 'spyDailyMove')}>
                                 <ErrorBoundary resetKey={refreshTick}>
