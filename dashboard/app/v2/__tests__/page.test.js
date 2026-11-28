@@ -512,7 +512,7 @@ describe('the top line', () => {
     });
 
     describe('the Today card (synthetic feeds)', () => {
-        const ownFeed = { v: 1, made: new Date().toISOString(), asof: '2026-11-27', near: { gap: 11.1, side: 'hot' }, alarms: [
+        const ownFeed = { v: 1, made: new Date().toISOString(), asof: '2026-11-27', holds: [{ kind: 'bonds', pct: 50 }, { kind: 'cash', pct: 50 }], near: { gap: 11.1, side: 'hot' }, alarms: [
             { id: 'ballast1', name: 'Ballast slide', state: 'ok', note: '6 months −1%' }, { id: 'ballast2', name: 'Ballast in falls', state: 'ok', note: '0 of 2 strikes' },
             { id: 'ballast3', name: 'Book v old ballast', state: 'ok', note: '0 of 2 strikes' }, { id: 'dip', name: 'Dip engine', state: 'ok', note: 'last 40 dip days +165' }],
             race: { start: '2026-11-27', day: 1, rows: [{ id: 'r1', name: 'Faster dip', vs: 1.2, fall: -0.4 }, { id: 'r2', name: 'Guard off', vs: -0.3, fall: 0 },
@@ -532,7 +532,7 @@ describe('the top line', () => {
             const c = await show();
             await waitFor(() => expect(verdict()).toBe('Nothing to do'));
             expect(c.className).toContain('is-quiet');
-            expect([...c.querySelectorAll('.v2-tc-cell')].map((b) => b.textContent)).toEqual(['HoldsBIL · Cash', 'Nearest11.1 pts · hot side', 'Split71 / 29', 'Alarms4 quiet', 'Raceday 1 · 2 of 4 ahead']);
+            expect([...c.querySelectorAll('.v2-tc-cell')].map((b) => b.textContent)).toEqual(['HoldsBonds 50 · Cash 50', 'Nearest11.1 pts · hot side', 'Split71 / 29', 'Alarms4 quiet', 'Raceday 1 · 2 of 4 ahead']);
             expect([...c.querySelectorAll('.v2-tc-links a')].map((a) => [a.textContent, a.getAttribute('href'), a.getAttribute('target'), a.getAttribute('rel')])).toEqual([
                 ['NUTS ↗', 'https://nuts-sooty.vercel.app', '_blank', 'noopener noreferrer'], ['Radar ↗', 'https://nuts-radar.vercel.app', '_blank', 'noopener noreferrer'],
                 ['Night Shift ↗', 'https://nightshift-jalal.vercel.app', '_blank', 'noopener noreferrer'], ['Wayback ↗', 'https://wayback-backtester.vercel.app', '_blank', 'noopener noreferrer']]);
@@ -560,16 +560,30 @@ describe('the top line', () => {
             expect([...d.querySelectorAll('.v2-tc-row')].map((r) => r.textContent)).toEqual([
                 'Ballast slidequiet6 months −1%', 'Ballast in fallstripped2 of 2 strikes', 'Book v old ballastquiet0 of 2 strikes', 'Dip enginequiet' + 'last 40 dip days +165']);
         });
-        it('a FrontRunner dip buy says Dip day; out of band the split leads', async () => {
-            await show({ '/api/split': ok({ ...splitSnap, main: 82 }) }, { ...calm, FrontRunner: 'Select bottom 2 RSI assets from (SOXL, TECL, TQQQ, FNGU)' });
+        it('Dip day comes from Main\'s own rule (gap 0, dip side), never the FrontRunner sheet; out of band the split leads', async () => {
+            await show({ '/api/split': ok({ ...splitSnap, main: 82 }), '/api/own': ok({ ...ownFeed, near: { gap: 0, side: 'dip' } }) });
             await waitFor(() => expect(verdict()).toBe('Split 82 / 18Dip day')); // the · between is CSS
-            expect(card().querySelector('.is-holds').textContent).toBe('HoldsDip buy');
+            fireEvent.click(within(card()).getByRole('button', { name: 'Dip day' }));
+            expect((await screen.findByRole('dialog')).textContent).toContain('Nearest rule');
+        });
+        it('a FrontRunner dip buy on the sheet changes nothing on the card (a different algo); its tile and the top line keep it', async () => {
+            await show({}, { ...calm, FrontRunner: 'Select bottom 2 RSI assets from (SOXL, TECL, TQQQ, FNGU)' });
+            await waitFor(() => expect(verdict()).toBe('Nothing to do'));
+            expect(card().querySelector('.is-holds').textContent).toBe('HoldsBonds 50 · Cash 50');
+            expect(document.querySelector('.v2-today button').textContent).toBe('FrontRunner dip buy');
+        });
+        it('no holds in the feed: Holds N/A, the rest still reads', async () => {
+            await show({ '/api/own': ok({ ...ownFeed, holds: null }) });
+            await waitFor(() => expect(verdict()).toBe('Nothing to do'));
+            expect(card().querySelector('.is-holds').textContent).toBe('HoldsN/A');
+            fireEvent.click(card().querySelector('.is-holds'));
+            expect((await screen.findByRole('dialog')).textContent).toContain('What Main held at the last close.');
         });
         it.each([
-            [{ gap: 0, side: 'dip' }, 'Nearest' + 'on · dip side', true], [null, 'NearestN/A', false],
+            [{ gap: 0, side: 'hot' }, 'Nearest' + 'on · hot side', true], [null, 'NearestN/A', false],
         ])('Main\'s nearest rule %j reads its own words, never the top line\'s signal', async (near, text, lit) => {
             const c = await show({ '/api/own': ok({ ...ownFeed, near }) });
-            await waitFor(() => expect(verdict()).toBe('Nothing to do'));                   // near never adds a verdict item
+            await waitFor(() => expect(verdict()).toBe('Nothing to do'));                   // only gap 0 on the dip side adds one (Dip day)
             expect(c.querySelector('.is-near').textContent).toBe(text);
             expect(c.querySelector('.is-near').classList.contains('is-warn')).toBe(lit);
             fireEvent.click(c.querySelector('.is-near'));

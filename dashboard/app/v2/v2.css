@@ -1545,7 +1545,7 @@ body:has(.v2) { background: #0b0c0e; }
 }
 @media (max-width: 640px) {
   .v2-tc { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px 12px; margin-top: 18px; margin-bottom: -8px; padding: 10px 14px; }
-  .v2-tc { grid-template-areas: 'v v' 'h s' 'n n' 'a r' 'l l'; }
+  .v2-tc { grid-template-areas: 'v v' 'h h' 'n n' 's a' 'r r' 'l l'; }
   .v2-tc-verdict { grid-area: v; } .v2-tc-links { grid-area: l; }
   .v2-tc-cells { display: contents; }
   .v2-tc-cell.is-holds { grid-area: h; } .v2-tc-cell.is-split { grid-area: s; } .v2-tc-cell.is-near { grid-area: n; }

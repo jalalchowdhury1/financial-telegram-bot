@@ -32,16 +32,24 @@ function near(n) {
     return { gap: Math.round(n.gap * 10) / 10, side: n.side };
 }
 
+const KINDS = ['stocks', 'bonds', 'cash', 'fear', 'short', 'other'];
+/** What Main held at the last close, as plain kinds (no tickers): 1 to 6 of { kind, pct }; anything else is null. */
+function holds(h) {
+    if (!Array.isArray(h) || !h.length || h.length > 6) return null;
+    const out = h.map((x) => (x && KINDS.includes(x.kind) && Number.isInteger(x.pct) && x.pct >= 0 && x.pct <= 100 ? { kind: x.kind, pct: x.pct } : null));
+    return out.every(Boolean) ? out : null;
+}
+
 /**
- * What /api/own relays, rebuilt from the allow-list (v, made, asof, near{gap,side}, alarms[id,name,state,note], race{start,day,rows[id,name,vs,fall]}),
- * or null when the feed is not one the card can trust. A race or near that fails its checks is dropped alone (null); a bad alarm fails the feed.
+ * What /api/own relays, rebuilt from the allow-list (v, made, asof, holds[kind,pct], near{gap,side}, alarms[id,name,state,note], race{start,day,rows[id,name,vs,fall]}),
+ * or null when the feed is not one the card can trust. A race, holds or near that fails its checks is dropped alone (null); a bad alarm fails the feed.
  */
 export function publicOwn(s, now = Date.now()) {
     if (!s || s.v !== 1 || typeof s.made !== 'string' || !STAMP.test(s.made) || !(Date.parse(s.made) <= now + AHEAD_MS)) return null;
     if (!isDate(s.asof) || !Array.isArray(s.alarms) || !s.alarms.length || s.alarms.length > 8) return null;
     const alarms = s.alarms.map(alarm);
     if (!alarms.every(Boolean)) return null;
-    return { v: 1, made: s.made, asof: s.asof, near: near(s.near), alarms, race: race(s.race) };
+    return { v: 1, made: s.made, asof: s.asof, holds: holds(s.holds), near: near(s.near), alarms, race: race(s.race) };
 }
 
 export const validateOwn = (s, now = Date.now()) => publicOwn(s, now) !== null;

@@ -999,7 +999,6 @@ function Signals({ sheets, spy, loading, old, onState, onToday }) {
     // The Today card reads the same states (undefined = loading, null = unread), so it never disagrees with the tiles.
     useEffect(() => {
         onToday({
-            fr: loading ? undefined : frRead && fresh(['FrontRunner']) ? fr : null, frMode: FR_MODE(fr),
             split: split === undefined ? undefined : split && !splitOld ? { main: splitM, other: split.other || 'Opposite 3', target: split.target, band: split.band, asOf: split.asOf, out: splitOut, totalsOld: anchorDays > 31 } : null,
             centred: centred === undefined ? undefined : centred && !centredOld ? { off: centredOff ? centred.off : 0 } : null,
         });

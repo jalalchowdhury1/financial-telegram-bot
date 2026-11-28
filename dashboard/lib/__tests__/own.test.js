@@ -8,7 +8,7 @@ import fs from 'fs';
 import { publicOwn, validateOwn } from '../own';
 import { ownItem, ownStale } from '../servedFreshness';
 import { saveLastGood } from '../store';
-import { todayVerdict, ownRead, nearText } from '../../components/TodayCard';
+import { todayVerdict, ownRead, nearText, holdsText } from '../../components/TodayCard';
 import { GET } from '../../app/api/own/route';
 import fixture from './own.fixture.json';
 
@@ -51,6 +51,16 @@ describe('publicOwn: the allow-list', () => {
             expect(out.alarms).toHaveLength(4);
         }
     });
+    it('holds: 1 to 6 known kinds with whole-number shares; anything else (or missing) is null, the feed still reads', () => {
+        expect(publicOwn({ ...fixture, holds: [{ kind: 'stocks', pct: 100, ticker: 'AAA' }] }, NOW).holds).toEqual([{ kind: 'stocks', pct: 100 }]);
+        const { holds: _, ...without } = fixture;
+        for (const h of [undefined, null, [], [{ kind: 'gold', pct: 50 }], [{ kind: 'bonds', pct: 50.5 }], [{ kind: 'bonds', pct: 101 }], [{ kind: 'bonds', pct: -1 }],
+            [{ kind: 'bonds' }], 'bonds', Array(7).fill({ kind: 'cash', pct: 10 })]) {
+            const out = publicOwn(h === undefined ? without : { ...fixture, holds: h }, NOW);
+            expect(out.holds).toBeNull();
+            expect(out.alarms).toHaveLength(4);
+        }
+    });
     it('a broken race is dropped alone; the alarms still read', () => {
         for (const race of [null, { ...fixture.race, rows: [] }, { ...fixture.race, rows: [{ ...fixture.race.rows[0], vs: 'up' }] }, { ...fixture.race, day: -1 }]) {
             const out = publicOwn({ ...fixture, race }, NOW);
@@ -67,7 +77,7 @@ describe('30 h unread rule + freshness item', () => {
         expect(ownStale(fixture, NOW + 30 * 3600e3)).toBe(true);
     });
     it('nothing served (the route\'s fallback): no age, the cap stays, and it reads as unread', () => {
-        const none = { v: 1, made: null, asof: null, near: null, alarms: [], race: null };
+        const none = { v: 1, made: null, asof: null, holds: null, near: null, alarms: [], race: null };
         expect(ownItem(none, NOW)).toMatchObject({ servedAgeH: null, maxAgeH: 30 });
         expect(ownStale(none, NOW)).toBe(true);
         expect(ownRead(none, NOW)).toBeNull();
@@ -78,7 +88,7 @@ describe('30 h unread rule + freshness item', () => {
 });
 
 describe('the Today verdict', () => {
-    const calm = { fr: 'BIL (T-Bill ETF)', frMode: 'Cash', split: { main: 71, out: false, totalsOld: false }, centred: { off: 0 } };
+    const calm = { split: { main: 71, out: false, totalsOld: false }, centred: { off: 0 } };
     const tripped = { ...fixture, alarms: fixture.alarms.map((a) => (a.id === 'ballast2' ? { ...a, state: 'tripped' } : a)) };
     const texts = (v) => v.parts.map((p) => `${p.tone}:${p.text}`);
     it('everything read and quiet → Nothing to do', () => expect(todayVerdict(calm, fixture)).toEqual({ quiet: true, parts: [] }));
@@ -90,13 +100,12 @@ describe('the Today verdict', () => {
     });
     it('a tripped alarm speaks by its name', () => expect(texts(todayVerdict(calm, tripped))).toEqual(['warn:Ballast in falls']));
     it('most important first: split, alarms, dip day, off centre, then the unread ones', () => {
-        const v = todayVerdict({ fr: 'Select bottom 2', frMode: 'Dip buy', split: { main: 82, out: true }, centred: { off: 1 } }, tripped);
+        const v = todayVerdict({ split: { main: 82, out: true }, centred: { off: 1 } }, { ...tripped, near: { gap: 0, side: 'dip' } });
         expect(texts(v)).toEqual(['warn:Split 82 / 18', 'warn:Ballast in falls', 'warn:Dip day', 'warn:1 off centre']);
-        expect(texts(todayVerdict({ ...calm, split: { main: 82, out: true }, fr: null }, null)))
-            .toEqual(['warn:Split 82 / 18', 'unread:Alarms unread', 'unread:FrontRunner unread']);
+        expect(texts(todayVerdict({ ...calm, split: { main: 82, out: true } }, null))).toEqual(['warn:Split 82 / 18', 'unread:Alarms unread']);
     });
     it('a crashed Signals card (null) reads as unread everywhere, never quiet', () => {
-        expect(texts(todayVerdict(null, fixture))).toEqual(['unread:Split unread', 'unread:FrontRunner unread', 'unread:Centred unread']);
+        expect(texts(todayVerdict(null, fixture))).toEqual(['unread:Split unread', 'unread:Centred unread']);
     });
     it('still loading with nothing to say → null (the card shows …)', () => {
         expect(todayVerdict(undefined, fixture)).toBeNull();
@@ -109,7 +118,17 @@ describe('the Today verdict', () => {
         expect(nearText(null)).toBeNull();
     });
     it('near never adds a verdict item', () => {
-        expect(todayVerdict({ fr: 'BIL', frMode: 'Cash', split: { main: 71 }, centred: { off: 0 } }, { ...fixture, near: { gap: 0, side: 'dip' } })).toEqual({ quiet: true, parts: [] });
+        for (const near of [{ gap: 0, side: 'hot' }, { gap: 0.1, side: 'dip' }, null]) expect(todayVerdict(calm, { ...fixture, near })).toEqual({ quiet: true, parts: [] });
+    });
+    it('Dip day comes only from Main\'s own rule: gap 0 on the dip side, amber, tapping opens Nearest', () => {
+        expect(todayVerdict(calm, { ...fixture, near: { gap: 0, side: 'dip' } }).parts).toEqual([{ text: 'Dip day', cell: 'near', tone: 'warn' }]);
+    });
+    it('the Holds cell: one kind = its label, more = top 3 with shares then +N, null = not read', () => {
+        expect(holdsText([{ kind: 'stocks', pct: 100 }])).toBe('Stocks 3x');
+        expect(holdsText(fixture.holds)).toBe('Bonds 50 · Cash 50');
+        expect(holdsText([{ kind: 'stocks', pct: 50 }, { kind: 'fear', pct: 25 }, { kind: 'bonds', pct: 25 }])).toBe('Stocks 3x 50 · Fear fund 25 · Bonds 25');
+        expect(holdsText([{ kind: 'stocks', pct: 40 }, { kind: 'bonds', pct: 30 }, { kind: 'cash', pct: 20 }, { kind: 'short', pct: 10 }])).toBe('Stocks 3x 40 · Bonds 30 · Cash 20 +1');
+        expect(holdsText(null)).toBeNull();
     });
 });
 
@@ -143,7 +162,7 @@ describe('/api/own', () => {
     it.each([['v != 1', { ...fresh, v: 2 }], ['missing (404)', null]])('a feed %s is never relayed: the unread fallback', async (_, body) => {
         answer(body ? 200 : 404, body);
         const b = await call('?_fail=lastgood');
-        expect(b).toMatchObject({ made: null, near: null, alarms: [], race: null, _meta: { source: 'Unavailable', hasErrors: true } });
+        expect(b).toMatchObject({ made: null, holds: null, near: null, alarms: [], race: null, _meta: { source: 'Unavailable', hasErrors: true } });
         expect(ownRead(publicOwn(b))).toBeNull();
     });
     it('gist down → the last good copy, flagged stale', async () => {

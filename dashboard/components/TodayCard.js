@@ -3,8 +3,9 @@
  * Today: one slim card under the /v2 top line that answers "do I need to do anything today?". A verdict, five
  * one-line cells (each taps to a plain-words sheet) and four links out. It reports; it never advises.
  *
- * It reads what the page already knows (the Signals card's FrontRunner, split and Centred states) plus one small
- * relay, /api/own (the morning alarms, race and Main's nearest rule). "Nothing to do" only when every source was read.
+ * It reads the Signals card's split and Centred states plus one small relay, /api/own: what Main held at the last close,
+ * its nearest rule, the morning alarms and the race. Main comes ONLY from own.json, never the FrontRunner sheet (a
+ * different algo: on 28 Nov the sheet said cash while Main held bonds 50 / cash 50). "Nothing to do" only when every source was read.
  */
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -22,28 +23,30 @@ export const TODAY_LINKS = [
 ];
 const day = (iso) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 const pts = (v) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v).toFixed(1)}`;
-const ticker = (fr) => (/^[A-Z]{2,5}\b/.exec(fr) || [])[0];
+const KIND = { stocks: 'Stocks 3x', bonds: 'Bonds', cash: 'Cash', fear: 'Fear fund', short: 'Short', other: 'Other' };
+/** Main's holding as the cell says it: one kind = its label; more = "Bonds 50 · Cash 50", top 3 then "+N"; null = not read. */
+export const holdsText = (h) => (!h ? null : h.length === 1 ? KIND[h[0].kind]
+    : h.slice(0, 3).map((x) => `${KIND[x.kind]} ${x.pct}`).join(' · ') + (h.length > 3 ? ` +${h.length - 3}` : ''));
 
 /** The own feed as the card reads it: undefined = loading, null = unread (missing, broken, v != 1 or over 30 h old). */
 export const ownRead = (own, now = Date.now()) => (own === undefined ? undefined : own && !ownStale(own, now) ? own : null);
 
 /**
  * The verdict: the things that want a look (amber), most important first, then what could not be read (grey).
- * sig = the Signals card's states ({ fr, frMode, split, centred }; undefined = loading, null = unread).
+ * sig = the Signals card's states ({ split, centred }; undefined = loading, null = unread).
  * -> null while loading with nothing to say yet, else { quiet, parts: [{ text, tone, cell }] }.
  */
 export function todayVerdict(sig, own) {
     const s = sig || {}, look = [], unread = [];
-    const loading = sig === undefined || own === undefined || (!!sig && (s.split === undefined || s.fr === undefined || s.centred === undefined));
+    const loading = sig === undefined || own === undefined || (!!sig && (s.split === undefined || s.centred === undefined));
     if (s.split?.out) look.push({ text: `Split ${s.split.main} / ${100 - s.split.main}`, cell: 'split' });
     (own?.alarms || []).filter((a) => a.state === 'tripped').forEach((a) => look.push({ text: a.name, cell: 'alarms' }));
-    if (s.fr && s.frMode !== 'Cash') look.push({ text: s.frMode === 'Dip buy' ? 'Dip day' : s.frMode, cell: 'holds' });
+    if (own?.near?.gap === 0 && own.near.side === 'dip') look.push({ text: 'Dip day', cell: 'near' });
     if (s.centred?.off > 0) look.push({ text: `${s.centred.off} off centre`, cell: 'centred' });
     if (s.split?.totalsOld) look.push({ text: 'Split totals old', cell: 'split' });
     if (own === null) unread.push({ text: 'Alarms unread', cell: 'alarms' });
     else if (own?.alarms.some((a) => a.state === 'unread')) unread.push({ text: `${own.alarms.filter((a) => a.state === 'unread').length} alarm unread`, cell: 'alarms' });
     if (sig === null || s.split === null) unread.push({ text: 'Split unread', cell: 'split' });
-    if (sig === null || s.fr === null) unread.push({ text: 'FrontRunner unread', cell: 'holds' });
     if (sig === null || s.centred === null) unread.push({ text: 'Centred unread', cell: 'centred' });
     if (loading && !look.length && !unread.length) return null;
     const parts = [...look.map((p) => ({ ...p, tone: 'warn' })), ...unread.map((p) => ({ ...p, tone: 'unread' }))];
@@ -87,14 +90,14 @@ export default function TodayCard({ sig, tick }) {
     const [open, setOpen] = useState(null);
     const close = () => setOpen(null);
     const v = todayVerdict(sig, own);
-    const s = sig || {}, near = nearText(own?.near);
+    const s = sig || {}, near = nearText(own?.near), held = holdsText(own?.holds);
     const tripped = own ? own.alarms.filter((a) => a.state === 'tripped').length : 0;
     const unreadN = own ? own.alarms.filter((a) => a.state === 'unread').length : 0;
     const ahead = own?.race ? own.race.rows.filter((r) => r.vs > 0).length : 0;
     const wait = (x) => (x === undefined ? '…' : 'N/A');
 
     const cells = [
-        { k: 'holds', label: 'Holds', value: s.fr ? (ticker(s.fr) ? `${ticker(s.fr)} · ${s.frMode}` : s.frMode) : wait(s.fr), tone: s.fr && s.frMode !== 'Cash' ? 'warn' : '' },
+        { k: 'holds', label: 'Holds', value: held || (own === undefined ? '…' : 'N/A') },
         { k: 'near', label: 'Nearest', value: near || (own === undefined ? '…' : 'N/A'), tone: own?.near?.gap === 0 ? 'warn' : '' },
         { k: 'split', label: 'Split', value: s.split ? `${s.split.main} / ${100 - s.split.main}` : wait(s.split), tone: s.split?.out ? 'warn' : '' },
         { k: 'alarms', label: 'Alarms', value: own ? (tripped ? `${tripped} tripped` : unreadN ? `${unreadN} unread` : `${own.alarms.length} quiet`) : own === undefined ? '…' : 'unread', tone: tripped ? 'warn' : '' },
@@ -122,13 +125,9 @@ export default function TodayCard({ sig, tick }) {
             </span>
 
             {open === 'holds' && (
-                <Sheet title="Holds" head={s.fr ? s.frMode : 'Not read today'} onClose={close}>
-                    {s.fr && s.fr.length <= 40 && <div className="v2-sh-row"><span>Today</span><span>{s.fr}</span></div>}
-                    <Say lines={[
-                        'What the FrontRunner model holds today.',
-                        !s.fr ? 'The morning sheet could not be read.' : s.frMode === 'Cash' ? 'Cash: none of its rules is on.' : s.frMode === 'Dip buy' ? 'A dip buy is on: it holds the dip.' : `${s.frMode}: one of its rules is on.`,
-                        'Its 15 RSIs are on the FrontRunner tile.',
-                    ]} />
+                <Sheet title="Holds" head={own?.holds ? `As of ${day(own.asof)}` : 'Not read today'} onClose={close}>
+                    {own?.holds?.map((x) => <div key={x.kind} className="v2-sh-row"><span>{KIND[x.kind]}</span><span>{x.pct}%</span></div>)}
+                    <Say lines={['What Main held at the last close.', "From Composer's own numbers.", 'Tickers are on NUTS.']} />
                 </Sheet>
             )}
             {open === 'near' && (
