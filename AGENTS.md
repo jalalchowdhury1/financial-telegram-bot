@@ -235,6 +235,25 @@ compare line from `delta` (centred minus live) + verdict chip, off count per nig
 `https://nuts-radar.vercel.app/#centred`. It reports; it never suggests a trade. Freshness item `centred`:
 servedAgeH from `generated_at`, grace = cap = 30 h (nothing served = red).
 
+### Today card (28 Nov 2026)
+
+His yes to "one screen that answers 'do I need to do anything today?'". One slim card on /v2 directly under the top line
+(`components/TodayCard.js`, CSS at the end of `app/v2/v2.css`; one row at desktop width, a small grid on the phone). Left: the
+verdict; then five one-line cells that each tap to a plain-words sheet (Holds, Nearest, Split, Alarms, Race); right: four links
+out (NUTS, Radar, Night Shift bare URL, Wayback). It reports, never advises. It reads the Signals card's own states through a
+v2-only `onToday` prop (FrontRunner as the top line reads it, the split tile's rounded split / band / old rule, the Centred
+strip's off count; `undefined` = loading, `null` = unread), the top line's items for "Nearest" (same `closest`), and ONE relay:
+`/api/own` (relay as `/api/centred`, `serve('own')`, cdn `[1800, 1800]`). The Mac's `~/.local/bin/own-watch.py` (06:25 daily)
+writes `own.json` to the SPLIT's gist (`EXTERNAL_URLS.OWN_GIST`); `lib/own.js publicOwn` REBUILDS it from an allow-list
+(v, made, asof, alarms[id,name,state,note], race{start,day,rows[id,name,vs,fall]}) with type and length checks; a name or note
+with a ticker-like capital pair, a bracket, < > or $ never passes (a bad name fails the feed, a bad note is blanked, a bad
+race is dropped alone). Never add tickers, thresholds, conditions, dollars or ids to it, here or in tests.
+Verdict (`todayVerdict`), amber first in this order: split out of band (`Split 82 / 18`), each tripped alarm by its name, a
+FrontRunner trade (`Dip day`, else its mode), `N off centre`, `Split totals old`; then grey: `Alarms unread` (feed missing,
+broken, v != 1 or `made` over 30 h: `ownStale`), `N alarm unread`, `Split unread`, `FrontRunner unread`, `Centred unread`.
+"Nothing to do" (green) only when every source was read and nothing is listed. Centred `unknown` (not checked) counts as read.
+Freshness item `own`: servedAgeH from `made`, grace = cap = 30 h (nothing served = red), read through `/api/own` as the card.
+
 ---
 
 **Later the same day (his "All of it. Make it better"):**
@@ -972,7 +991,7 @@ Rule: every number has ≥2 independent live sources, then saved copies, then an
   `cnn → rapidapi → saved CNN index ≤24 h → fg_yahoo/fg_cboe/fg_fred` (VIX proxy, `_meta.proxy`
   + UI label; it read 81 vs CNN 45 on 2026-10-09) → saved index ≤3 days. **jev-pills**: missing inputs → verdict `unknown`, never a calm default.
 - **Nightly guard:** `scripts/fault_matrix.py` (launchd `com.jalal.ftb-fault-matrix`, 21:40 daily,
-  log `~/Library/Logs/ftb-fault-matrix.log`) runs 75 checks on prod (72 + the split relay, 14 Nov 2026) and pings 📡 only on a FAIL.
+  log `~/Library/Logs/ftb-fault-matrix.log`) runs 75 checks on prod (72 + the split relay, 14 Nov 2026; + 3 own relay cases, 28 Nov) and pings 📡 only on a FAIL.
   Add a case there whenever you add a tier.
   Catch-up: `com.jalal.ftb-fault-matrix-catchup` (01:40, `--catchup`) re-runs ONLY when the log's
   last line isn't `=== N/N passed ===`, and prints nothing on a skip — keep it silent, or the

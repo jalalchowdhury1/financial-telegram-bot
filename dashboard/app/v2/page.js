@@ -52,6 +52,7 @@ import SplitHistory from '../../components/SplitHistory';
 import { splitStale, centredStale } from '../../lib/servedFreshness';
 import { validateCentred, cbar } from '../../lib/centred';
 import CentredDetails from '../../components/CentredDetails';
+import TodayCard from '../../components/TodayCard';
 
 const SECTIONS = [
     ['now', 'Now'], ['signals', 'Signals'], ['market', 'Market'], ['risk', 'Risk'],
@@ -919,7 +920,7 @@ function TriggerLine({ points, line, tag, tone }) {
     );
 }
 
-function Signals({ sheets, spy, loading, old, onState }) {
+function Signals({ sheets, spy, loading, old, onState, onToday }) {
     const na = loading ? '…' : 'N/A';
     const [study, setStudy] = useState(false);
     const [split, setSplit] = useState(undefined); // undefined = loading, null = unread
@@ -995,6 +996,15 @@ function Signals({ sheets, spy, loading, old, onState }) {
         ]);
     }, [loading, old, sheets, aaii, aaiiRead, bullUntil, vixCur, vix3m, vixRead, split, splitOld, centred, centredOff, onState]); // eslint-disable-line react-hooks/exhaustive-deps
     useEffect(() => () => onState(null), [onState]); // a crashed or gone card leaves the top line unread, not stuck
+    // The Today card reads the same states (undefined = loading, null = unread), so it never disagrees with the tiles.
+    useEffect(() => {
+        onToday({
+            fr: loading ? undefined : frRead && fresh(['FrontRunner']) ? fr : null, frMode: FR_MODE(fr),
+            split: split === undefined ? undefined : split && !splitOld ? { main: splitM, other: split.other || 'Opposite 3', target: split.target, band: split.band, asOf: split.asOf, out: splitOut, totalsOld: anchorDays > 31 } : null,
+            centred: centred === undefined ? undefined : centred && !centredOld ? { off: centredOff ? centred.off : 0 } : null,
+        });
+    }, [loading, old, sheets, split, splitOld, centred, centredOld, onToday]); // eslint-disable-line react-hooks/exhaustive-deps
+    useEffect(() => () => onToday(null), [onToday]);
 
     const ratioPts = useMemo(() => {
         const v3 = new Map((v3Hist?.points || []).map((p) => [p.date, p.value]));
@@ -1272,6 +1282,7 @@ export default function DashboardV2() {
     const [rubberBand, setRubberBand] = useState(undefined);
     const [sigState, setSigState] = useState(null);
     const [comboState, setComboState] = useState(null);
+    const [todaySig, setTodaySig] = useState(undefined);
     const [trioOpen, toggleTrio] = useOpen('fred-trio');
     const heroRef = useRef(null);
     const [heroGone, setHeroGone] = useState(false);
@@ -1331,6 +1342,7 @@ export default function DashboardV2() {
                     <section id="now" className="v2-now" aria-label="The market now">
                         <div className="v2-phone-clock"><ErrorBoundary><MarketClock /></ErrorBoundary></div>
                         <ErrorBoundary resetKey={refreshTick}><TodayLine items={(sigState || comboState) && [...(sigState || [null]), ...(comboState || [null])]} /></ErrorBoundary>
+                        <ErrorBoundary resetKey={refreshTick}><TodayCard items={(sigState || comboState) && [...(sigState || [null]), ...(comboState || [null])]} sig={todaySig} tick={sheets} /></ErrorBoundary>
                         <div className="v2-hero" ref={heroRef}>
                             <div className="v2-hero-spy" data-jump="SPY overview" data-cached={saved('spy', 'spyDailyMove')}>
                                 <ErrorBoundary resetKey={refreshTick}>
@@ -1413,7 +1425,7 @@ export default function DashboardV2() {
 
                     <Section id="signals" title="Signals">
                         <div data-jump="Indicators" data-cached={saved('sheets')}>
-                            <ErrorBoundary resetKey={refreshTick}><Signals sheets={sheets} spy={spyOk ? spy.chartHistory : null} loading={pending.sheets && !sheets} old={!!saved('sheets')} onState={setSigState} /></ErrorBoundary>
+                            <ErrorBoundary resetKey={refreshTick}><Signals sheets={sheets} spy={spyOk ? spy.chartHistory : null} loading={pending.sheets && !sheets} old={!!saved('sheets')} onState={setSigState} onToday={setTodaySig} /></ErrorBoundary>
                         </div>
                         <div className="v2-grid">
                             <ErrorBoundary resetKey={refreshTick}>

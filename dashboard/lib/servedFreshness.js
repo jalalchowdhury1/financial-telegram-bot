@@ -88,6 +88,16 @@ export function centredItem(payload, now = Date.now()) {
 /** True when the feed is older than 30 h (the tile says "Old"). */
 export const centredStale = (payload, now = Date.now()) => isRed(centredItem(payload, now));
 
+// Own watch: the Mac publishes once a morning (06:25 ET); 30 h = one missed morning + slack, as centred. Nothing served = red.
+export const OWN_GRACE_H = 30;
+/** Own watch: payload = the /api/own JSON (producer: ~/.local/bin/own-watch.py); the Today card reads it the same way. */
+export function ownItem(payload, now = Date.now()) {
+    const ms = Date.parse(payload?.made ?? '');
+    return { name: 'own', inputAgeH: null, servedAgeH: Number.isFinite(ms) ? round1((now - ms) / H) : null, graceH: OWN_GRACE_H, maxAgeH: OWN_GRACE_H };
+}
+/** True when the feed is older than 30 h or missing (the Today card says "Alarms unread"). */
+export const ownStale = (payload, now = Date.now()) => { const i = ownItem(payload, now); return i.servedAgeH == null || isRed(i); };
+
 /**
  * Newest Sheet1 row: its UTC date and how many rows carry it (1 = only the 02:00 run so
  * far, ≥2 = the 14:00 run too). Rows are raw CSV cells; non-date first cells are skipped.
@@ -264,7 +274,7 @@ export function buildFreshness(raw, now = Date.now()) {
         app: 'financial-telegram-bot',
         v: 1,
         items: [
-            rubberBandItem(raw.rubberBand, now), splitItem(raw.split, now), centredItem(raw.centred, now), historyItem(raw.history, now),
+            rubberBandItem(raw.rubberBand, now), splitItem(raw.split, now), centredItem(raw.centred, now), ownItem(raw.own, now), historyItem(raw.history, now),
             ...SERVED_ROUTES.map((r) => servedCopyItem(r, raw.served?.[r], now)), peItem(raw.served?.fred, now),
             fwdPeItem(raw.fwdPe, now), polymarketItem(raw.polymarket, now),
         ].filter(Boolean),

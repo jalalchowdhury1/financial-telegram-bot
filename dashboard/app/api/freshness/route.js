@@ -1,7 +1,7 @@
 /**
  * GET /api/freshness — fleet freshness contract v1 (ages in hours only, no data).
  *
- * Reads the producer -> screen pipelines (/api/rubber-band, /api/split, /api/centred, /api/history, /api/fwd-pe) and the
+ * Reads the producer -> screen pipelines (/api/rubber-band, /api/split, /api/centred, /api/own, /api/history, /api/fwd-pe) and the
  * market routes (served:* items, lib/servedFreshness.js) through the SAME public routes the page reads, so edge cache + last-known-good fallbacks are
  * included in what is measured. Pure maths: lib/servedFreshness.js. No auth by design:
  * the body holds only pipeline names and hour counts.
@@ -63,12 +63,12 @@ export async function GET(request) {
         // A market route that errors is graded (null → red), it does not 500 the whole probe.
         const soft = (p) => sibling(origin, p).catch(() => null);
         const started = Date.now();
-        const [rubberBand, history, fwdPe, polymarket, split, centred, ...served] = await Promise.all([
-            sibling(origin, '/api/rubber-band'), sibling(origin, '/api/history'), soft('/api/fwd-pe'), soft('/api/polymarket'), soft('/api/split'), soft('/api/centred'),
+        const [rubberBand, history, fwdPe, polymarket, split, centred, own, ...served] = await Promise.all([
+            sibling(origin, '/api/rubber-band'), sibling(origin, '/api/history'), soft('/api/fwd-pe'), soft('/api/polymarket'), soft('/api/split'), soft('/api/centred'), soft('/api/own'),
             ...SERVED_ROUTES.map((r) => servedSibling((p) => sibling(origin, p), `/api/${r}`, started)),
         ]);
         const servedMap = Object.fromEntries(SERVED_ROUTES.map((r, i) => [r, served[i]]));
-        const body = buildFreshness({ rubberBand, history, served: servedMap, fwdPe, polymarket, split, centred });
+        const body = buildFreshness({ rubberBand, history, served: servedMap, fwdPe, polymarket, split, centred, own });
         return Response.json(body, { status: 200, headers: freshnessHeaders(body) });
     } catch (e) {
         return Response.json({ error: String(e?.message || e).slice(0, 160) }, { status: 500, headers });

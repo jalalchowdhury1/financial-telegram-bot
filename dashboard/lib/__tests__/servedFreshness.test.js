@@ -102,7 +102,7 @@ test('buildFreshness emits only names + hour counts', () => {
     const out = buildFreshness({ rubberBand: snap('2026-10-02'), history: { _meta: { newestRow: { date: '2026-10-03', rows: 1 } } } }, t('2026-10-03T02:48:00Z'));
     expect(out.app).toBe('financial-telegram-bot');
     expect(out.v).toBe(1);
-    expect(out.items.map((i) => i.name)).toEqual(['rubber-band', 'split', 'centred', 'history-sheet', ...SERVED_ROUTES.map((r) => `served:${r}`), 'pe']);
+    expect(out.items.map((i) => i.name)).toEqual(['rubber-band', 'split', 'centred', 'own', 'history-sheet', ...SERVED_ROUTES.map((r) => `served:${r}`), 'pe']);
     expect(JSON.stringify(out)).not.toMatch(/\d{4}-\d{2}-\d{2}/);
 });
 

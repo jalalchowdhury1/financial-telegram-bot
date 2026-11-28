@@ -511,6 +511,69 @@ describe('the top line', () => {
         });
     });
 
+    describe('the Today card (synthetic feeds)', () => {
+        const ownFeed = { v: 1, made: new Date().toISOString(), asof: '2026-11-27', alarms: [
+            { id: 'ballast1', name: 'Ballast slide', state: 'ok', note: '6 months −1%' }, { id: 'ballast2', name: 'Ballast in falls', state: 'ok', note: '0 of 2 strikes' },
+            { id: 'ballast3', name: 'Book v old ballast', state: 'ok', note: '0 of 2 strikes' }, { id: 'dip', name: 'Dip engine', state: 'ok', note: 'last 40 dip days +165' }],
+            race: { start: '2026-11-27', day: 1, rows: [{ id: 'r1', name: 'Faster dip', vs: 1.2, fall: -0.4 }, { id: 'r2', name: 'Guard off', vs: -0.3, fall: 0 },
+                { id: 'r3', name: 'From scratch', vs: 0, fall: 0 }, { id: 'r4', name: 'Simple', vs: 0.5, fall: 0.2 }] } };
+        const splitSnap = { asOf: '2099-01-02', main: 71.1, target: 70, band: 10, anchored: new Date().toISOString().slice(0, 10), other: 'Opposite 3' };
+        const centredFeed = { v: 1, generated_at: new Date().toISOString(), prices_to: '2026-11-13', state: 'centred', note: '', checked: 5, off: 0, edge: 0, history: [] };
+        const card = () => document.querySelector('.v2-tc');
+        const verdict = () => card().querySelector('.v2-tc-verdict').textContent;
+        const show = async (routes = {}, sheets = calm) => {
+            mockRoutes({ '/api/sheets': ok(sheets), '/api/history': sheet(), '/api/split': ok(splitSnap), '/api/centred': ok(centredFeed), '/api/own': ok(ownFeed), ...files, ...routes });
+            render(<DashboardV2 />);
+            await waitFor(() => expect(card().querySelector('.is-race').textContent).not.toContain('…'));
+            await waitFor(() => expect(verdict()).not.toBe('…'));
+            return card();
+        };
+        it('every source read and quiet: Nothing to do, five one-line cells and four links, right under the top line', async () => {
+            const c = await show();
+            await waitFor(() => expect(verdict()).toBe('Nothing to do'));
+            expect(c.className).toContain('is-quiet');
+            expect([...c.querySelectorAll('.v2-tc-cell')].map((b) => b.textContent)).toEqual(['HoldsBIL · Cash', 'NearestVIX/3M 0.93 → 1', 'Split71 / 29', 'Alarms4 quiet', 'Raceday 1 · 2 of 4 ahead']);
+            expect([...c.querySelectorAll('.v2-tc-links a')].map((a) => [a.textContent, a.getAttribute('href'), a.getAttribute('target'), a.getAttribute('rel')])).toEqual([
+                ['NUTS ↗', 'https://nuts-sooty.vercel.app', '_blank', 'noopener noreferrer'], ['Radar ↗', 'https://nuts-radar.vercel.app', '_blank', 'noopener noreferrer'],
+                ['Night Shift ↗', 'https://nightshift-jalal.vercel.app', '_blank', 'noopener noreferrer'], ['Wayback ↗', 'https://wayback-backtester.vercel.app', '_blank', 'noopener noreferrer']]);
+            expect(c.previousElementSibling.className).toMatch(/\bv2-today\b/);           // directly under the top line
+            expect(screen.getByText('Nothing firing')).toBeInTheDocument();               // the top line is untouched
+        });
+        it.each([
+            ['the own feed is missing', { '/api/own': ok({ v: 1, made: null, asof: null, alarms: [], race: null }) }, 'Alarms unread'],
+            ['the own feed is older than 30 h', { '/api/own': ok({ ...ownFeed, made: '2026-01-02T06:25:00-05:00' }) }, 'Alarms unread'],
+            ['the own feed is v 2', { '/api/own': ok({ ...ownFeed, v: 2 }) }, 'Alarms unread'],
+            ['the split is unread', { '/api/split': ok({ asOf: null, main: null, target: null, band: null }) }, 'Split unread'],
+        ])('never Nothing to do when %s: says what could not be read, in grey', async (_, routes, text) => {
+            const c = await show(routes);
+            await waitFor(() => expect(verdict()).toBe(text));
+            expect(c.className).not.toMatch(/is-quiet|is-warn/);
+            expect(c.textContent).not.toContain('Nothing to do');
+        });
+        it('a tripped alarm leads the verdict by its name; the cell and its sheet say which', async () => {
+            const c = await show({ '/api/own': ok({ ...ownFeed, alarms: ownFeed.alarms.map((a) => (a.id === 'ballast2' ? { ...a, state: 'tripped', note: '2 of 2 strikes' } : a)) }) });
+            await waitFor(() => expect(verdict()).toBe('Ballast in falls'));
+            expect(c.className).toContain('is-warn');
+            expect(c.querySelector('.is-alarms').textContent).toBe('Alarms1 tripped');
+            fireEvent.click(c.querySelector('.is-alarms'));
+            const d = await screen.findByRole('dialog');
+            expect([...d.querySelectorAll('.v2-tc-row')].map((r) => r.textContent)).toEqual([
+                'Ballast slidequiet6 months −1%', 'Ballast in fallstripped2 of 2 strikes', 'Book v old ballastquiet0 of 2 strikes', 'Dip enginequiet' + 'last 40 dip days +165']);
+        });
+        it('a FrontRunner dip buy says Dip day; out of band the split leads', async () => {
+            await show({ '/api/split': ok({ ...splitSnap, main: 82 }) }, { ...calm, FrontRunner: 'Select bottom 2 RSI assets from (SOXL, TECL, TQQQ, FNGU)' });
+            await waitFor(() => expect(verdict()).toBe('Split 82 / 18Dip day')); // the · between is CSS
+            expect(card().querySelector('.is-holds').textContent).toBe('HoldsDip buy');
+        });
+        it('the race sheet: each runner v Main in points, and one line that it is a watch', async () => {
+            const c = await show();
+            fireEvent.click(c.querySelector('.is-race'));
+            const d = await screen.findByRole('dialog');
+            expect([...d.querySelectorAll('.v2-tc-row')].map((r) => r.textContent)).toEqual(['v Main, pointsreturnfall', 'Faster dip+1.2−0.4', 'Guard off−0.30.0', 'From scratch0.00.0', 'Simple+0.5+0.2']);
+            expect(d.textContent).toContain('A watch, not evidence. Quarterly check.');
+        });
+    });
+
     it('an unread NotSoBoring or FrontRunner (N/A) is no alert on its tile, and no "Dip buy"', async () => {
         mockRoutes({ '/api/sheets': ok({ ...calm, NotSoBoring: 'N/A', FrontRunner: 'N/A' }), '/api/history': sheet(), ...files });
         render(<DashboardV2 />);
