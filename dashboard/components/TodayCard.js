@@ -41,16 +41,20 @@ export function todayVerdict(sig, own) {
     const loading = sig === undefined || own === undefined || (!!sig && (s.split === undefined || s.centred === undefined));
     if (s.split?.out) look.push({ text: `Split ${s.split.main} / ${100 - s.split.main}`, cell: 'split' });
     (own?.alarms || []).filter((a) => a.state === 'tripped').forEach((a) => look.push({ text: a.name, cell: 'alarms' }));
-    if (own?.near?.gap === 0 && own.near.side === 'dip') look.push({ text: 'Dip day', cell: 'near' });
+    if (own?.near?.gap === 0) look.push({ text: own.near.side === 'dip' ? 'Dip day' : 'Hot day', cell: 'near' });
     if (s.centred?.off > 0) look.push({ text: `${s.centred.off} off centre`, cell: 'centred' });
     if (s.split?.totalsOld) look.push({ text: 'Split totals old', cell: 'split' });
     if (own === null) unread.push({ text: 'Alarms unread', cell: 'alarms' });
-    else if (own?.alarms.some((a) => a.state === 'unread')) unread.push({ text: `${own.alarms.filter((a) => a.state === 'unread').length} alarm unread`, cell: 'alarms' });
+    const n = own ? own.alarms.filter((a) => a.state === 'unread').length : 0;
+    if (n) unread.push({ text: `${n} alarm${n > 1 ? 's' : ''} unread`, cell: 'alarms' });
+    if (own && !own.holds) unread.push({ text: 'Holds unread', cell: 'holds' });
+    if (own && !own.near) unread.push({ text: 'Nearest unread', cell: 'near' });
+    if (own && !own.race) unread.push({ text: 'Race unread', cell: 'race' });
     if (sig === null || s.split === null) unread.push({ text: 'Split unread', cell: 'split' });
     if (sig === null || s.centred === null) unread.push({ text: 'Centred unread', cell: 'centred' });
     if (loading && !look.length && !unread.length) return null;
     const parts = [...look.map((p) => ({ ...p, tone: 'warn' })), ...unread.map((p) => ({ ...p, tone: 'unread' }))];
-    return { quiet: !parts.length && !loading, parts };
+    return { quiet: !parts.length, parts };
 }
 
 /** Main's nearest rule as the cell says it: "11.1 pts · hot side", "on · dip side" at 0; null = not read. */
@@ -100,7 +104,7 @@ export default function TodayCard({ sig, tick }) {
         { k: 'holds', label: 'Holds', value: held || (own === undefined ? '…' : 'N/A') },
         { k: 'near', label: 'Nearest', value: near || (own === undefined ? '…' : 'N/A'), tone: own?.near?.gap === 0 ? 'warn' : '' },
         { k: 'split', label: 'Split', value: s.split ? `${s.split.main} / ${100 - s.split.main}` : wait(s.split), tone: s.split?.out ? 'warn' : '' },
-        { k: 'alarms', label: 'Alarms', value: own ? (tripped ? `${tripped} tripped` : unreadN ? `${unreadN} unread` : `${own.alarms.length} quiet`) : own === undefined ? '…' : 'unread', tone: tripped ? 'warn' : '' },
+        { k: 'alarms', label: 'Alarms', value: own ? (tripped ? `${tripped} tripped${unreadN ? ` · ${unreadN} unread` : ''}` : unreadN ? `${unreadN} unread` : `${own.alarms.length} quiet`) : own === undefined ? '…' : 'unread', tone: tripped ? 'warn' : '' },
         { k: 'race', label: 'Race', value: own?.race ? `day ${own.race.day} · ${ahead} of ${own.race.rows.length} ahead` : own === undefined ? '…' : 'N/A' },
     ];
 
@@ -152,7 +156,7 @@ export default function TodayCard({ sig, tick }) {
                 </Sheet>
             )}
             {open === 'alarms' && (
-                <Sheet title="Alarms" head={own ? `${tripped ? `${tripped} tripped` : `${own.alarms.length - unreadN} quiet`} · as of ${day(own.asof)}` : 'Unread'} onClose={close}>
+                <Sheet title="Alarms" head={own ? `${tripped ? `${tripped} tripped` : `${own.alarms.length - unreadN} quiet`}${unreadN ? ` · ${unreadN} unread` : ''} · as of ${day(own.asof)}` : 'Unread'} onClose={close}>
                     {own ? own.alarms.map((a) => (
                         <div key={a.id} className={`v2-sh-row v2-tc-row is-${a.state}`}><span>{a.name}</span><span><b>{a.state === 'ok' ? 'quiet' : a.state}</b>{a.note}</span></div>
                     )) : null}

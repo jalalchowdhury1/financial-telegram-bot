@@ -10,8 +10,8 @@ const STAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:\d{2}
 const AHEAD_MS = 3600e3;                                 // a stamp further ahead than this is a broken clock: it would never go stale
 const isDate = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
 const isId = (s) => typeof s === 'string' && /^[a-z0-9_-]{1,16}$/.test(s);
-// Plain words only: a ticker-like word in capitals, a bracket, < > or $ never passes (conditions and dollars stay on the Mac).
-const isText = (s, max) => typeof s === 'string' && s.length > 0 && s.length <= max && !/[A-Z]{2}|[()<>$[\]{}]/.test(s);
+// Plain words only: ASCII letters, digits, space and + − - % . (so no bracket, < >, $, € or comma), and never a ticker-like capital pair.
+const isText = (s, max) => typeof s === 'string' && s.length > 0 && s.length <= max && /^[A-Za-z0-9 +\u2212%.-]+$/.test(s) && !/[A-Z]{2}/.test(s);
 const pts = (n) => Number.isFinite(n) && Math.abs(n) < 1000;
 
 function alarm(a) {
@@ -29,15 +29,16 @@ function race(r) {
 /** Main's nearest rule at the last close: points from its line (0 = on) and which side; anything else is null. */
 function near(n) {
     if (!n || !Number.isFinite(n.gap) || n.gap < 0 || n.gap > 100 || !['dip', 'hot'].includes(n.side)) return null;
-    return { gap: Math.round(n.gap * 10) / 10, side: n.side };
+    return { gap: Math.max(n.gap > 0 ? 0.1 : 0, Math.round(n.gap * 10) / 10), side: n.side }; // above 0 never rounds to "on"
 }
 
 const KINDS = ['stocks', 'bonds', 'cash', 'fear', 'short', 'other'];
-/** What Main held at the last close, as plain kinds (no tickers): 1 to 6 of { kind, pct }; anything else is null. */
+/** What Main held at the last close, as plain kinds (no tickers): 1 to 6 of { kind, pct } summing to 95..105; anything else is null. */
 function holds(h) {
     if (!Array.isArray(h) || !h.length || h.length > 6) return null;
     const out = h.map((x) => (x && KINDS.includes(x.kind) && Number.isInteger(x.pct) && x.pct >= 0 && x.pct <= 100 ? { kind: x.kind, pct: x.pct } : null));
-    return out.every(Boolean) ? out : null;
+    const sum = out.every(Boolean) ? out.reduce((t, x) => t + x.pct, 0) : 0;
+    return sum >= 95 && sum <= 105 ? out : null;
 }
 
 /**
@@ -48,7 +49,7 @@ export function publicOwn(s, now = Date.now()) {
     if (!s || s.v !== 1 || typeof s.made !== 'string' || !STAMP.test(s.made) || !(Date.parse(s.made) <= now + AHEAD_MS)) return null;
     if (!isDate(s.asof) || !Array.isArray(s.alarms) || !s.alarms.length || s.alarms.length > 8) return null;
     const alarms = s.alarms.map(alarm);
-    if (!alarms.every(Boolean)) return null;
+    if (!alarms.every(Boolean) || new Set(alarms.map((a) => a.id)).size !== alarms.length) return null;
     return { v: 1, made: s.made, asof: s.asof, holds: holds(s.holds), near: near(s.near), alarms, race: race(s.race) };
 }
 

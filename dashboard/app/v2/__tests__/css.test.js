@@ -14,3 +14,12 @@ it('the chart draw-in is switched on the chart\'s box, never on the svg it clips
     expect(css).toMatch(/\)\.is-drawn > svg \{ animation: v2-draw/);
     expect(css).not.toMatch(/svg[^{,]*\.is-drawn\s*\{/);
 });
+
+it('the Today card never widens the page: a long verdict scrolls inside the card, cells wrap whole below 1080 px, buttons show focus', () => {
+    const verdict = css.match(/\.v2-tc-verdict \{[^}]*\}/)?.[0];
+    expect(verdict).toMatch(/min-width: 0/);
+    expect(verdict).toMatch(/overflow-x: auto/);
+    expect(css.match(/@media \(max-width: 1080px\) \{\n  \.v2-tc \{[\s\S]*?\n\}/)?.[0]).toMatch(/\.v2-tc-cells \{ flex-wrap: wrap;/);
+    expect(css).toMatch(/\.v2-tc button \{ all: unset; cursor: pointer; white-space: nowrap; \}/);   // a cell's own text never wraps
+    expect(css).toMatch(/\.v2-tc button:focus-visible \{ outline: 1px solid var\(--line-2\); \}/);
+});

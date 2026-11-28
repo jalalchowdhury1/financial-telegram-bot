@@ -5,6 +5,7 @@
  */
 import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import DashboardV2 from '../page';
+import TodayCard from '../../../components/TodayCard';
 import { writeSnap } from '../../../lib/snapshot';
 import { plusMonthsIso } from '../../../lib/signalStudy';
 
@@ -544,6 +545,10 @@ describe('the top line', () => {
             ['the own feed is older than 30 h', { '/api/own': ok({ ...ownFeed, made: '2026-01-02T06:25:00-05:00' }) }, 'Alarms unread'],
             ['the own feed is v 2', { '/api/own': ok({ ...ownFeed, v: 2 }) }, 'Alarms unread'],
             ['the split is unread', { '/api/split': ok({ asOf: null, main: null, target: null, band: null }) }, 'Split unread'],
+            ['the split is old', { '/api/split': ok({ ...splitSnap, asOf: '2020-01-02' }) }, 'Split unread'],
+            ['the Centred feed is old', { '/api/centred': ok({ ...centredFeed, generated_at: new Date(Date.now() - 72 * 3600e3).toISOString() }) }, 'Centred unread'],
+            ['Centred was not checked (unknown)', { '/api/centred': ok({ ...centredFeed, state: 'unknown', checked: 0, edge: null }) }, 'Centred unread'],
+            ['the race is null', { '/api/own': ok({ ...ownFeed, race: null }) }, 'Race unread'],
         ])('never Nothing to do when %s: says what could not be read, in grey', async (_, routes, text) => {
             const c = await show(routes);
             await waitFor(() => expect(verdict()).toBe(text));
@@ -557,6 +562,7 @@ describe('the top line', () => {
             expect(c.querySelector('.is-alarms').textContent).toBe('Alarms1 tripped');
             fireEvent.click(c.querySelector('.is-alarms'));
             const d = await screen.findByRole('dialog');
+            expect(d.querySelector('.v2-aa-title p').textContent).toBe('1 tripped · as of Nov 27');
             expect([...d.querySelectorAll('.v2-tc-row')].map((r) => r.textContent)).toEqual([
                 'Ballast slidequiet6 months −1%', 'Ballast in fallstripped2 of 2 strikes', 'Book v old ballastquiet0 of 2 strikes', 'Dip enginequiet' + 'last 40 dip days +165']);
         });
@@ -572,18 +578,37 @@ describe('the top line', () => {
             expect(card().querySelector('.is-holds').textContent).toBe('HoldsBonds 50 · Cash 50');
             expect(document.querySelector('.v2-today button').textContent).toBe('FrontRunner dip buy');
         });
-        it('no holds in the feed: Holds N/A, the rest still reads', async () => {
-            await show({ '/api/own': ok({ ...ownFeed, holds: null }) });
+        it('tripped and unread together: the cell and its sheet say both', async () => {
+            const c = await show({ '/api/own': ok({ ...ownFeed, alarms: ownFeed.alarms.map((a) => ({ ...a, state: { ballast2: 'tripped', dip: 'unread' }[a.id] || a.state })) }) });
+            await waitFor(() => expect(verdict()).toBe('Ballast in falls1 alarm unread'));
+            expect(c.querySelector('.is-alarms').textContent).toBe('Alarms1 tripped · 1 unread');
+            fireEvent.click(c.querySelector('.is-alarms'));
+            expect((await screen.findByRole('dialog')).querySelector('.v2-aa-title p').textContent).toBe('1 tripped · 1 unread · as of Nov 27');
+        });
+        it('a failed refresh keeps the last good read, never drops to unread', async () => {
+            const calmSig = { split: { main: 71, out: false, totalsOld: false }, centred: { off: 0 } };
+            mockRoutes({ '/api/own': ok(ownFeed) });
+            const { rerender } = render(<TodayCard sig={calmSig} tick={1} />);
             await waitFor(() => expect(verdict()).toBe('Nothing to do'));
+            mockRoutes({ '/api/own': ok({ v: 1, made: null, asof: null, holds: null, near: null, alarms: [], race: null }) });
+            rerender(<TodayCard sig={calmSig} tick={2} />);
+            await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+            await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
+            expect(verdict()).toBe('Nothing to do');
+            expect(card().querySelector('.is-alarms').textContent).toBe('Alarms4 quiet');
+        });
+        it('no holds in the feed: Holds N/A and Holds unread, the rest still reads', async () => {
+            await show({ '/api/own': ok({ ...ownFeed, holds: null }) });
+            await waitFor(() => expect(verdict()).toBe('Holds unread'));
             expect(card().querySelector('.is-holds').textContent).toBe('HoldsN/A');
             fireEvent.click(card().querySelector('.is-holds'));
             expect((await screen.findByRole('dialog')).textContent).toContain('What Main held at the last close.');
         });
         it.each([
-            [{ gap: 0, side: 'hot' }, 'Nearest' + 'on · hot side', true], [null, 'NearestN/A', false],
-        ])('Main\'s nearest rule %j reads its own words, never the top line\'s signal', async (near, text, lit) => {
+            [{ gap: 0, side: 'hot' }, 'Nearest' + 'on · hot side', true, 'Hot day'], [null, 'NearestN/A', false, 'Nearest unread'],
+        ])('Main\'s nearest rule %j reads its own words, never the top line\'s signal', async (near, text, lit, said) => {
             const c = await show({ '/api/own': ok({ ...ownFeed, near }) });
-            await waitFor(() => expect(verdict()).toBe('Nothing to do'));                   // only gap 0 on the dip side adds one (Dip day)
+            await waitFor(() => expect(verdict()).toBe(said));                              // the verdict agrees with the cell
             expect(c.querySelector('.is-near').textContent).toBe(text);
             expect(c.querySelector('.is-near').classList.contains('is-warn')).toBe(lit);
             fireEvent.click(c.querySelector('.is-near'));

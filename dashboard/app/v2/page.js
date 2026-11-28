@@ -1000,7 +1000,7 @@ function Signals({ sheets, spy, loading, old, onState, onToday }) {
     useEffect(() => {
         onToday({
             split: split === undefined ? undefined : split && !splitOld ? { main: splitM, other: split.other || 'Opposite 3', target: split.target, band: split.band, asOf: split.asOf, out: splitOut, totalsOld: anchorDays > 31 } : null,
-            centred: centred === undefined ? undefined : centred && !centredOld ? { off: centredOff ? centred.off : 0 } : null,
+            centred: centred === undefined ? undefined : centred && !centredOld && centred.state !== 'unknown' ? { off: centredOff ? centred.off : 0 } : null,
         });
     }, [loading, old, sheets, split, splitOld, centred, centredOld, onToday]); // eslint-disable-line react-hooks/exhaustive-deps
     useEffect(() => () => onToday(null), [onToday]);

@@ -243,11 +243,12 @@ verdict; then five one-line cells that each tap to a plain-words sheet (Holds, N
 out (NUTS, Radar, Night Shift bare URL, Wayback). It reports, never advises. It reads the Signals card's own states through a
 v2-only `onToday` prop (the split tile's rounded split / band / old rule, the Centred
 strip's off count; `undefined` = loading, `null` = unread), and ONE relay:
-`/api/own` (relay as `/api/centred`, `serve('own')`, cdn `[1800, 1800]`). The Mac's `~/.local/bin/own-watch.py` (06:25 daily)
+`/api/own` (relay as `/api/centred`, `serve('own')`, cdn `[300, 300]`: an alarm ping links straight to the card). The Mac's `~/.local/bin/own-watch.py` (06:25 daily)
 writes `own.json` to the SPLIT's gist (`EXTERNAL_URLS.OWN_GIST`); `lib/own.js publicOwn` REBUILDS it from an allow-list
 (v, made, asof, holds[kind,pct], near{gap,side}, alarms[id,name,state,note], race{start,day,rows[id,name,vs,fall]}) with type and length checks; a name or note
-with a ticker-like capital pair, a bracket, < > or $ never passes (a bad name fails the feed, a bad note is blanked, a bad
-race, `holds` or `near` is dropped alone).
+passes only as ASCII letters, digits, space and `+ − - % .`, never with a ticker-like capital pair (a bad name or a repeated
+alarm id fails the feed, a bad note is blanked, a bad race, `near` or `holds` (shares outside 95–105 in total) is dropped alone;
+a `near.gap` above 0 never rounds to 0, its floor is 0.1).
 **Main comes ONLY from own.json, never the FrontRunner sheet:** that sheet ("Robinhood - Ultimate Frontrunners") is a
 different algo; on 28 Nov it said BIL / cash while Main held bonds 50 / cash 50 (red team). "Holds" = `own.holds`, what Main
 held at the last close on Composer's own numbers, as kinds (stocks → "Stocks 3x", bonds, cash, fear → "Fear fund", short,
@@ -256,9 +257,11 @@ N/A when null or unread, neutral tone. The FrontRunner tile and the top line kee
 side `dip` = a buy-the-dip rule, `hot` = a step-aside rule; no ticker, no level): "11.1 pts · hot side", "on · dip side"
 (amber) at 0, N/A when null or unread. It is NOT the top line's closest signal. Never add tickers, thresholds, conditions, dollars or ids to it, here or in tests.
 Verdict (`todayVerdict`), amber first in this order: split out of band (`Split 82 / 18`), each tripped alarm by its name,
-`Dip day` (ONLY `own.near` gap 0 on the dip side; taps to Nearest), `N off centre`, `Split totals old`; then grey: `Alarms unread` (feed missing,
-broken, v != 1 or `made` over 30 h: `ownStale`), `N alarm unread`, `Split unread`, `Centred unread`.
-"Nothing to do" (green) only when every source was read and nothing is listed. Centred `unknown` (not checked) counts as read.
+`Dip day` / `Hot day` (ONLY `own.near` gap 0, on the dip / hot side; taps to Nearest), `N off centre`, `Split totals old`; then grey: `Alarms unread` (feed missing,
+broken, v != 1 or `made` over 30 h: `ownStale`), `1 alarm unread` / `N alarms unread`, `Holds unread`, `Nearest unread`, `Race unread` (a read
+feed with that field null), `Split unread`, `Centred unread`. The Alarms cell and sheet say both counts ("1 tripped · 1 unread").
+"Nothing to do" (green) only when every source was read and nothing is listed. Centred `unknown` (not checked) is unread on the card
+(`Centred unread`), though the strip itself stays quiet.
 Freshness item `own`: servedAgeH from `made`, grace = cap = 30 h (nothing served = red), read through `/api/own` as the card.
 
 ---

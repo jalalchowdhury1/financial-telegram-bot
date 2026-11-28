@@ -50,7 +50,7 @@ export const CDN_POLICY = {
     split:            [300, 360],   // ≤ 11 min, day and night: over 600 s in all on purpose, so the off-hours price-row
                                     // stretch (≤ 2 h) never holds back the 04:00 split or its Old mark (rehearsal 14 Nov 2026)
     centred:          [1800, 1800], // ≤ 1 h: written nightly by the Mac mini (the tile's Old mark is 30 h)
-    own:              [1800, 1800], // ≤ 1 h: written each morning by the Mac mini (the card's unread mark is 30 h)
+    own:              [300, 300],   // ≤ 10 min: an alarm ping links straight here; written each morning by the Mac mini (the card's unread mark is 30 h)
     history:          [3600, 3600], // ≤ 2 h: Sheet1 gets rows at 02:00 + 14:00 UTC (freshness maxAgeH 30 h counts it)
     aaii:             [7200, 3600], // ≤ 3 h: weekly survey (the route also caches 3 h per instance)
     breadth:          [7200, 3600], // ≤ 3 h: daily bars

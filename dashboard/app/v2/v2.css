@@ -1515,7 +1515,8 @@ body:has(.v2) { background: #0b0c0e; }
   white-space: nowrap; font: 500 13px var(--sans); color: var(--ink-2); font-variant-numeric: tabular-nums;
 }
 .v2-tc button { all: unset; cursor: pointer; white-space: nowrap; }
-.v2-tc-verdict { display: flex; align-items: center; gap: 8px; flex: none; }
+.v2-tc button:focus-visible { outline: 1px solid var(--line-2); }   /* all: unset took the ring away */
+.v2-tc-verdict { display: flex; align-items: center; gap: 8px; flex: none; min-width: 0; max-width: calc(100% + 20px); overflow-x: auto; padding: 10px; margin: -10px; }   /* a long verdict scrolls inside the card, one line; the padding keeps the dot's glow and the focus ring */
 .v2-tc-verdict .v2-tc-v + .v2-tc-v::before { content: '·'; margin-right: 8px; color: var(--ink-3); }
 .v2-tc-v { color: var(--ink-3); }
 .v2-tc-v.is-warn { color: var(--warn); }
@@ -1542,9 +1543,10 @@ body:has(.v2) { background: #0b0c0e; }
 @media (max-width: 1080px) {
   .v2-tc { flex-wrap: wrap; row-gap: 8px; }
   .v2-tc-links { margin-left: 0; flex-basis: 100%; }
+  .v2-tc-cells { flex-wrap: wrap; row-gap: 8px; max-width: 100%; }   /* whole cells drop to a new row; a cell's text never wraps */
 }
 @media (max-width: 640px) {
-  .v2-tc { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px 12px; margin-top: 18px; margin-bottom: -8px; padding: 10px 14px; }
+  .v2-tc { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px 12px; margin-top: 18px; margin-bottom: -8px; padding: 10px 14px; }
   .v2-tc { grid-template-areas: 'v v' 'h h' 'n n' 's a' 'r r' 'l l'; }
   .v2-tc-verdict { grid-area: v; } .v2-tc-links { grid-area: l; }
   .v2-tc-cells { display: contents; }
