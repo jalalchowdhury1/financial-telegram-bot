@@ -13,7 +13,7 @@
  *
  * Fault gates: breadth_polygon, breadth_cnbc.
  */
-import { polygonDaily, cnbcHistory } from '../../../lib/sources';
+import { polygonDaily, cnbcHistory, cnbcQuotes } from '../../../lib/sources';
 import { serve } from '../../../lib/store';
 import { faultsFrom, gate } from '../../../lib/faults';
 import { PAIRS, ratioSeries, pairStats, legStats } from '../../../lib/breadth';
@@ -43,6 +43,14 @@ async function fetchTickerHistory(ticker, polygonKey, faults, expected) {
     if (!best || last(best) < expected) {
         const fresh = await tier('cnbc', () => cnbcHistory(ticker, { range: '1Y', bust: true }));
         if (fresh && (!best || last(fresh) > last(best))) best = fresh;
+    }
+    // Daily feeds one session short (27 Nov 2026 half-day: CNBC's daily bars still ended on the 25th
+    // at 19:18 ET): add the newest close from CNBC's quote, only when the quote is dated that session.
+    if (best && last(best) === latestCompletedSessionDate(etWallToMs(expected, 0))) {
+        const q = await gate('breadth_cnbc', faults, () => cnbcQuotes([ticker], { revalidate: 0 })).catch(() => null);
+        if (q?.[ticker]?.asOf === expected) {
+            best = { history: [...best.history, { date: expected, price: q[ticker].price }], source: `${best.source}+quote` };
+        }
     }
     return best || { history: null, source: 'none' };
 }

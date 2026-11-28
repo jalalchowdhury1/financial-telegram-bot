@@ -8,6 +8,7 @@
  */
 let lastBar = {};
 let bustBar = {}; // what an uncached (bust) CNBC fetch returns, per ticker; default = the cached bar
+let quotes = {}; // CNBC quote per ticker: { price, asOf }
 jest.mock('../sources', () => ({
     polygonDaily: jest.fn(async () => { throw new Error('unused'); }),
     cnbcHistory: jest.fn(async (ticker, opts = {}) => {
@@ -15,6 +16,7 @@ jest.mock('../sources', () => ({
         const end = Date.parse(`${day}T12:00:00Z`);
         return Array.from({ length: 80 }, (_, i) => ({ date: new Date(end - (79 - i) * 864e5).toISOString().slice(0, 10), price: 100 + i }));
     }),
+    cnbcQuotes: jest.fn(async ([t]) => { if (!quotes[t]) throw new Error('no quote'); return { [t]: quotes[t] }; }),
 }));
 
 const { GET } = require('../../app/api/breadth/route');
@@ -23,7 +25,7 @@ const get = async () => (await GET(new Request('https://x.test/api/breadth?_fail
 beforeAll(() => jest.useFakeTimers({ now: new Date('2026-11-01T21:22:00Z'), doNotFake: ['setTimeout', 'clearTimeout', 'setImmediate', 'nextTick', 'queueMicrotask'] }));
 afterAll(() => jest.useRealTimers());
 
-beforeEach(() => { bustBar = {}; jest.setSystemTime(new Date('2026-11-01T21:22:00Z')); });
+beforeEach(() => { bustBar = {}; quotes = {}; jest.setSystemTime(new Date('2026-11-01T21:22:00Z')); });
 
 test('live 1 Nov shape (Friday bars on Sunday) is not stale', async () => {
     lastBar = { '*': '2026-10-30' };
@@ -67,4 +69,27 @@ test('inside the 6h grace after the close a one-session lag is not stale yet', a
     const b = await get();
     expect(b.pairs.xlkXlu.stale).toBeUndefined();
     expect(b._meta.stale).toBeFalsy();
+});
+
+// Known-bad replay, 27 Nov 2026 19:18 ET (Watch 6a9c436e): 1 pm half-day after Thanksgiving; CNBC's
+// daily bars (1Y/3M) still ended on Wed 25 Nov, but its quotes carried the 27 Nov closes.
+test('27 Nov replay: daily feeds a session short -> the session-dated quote adds the close', async () => {
+    jest.setSystemTime(new Date('2026-11-28T00:18:00Z'));
+    lastBar = { '*': '2026-11-25' };
+    const close = { SPY: 728.32, RSP: 218.38, IWM: 273.79, XLK: 160.15, XLU: 43.73, HYG: 76.61, LQD: 104.0 };
+    for (const [t, price] of Object.entries(close)) quotes[t] = { price, asOf: '2026-11-27' };
+    const b = await get();
+    for (const k of ['rspSpy', 'iwmSpy', 'xlkXlu', 'hygLqd']) expect(b.pairs[k].asOf).toBe('2026-11-27');
+    expect(b.pairs.rspSpy.ratio).toBeCloseTo(218.38 / 728.32, 6);
+    expect(b._meta.stale).toBeFalsy();
+    expect(b._meta.source).toMatch(/SPY:cnbc\+quote/);
+});
+
+test('27 Nov replay: quote still dated the 25th -> no bar added, labelled stale', async () => {
+    jest.setSystemTime(new Date('2026-11-28T00:18:00Z'));
+    lastBar = { '*': '2026-11-25' };
+    for (const t of ['SPY', 'RSP', 'IWM', 'XLK', 'XLU', 'HYG', 'LQD']) quotes[t] = { price: 1, asOf: '2026-11-25' };
+    const b = await get();
+    expect(b.pairs.rspSpy).toMatchObject({ asOf: '2026-11-25', stale: true });
+    expect(b._meta.source).not.toMatch(/quote/);
 });
